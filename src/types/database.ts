@@ -1,0 +1,435 @@
+export type UserRole = 'admin' | 'manager' | 'finance' | 'staff'
+export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
+export type PaymentStatus = 'pending' | 'processing' | 'paid'
+export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
+export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered'
+
+export interface Database {
+  public: {
+    Tables: {
+      user_profiles: { Row: UserProfile; Insert: UserProfileInsert; Update: Partial<UserProfileInsert> }
+      staff: { Row: Staff; Insert: StaffInsert; Update: Partial<StaffInsert> }
+      projects: { Row: Project; Insert: ProjectInsert; Update: Partial<ProjectInsert> }
+      vendors: { Row: Vendor; Insert: VendorInsert; Update: Partial<VendorInsert> }
+      categories: { Row: Category; Insert: CategoryInsert; Update: Partial<CategoryInsert> }
+      sub_categories: { Row: SubCategory; Insert: SubCategoryInsert; Update: Partial<SubCategoryInsert> }
+      expenses: { Row: Expense; Insert: ExpenseInsert; Update: Partial<ExpenseInsert> }
+      orders: { Row: Order; Insert: OrderInsert; Update: Partial<OrderInsert> }
+      purchase_allocation: { Row: PurchaseAllocation; Insert: PurchaseAllocationInsert; Update: Partial<PurchaseAllocationInsert> }
+      transportation_requests: { Row: TransportationRequest; Insert: TransportationRequestInsert; Update: Partial<TransportationRequestInsert> }
+      locations: { Row: Location; Insert: LocationInsert; Update: Partial<LocationInsert> }
+      accounts: { Row: Account; Insert: AccountInsert; Update: Partial<AccountInsert> }
+      transfers: { Row: Transfer; Insert: TransferInsert; Update: Partial<TransferInsert> }
+      sales: { Row: Sale; Insert: SaleInsert; Update: Partial<SaleInsert> }
+      clients: { Row: Client; Insert: ClientInsert; Update: Partial<ClientInsert> }
+      products: { Row: Product; Insert: ProductInsert; Update: Partial<ProductInsert> }
+      payroll: { Row: Payroll; Insert: PayrollInsert; Update: Partial<PayrollInsert> }
+      emergency_payroll_summary: { Row: EmergencyPayrollSummary; Insert: EmergencyPayrollSummaryInsert; Update: Partial<EmergencyPayrollSummaryInsert> }
+      cash_advances: { Row: CashAdvance; Insert: CashAdvanceInsert; Update: Partial<CashAdvanceInsert> }
+      vendor_receipt_facilitation: { Row: VendorReceiptFacilitation; Insert: VendorReceiptFacilitationInsert; Update: Partial<VendorReceiptFacilitationInsert> }
+      tax_summary: { Row: TaxSummary; Insert: TaxSummaryInsert; Update: Partial<TaxSummaryInsert> }
+      cpo_bonds: { Row: CpoBond; Insert: CpoBondInsert; Update: Partial<CpoBondInsert> }
+      payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
+      batch_payments: { Row: BatchPayment; Insert: BatchPaymentInsert; Update: Partial<BatchPaymentInsert> }
+      timesheet: { Row: Timesheet; Insert: TimesheetInsert; Update: Partial<TimesheetInsert> }
+    }
+  }
+}
+
+// ── User Profiles ──────────────────────────────────────────────
+export interface UserProfile {
+  id: string
+  full_name: string
+  role: UserRole
+  department: string | null
+  phone_number: string | null
+  created_at: string
+}
+export type UserProfileInsert = Omit<UserProfile, 'created_at'>
+
+// ── Staff ──────────────────────────────────────────────────────
+export interface Staff {
+  id: string
+  employee_name: string
+  staff_type: StaffType | null
+  role: string | null
+  monthly_salary: number | null
+  day_rate: number | null
+  payment_frequency: string | null
+  bank_account: string | null
+  starting_date: string | null
+  termination_date: string | null
+  phone_number: string | null
+  experience: string | null
+  created_at: string
+  updated_at: string
+}
+export type StaffInsert = Omit<Staff, 'id' | 'created_at' | 'updated_at'>
+
+// ── Projects ────────────────────────────────────────────────────
+export interface Project {
+  id: string
+  project_name: string
+  department: string | null
+  start_date: string | null
+  active_for_year: boolean
+  created_at: string
+  updated_at: string
+}
+export type ProjectInsert = Omit<Project, 'id' | 'created_at' | 'updated_at'>
+
+// ── Vendors ─────────────────────────────────────────────────────
+export interface Vendor {
+  id: string
+  vendor_name: string
+  vendor_type: string | null
+  tin: string | null
+  bank_account: string | null
+  phone_contact: string | null
+  category: string | null
+  wth_eligible: boolean
+  active: boolean
+  location: string | null
+  created_at: string
+  updated_at: string
+}
+export type VendorInsert = Omit<Vendor, 'id' | 'created_at' | 'updated_at'>
+
+// ── Categories ──────────────────────────────────────────────────
+export interface Category {
+  id: string
+  category_name: string
+  category_type: string | null
+  parent_type: string | null
+  created_at: string
+}
+export type CategoryInsert = Omit<Category, 'id' | 'created_at'>
+
+// ── Sub-Categories ──────────────────────────────────────────────
+export interface SubCategory {
+  id: string
+  item_name: string
+  parent_category_id: string | null
+  description: string | null
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+export type SubCategoryInsert = Omit<SubCategory, 'id' | 'created_at' | 'updated_at'>
+
+// ── Expenses ─────────────────────────────────────────────────────
+export interface Expense {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  payment_status: boolean
+  requested: boolean
+  partially_paid: boolean
+  bank_ref: string | null
+  purchase_type: string | null
+  date: string | null
+  quantity: number | null
+  uom: string | null
+  receipt_available: string | null
+  expense_type: string | null
+  notes: string | null
+  proposed_item_name: string | null
+  project_name: string | null
+  vendors_name: string | null
+  vendors_bank_account: string | null
+  delivery_status: string[] | null
+  delivery_notes: string | null
+  contacted: boolean
+  verify_wht: boolean
+  wht_handling_method: string | null
+  wht_fund: string | null
+  is_new_item: boolean
+  description_of_item: string | null
+  is_allocated: boolean
+  receipt_delivered: boolean
+  partial_paid_amount: number | null
+  partial_payment_notes: string | null
+  total_payment_date: string | null
+  partial_payment_date: string | null
+  completion_percentage: number | null
+  paid_date: string | null
+  vendors_location: string | null
+  category_id: string | null
+  vendor_id: string | null
+  project_id: string | null
+  staff_id: string | null
+  purchaser_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at'>
+
+// ── Orders ───────────────────────────────────────────────────────
+export interface Order {
+  id: string
+  order_name: string | null
+  order_date: string | null
+  item_service_description: string | null
+  quantity: number | null
+  status: OrderStatus | null
+  notes: string | null
+  vendor_recommendation: string | null
+  project_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type OrderInsert = Omit<Order, 'id' | 'order_name' | 'created_at' | 'updated_at'>
+
+// ── Purchase Allocation ──────────────────────────────────────────
+export interface PurchaseAllocation {
+  id: string
+  allocation_name: string | null
+  parent_purchase_id: string | null
+  sub_category_id: string | null
+  quantity: number | null
+  uom: string | null
+  unit_price_vat_status: string | null
+  unit_price: number | null
+  project_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type PurchaseAllocationInsert = Omit<PurchaseAllocation, 'id' | 'allocation_name' | 'created_at' | 'updated_at'>
+
+// ── Transportation Requests ──────────────────────────────────────
+export interface TransportationRequest {
+  id: string
+  request_name: string | null
+  requested_date: string | null
+  payment_status: boolean
+  requested: boolean
+  amount: number | null
+  bank_ref: string | null
+  delivery_status: string | null
+  vehicle_type: string | null
+  driver_name: string | null
+  expected_delivery_date: string | null
+  actual_delivery_date: string | null
+  pickup_location_text: string | null
+  dropoff_location_text: string | null
+  vendor_name: string | null
+  vendor_bank_account: string | null
+  notes: string | null
+  requested_by_id: string | null
+  project_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'request_name' | 'created_at' | 'updated_at'>
+
+// ── Locations ────────────────────────────────────────────────────
+export interface Location {
+  id: string
+  location_name: string
+  location_type: string | null
+  notes: string | null
+  created_at: string
+}
+export type LocationInsert = Omit<Location, 'id' | 'created_at'>
+
+// ── Accounts ─────────────────────────────────────────────────────
+export interface Account {
+  id: string
+  account_name: string
+  type: string | null
+  account_number: string | null
+  notes: string | null
+  status: string | null
+  created_at: string
+  updated_at: string
+}
+export type AccountInsert = Omit<Account, 'id' | 'created_at' | 'updated_at'>
+
+// ── Transfers ────────────────────────────────────────────────────
+export interface Transfer {
+  id: string
+  transfer_id_code: string | null
+  date: string | null
+  from_account_id: string | null
+  to_account_id: string | null
+  amount: number | null
+  notes: string | null
+  created_at: string
+}
+export type TransferInsert = Omit<Transfer, 'id' | 'created_at'>
+
+// ── Sales ────────────────────────────────────────────────────────
+export interface Sale {
+  id: string
+  sales_description: string
+  sales_status: string | null
+  date: string | null
+  amount: number | null
+  product_or_service: string | null
+  payment_method: string | null
+  notes: string | null
+  client_id: string | null
+  project_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type SaleInsert = Omit<Sale, 'id' | 'created_at' | 'updated_at'>
+
+// ── Clients ──────────────────────────────────────────────────────
+export interface Client {
+  id: string
+  client_name: string
+  phone_number: string | null
+  email: string | null
+  additional_email: string | null
+  business_type: string | null
+  address: string | null
+  notes: string | null
+  receipt_vouched: boolean
+  created_at: string
+  updated_at: string
+}
+export type ClientInsert = Omit<Client, 'id' | 'created_at' | 'updated_at'>
+
+// ── Products ─────────────────────────────────────────────────────
+export interface Product {
+  id: string
+  product_name: string
+  category: string | null
+  unit_price: number | null
+  active: boolean
+  description: string | null
+  created_at: string
+  updated_at: string
+}
+export type ProductInsert = Omit<Product, 'id' | 'created_at' | 'updated_at'>
+
+// ── Payroll ──────────────────────────────────────────────────────
+export interface Payroll {
+  id: string
+  payroll_record: string | null
+  pay_period: string | null
+  start_date: string | null
+  end_date: string | null
+  payroll_type: string | null
+  payment_status: string | null
+  payment_method: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type PayrollInsert = Omit<Payroll, 'id' | 'payroll_record' | 'created_at' | 'updated_at'>
+
+// ── Emergency Payroll Summary ─────────────────────────────────────
+export interface EmergencyPayrollSummary {
+  id: string
+  record_name: string | null
+  payroll_month: string | null
+  days_worked: number | null
+  total_ot_days: number | null
+  total_bonus: number | null
+  advance_taken: number | null
+  payment_status: string | null
+  payment_date: string | null
+  notes: string | null
+  staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type EmergencyPayrollSummaryInsert = Omit<EmergencyPayrollSummary, 'id' | 'record_name' | 'created_at' | 'updated_at'>
+
+// ── Cash Advances ─────────────────────────────────────────────────
+export interface CashAdvance {
+  id: string
+  advance_id_code: string | null
+  amount_advanced: number | null
+  date_given: string | null
+  notes: string | null
+  staff_id: string | null
+  account_used_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type CashAdvanceInsert = Omit<CashAdvance, 'id' | 'created_at' | 'updated_at'>
+
+// ── Vendor Receipt Facilitation ───────────────────────────────────
+export interface VendorReceiptFacilitation {
+  id: string
+  record_name: string | null
+  money_returned: number | null
+  notes: string | null
+  net_facilitation_cost: number | null
+  trxn_date: string | null
+  created_at: string
+  updated_at: string
+}
+export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at'>
+
+// ── Tax Summary ───────────────────────────────────────────────────
+export interface TaxSummary {
+  id: string
+  month: string
+  vat_from_expenses: number | null
+  vat_from_sales: number | null
+  wht_from_expenses: number | null
+  wht_deducted_by_client: number | null
+  created_at: string
+}
+export type TaxSummaryInsert = Omit<TaxSummary, 'id' | 'created_at'>
+
+// ── CPO Bonds ─────────────────────────────────────────────────────
+export interface CpoBond {
+  id: string
+  bond_id_ref: string | null
+  project: string | null
+  total_bond_amount: number | null
+  bond_status: string | null
+  notes: string | null
+  vendor_id: string | null
+  paid_from_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type CpoBondInsert = Omit<CpoBond, 'id' | 'created_at' | 'updated_at'>
+
+// ── Payroll Taxes ─────────────────────────────────────────────────
+export interface PayrollTax {
+  id: string
+  record_name: string | null
+  payroll_month: string | null
+  gross_salary: number | null
+  tax_amount: number | null
+  taxable: string | null
+  staff_id: string | null
+  payroll_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type PayrollTaxInsert = Omit<PayrollTax, 'id' | 'record_name' | 'created_at' | 'updated_at'>
+
+// ── Batch Payments ────────────────────────────────────────────────
+export interface BatchPayment {
+  id: string
+  payment_code: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type BatchPaymentInsert = Omit<BatchPayment, 'id' | 'created_at' | 'updated_at'>
+
+// ── Timesheet ─────────────────────────────────────────────────────
+export interface Timesheet {
+  id: string
+  code: string | null
+  date: string | null
+  check_in_time: string | null
+  check_out_time: string | null
+  notes: string | null
+  staff_id: string | null
+  project_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type TimesheetInsert = Omit<Timesheet, 'id' | 'code' | 'created_at' | 'updated_at'>
