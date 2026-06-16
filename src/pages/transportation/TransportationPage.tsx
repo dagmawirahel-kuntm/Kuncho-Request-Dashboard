@@ -1,35 +1,28 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { TransportationRequest, TransportationRequestInsert } from '@/types/database'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Pencil, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-
-const columns: ColumnDef<TransportationRequest>[] = [
-  { accessorKey: 'request_name', header: 'Request', cell: ({ getValue }) => getValue() ?? '—' },
-  { accessorKey: 'requested_date', header: 'Date', cell: ({ getValue }) => formatDate(getValue() as string) },
-  { accessorKey: 'amount', header: 'Amount', cell: ({ getValue }) => formatCurrency(getValue() as number) },
-  { accessorKey: 'vehicle_type', header: 'Vehicle', cell: ({ getValue }) => getValue() ?? '—' },
-  { accessorKey: 'driver_name', header: 'Driver', cell: ({ getValue }) => getValue() ?? '—' },
-  { accessorKey: 'pickup_location_text', header: 'Pickup', cell: ({ getValue }) => getValue() ?? '—' },
-  { accessorKey: 'dropoff_location_text', header: 'Dropoff', cell: ({ getValue }) => getValue() ?? '—' },
-  { accessorKey: 'delivery_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
-  { accessorKey: 'payment_status', header: 'Payment', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
-]
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="mb-1 block text-xs font-medium text-slate-600">{label}</label>{children}</div>
 }
 
-function TransportFormModal({ onClose }: { onClose: () => void }) {
+function TransportFormModal({ record, onClose }: { record?: TransportationRequest; onClose: () => void }) {
   const { user } = useAuth()
   const qc = useQueryClient()
-  const [form, setForm] = useState<Partial<TransportationRequestInsert>>({ payment_status: false, requested: false, requested_by_id: user?.id })
+  const isEdit = !!record
+  const [form, setForm] = useState<Partial<TransportationRequestInsert>>(
+    isEdit
+      ? { requested_date: record.requested_date, amount: record.amount ?? undefined, vehicle_type: record.vehicle_type, driver_name: record.driver_name, pickup_location_text: record.pickup_location_text, dropoff_location_text: record.dropoff_location_text, expected_delivery_date: record.expected_delivery_date, vendor_name: record.vendor_name, vendor_bank_account: record.vendor_bank_account, notes: record.notes, payment_status: record.payment_status, requested: record.requested }
+      : { payment_status: false, requested: false, requested_by_id: user?.id }
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   function set(key: keyof TransportationRequestInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
@@ -37,9 +30,10 @@ function TransportFormModal({ onClose }: { onClose: () => void }) {
   async function handleSave() {
     setError(''); setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await supabase.from('transportation_requests').insert([form as any])
+    const op = isEdit ? supabase.from('transportation_requests').update(form as any).eq('id', record!.id) : supabase.from('transportation_requests').insert([form as any])
+    const { error: err } = await op
     setSaving(false)
-    if (error) { setError(error.message); return }
+    if (err) { setError(err.message); return }
     qc.invalidateQueries({ queryKey: ['transportation'] }); onClose()
   }
 
@@ -47,13 +41,13 @@ function TransportFormModal({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
       <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">New Transportation Request</h2>
+          <h2 className="text-lg font-semibold">{isEdit ? 'Edit Transportation Request' : 'New Transportation Request'}</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-slate-100"><X className="h-4 w-4" /></button>
         </div>
         <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Requested Date"><input type="date" className={inputCls} value={form.requested_date ?? ''} onChange={e => set('requested_date', e.target.value)} /></Field>
-            <Field label="Amount (ETB)"><input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', parseFloat(e.target.value))} /></Field>
+            <Field label="Amount (ETB)"><input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Vehicle Type">
@@ -72,11 +66,23 @@ function TransportFormModal({ onClose }: { onClose: () => void }) {
           </div>
           <Field label="Vendor Bank Account"><input type="text" className={inputCls} value={form.vendor_bank_account ?? ''} onChange={e => set('vendor_bank_account', e.target.value)} /></Field>
           <Field label="Notes"><textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} /></Field>
+          <div className="flex items-center gap-4 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.requested} onChange={e => set('requested', e.target.checked)} />
+              Requested
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.payment_status} onChange={e => set('payment_status', e.target.checked)} />
+              Paid
+            </label>
+          </div>
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">{saving ? 'Saving…' : 'Submit Request'}</button>
+          <button onClick={handleSave} disabled={saving} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
+            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Submit Request'}
+          </button>
         </div>
       </div>
     </div>
@@ -84,7 +90,9 @@ function TransportFormModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function TransportationPage() {
-  const [showForm, setShowForm] = useState(false)
+  const [modal, setModal] = useState<'create' | TransportationRequest | null>(null)
+  const qc = useQueryClient()
+
   const { data = [], isLoading } = useQuery({
     queryKey: ['transportation'],
     queryFn: async () => {
@@ -94,14 +102,50 @@ export default function TransportationPage() {
     },
   })
 
+  async function handleDelete(id: string) {
+    if (!window.confirm('Delete this transportation request? This cannot be undone.')) return
+    await supabase.from('transportation_requests').delete().eq('id', id)
+    qc.invalidateQueries({ queryKey: ['transportation'] })
+  }
+
+  const columns: ColumnDef<TransportationRequest>[] = useMemo(() => [
+    { accessorKey: 'request_name', header: 'Request', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'requested_date', header: 'Date', cell: ({ getValue }) => formatDate(getValue() as string) },
+    { accessorKey: 'amount', header: 'Amount', cell: ({ getValue }) => formatCurrency(getValue() as number) },
+    { accessorKey: 'vehicle_type', header: 'Vehicle', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'driver_name', header: 'Driver', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'pickup_location_text', header: 'Pickup', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'dropoff_location_text', header: 'Dropoff', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'delivery_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
+    { accessorKey: 'payment_status', header: 'Payment', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <button onClick={() => setModal(row.original)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit">
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => handleDelete(row.original.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ),
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [])
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Transportation Requests</h1><p className="text-sm text-slate-500">Track transportation needs and status</p></div>
-        <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"><Plus className="h-4 w-4" /> New Request</button>
+        <button onClick={() => setModal('create')} className="flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
+          <Plus className="h-4 w-4" /> New Request
+        </button>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search requests…" />}
-      {showForm && <TransportFormModal onClose={() => setShowForm(false)} />}
+      {modal === 'create' && <TransportFormModal onClose={() => setModal(null)} />}
+      {modal && modal !== 'create' && <TransportFormModal record={modal as TransportationRequest} onClose={() => setModal(null)} />}
     </div>
   )
 }
