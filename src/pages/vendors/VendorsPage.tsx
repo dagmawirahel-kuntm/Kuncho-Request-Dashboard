@@ -4,6 +4,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable } from '@/components/shared/DataTable'
 import type { Vendor, VendorInsert } from '@/types/database'
+import { useToast } from '@/contexts/ToastContext'
 import { Plus, X, Pencil, Trash2, Check } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500'
@@ -12,6 +13,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function VendorFormModal({ record, onClose }: { record?: Vendor; onClose: () => void }) {
+  const { toast } = useToast()
   const qc = useQueryClient()
   const isEdit = !!record
   const [form, setForm] = useState<Partial<VendorInsert>>(
@@ -30,8 +32,11 @@ function VendorFormModal({ record, onClose }: { record?: Vendor; onClose: () => 
     const op = isEdit ? supabase.from('vendors').update(form as any).eq('id', record!.id) : supabase.from('vendors').insert([form as any])
     const { error: err } = await op
     setSaving(false)
-    if (err) { setError(err.message); return }
-    qc.invalidateQueries({ queryKey: ['vendors'] }); onClose()
+    if (err) { setError(err.message); toast(err.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vendors'] })
+    qc.invalidateQueries({ queryKey: ['vendors-lookup'] })
+    toast(isEdit ? 'Vendor updated' : 'Vendor added', 'success')
+    onClose()
   }
 
   return (
@@ -95,6 +100,7 @@ function VendorFormModal({ record, onClose }: { record?: Vendor; onClose: () => 
 
 export default function VendorsPage() {
   const [modal, setModal] = useState<'create' | Vendor | null>(null)
+  const { toast } = useToast()
   const qc = useQueryClient()
 
   const { data = [], isLoading } = useQuery({
@@ -108,8 +114,11 @@ export default function VendorsPage() {
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete vendor "${name}"? This cannot be undone.`)) return
-    await supabase.from('vendors').delete().eq('id', id)
+    const { error } = await supabase.from('vendors').delete().eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['vendors'] })
+    qc.invalidateQueries({ queryKey: ['vendors-lookup'] })
+    toast('Vendor deleted', 'success')
   }
 
   const columns: ColumnDef<Vendor>[] = useMemo(() => [
@@ -138,12 +147,8 @@ export default function VendorsPage() {
       header: '',
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
-          <button onClick={() => setModal(row.original)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit">
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button onClick={() => handleDelete(row.original.id, row.original.vendor_name)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete">
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          <button onClick={() => setModal(row.original)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
+          <button onClick={() => handleDelete(row.original.id, row.original.vendor_name)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
       ),
     },

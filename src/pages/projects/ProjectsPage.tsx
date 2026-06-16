@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { DataTable } from '@/components/shared/DataTable'
 import { formatDate } from '@/lib/utils'
 import type { Project, ProjectInsert } from '@/types/database'
-import { Plus, X, Pencil, Trash2 } from 'lucide-react'
+import { useToast } from '@/contexts/ToastContext'
+import { Plus, X, Pencil, Trash2, Check } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -13,11 +14,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function ProjectFormModal({ record, onClose }: { record?: Project; onClose: () => void }) {
+  const { toast } = useToast()
   const qc = useQueryClient()
   const isEdit = !!record
   const [form, setForm] = useState<Partial<ProjectInsert>>(
     isEdit
-      ? { project_name: record.project_name, department: record.department, start_date: record.start_date, active_for_year: record.active_for_year }
+      ? {
+          project_name: record.project_name,
+          department: record.department,
+          start_date: record.start_date,
+          active_for_year: record.active_for_year,
+        }
       : { active_for_year: true }
   )
   const [saving, setSaving] = useState(false)
@@ -31,13 +38,16 @@ function ProjectFormModal({ record, onClose }: { record?: Project; onClose: () =
     const op = isEdit ? supabase.from('projects').update(form as any).eq('id', record!.id) : supabase.from('projects').insert([form as any])
     const { error: err } = await op
     setSaving(false)
-    if (err) { setError(err.message); return }
-    qc.invalidateQueries({ queryKey: ['projects'] }); onClose()
+    if (err) { setError(err.message); toast(err.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['projects'] })
+    qc.invalidateQueries({ queryKey: ['projects-lookup'] })
+    toast(isEdit ? 'Project updated' : 'Project created', 'success')
+    onClose()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{isEdit ? 'Edit Project' : 'New Project'}</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-slate-100"><X className="h-4 w-4" /></button>
@@ -46,22 +56,24 @@ function ProjectFormModal({ record, onClose }: { record?: Project; onClose: () =
           <Field label="Project Name *">
             <input type="text" className={inputCls} value={form.project_name ?? ''} onChange={e => set('project_name', e.target.value)} />
           </Field>
-          <Field label="Department">
-            <input type="text" className={inputCls} value={form.department ?? ''} onChange={e => set('department', e.target.value)} />
-          </Field>
-          <Field label="Start Date">
-            <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Department">
+              <input type="text" className={inputCls} value={form.department ?? ''} onChange={e => set('department', e.target.value)} />
+            </Field>
+            <Field label="Start Date">
+              <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
+            </Field>
+          </div>
           <label className="flex items-center gap-2 cursor-pointer text-sm">
             <input type="checkbox" checked={!!form.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
-            Active for current year
+            Active for Year
           </label>
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Project'}
+            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Project'}
           </button>
         </div>
       </div>
@@ -71,6 +83,7 @@ function ProjectFormModal({ record, onClose }: { record?: Project; onClose: () =
 
 export default function ProjectsPage() {
   const [modal, setModal] = useState<'create' | Project | null>(null)
+  const { toast } = useToast()
   const qc = useQueryClient()
 
   const { data = [], isLoading } = useQuery({
@@ -84,34 +97,29 @@ export default function ProjectsPage() {
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete project "${name}"? This cannot be undone.`)) return
-    await supabase.from('projects').delete().eq('id', id)
+    const { error } = await supabase.from('projects').delete().eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['projects'] })
+    qc.invalidateQueries({ queryKey: ['projects-lookup'] })
+    toast('Project deleted', 'success')
   }
 
   const columns: ColumnDef<Project>[] = useMemo(() => [
-    { accessorKey: 'project_name', header: 'Project' },
+    { accessorKey: 'project_name', header: 'Project Name' },
     { accessorKey: 'department', header: 'Department', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'start_date', header: 'Start Date', cell: ({ getValue }) => formatDate(getValue() as string) },
     {
       accessorKey: 'active_for_year',
-      header: 'Status',
-      cell: ({ getValue }) => (
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getValue() ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-          {getValue() ? 'Active' : 'Inactive'}
-        </span>
-      ),
+      header: 'Active',
+      cell: ({ getValue }) => getValue() ? <Check className="h-4 w-4 text-green-500" /> : <span className="text-slate-300">—</span>,
     },
     {
       id: 'actions',
       header: '',
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
-          <button onClick={() => setModal(row.original)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit">
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button onClick={() => handleDelete(row.original.id, row.original.project_name)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete">
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          <button onClick={() => setModal(row.original)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
+          <button onClick={() => handleDelete(row.original.id, row.original.project_name)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
       ),
     },
@@ -121,9 +129,9 @@ export default function ProjectsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-xl font-bold text-slate-800">Projects</h1><p className="text-sm text-slate-500">Active and past projects</p></div>
+        <div><h1 className="text-xl font-bold text-slate-800">Projects</h1><p className="text-sm text-slate-500">Project and department directory</p></div>
         <button onClick={() => setModal('create')} className="flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
-          <Plus className="h-4 w-4" /> New Project
+          <Plus className="h-4 w-4" /> Add Project
         </button>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search projects…" />}
