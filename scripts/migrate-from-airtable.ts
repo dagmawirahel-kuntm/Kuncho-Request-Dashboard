@@ -53,7 +53,7 @@ async function fetchAllRecords(tableId: string, fieldIds?: string[]): Promise<Ai
   let offset: string | undefined
 
   do {
-    const params = new URLSearchParams({ pageSize: '100' })
+    const params = new URLSearchParams({ pageSize: '100', returnFieldsByFieldId: 'true' })
     if (offset) params.set('offset', offset)
     if (fieldIds) fieldIds.forEach(f => params.append('fields[]', f))
 
