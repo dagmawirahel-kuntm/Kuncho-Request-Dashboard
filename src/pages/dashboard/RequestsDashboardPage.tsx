@@ -5,20 +5,22 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, buildMonthlyTrend } from '@/lib/utils'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BreakdownBarList } from '@/components/shared/BreakdownBarList'
+import { DonutChart } from '@/components/shared/DonutChart'
 import { TrendLineChart } from '@/components/shared/TrendLineChart'
+import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 
-interface ExpenseRow { amount_etb: number | null; payment_status: boolean; date: string | null; categories: { category_name: string } | null }
-interface OrderRow { status: string | null }
-interface TransportRow { amount: number | null; payment_status: boolean; requested_date: string | null }
+interface ExpenseRow { id: string; amount_etb: number | null; payment_status: boolean; date: string | null; item_service_description: string | null; created_at: string; categories: { category_name: string } | null }
+interface OrderRow { id: string; status: string | null; order_name: string | null; created_at: string }
+interface TransportRow { id: string; amount: number | null; payment_status: boolean; requested_date: string | null; request_name: string | null; created_at: string }
 
 export default function RequestsDashboardPage() {
   const { data } = useQuery({
     queryKey: ['dashboard-requests'],
     queryFn: async () => {
       const [expenses, orders, transport, allocation] = await Promise.all([
-        supabase.from('expenses').select('amount_etb, payment_status, date, categories(category_name)'),
-        supabase.from('orders').select('status'),
-        supabase.from('transportation_requests').select('amount, payment_status, requested_date'),
+        supabase.from('expenses').select('id, amount_etb, payment_status, date, item_service_description, created_at, categories(category_name)'),
+        supabase.from('orders').select('id, status, order_name, created_at'),
+        supabase.from('transportation_requests').select('id, amount, payment_status, requested_date, request_name, created_at'),
         supabase.from('purchase_allocation').select('id'),
       ])
       return {
@@ -53,6 +55,12 @@ export default function RequestsDashboardPage() {
 
   const trend = buildMonthlyTrend(expenses.map(e => ({ date: e.date, value: e.amount_etb ?? 0 })))
 
+  const recentActivity: ActivityItem[] = [
+    ...expenses.map(e => ({ id: `exp-${e.id}`, label: e.item_service_description ?? 'Expense', sub: e.amount_etb ? formatCurrency(e.amount_etb) : undefined, date: e.created_at, to: '/expenses', icon: Receipt })),
+    ...orders.map(o => ({ id: `ord-${o.id}`, label: o.order_name ?? 'Order', sub: o.status ?? undefined, date: o.created_at, to: '/orders', icon: ShoppingCart })),
+    ...transport.map(t => ({ id: `trn-${t.id}`, label: t.request_name ?? 'Transport Request', sub: t.amount ? formatCurrency(t.amount) : undefined, date: t.created_at, to: '/transportation', icon: Truck })),
+  ]
+
   return (
     <div className="space-y-6">
       <div>
@@ -68,7 +76,7 @@ export default function RequestsDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BreakdownBarList
+        <DonutChart
           title="Orders by Status"
           items={Object.entries(orderStatusCounts).map(([label, value]) => ({ label, value }))}
         />
@@ -79,10 +87,13 @@ export default function RequestsDashboardPage() {
         />
       </div>
 
-      <TrendLineChart title="Expense Spend — Last 6 Months" data={trend} formatValue={formatCurrency} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <TrendLineChart title="Expense Spend — Last 6 Months" data={trend} formatValue={formatCurrency} />
+        <RecentActivityFeed title="Recent Requests" items={recentActivity} />
+      </div>
 
       <div className="flex flex-wrap gap-2">
-        <Link to="/expenses" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">+ New Expense</Link>
+        <Link to="/expenses" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Expense</Link>
         <Link to="/orders" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Order</Link>
         <Link to="/transportation" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Transportation Request</Link>
       </div>

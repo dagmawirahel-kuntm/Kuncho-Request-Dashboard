@@ -134,7 +134,7 @@ export default function DashboardPage() {
       <div>
         <h2 className="mb-3 text-sm font-semibold text-slate-600 uppercase tracking-wide">Quick Actions</h2>
         <div className="flex flex-wrap gap-2">
-          <Link to="/expenses" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
+          <Link to="/expenses" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
             + New Expense
           </Link>
           <Link to="/orders" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">

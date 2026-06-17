@@ -1,10 +1,14 @@
 import { Outlet, useLocation, NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { Sidebar } from './Sidebar'
+import { GlobalSearch } from './GlobalSearch'
+import { NotificationsBell } from './NotificationsBell'
 import { useAuth } from '@/contexts/AuthContext'
-import { LogOut, ChevronRight } from 'lucide-react'
+import { LogOut, ChevronRight, Menu } from 'lucide-react'
 
 const breadcrumbLabels: Record<string, string> = {
   dashboard: 'Dashboard',
+  overview: 'Company Overview',
   requests: 'Requests',
   procurement: 'Procurement',
   finance: 'Finance',
@@ -45,14 +49,37 @@ export function AppShell() {
   const location = useLocation()
   const segments = location.pathname.split('/').filter(Boolean)
 
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0')
+  }, [collapsed])
+
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      <Sidebar />
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed(c => !c)}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b bg-white px-6">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 lg:hidden"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
           {/* Breadcrumb */}
-          <nav className="flex items-center gap-1 text-sm text-slate-500">
+          <nav className="hidden items-center gap-1 text-sm text-slate-500 md:flex">
             <NavLink to="/dashboard" className="hover:text-slate-700">Home</NavLink>
             {segments.map((seg, i) => (
               <span key={seg} className="flex items-center gap-1">
@@ -64,26 +91,31 @@ export function AppShell() {
             ))}
           </nav>
 
+          <div className="flex flex-1 justify-center px-2 sm:px-4">
+            <GlobalSearch />
+          </div>
+
           {/* User info */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <NotificationsBell />
             {role && (
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${roleBadgeColors[role] ?? 'bg-slate-100 text-slate-600'}`}>
+              <span className={`hidden rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize sm:inline ${roleBadgeColors[role] ?? 'bg-slate-100 text-slate-600'}`}>
                 {role}
               </span>
             )}
-            <span className="text-sm font-medium text-slate-700">{profile?.full_name ?? 'User'}</span>
+            <span className="hidden text-sm font-medium text-slate-700 md:inline">{profile?.full_name ?? 'User'}</span>
             <button
               onClick={signOut}
               className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700"
             >
               <LogOut className="h-4 w-4" />
-              Sign out
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </header>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

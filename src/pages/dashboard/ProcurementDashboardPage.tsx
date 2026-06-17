@@ -69,7 +69,7 @@ export default function ProcurementDashboardPage() {
       <TrendLineChart title="Vendor Receipt Facilitation Cost — Last 6 Months" data={trend} formatValue={formatCurrency} />
 
       <div className="flex flex-wrap gap-2">
-        <Link to="/vendors" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">+ New Vendor</Link>
+        <Link to="/vendors" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Vendor</Link>
         <Link to="/categories" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Category</Link>
         <Link to="/vendor-receipts" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Vendor Receipt</Link>
       </div>

@@ -72,7 +72,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
               placeholder="Search…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-400 border"
+              className="w-full rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-brand border"
             />
           </div>
           <div className="max-h-[200px] overflow-y-auto">
@@ -84,7 +84,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
                   key={o.id}
                   type="button"
                   onClick={() => { onChange(o.id); setOpen(false); setSearch('') }}
-                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${o.id === value ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-800'}`}
+                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${o.id === value ? 'bg-brand/10 text-brand font-medium' : 'text-slate-800'}`}
                 >
                   <div className="truncate">{o.label}</div>
                   {o.sub && <div className="text-xs text-slate-400 truncate">{o.sub}</div>}

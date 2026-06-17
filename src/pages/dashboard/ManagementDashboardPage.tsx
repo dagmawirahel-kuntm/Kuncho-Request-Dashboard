@@ -70,7 +70,7 @@ export default function ManagementDashboardPage() {
       <TrendLineChart title="New Projects Started — Last 6 Months" data={trend} />
 
       <div className="flex flex-wrap gap-2">
-        <Link to="/projects" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">+ New Project</Link>
+        <Link to="/projects" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Project</Link>
         <Link to="/products" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Product</Link>
         <Link to="/locations" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Location</Link>
       </div>

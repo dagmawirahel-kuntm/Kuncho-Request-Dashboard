@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban,
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
-  Layers, Tag, Archive, Shield, ChevronDown
+  Layers, Tag, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -27,6 +27,7 @@ const navGroups: NavGroup[] = [
     title: 'Overview',
     items: [
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
+      { label: 'Company Overview', to: '/overview', icon: Globe2 },
     ],
   },
   {
@@ -82,7 +83,7 @@ const navGroups: NavGroup[] = [
   },
 ]
 
-function NavGroup({ group }: { group: NavGroup }) {
+function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
   const { role } = useAuth()
   const [open, setOpen] = useState(true)
 
@@ -90,6 +91,30 @@ function NavGroup({ group }: { group: NavGroup }) {
     !item.roles || (role && item.roles.includes(role))
   )
   if (visibleItems.length === 0) return null
+
+  if (collapsed) {
+    return (
+      <div className="mb-1 space-y-0.5">
+        {visibleItems.map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            title={item.label}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center justify-center rounded-md px-2 py-2 text-sm transition-colors',
+                isActive
+                  ? 'bg-white/10 text-white font-medium'
+                  : 'text-slate-300 hover:bg-white/5 hover:text-white',
+              )
+            }
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+          </NavLink>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="mb-1">
@@ -130,17 +155,45 @@ function NavGroup({ group }: { group: NavGroup }) {
   )
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  collapsed: boolean
+  onToggleCollapse: () => void
+  mobileOpen: boolean
+  onCloseMobile: () => void
+}
+
+export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }: SidebarProps) {
   return (
-    <aside className="flex h-screen w-56 shrink-0 flex-col bg-sidebar overflow-y-auto">
-      <div className="flex h-14 shrink-0 items-center border-b border-white/10 px-4">
-        <img src="/kuncho-logo.png" alt="KUNCHO" className="h-9 w-auto" />
-      </div>
-      <nav className="flex-1 p-3 space-y-1">
-        {navGroups.map(group => (
-          <NavGroup key={group.title} group={group} />
-        ))}
-      </nav>
-    </aside>
+    <>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 flex h-screen shrink-0 flex-col bg-sidebar overflow-y-auto transition-all duration-200',
+          'lg:static lg:translate-x-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          collapsed ? 'w-56 lg:w-16' : 'w-56',
+        )}
+      >
+        <div className={cn('flex h-14 shrink-0 items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
+          <img src="/kuncho-logo.png" alt="KUNCHO" className="h-9 w-auto" />
+        </div>
+        <nav className="flex-1 p-3 space-y-1">
+          {navGroups.map(group => (
+            <NavGroup key={group.title} group={group} collapsed={collapsed} />
+          ))}
+        </nav>
+        <button
+          onClick={onToggleCollapse}
+          className="hidden shrink-0 items-center justify-center gap-2 border-t border-white/10 py-3 text-slate-400 hover:bg-white/5 hover:text-white lg:flex"
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <><ChevronLeft className="h-4 w-4" /><span className="text-xs">Collapse</span></>}
+        </button>
+      </aside>
+    </>
   )
 }

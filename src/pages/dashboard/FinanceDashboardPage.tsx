@@ -73,7 +73,7 @@ export default function FinanceDashboardPage() {
       <TrendLineChart title="Sales Revenue — Last 6 Months" data={trend} formatValue={formatCurrency} color="#059669" />
 
       <div className="flex flex-wrap gap-2">
-        <Link to="/sales" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">+ New Sale</Link>
+        <Link to="/sales" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Sale</Link>
         <Link to="/accounts" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Account</Link>
         <Link to="/cpo-bonds" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ CPO Bond</Link>
       </div>

@@ -1,0 +1,85 @@
+import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { Bell } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+
+interface NotificationItem {
+  label: string
+  count: number
+  to: string
+}
+
+export function NotificationsBell() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const { data } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const [expenses, orders, transport, payroll, emergency] = await Promise.all([
+        supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_status', false),
+        supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('transportation_requests').select('*', { count: 'exact', head: true }).eq('payment_status', false),
+        supabase.from('payroll').select('*', { count: 'exact', head: true }).neq('payment_status', 'paid'),
+        supabase.from('emergency_payroll_summary').select('*', { count: 'exact', head: true }).neq('payment_status', 'paid'),
+      ])
+      const items: NotificationItem[] = [
+        { label: 'Unpaid expenses', count: expenses.count ?? 0, to: '/expenses' },
+        { label: 'Pending orders', count: orders.count ?? 0, to: '/orders' },
+        { label: 'Pending transportation requests', count: transport.count ?? 0, to: '/transportation' },
+        { label: 'Pending payroll', count: payroll.count ?? 0, to: '/payroll' },
+        { label: 'Pending emergency payroll', count: emergency.count ?? 0, to: '/emergency-payroll' },
+      ]
+      return items.filter(i => i.count > 0)
+    },
+    refetchInterval: 60_000,
+  })
+
+  const items = data ?? []
+  const total = items.reduce((sum, i) => sum + i.count, 0)
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="relative flex items-center justify-center rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+      >
+        <Bell className="h-4.5 w-4.5" />
+        {total > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+            {total > 99 ? '99+' : total}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-1 w-72 rounded-md border bg-white p-2 shadow-lg">
+          <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Needs attention</p>
+          {items.length === 0 ? (
+            <p className="px-2 py-4 text-center text-sm text-slate-400">You're all caught up</p>
+          ) : (
+            items.map(item => (
+              <button
+                key={item.label}
+                onClick={() => { navigate(item.to); setOpen(false) }}
+                className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-sm hover:bg-slate-50"
+              >
+                <span className="text-slate-700">{item.label}</span>
+                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-semibold text-brand">{item.count}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

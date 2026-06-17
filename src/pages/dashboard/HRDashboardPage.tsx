@@ -76,7 +76,7 @@ export default function HRDashboardPage() {
       <TrendLineChart title="Cash Advances — Last 6 Months" data={trend} formatValue={formatCurrency} color="#7c3aed" />
 
       <div className="flex flex-wrap gap-2">
-        <Link to="/staff" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">+ New Staff</Link>
+        <Link to="/staff" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Staff</Link>
         <Link to="/payroll" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Payroll Record</Link>
         <Link to="/cash-advances" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cash Advance</Link>
       </div>
