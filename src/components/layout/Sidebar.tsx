@@ -18,6 +18,7 @@ interface NavItem {
 
 interface NavGroup {
   title: string
+  to?: string
   items: NavItem[]
 }
 
@@ -30,6 +31,7 @@ const navGroups: NavGroup[] = [
   },
   {
     title: 'Requests',
+    to: '/requests',
     items: [
       { label: 'Expenses', to: '/expenses', icon: Receipt },
       { label: 'Orders', to: '/orders', icon: ShoppingCart },
@@ -39,6 +41,7 @@ const navGroups: NavGroup[] = [
   },
   {
     title: 'Procurement',
+    to: '/procurement',
     items: [
       { label: 'Vendors', to: '/vendors', icon: Building2 },
       { label: 'Categories', to: '/categories', icon: Tag },
@@ -47,6 +50,7 @@ const navGroups: NavGroup[] = [
   },
   {
     title: 'Finance',
+    to: '/finance',
     items: [
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'manager', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },
@@ -57,6 +61,7 @@ const navGroups: NavGroup[] = [
   },
   {
     title: 'HR',
+    to: '/hr',
     items: [
       { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'manager', 'finance'] },
       { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'manager', 'finance'] },
@@ -68,6 +73,7 @@ const navGroups: NavGroup[] = [
   },
   {
     title: 'Management',
+    to: '/management',
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance'] },
@@ -87,13 +93,18 @@ function NavGroup({ group }: { group: NavGroup }) {
 
   return (
     <div className="mb-1">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-300"
-      >
-        {group.title}
-        <ChevronDown className={cn('h-3 w-3 transition-transform', !open && '-rotate-90')} />
-      </button>
+      <div className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        {group.to ? (
+          <NavLink to={group.to} className={({ isActive }) => cn('hover:text-slate-200', isActive && 'text-white')}>
+            {group.title}
+          </NavLink>
+        ) : (
+          <span>{group.title}</span>
+        )}
+        <button onClick={() => setOpen(o => !o)} className="hover:text-slate-300">
+          <ChevronDown className={cn('h-3 w-3 transition-transform', !open && '-rotate-90')} />
+        </button>
+      </div>
       {open && (
         <div className="space-y-0.5">
           {visibleItems.map(item => (

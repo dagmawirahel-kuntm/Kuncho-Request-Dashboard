@@ -166,7 +166,7 @@ export default function SalesPage() {
           <Plus className="h-4 w-4" /> New Sale
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search sales…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search sales…" persistKey="sales" />}
       {modal === 'create' && <SaleFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <SaleFormModal record={modal as Sale} onClose={() => setModal(null)} />}
     </div>

@@ -149,7 +149,7 @@ export default function PayrollTaxesPage() {
           <Plus className="h-4 w-4" /> Add Record
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll taxes…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll taxes…" persistKey="payroll-taxes" />}
       {modal === 'create' && <PayrollTaxFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <PayrollTaxFormModal record={modal as PayrollTax} onClose={() => setModal(null)} />}
     </div>

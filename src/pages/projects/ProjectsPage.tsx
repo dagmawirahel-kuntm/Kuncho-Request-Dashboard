@@ -134,7 +134,7 @@ export default function ProjectsPage() {
           <Plus className="h-4 w-4" /> Add Project
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search projects…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search projects…" persistKey="projects" />}
       {modal === 'create' && <ProjectFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <ProjectFormModal record={modal as Project} onClose={() => setModal(null)} />}
     </div>

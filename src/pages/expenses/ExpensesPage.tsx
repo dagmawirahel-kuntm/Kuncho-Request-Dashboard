@@ -393,7 +393,7 @@ export default function ExpensesPage() {
           <Plus className="h-4 w-4" /> New Expense
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search expenses…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search expenses…" persistKey="expenses" />}
       {modal === 'create' && <ExpenseFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <ExpenseFormModal record={modal as Expense} onClose={() => setModal(null)} />}
     </div>

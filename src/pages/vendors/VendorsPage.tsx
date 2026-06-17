@@ -163,7 +163,7 @@ export default function VendorsPage() {
           <Plus className="h-4 w-4" /> Add Vendor
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search vendors…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search vendors…" persistKey="vendors" />}
       {modal === 'create' && <VendorFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <VendorFormModal record={modal as Vendor} onClose={() => setModal(null)} />}
     </div>

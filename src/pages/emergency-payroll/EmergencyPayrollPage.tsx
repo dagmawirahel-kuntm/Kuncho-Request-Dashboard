@@ -166,7 +166,7 @@ export default function EmergencyPayrollPage() {
           <Plus className="h-4 w-4" /> Add Record
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll…" persistKey="emergency-payroll" />}
       {modal === 'create' && <EmergencyPayrollFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <EmergencyPayrollFormModal record={modal as EmergencyPayrollSummary} onClose={() => setModal(null)} />}
     </div>

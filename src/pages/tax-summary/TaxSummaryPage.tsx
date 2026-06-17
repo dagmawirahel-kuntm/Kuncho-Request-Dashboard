@@ -134,7 +134,7 @@ export default function TaxSummaryPage() {
           <Plus className="h-4 w-4" /> Add Summary
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search tax summaries…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search tax summaries…" persistKey="tax-summary" />}
       {modal === 'create' && <TaxSummaryFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <TaxSummaryFormModal record={modal as TaxSummary} onClose={() => setModal(null)} />}
     </div>

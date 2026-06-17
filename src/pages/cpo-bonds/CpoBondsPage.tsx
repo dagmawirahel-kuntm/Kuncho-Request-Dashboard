@@ -152,7 +152,7 @@ export default function CpoBondsPage() {
           <Plus className="h-4 w-4" /> Add Bond
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search bonds…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search bonds…" persistKey="cpo-bonds" />}
       {modal === 'create' && <CpoBondFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <CpoBondFormModal record={modal as CpoBond} onClose={() => setModal(null)} />}
     </div>

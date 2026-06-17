@@ -125,7 +125,7 @@ export default function CategoriesPage() {
           <Plus className="h-4 w-4" /> Add Category
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search categories…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search categories…" persistKey="categories" />}
       {modal === 'create' && <CategoryFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <CategoryFormModal record={modal as Category} onClose={() => setModal(null)} />}
     </div>

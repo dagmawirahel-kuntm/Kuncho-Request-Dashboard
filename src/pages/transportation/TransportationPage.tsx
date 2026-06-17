@@ -199,7 +199,7 @@ export default function TransportationPage() {
           <Plus className="h-4 w-4" /> New Request
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search requests…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search requests…" persistKey="transportation" />}
       {modal === 'create' && <TransportFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <TransportFormModal record={modal as TransportationRequest} onClose={() => setModal(null)} />}
     </div>

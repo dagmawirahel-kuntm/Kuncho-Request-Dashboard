@@ -110,7 +110,7 @@ export default function BatchPaymentsPage() {
           <Plus className="h-4 w-4" /> Add Payment
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payments…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payments…" persistKey="batch-payments" />}
       {modal === 'create' && <BatchPaymentFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <BatchPaymentFormModal record={modal as BatchPayment} onClose={() => setModal(null)} />}
     </div>

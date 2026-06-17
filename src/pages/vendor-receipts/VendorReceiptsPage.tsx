@@ -127,7 +127,7 @@ export default function VendorReceiptsPage() {
           <Plus className="h-4 w-4" /> Add Record
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search records…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search records…" persistKey="vendor-receipts" />}
       {modal === 'create' && <VendorReceiptFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <VendorReceiptFormModal record={modal as VendorReceiptFacilitation} onClose={() => setModal(null)} />}
     </div>

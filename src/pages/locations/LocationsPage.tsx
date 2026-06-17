@@ -120,7 +120,7 @@ export default function LocationsPage() {
           <Plus className="h-4 w-4" /> Add Location
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search locations…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search locations…" persistKey="locations" />}
       {modal === 'create' && <LocationFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <LocationFormModal record={modal as Location} onClose={() => setModal(null)} />}
     </div>

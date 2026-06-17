@@ -5,6 +5,11 @@ import { LogOut, ChevronRight } from 'lucide-react'
 
 const breadcrumbLabels: Record<string, string> = {
   dashboard: 'Dashboard',
+  requests: 'Requests',
+  procurement: 'Procurement',
+  finance: 'Finance',
+  hr: 'HR',
+  management: 'Management',
   expenses: 'Expenses',
   orders: 'Orders',
   transportation: 'Transportation',

@@ -1,34 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
-import { Receipt, ShoppingCart, Truck, DollarSign } from 'lucide-react'
+import { Receipt, ShoppingCart, Truck, DollarSign, ArrowRight, Building2, Wallet, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { KpiCard } from '@/components/shared/KpiCard'
 
-interface StatCard {
-  label: string
-  value: string | number
-  sub?: string
-  icon: React.ElementType
-  color: string
-  to: string
-}
-
-function StatCard({ label, value, sub, icon: Icon, color, to }: StatCard) {
-  return (
-    <Link to={to} className="block rounded-xl border bg-white p-5 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-slate-500">{label}</p>
-          <p className="mt-1 text-2xl font-bold text-slate-800">{value}</p>
-          {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
-        </div>
-        <span className={`rounded-lg p-2 ${color}`}>
-          <Icon className="h-5 w-5" />
-        </span>
-      </div>
-    </Link>
-  )
-}
+const sections = [
+  { label: 'Requests', to: '/requests', icon: Receipt, color: 'bg-blue-50 text-blue-500', desc: 'Expenses, orders, transportation' },
+  { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts' },
+  { label: 'Finance', to: '/finance', icon: DollarSign, color: 'bg-emerald-50 text-emerald-500', desc: 'Accounts, sales, bonds' },
+  { label: 'HR', to: '/hr', icon: Wallet, color: 'bg-orange-50 text-orange-500', desc: 'Staff, payroll, advances' },
+  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations' },
+]
 
 export default function DashboardPage() {
   const { data: expenseStats } = useQuery({
@@ -74,7 +57,7 @@ export default function DashboardPage() {
     },
   })
 
-  const stats: StatCard[] = [
+  const stats = [
     {
       label: 'Pending Expenses',
       value: expenseStats?.pending ?? '—',
@@ -118,8 +101,33 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map(stat => (
-          <StatCard key={stat.label} {...stat} />
+          <KpiCard key={stat.label} {...stat} />
         ))}
+      </div>
+
+      {/* Section Dashboards */}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-slate-600 uppercase tracking-wide">Sections</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {sections.map(section => (
+            <Link
+              key={section.to}
+              to={section.to}
+              className="group flex flex-col justify-between rounded-xl border bg-white p-5 hover:shadow-md transition-shadow"
+            >
+              <div>
+                <span className={`inline-flex rounded-lg p-2 ${section.color}`}>
+                  <section.icon className="h-5 w-5" />
+                </span>
+                <p className="mt-3 font-semibold text-slate-800">{section.label}</p>
+                <p className="mt-0.5 text-xs text-slate-400">{section.desc}</p>
+              </div>
+              <div className="mt-4 flex items-center gap-1 text-xs font-medium text-slate-500 group-hover:text-slate-800">
+                View dashboard <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* Quick Actions */}

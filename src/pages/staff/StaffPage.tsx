@@ -167,7 +167,7 @@ export default function StaffPage() {
           <Plus className="h-4 w-4" /> Add Staff
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search staff…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search staff…" persistKey="staff" />}
       {modal === 'create' && <StaffFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <StaffFormModal record={modal as Staff} onClose={() => setModal(null)} />}
     </div>

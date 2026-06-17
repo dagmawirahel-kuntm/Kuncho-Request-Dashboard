@@ -144,7 +144,7 @@ export default function TimesheetPage() {
           <Plus className="h-4 w-4" /> New Entry
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search timesheet…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search timesheet…" persistKey="timesheet" />}
       {modal === 'create' && <TimesheetFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <TimesheetFormModal record={modal as Timesheet} onClose={() => setModal(null)} />}
     </div>

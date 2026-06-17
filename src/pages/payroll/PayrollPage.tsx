@@ -162,7 +162,7 @@ export default function PayrollPage() {
           <Plus className="h-4 w-4" /> Add Payroll
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll…" persistKey="payroll" />}
       {modal === 'create' && <PayrollFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <PayrollFormModal record={modal as Payroll} onClose={() => setModal(null)} />}
     </div>

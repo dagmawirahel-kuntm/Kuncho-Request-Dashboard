@@ -140,7 +140,7 @@ export default function CashAdvancesPage() {
           <Plus className="h-4 w-4" /> New Advance
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search advances…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search advances…" persistKey="cash-advances" />}
       {modal === 'create' && <CashAdvanceFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <CashAdvanceFormModal record={modal as CashAdvance} onClose={() => setModal(null)} />}
     </div>

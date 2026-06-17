@@ -137,7 +137,7 @@ export default function ProductsPage() {
           <Plus className="h-4 w-4" /> Add Product
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search products…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search products…" persistKey="products" />}
       {modal === 'create' && <ProductFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <ProductFormModal record={modal as Product} onClose={() => setModal(null)} />}
     </div>

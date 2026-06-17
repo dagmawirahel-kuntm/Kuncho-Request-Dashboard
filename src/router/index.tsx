@@ -3,6 +3,11 @@ import { ProtectedRoute } from './ProtectedRoute'
 import { AppShell } from '@/components/layout/AppShell'
 import LoginPage from '@/pages/auth/LoginPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
+import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
+import ProcurementDashboardPage from '@/pages/dashboard/ProcurementDashboardPage'
+import FinanceDashboardPage from '@/pages/dashboard/FinanceDashboardPage'
+import HRDashboardPage from '@/pages/dashboard/HRDashboardPage'
+import ManagementDashboardPage from '@/pages/dashboard/ManagementDashboardPage'
 import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
@@ -35,16 +40,19 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: 'dashboard', element: <DashboardPage /> },
+          { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },
           { path: 'orders', element: <OrdersPage /> },
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'purchase-allocation', element: <PurchaseAllocationPage /> },
+          { path: 'procurement', element: <ProcurementDashboardPage /> },
           { path: 'vendors', element: <VendorsPage /> },
           { path: 'categories', element: <CategoriesPage /> },
           { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
           {
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
             children: [
+              { path: 'finance', element: <FinanceDashboardPage /> },
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'sales', element: <SalesPage /> },
               { path: 'tax-summary', element: <TaxSummaryPage /> },
@@ -56,6 +64,7 @@ export const router = createBrowserRouter([
           {
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
             children: [
+              { path: 'hr', element: <HRDashboardPage /> },
               { path: 'staff', element: <StaffPage /> },
               { path: 'payroll', element: <PayrollPage /> },
               { path: 'payroll-taxes', element: <PayrollTaxesPage /> },
@@ -67,6 +76,7 @@ export const router = createBrowserRouter([
           {
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
             children: [
+              { path: 'management', element: <ManagementDashboardPage /> },
               { path: 'projects', element: <ProjectsPage /> },
               { path: 'products', element: <ProductsPage /> },
               { path: 'locations', element: <LocationsPage /> },

@@ -140,7 +140,7 @@ export default function AccountsPage() {
           <Plus className="h-4 w-4" /> Add Account
         </button>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search accounts…" />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search accounts…" persistKey="accounts" />}
       {modal === 'create' && <AccountFormModal onClose={() => setModal(null)} />}
       {modal && modal !== 'create' && <AccountFormModal record={modal as Account} onClose={() => setModal(null)} />}
     </div>
