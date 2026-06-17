@@ -23,6 +23,6 @@ export function KpiCard({ label, value, sub, icon: Icon, color, to }: KpiCardPro
       </span>
     </div>
   )
-  const cls = 'block rounded-xl border bg-white p-5 hover:shadow-md transition-shadow'
+  const cls = 'block rounded-xl border bg-white p-5 transition-all hover:shadow-md hover:-translate-y-0.5'
   return to ? <Link to={to} className={cls}>{content}</Link> : <div className={cls}>{content}</div>
 }

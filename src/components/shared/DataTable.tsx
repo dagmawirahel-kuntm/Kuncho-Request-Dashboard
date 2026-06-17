@@ -74,7 +74,7 @@ function ColumnVisibilityMenu<TData>({ table }: { table: ReturnType<typeof useRe
         <Columns3 className="h-4 w-4" /> Columns
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-56 max-h-72 overflow-y-auto rounded-md border bg-white p-2 shadow-lg">
+        <div className="animate-fade-in-up absolute right-0 z-20 mt-1 w-56 max-h-72 overflow-y-auto rounded-md border bg-white p-2 shadow-lg">
           {table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select').map(column => (
             <label key={column.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50 cursor-pointer">
               <input
@@ -118,7 +118,7 @@ function ViewsMenu({
         <Bookmark className="h-4 w-4" /> Views
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border bg-white p-2 shadow-lg">
+        <div className="animate-fade-in-up absolute right-0 z-20 mt-1 w-64 rounded-md border bg-white p-2 shadow-lg">
           {views.length === 0 && !naming && <p className="px-2 py-3 text-center text-xs text-slate-400">No saved views yet</p>}
           {views.map(v => (
             <div key={v.name} className="group flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-slate-50">

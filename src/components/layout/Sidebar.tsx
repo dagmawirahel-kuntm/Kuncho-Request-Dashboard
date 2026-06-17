@@ -167,7 +167,7 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          className="animate-fade-in fixed inset-0 z-30 bg-black/40 lg:hidden"
           onClick={onCloseMobile}
         />
       )}

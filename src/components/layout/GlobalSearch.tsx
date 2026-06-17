@@ -81,7 +81,7 @@ export function GlobalSearch() {
         </button>
       )}
       {open && query.trim().length >= 2 && (
-        <div className="absolute left-0 right-0 z-30 mt-1 max-h-80 overflow-y-auto rounded-md border bg-white shadow-lg">
+        <div className="animate-fade-in-up absolute left-0 right-0 z-30 mt-1 max-h-80 overflow-y-auto rounded-md border bg-white shadow-lg">
           {loading ? (
             <p className="px-3 py-3 text-center text-xs text-slate-400">Searching…</p>
           ) : results.length === 0 ? (

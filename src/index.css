@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 @theme {
+  --animate-fade-in: fade-in 200ms ease-out;
+  --animate-fade-in-up: fade-in-up 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-toast-in: toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
   --color-border: hsl(214.3 31.8% 91.4%);
   --color-input: hsl(214.3 31.8% 91.4%);
   --color-ring: hsl(222.2 84% 4.9%);
@@ -32,6 +35,30 @@
 
 * {
   border-color: var(--color-border);
+}
+
+@layer base {
+  button,
+  a {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 body {

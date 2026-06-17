@@ -62,7 +62,7 @@ export function NotificationsBell() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-72 rounded-md border bg-white p-2 shadow-lg">
+        <div className="animate-fade-in-up absolute right-0 z-30 mt-1 w-72 rounded-md border bg-white p-2 shadow-lg">
           <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Needs attention</p>
           {items.length === 0 ? (
             <p className="px-2 py-4 text-center text-sm text-slate-400">You're all caught up</p>

@@ -14,7 +14,7 @@ interface FormPageProps {
 
 export function FormPage({ title, backTo, children, error, saving, saveLabel = 'Save', loading, onSave }: FormPageProps) {
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="animate-fade-in-up mx-auto max-w-2xl space-y-4">
       <div className="flex items-center gap-3">
         <Link to={backTo} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" />
