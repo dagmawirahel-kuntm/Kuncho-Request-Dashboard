@@ -31,11 +31,10 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2">
-            <span className="text-2xl font-bold text-slate-900">KUNCH</span>
-            <span className="rounded bg-blue-500 px-2 py-0.5 text-sm font-bold text-white">10</span>
+          <div className="inline-flex items-center justify-center rounded-xl bg-brand p-3">
+            <img src="/kuncho-logo.png" alt="KUNCHO" className="h-14 w-auto" />
           </div>
-          <p className="mt-2 text-sm text-slate-500">Operations Dashboard</p>
+          <p className="mt-3 text-sm text-slate-500">Operations Dashboard</p>
         </div>
 
         <div className="rounded-xl border bg-white p-8 shadow-sm">
@@ -70,7 +69,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60 transition-colors"
+              className="w-full rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
             >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>

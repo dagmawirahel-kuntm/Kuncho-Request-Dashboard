@@ -132,10 +132,9 @@ function NavGroup({ group }: { group: NavGroup }) {
 
 export function Sidebar() {
   return (
-    <aside className="flex h-screen w-56 shrink-0 flex-col bg-slate-900 overflow-y-auto">
+    <aside className="flex h-screen w-56 shrink-0 flex-col bg-sidebar overflow-y-auto">
       <div className="flex h-14 shrink-0 items-center border-b border-white/10 px-4">
-        <span className="font-bold text-white tracking-tight">KUNCH</span>
-        <span className="ml-1.5 rounded bg-blue-500 px-1.5 py-0.5 text-xs font-semibold text-white">10</span>
+        <img src="/kuncho-logo.png" alt="KUNCHO" className="h-9 w-auto" />
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {navGroups.map(group => (
