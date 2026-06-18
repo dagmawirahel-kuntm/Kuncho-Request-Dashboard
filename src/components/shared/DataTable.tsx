@@ -10,6 +10,7 @@ import {
   type ColumnFiltersState,
   type VisibilityState,
   type RowSelectionState,
+  type Row,
 } from '@tanstack/react-table'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -17,7 +18,7 @@ import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight,
   Search, Columns3, Download, BookmarkPlus, Bookmark, X, Trash2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -55,6 +56,23 @@ interface DataTableProps<TData> {
    * while hiding the rest until the user asks for it.
    */
   expandable?: { summaryColumnIds: string[] }
+  /**
+   * Groups rows into date sections (newest first) instead of one flat
+   * list. The most recent date present is shown as a headline section,
+   * the next most recent as a secondary headline, and older dates get a
+   * plain group label. `columnId` must hold a 'YYYY-MM-DD'-prefixed date.
+   */
+  groupBy?: { columnId: string }
+}
+
+function groupDateLabel(key: string): string {
+  if (key === '—') return 'No date'
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (key === todayStr) return 'Today'
+  if (key === yesterday.toISOString().slice(0, 10)) return 'Yesterday'
+  return formatDate(key)
 }
 
 function useClickOutside(onOutside: () => void) {
@@ -197,12 +215,13 @@ export function DataTable<TData extends { id: string }>({
   tableName,
   queryKeys,
   expandable,
+  groupBy,
 }: DataTableProps<TData>) {
   const { toast } = useToast()
   const qc = useQueryClient()
 
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
-  const [sorting, setSorting] = useState<SortingState>([])
+  const [sorting, setSorting] = useState<SortingState>(() => groupBy ? [{ id: groupBy.columnId, desc: true }] : [])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '')
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
@@ -273,6 +292,73 @@ export function DataTable<TData extends { id: string }>({
   })
 
   const selectedIds = Object.keys(rowSelection).filter(id => rowSelection[id])
+
+  const visibleHeaderCount =
+    (expandable ? 1 : 0) +
+    table.getHeaderGroups()[0].headers.filter(
+      header => !expandable || expandable.summaryColumnIds.includes(header.column.id) || header.column.id === 'select' || header.column.id === 'actions',
+    ).length
+
+  const groups = groupBy
+    ? table.getSortedRowModel().rows.reduce<{ key: string; rows: Row<TData>[] }[]>((acc, row) => {
+        const raw = row.getValue(groupBy.columnId)
+        const key = raw ? String(raw).slice(0, 10) : '—'
+        const last = acc[acc.length - 1]
+        if (last && last.key === key) last.rows.push(row)
+        else acc.push({ key, rows: [row] })
+        return acc
+      }, [])
+    : null
+
+  function renderRow(row: Row<TData>) {
+    const allCells = row.getVisibleCells()
+    const summaryCells = expandable
+      ? allCells.filter(c => expandable.summaryColumnIds.includes(c.column.id) || c.column.id === 'select' || c.column.id === 'actions')
+      : allCells
+    const detailCells = expandable
+      ? allCells.filter(c => c.column.id !== 'select' && c.column.id !== 'actions' && !expandable.summaryColumnIds.includes(c.column.id))
+      : []
+    const isExpanded = !!expandedRows[row.id]
+    return (
+      <Fragment key={row.id}>
+        <tr
+          className={cn('transition-colors', row.getIsSelected() && 'bg-brand/5', expandable ? 'cursor-pointer hover:bg-slate-50' : 'hover:bg-slate-50')}
+          onClick={expandable ? () => setExpandedRows(prev => ({ ...prev, [row.id]: !prev[row.id] })) : undefined}
+        >
+          {expandable && (
+            <td className="pl-4 pr-1 w-8 text-slate-400">
+              <ChevronRight className={cn('h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
+            </td>
+          )}
+          {summaryCells.map(cell => (
+            <td
+              key={cell.id}
+              className={cn('py-3 text-slate-700', cell.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
+              onClick={cell.column.id === 'select' || cell.column.id === 'actions' ? e => e.stopPropagation() : undefined}
+            >
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </td>
+          ))}
+        </tr>
+        {expandable && isExpanded && (
+          <tr className="bg-slate-50/60">
+            <td colSpan={summaryCells.length + 1} className="px-6 py-4">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+                {detailCells.map(cell => (
+                  <div key={cell.id} className="min-w-0">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                      {typeof cell.column.columnDef.header === 'string' ? cell.column.columnDef.header : cell.column.id}
+                    </p>
+                    <div className="text-sm text-slate-700">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>
+                  </div>
+                ))}
+              </div>
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    )
+  }
 
   async function handleBulkDelete() {
     if (!tableName || selectedIds.length === 0) return
@@ -397,62 +483,42 @@ export function DataTable<TData extends { id: string }>({
               ))}
             </thead>
             <tbody className="divide-y">
-              {table.getRowModel().rows.length === 0 ? (
+              {(groups ? groups.length === 0 : table.getRowModel().rows.length === 0) ? (
                 <tr>
-                  <td colSpan={tableColumns.length} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={visibleHeaderCount} className="px-4 py-12 text-center text-slate-400">
                     No records found
                   </td>
                 </tr>
-              ) : (
-                table.getRowModel().rows.map(row => {
-                  const allCells = row.getVisibleCells()
-                  const summaryCells = expandable
-                    ? allCells.filter(c => expandable.summaryColumnIds.includes(c.column.id) || c.column.id === 'select' || c.column.id === 'actions')
-                    : allCells
-                  const detailCells = expandable
-                    ? allCells.filter(c => c.column.id !== 'select' && c.column.id !== 'actions' && !expandable.summaryColumnIds.includes(c.column.id))
-                    : []
-                  const isExpanded = !!expandedRows[row.id]
+              ) : groups ? (
+                groups.map((group, idx) => {
+                  const label = groupDateLabel(group.key)
+                  const absolute = group.key !== '—' ? formatDate(group.key) : null
+                  const isHeadline = idx === 0 || idx === 1
                   return (
-                    <Fragment key={row.id}>
-                      <tr
-                        className={cn('transition-colors', row.getIsSelected() && 'bg-brand/5', expandable ? 'cursor-pointer hover:bg-slate-50' : 'hover:bg-slate-50')}
-                        onClick={expandable ? () => setExpandedRows(prev => ({ ...prev, [row.id]: !prev[row.id] })) : undefined}
-                      >
-                        {expandable && (
-                          <td className="pl-4 pr-1 w-8 text-slate-400">
-                            <ChevronRight className={cn('h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
-                          </td>
-                        )}
-                        {summaryCells.map(cell => (
-                          <td
-                            key={cell.id}
-                            className={cn('py-3 text-slate-700', cell.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
-                            onClick={cell.column.id === 'select' || cell.column.id === 'actions' ? e => e.stopPropagation() : undefined}
-                          >
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </td>
-                        ))}
+                    <Fragment key={group.key}>
+                      <tr className={cn('border-t', idx === 0 ? 'bg-brand/10' : idx === 1 ? 'bg-amber-50' : 'bg-slate-50/70')}>
+                        <td colSpan={visibleHeaderCount} className={cn('px-4', isHeadline ? 'py-3' : 'py-1.5')}>
+                          <div className="flex items-baseline gap-2">
+                            <span className={cn(
+                              isHeadline ? (idx === 0 ? 'text-base font-bold text-brand' : 'text-sm font-bold text-amber-700') : 'text-xs font-semibold uppercase tracking-wide text-slate-400',
+                            )}>
+                              {label}
+                            </span>
+                            {absolute && label !== absolute && (
+                              <span className={cn('text-xs', isHeadline ? 'text-slate-500' : 'text-slate-400')}>{absolute}</span>
+                            )}
+                            <span className={cn('text-xs', isHeadline ? 'text-slate-500' : 'text-slate-400')}>
+                              · {group.rows.length} record{group.rows.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </td>
                       </tr>
-                      {expandable && isExpanded && (
-                        <tr className="bg-slate-50/60">
-                          <td colSpan={summaryCells.length + 1} className="px-6 py-4">
-                            <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
-                              {detailCells.map(cell => (
-                                <div key={cell.id} className="min-w-0">
-                                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                                    {typeof cell.column.columnDef.header === 'string' ? cell.column.columnDef.header : cell.column.id}
-                                  </p>
-                                  <div className="text-sm text-slate-700">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
+                      {group.rows.map(renderRow)}
                     </Fragment>
                   )
                 })
+              ) : (
+                table.getRowModel().rows.map(renderRow)
               )}
             </tbody>
           </table>
@@ -465,35 +531,37 @@ export function DataTable<TData extends { id: string }>({
           {table.getFilteredRowModel().rows.length} record{table.getFilteredRowModel().rows.length !== 1 ? 's' : ''}
           {selectedIds.length > 0 && ` · ${selectedIds.length} selected`}
         </span>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs text-slate-500">
-            Rows per page
-            <select
-              value={table.getState().pagination.pageSize}
-              onChange={e => table.setPageSize(Number(e.target.value))}
-              className="rounded border bg-white px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-brand"
-            >
-              {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
-            </select>
-          </label>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-              className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}</span>
-            <button
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-              className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        {!groupBy && (
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              Rows per page
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={e => table.setPageSize(Number(e.target.value))}
+                className="rounded border bg-white px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-brand"
+              >
+                {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+                className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}</span>
+              <button
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+                className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
