@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Project, ProjectInsert } from '@/types/database'
+import { useStaff, useLocations } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -45,8 +47,10 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     const navigate = useNavigate()
     const { toast } = useToast()
     const qc = useQueryClient()
-  
-    
+    const { data: staff = [] } = useStaff()
+    const { data: locations = [] } = useLocations()
+    const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
+    const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
 
   const [form, setForm] = useState<Partial<ProjectInsert>>(
     record
@@ -55,6 +59,8 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
         department: record.department,
         start_date: record.start_date,
         active_for_year: record.active_for_year,
+        project_manager_id: record.project_manager_id,
+        location_id: record.location_id,
       }
       : { active_for_year: true }
   )
@@ -90,6 +96,14 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
         </Field>
         <Field label="Start Date">
           <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Project Manager">
+          <SearchableSelect value={form.project_manager_id ?? null} onChange={id => set('project_manager_id', id)} options={staffOptions} placeholder="Select staff…" />
+        </Field>
+        <Field label="Location">
+          <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
         </Field>
       </div>
       <label className="flex items-center gap-2 cursor-pointer text-sm">

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { EmergencyPayrollSummary, EmergencyPayrollSummaryInsert } from '@/types/database'
-import { useStaff } from '@/hooks/useLookups'
+import { useStaff, usePayrollList } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -49,6 +49,8 @@ function EmergencyPayrollFormPageBody({ id, record }: { id?: string; record?: Em
     const qc = useQueryClient()
     const { data: staff = [] } = useStaff()
     const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
+    const { data: payroll = [] } = usePayrollList()
+    const payrollOptions = useMemo(() => payroll.map((p: any) => ({ id: p.id, label: p.payroll_record ?? p.pay_period })), [payroll])
   
     
 
@@ -64,6 +66,7 @@ function EmergencyPayrollFormPageBody({ id, record }: { id?: string; record?: Em
         payment_date: record.payment_date,
         notes: record.notes,
         staff_id: record.staff_id,
+        payroll_id: record.payroll_id,
       }
       : {}
   )
@@ -90,6 +93,9 @@ function EmergencyPayrollFormPageBody({ id, record }: { id?: string; record?: Em
     <FormPage title={isEdit ? 'Edit Emergency Payroll' : 'New Emergency Payroll'} backTo="/emergency-payroll" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Record'} onSave={handleSave}>
       <Field label="Staff Member">
         <SearchableSelect value={form.staff_id ?? null} onChange={id => set('staff_id', id)} options={staffOptions} placeholder="Select staff…" />
+      </Field>
+      <Field label="Payroll">
+        <SearchableSelect value={form.payroll_id ?? null} onChange={id => set('payroll_id', id)} options={payrollOptions} placeholder="Select payroll…" />
       </Field>
       <Field label="Payroll Month">
         <input type="month" className={inputCls} value={form.payroll_month ?? ''} onChange={e => set('payroll_month', e.target.value)} />

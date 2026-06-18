@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Timesheet, TimesheetInsert } from '@/types/database'
-import { useStaff, useProjects } from '@/hooks/useLookups'
+import { useStaff, useProjects, usePayrollList } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -49,8 +49,10 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
     const qc = useQueryClient()
     const { data: staff = [] } = useStaff()
     const { data: projects = [] } = useProjects()
+    const { data: payrolls = [] } = usePayrollList()
     const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+    const payrollOptions = useMemo(() => payrolls.map((p: any) => ({ id: p.id, label: p.payroll_record ?? p.pay_period })), [payrolls])
   
     
 
@@ -63,6 +65,7 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
         notes: record.notes,
         staff_id: record.staff_id,
         project_id: record.project_id,
+        payroll_id: record.payroll_id,
       }
       : {}
   )
@@ -103,6 +106,9 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
       </div>
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
+      </Field>
+      <Field label="Pay Period (Payroll)">
+        <SearchableSelect value={form.payroll_id ?? null} onChange={id => set('payroll_id', id)} options={payrollOptions} placeholder="Select pay period…" />
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />

@@ -17,7 +17,7 @@ export default function BatchPaymentsPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['batch-payments'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('batch_payments').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('batch_payments').select('*, user_profiles(full_name), batch_payment_expenses(expense_id)').order('created_at', { ascending: false })
       if (error) throw error
       return data as BatchPayment[]
     },
@@ -35,6 +35,8 @@ export default function BatchPaymentsPage() {
     { accessorKey: 'payment_code', header: 'Payment Code', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-sm">{(getValue() as string) ?? '—'}</span> },
     { accessorKey: 'created_at', header: 'Created', cell: ({ getValue }) => formatDate(getValue() as string) },
+    { id: 'assignee_name', header: 'Assignee', cell: ({ row }) => (row.original as any).user_profiles?.full_name ?? '—' },
+    { id: 'expenses_count', header: 'Expenses', cell: ({ row }) => (row.original as any).batch_payment_expenses?.length ?? 0 },
     {
       id: 'actions',
       header: '',

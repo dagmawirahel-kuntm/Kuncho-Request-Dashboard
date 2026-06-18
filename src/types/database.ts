@@ -32,6 +32,10 @@ export interface Database {
       payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
       batch_payments: { Row: BatchPayment; Insert: BatchPaymentInsert; Update: Partial<BatchPaymentInsert> }
       timesheet: { Row: Timesheet; Insert: TimesheetInsert; Update: Partial<TimesheetInsert> }
+      order_expenses: { Row: OrderExpense; Insert: OrderExpense; Update: Partial<OrderExpense> }
+      batch_payment_expenses: { Row: BatchPaymentExpense; Insert: BatchPaymentExpense; Update: Partial<BatchPaymentExpense> }
+      payroll_staff: { Row: PayrollStaff; Insert: PayrollStaff; Update: Partial<PayrollStaff> }
+      cash_advance_expenses: { Row: CashAdvanceExpense; Insert: CashAdvanceExpense; Update: Partial<CashAdvanceExpense> }
     }
   }
 }
@@ -73,6 +77,8 @@ export interface Project {
   department: string | null
   start_date: string | null
   active_for_year: boolean
+  project_manager_id: string | null
+  location_id: string | null
   created_at: string
   updated_at: string
 }
@@ -160,6 +166,12 @@ export interface Expense {
   project_id: string | null
   staff_id: string | null
   purchaser_user_id: string | null
+  sub_category_id: string | null
+  account_id: string | null
+  vendor_receipt_facilitation_id: string | null
+  transfer_id: string | null
+  tax_summary_id: string | null
+  location_id: string | null
   created_at: string
   updated_at: string
 }
@@ -176,6 +188,9 @@ export interface Order {
   notes: string | null
   vendor_recommendation: string | null
   project_id: string | null
+  staff_id: string | null
+  category_id: string | null
+  recommended_vendor_id: string | null
   created_at: string
   updated_at: string
 }
@@ -219,6 +234,10 @@ export interface TransportationRequest {
   notes: string | null
   requested_by_id: string | null
   project_id: string | null
+  expense_id: string | null
+  pickup_location_id: string | null
+  dropoff_location_id: string | null
+  vendor_id: string | null
   created_at: string
   updated_at: string
 }
@@ -272,6 +291,8 @@ export interface Sale {
   notes: string | null
   client_id: string | null
   project_id: string | null
+  account_id: string | null
+  tax_summary_id: string | null
   created_at: string
   updated_at: string
 }
@@ -317,6 +338,7 @@ export interface Payroll {
   payment_status: string | null
   payment_method: string | null
   notes: string | null
+  account_id: string | null
   created_at: string
   updated_at: string
 }
@@ -335,6 +357,7 @@ export interface EmergencyPayrollSummary {
   payment_date: string | null
   notes: string | null
   staff_id: string | null
+  payroll_id: string | null
   created_at: string
   updated_at: string
 }
@@ -349,6 +372,7 @@ export interface CashAdvance {
   notes: string | null
   staff_id: string | null
   account_used_id: string | null
+  payroll_id: string | null
   created_at: string
   updated_at: string
 }
@@ -362,6 +386,8 @@ export interface VendorReceiptFacilitation {
   notes: string | null
   net_facilitation_cost: number | null
   trxn_date: string | null
+  initial_account_id: string | null
+  return_account_id: string | null
   created_at: string
   updated_at: string
 }
@@ -389,6 +415,7 @@ export interface CpoBond {
   notes: string | null
   vendor_id: string | null
   paid_from_id: string | null
+  related_expense_id: string | null
   created_at: string
   updated_at: string
 }
@@ -414,6 +441,7 @@ export interface BatchPayment {
   id: string
   payment_code: string | null
   notes: string | null
+  assignee_id: string | null
   created_at: string
   updated_at: string
 }
@@ -429,7 +457,29 @@ export interface Timesheet {
   notes: string | null
   staff_id: string | null
   project_id: string | null
+  payroll_id: string | null
   created_at: string
   updated_at: string
 }
 export type TimesheetInsert = Omit<Timesheet, 'id' | 'code' | 'created_at' | 'updated_at'>
+
+// ── Junction Tables (many-to-many) ────────────────────────────────
+export interface OrderExpense {
+  order_id: string
+  expense_id: string
+}
+
+export interface BatchPaymentExpense {
+  batch_payment_id: string
+  expense_id: string
+}
+
+export interface PayrollStaff {
+  payroll_id: string
+  staff_id: string
+}
+
+export interface CashAdvanceExpense {
+  cash_advance_id: string
+  expense_id: string
+}

@@ -18,7 +18,7 @@ export default function PayrollPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['payroll'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('payroll').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id)').order('created_at', { ascending: false })
       if (error) throw error
       return data as Payroll[]
     },
@@ -41,6 +41,8 @@ export default function PayrollPage() {
     { accessorKey: 'end_date', header: 'End', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'payment_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
     { accessorKey: 'payment_method', header: 'Method', cell: ({ getValue }) => getValue() ?? '—' },
+    { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
+    { id: 'staff_count', header: 'Employees', cell: ({ row }) => (row.original as any).payroll_staff?.length ?? 0 },
     {
       id: 'actions',
       header: '',

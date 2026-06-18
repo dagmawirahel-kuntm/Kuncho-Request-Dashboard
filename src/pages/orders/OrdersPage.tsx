@@ -31,7 +31,7 @@ export default function OrdersPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['orders'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('orders').select('*, projects(project_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('orders').select('*, projects(project_name), staff(employee_name), categories(category_name), vendors(vendor_name)').order('created_at', { ascending: false })
       if (error) throw error
       return data as Order[]
     },
@@ -55,6 +55,9 @@ export default function OrdersPage() {
     { accessorKey: 'status', header: 'Status', filterFn: 'equals', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
     { accessorKey: 'vendor_recommendation', header: 'Vendor Rec.', cell: ({ getValue }) => getValue() ?? '—' },
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
+    { id: 'staff_name', header: 'Ordered By', cell: ({ row }) => (row.original as any).staff?.employee_name ?? '—' },
+    { id: 'category_name', header: 'Category', cell: ({ row }) => (row.original as any).categories?.category_name ?? '—' },
+    { id: 'recommended_vendor_name', header: 'Recommended Vendor', cell: ({ row }) => (row.original as any).vendors?.vendor_name ?? '—' },
     {
       id: 'actions',
       header: '',

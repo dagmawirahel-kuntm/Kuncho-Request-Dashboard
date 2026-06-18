@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { CpoBond, CpoBondInsert } from '@/types/database'
-import { useVendors, useAccounts } from '@/hooks/useLookups'
+import { useVendors, useAccounts, useExpensesList } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -49,8 +49,10 @@ function CpoBondFormPageBody({ id, record }: { id?: string; record?: CpoBond }) 
     const qc = useQueryClient()
     const { data: vendors = [] } = useVendors()
     const { data: accounts = [] } = useAccounts()
+    const { data: expenses = [] } = useExpensesList()
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
     const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name, sub: a.account_number ?? undefined })), [accounts])
+    const expenseOptions = useMemo(() => expenses.map((e: any) => ({ id: e.id, label: e.item_service_description ?? e.expense_code ?? e.id })), [expenses])
   
     
 
@@ -64,6 +66,7 @@ function CpoBondFormPageBody({ id, record }: { id?: string; record?: CpoBond }) 
         notes: record.notes,
         vendor_id: record.vendor_id,
         paid_from_id: record.paid_from_id,
+        related_expense_id: record.related_expense_id,
       }
       : { bond_status: 'Active' }
   )
@@ -110,6 +113,9 @@ function CpoBondFormPageBody({ id, record }: { id?: string; record?: CpoBond }) 
       </Field>
       <Field label="Paid From Account">
         <SearchableSelect value={form.paid_from_id ?? null} onChange={id => set('paid_from_id', id)} options={accountOptions} placeholder="Select account…" />
+      </Field>
+      <Field label="Related Expense">
+        <SearchableSelect value={form.related_expense_id ?? null} onChange={id => set('related_expense_id', id)} options={expenseOptions} placeholder="Select expense…" />
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />

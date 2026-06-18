@@ -147,3 +147,119 @@ export function useLocations() {
     },
   })
 }
+
+export function useTaxSummaries() {
+  return useQuery({
+    queryKey: ['tax-summary-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('tax_summary')
+        .select('id,month')
+        .order('month', { ascending: false })
+      return data ?? []
+    },
+  })
+}
+
+export function useTransfers() {
+  return useQuery({
+    queryKey: ['transfers-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('transfers')
+        .select('id,transfer_id_code,amount')
+        .order('date', { ascending: false })
+        .limit(200)
+      return data ?? []
+    },
+  })
+}
+
+export function useVendorReceiptFacilitations() {
+  return useQuery({
+    queryKey: ['vendor-receipt-facilitation-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('vendor_receipt_facilitation')
+        .select('id,record_name,money_returned')
+        .order('trxn_date', { ascending: false })
+        .limit(200)
+      return data ?? []
+    },
+  })
+}
+
+export function useCpoBonds() {
+  return useQuery({
+    queryKey: ['cpo-bonds-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('cpo_bonds')
+        .select('id,bond_id_ref,total_bond_amount')
+        .order('created_at', { ascending: false })
+      return data ?? []
+    },
+  })
+}
+
+export function useBatchPayments() {
+  return useQuery({
+    queryKey: ['batch-payments-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('batch_payments')
+        .select('id,payment_code')
+        .order('created_at', { ascending: false })
+      return data ?? []
+    },
+  })
+}
+
+export function useOrdersList() {
+  return useQuery({
+    queryKey: ['orders-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('orders')
+        .select('id,order_name,item_service_description')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      return data ?? []
+    },
+  })
+}
+
+export function useUserProfiles() {
+  return useQuery({
+    queryKey: ['user-profiles-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id,full_name,role')
+        .order('full_name')
+      return data ?? []
+    },
+  })
+}
+
+export function useCashAdvancesList() {
+  return useQuery({
+    queryKey: ['cash-advances-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('cash_advances')
+        .select('id,advance_id_code,amount_advanced')
+        .order('created_at', { ascending: false })
+        .limit(200)
+      return data ?? []
+    },
+  })
+}

@@ -18,7 +18,7 @@ export default function SalesPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['sales'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('sales').select('*, clients(client_name), projects(project_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('sales').select('*, clients(client_name), projects(project_name), accounts(account_name), tax_summary(month)').order('created_at', { ascending: false })
       if (error) throw error
       return data as Sale[]
     },
@@ -40,6 +40,8 @@ export default function SalesPage() {
     { accessorKey: 'product_or_service', header: 'Product/Service', cell: ({ getValue }) => getValue() ?? '—' },
     { id: 'client_name', header: 'Client', cell: ({ row }) => (row.original as any).clients?.client_name ?? '—' },
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
+    { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
+    { id: 'tax_summary_month', header: 'Tax Month', cell: ({ row }) => (row.original as any).tax_summary?.month ?? '—' },
     {
       id: 'actions',
       header: '',

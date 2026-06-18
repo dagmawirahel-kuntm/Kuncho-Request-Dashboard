@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Sale, SaleInsert } from '@/types/database'
-import { useClients, useProjects } from '@/hooks/useLookups'
+import { useClients, useProjects, useAccounts, useTaxSummaries } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -49,8 +49,12 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     const qc = useQueryClient()
     const { data: clients = [] } = useClients()
     const { data: projects = [] } = useProjects()
+    const { data: accounts = [] } = useAccounts()
+    const { data: taxSummaries = [] } = useTaxSummaries()
     const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name, sub: c.phone_number ?? undefined })), [clients])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+    const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
+    const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
   
     
 
@@ -66,6 +70,8 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         notes: record.notes,
         client_id: record.client_id,
         project_id: record.project_id,
+        account_id: record.account_id,
+        tax_summary_id: record.tax_summary_id,
       }
       : { sales_status: 'Draft' }
   )
@@ -124,6 +130,12 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
       </Field>
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
+      </Field>
+      <Field label="Received Through (Account)">
+        <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
+      </Field>
+      <Field label="Tax Month">
+        <SearchableSelect value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />

@@ -17,7 +17,7 @@ export default function VendorReceiptsPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['vendor-receipts'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('vendor_receipt_facilitation').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('vendor_receipt_facilitation').select('*, initial:accounts!initial_account_id(account_name), returned:accounts!return_account_id(account_name)').order('created_at', { ascending: false })
       if (error) throw error
       return data as VendorReceiptFacilitation[]
     },
@@ -37,6 +37,8 @@ export default function VendorReceiptsPage() {
     { accessorKey: 'money_returned', header: 'Money Returned', cell: ({ getValue }) => formatCurrency(getValue() as number) },
     { accessorKey: 'net_facilitation_cost', header: 'Net Facilitation Cost', cell: ({ getValue }) => formatCurrency(getValue() as number) },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
+    { id: 'initial_account_name', header: 'Initial Account', cell: ({ row }) => (row.original as any).initial?.account_name ?? '—' },
+    { id: 'return_account_name', header: 'Return Account', cell: ({ row }) => (row.original as any).returned?.account_name ?? '—' },
     {
       id: 'actions',
       header: '',

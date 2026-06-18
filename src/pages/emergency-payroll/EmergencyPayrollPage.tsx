@@ -18,7 +18,7 @@ export default function EmergencyPayrollPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['emergency-payroll'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('emergency_payroll_summary').select('*, staff(employee_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('emergency_payroll_summary').select('*, staff(employee_name), payroll(payroll_record)').order('created_at', { ascending: false })
       if (error) throw error
       return data as EmergencyPayrollSummary[]
     },
@@ -42,6 +42,7 @@ export default function EmergencyPayrollPage() {
     { accessorKey: 'payment_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
     { accessorKey: 'payment_date', header: 'Payment Date', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
+    { id: 'payroll_record', header: 'Payroll', cell: ({ row }) => (row.original as any).payroll?.payroll_record ?? '—' },
     {
       id: 'actions',
       header: '',

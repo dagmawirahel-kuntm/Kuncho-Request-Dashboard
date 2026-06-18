@@ -17,7 +17,7 @@ export default function CashAdvancesPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['cash-advances'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('cash_advances').select('*, staff(employee_name), accounts(account_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('cash_advances').select('*, staff(employee_name), accounts(account_name), payroll(payroll_record)').order('created_at', { ascending: false })
       if (error) throw error
       return data as CashAdvance[]
     },
@@ -38,6 +38,7 @@ export default function CashAdvancesPage() {
     { accessorKey: 'amount_advanced', header: 'Amount (ETB)', cell: ({ getValue }) => formatCurrency(getValue() as number) },
     { accessorKey: 'date_given', header: 'Date Given', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
+    { id: 'payroll_name', header: 'Payroll', cell: ({ row }) => (row.original as any).payroll?.payroll_record ?? '—' },
     {
       id: 'actions',
       header: '',

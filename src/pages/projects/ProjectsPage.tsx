@@ -17,7 +17,7 @@ export default function ProjectsPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('projects').select('*').order('project_name')
+      const { data, error } = await supabase.from('projects').select('*, staff(employee_name), locations(location_name)').order('project_name')
       if (error) throw error
       return data as Project[]
     },
@@ -41,6 +41,8 @@ export default function ProjectsPage() {
       header: 'Active',
       cell: ({ getValue }) => getValue() ? <Check className="h-4 w-4 text-green-500" /> : <span className="text-slate-300">—</span>,
     },
+    { id: 'staff_name', header: 'Project Manager', cell: ({ row }) => (row.original as any).staff?.employee_name ?? '—' },
+    { id: 'location_name', header: 'Location', cell: ({ row }) => (row.original as any).locations?.location_name ?? '—' },
     {
       id: 'actions',
       header: '',

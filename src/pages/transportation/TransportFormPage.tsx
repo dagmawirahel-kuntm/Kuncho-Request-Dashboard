@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { TransportationRequest, TransportationRequestInsert } from '@/types/database'
-import { useProjects } from '@/hooks/useLookups'
+import { useProjects, useExpensesList, useLocations, useVendors } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -48,7 +48,13 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     const { toast } = useToast()
     const qc = useQueryClient()
     const { data: projects = [] } = useProjects()
+    const { data: expenses = [] } = useExpensesList()
+    const { data: locations = [] } = useLocations()
+    const { data: vendors = [] } = useVendors()
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+    const expenseOptions = useMemo(() => expenses.map((e: any) => ({ id: e.id, label: e.item_service_description ?? e.expense_code ?? e.id })), [expenses])
+    const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+    const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
   
     
 
@@ -71,6 +77,10 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         vendor_bank_account: record.vendor_bank_account,
         notes: record.notes,
         project_id: record.project_id,
+        expense_id: record.expense_id,
+        pickup_location_id: record.pickup_location_id,
+        dropoff_location_id: record.dropoff_location_id,
+        vendor_id: record.vendor_id,
       }
       : { payment_status: false, requested: false }
   )
@@ -106,6 +116,9 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
       </Field>
+      <Field label="Related Expense">
+        <SearchableSelect value={form.expense_id ?? null} onChange={id => set('expense_id', id)} options={expenseOptions} placeholder="Select expense…" />
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Vehicle Type">
           <input type="text" className={inputCls} value={form.vehicle_type ?? ''} onChange={e => set('vehicle_type', e.target.value)} />
@@ -129,6 +142,14 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Pickup Location (Linked)">
+          <SearchableSelect value={form.pickup_location_id ?? null} onChange={id => set('pickup_location_id', id)} options={locationOptions} placeholder="Select pickup location…" />
+        </Field>
+        <Field label="Dropoff Location (Linked)">
+          <SearchableSelect value={form.dropoff_location_id ?? null} onChange={id => set('dropoff_location_id', id)} options={locationOptions} placeholder="Select dropoff location…" />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Expected Delivery">
           <input type="date" className={inputCls} value={form.expected_delivery_date ?? ''} onChange={e => set('expected_delivery_date', e.target.value)} />
         </Field>
@@ -144,6 +165,9 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           <input type="text" className={inputCls} value={form.vendor_bank_account ?? ''} onChange={e => set('vendor_bank_account', e.target.value)} />
         </Field>
       </div>
+      <Field label="Vendor (Linked)">
+        <SearchableSelect value={form.vendor_id ?? null} onChange={id => set('vendor_id', id)} options={vendorOptions} placeholder="Select vendor…" />
+      </Field>
       <Field label="Bank Reference">
         <input type="text" className={inputCls} value={form.bank_ref ?? ''} onChange={e => set('bank_ref', e.target.value)} />
       </Field>

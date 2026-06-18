@@ -18,7 +18,7 @@ export default function CpoBondsPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['cpo-bonds'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('cpo_bonds').select('*, vendors(vendor_name), accounts(account_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('cpo_bonds').select('*, vendors(vendor_name), accounts(account_name), expenses(item_service_description)').order('created_at', { ascending: false })
       if (error) throw error
       return data as CpoBond[]
     },
@@ -40,6 +40,7 @@ export default function CpoBondsPage() {
     { id: 'vendor_name', header: 'Vendor', cell: ({ row }) => (row.original as any).vendors?.vendor_name ?? '—' },
     { id: 'account_name', header: 'Paid From', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
+    { id: 'related_expense', header: 'Related Expense', cell: ({ row }) => (row.original as any).expenses?.item_service_description ?? '—' },
     {
       id: 'actions',
       header: '',

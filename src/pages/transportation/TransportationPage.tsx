@@ -25,7 +25,7 @@ export default function TransportationPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['transportation'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('transportation_requests').select('*, projects(project_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('transportation_requests').select('*, projects(project_name), expenses(item_service_description), pickup:locations!pickup_location_id(location_name), dropoff:locations!dropoff_location_id(location_name), vendors(vendor_name)').order('created_at', { ascending: false })
       if (error) throw error
       return data as TransportationRequest[]
     },
@@ -48,6 +48,10 @@ export default function TransportationPage() {
     { accessorKey: 'delivery_status', header: 'Delivery', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
     { id: 'project', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
     { accessorKey: 'payment_status', header: 'Paid', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
+    { id: 'expense_name', header: 'Related Expense', cell: ({ row }) => (row.original as any).expenses?.item_service_description ?? '—' },
+    { id: 'pickup_location_name', header: 'Pickup Location', cell: ({ row }) => (row.original as any).pickup?.location_name ?? '—' },
+    { id: 'dropoff_location_name', header: 'Dropoff Location', cell: ({ row }) => (row.original as any).dropoff?.location_name ?? '—' },
+    { id: 'vendor_name_linked', header: 'Vendor', cell: ({ row }) => (row.original as any).vendors?.vendor_name ?? '—' },
     {
       id: 'actions',
       header: '',

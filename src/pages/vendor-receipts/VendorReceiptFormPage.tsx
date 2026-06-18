@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { VendorReceiptFacilitation, VendorReceiptFacilitationInsert } from '@/types/database'
+import { useAccounts } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -45,8 +47,8 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     const navigate = useNavigate()
     const { toast } = useToast()
     const qc = useQueryClient()
-  
-    
+    const { data: accounts = [] } = useAccounts()
+    const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
 
   const [form, setForm] = useState<Partial<VendorReceiptFacilitationInsert>>(
     record
@@ -55,6 +57,8 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
         money_returned: record.money_returned ?? undefined,
         net_facilitation_cost: record.net_facilitation_cost ?? undefined,
         notes: record.notes,
+        initial_account_id: record.initial_account_id,
+        return_account_id: record.return_account_id,
       }
       : {}
   )
@@ -92,6 +96,12 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       </div>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
+      </Field>
+      <Field label="Initial Account">
+        <SearchableSelect value={form.initial_account_id ?? null} onChange={id => set('initial_account_id', id)} options={accountOptions} placeholder="Select account funds were originally paid from…" />
+      </Field>
+      <Field label="Return Account">
+        <SearchableSelect value={form.return_account_id ?? null} onChange={id => set('return_account_id', id)} options={accountOptions} placeholder="Select account funds were returned to…" />
       </Field>
     </FormPage>
   )

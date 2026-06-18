@@ -31,7 +31,7 @@ export default function ExpensesPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
-        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name)')
+        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation(record_name), transfers(transfer_id_code), tax_summary(month), locations(location_name)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data as Expense[]
@@ -72,6 +72,36 @@ export default function ExpensesPage() {
     },
     { accessorKey: 'payment_status', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
     { accessorKey: 'requested', header: 'Requested', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'requested' : 'draft'} /> },
+    {
+      id: 'sub_category_name',
+      header: 'Sub-Category',
+      cell: ({ row }) => (row.original as any).sub_categories?.item_name ?? '—',
+    },
+    {
+      id: 'account_name',
+      header: 'Account',
+      cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—',
+    },
+    {
+      id: 'vendor_receipt_facilitation_name',
+      header: 'Vendor Receipt Facilitation',
+      cell: ({ row }) => (row.original as any).vendor_receipt_facilitation?.record_name ?? '—',
+    },
+    {
+      id: 'transfer_name',
+      header: 'Transfer',
+      cell: ({ row }) => (row.original as any).transfers?.transfer_id_code ?? '—',
+    },
+    {
+      id: 'tax_summary_month',
+      header: 'Tax Month',
+      cell: ({ row }) => (row.original as any).tax_summary?.month ?? '—',
+    },
+    {
+      id: 'location_name',
+      header: 'Location',
+      cell: ({ row }) => (row.original as any).locations?.location_name ?? '—',
+    },
     {
       id: 'actions',
       header: '',

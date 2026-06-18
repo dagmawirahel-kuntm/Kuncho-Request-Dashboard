@@ -20,7 +20,7 @@ export default function TimesheetPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['timesheet'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('timesheet').select('*, staff(employee_name), projects(project_name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('timesheet').select('*, staff(employee_name), projects(project_name), payroll(payroll_record)').order('created_at', { ascending: false })
       if (error) throw error
       return data as Timesheet[]
     },
@@ -42,6 +42,7 @@ export default function TimesheetPage() {
     { accessorKey: 'check_out_time', header: 'Check Out', cell: ({ getValue }) => getValue() ?? '—' },
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
+    { id: 'payroll_record', header: 'Pay Period', cell: ({ row }) => (row.original as any).payroll?.payroll_record ?? '—' },
     {
       id: 'actions',
       header: '',

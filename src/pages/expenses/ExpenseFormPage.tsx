@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Expense, ExpenseInsert } from '@/types/database'
-import { useVendors, useProjects, useCategories } from '@/hooks/useLookups'
+import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -55,12 +55,24 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
     const { data: vendors = [] } = useVendors()
     const { data: projects = [] } = useProjects()
     const { data: categories = [] } = useCategories()
-  
+    const { data: subCategories = [] } = useSubCategories()
+    const { data: accounts = [] } = useAccounts()
+    const { data: vendorReceiptFacilitations = [] } = useVendorReceiptFacilitations()
+    const { data: transfers = [] } = useTransfers()
+    const { data: taxSummaries = [] } = useTaxSummaries()
+    const { data: locations = [] } = useLocations()
+
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
     const categoryOptions = useMemo(() => categories.map((c: any) => ({ id: c.id, label: c.category_name })), [categories])
-  
-    
+    const subCategoryOptions = useMemo(() => subCategories.map((s: any) => ({ id: s.id, label: s.item_name })), [subCategories])
+    const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
+    const vendorReceiptFacilitationOptions = useMemo(() => vendorReceiptFacilitations.map((v: any) => ({ id: v.id, label: v.record_name })), [vendorReceiptFacilitations])
+    const transferOptions = useMemo(() => transfers.map((t: any) => ({ id: t.id, label: t.transfer_id_code })), [transfers])
+    const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
+    const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+
+
 
   const [form, setForm] = useState<Partial<ExpenseInsert>>(
     record
@@ -102,6 +114,12 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
         category_id: record.category_id,
         project_id: record.project_id,
         staff_id: record.staff_id,
+        sub_category_id: record.sub_category_id,
+        account_id: record.account_id,
+        vendor_receipt_facilitation_id: record.vendor_receipt_facilitation_id,
+        transfer_id: record.transfer_id,
+        tax_summary_id: record.tax_summary_id,
+        location_id: record.location_id,
       }
       : {
     payment_status: false,
@@ -324,6 +342,32 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
         </Field>
         <Field label="WHT Fund">
           <input type="text" className={inputCls} value={form.wht_fund ?? ''} onChange={e => set('wht_fund', e.target.value)} />
+        </Field>
+      </div>
+
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Linked Records</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Sub-Category">
+          <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub-category…" />
+        </Field>
+        <Field label="Account">
+          <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Vendor Receipt Facilitation">
+          <SearchableSelect value={form.vendor_receipt_facilitation_id ?? null} onChange={id => set('vendor_receipt_facilitation_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Select record…" />
+        </Field>
+        <Field label="Transfer">
+          <SearchableSelect value={form.transfer_id ?? null} onChange={id => set('transfer_id', id)} options={transferOptions} placeholder="Select transfer…" />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Tax Month">
+          <SearchableSelect value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
+        </Field>
+        <Field label="Location">
+          <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
         </Field>
       </div>
     </FormPage>
