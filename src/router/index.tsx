@@ -76,16 +76,21 @@ export const router = createBrowserRouter([
           { path: 'purchase-allocation', element: <PurchaseAllocationPage /> },
           { path: 'purchase-allocation/new', element: <AllocationFormPage /> },
           { path: 'purchase-allocation/:id/edit', element: <AllocationFormPage /> },
-          { path: 'procurement', element: <ProcurementDashboardPage /> },
-          { path: 'vendors', element: <VendorsPage /> },
-          { path: 'vendors/new', element: <VendorFormPage /> },
-          { path: 'vendors/:id/edit', element: <VendorFormPage /> },
-          { path: 'categories', element: <CategoriesPage /> },
-          { path: 'categories/new', element: <CategoryFormPage /> },
-          { path: 'categories/:id/edit', element: <CategoryFormPage /> },
-          { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
-          { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
-          { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'procurement_officer']} />,
+            children: [
+              { path: 'procurement', element: <ProcurementDashboardPage /> },
+              { path: 'vendors', element: <VendorsPage /> },
+              { path: 'vendors/new', element: <VendorFormPage /> },
+              { path: 'vendors/:id/edit', element: <VendorFormPage /> },
+              { path: 'categories', element: <CategoriesPage /> },
+              { path: 'categories/new', element: <CategoryFormPage /> },
+              { path: 'categories/:id/edit', element: <CategoryFormPage /> },
+              { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
+              { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
+              { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
+            ],
+          },
           {
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
             children: [
@@ -109,7 +114,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'hr_officer']} />,
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'staff', element: <StaffPage /> },
@@ -133,7 +138,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
             children: [
               { path: 'management', element: <ManagementDashboardPage /> },
               { path: 'projects', element: <ProjectsPage /> },

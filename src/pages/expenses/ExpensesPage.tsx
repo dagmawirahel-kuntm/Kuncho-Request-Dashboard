@@ -9,6 +9,8 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Expense } from '@/types/database'
 import { useVendors, useProjects, useCategories } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const expenseQuickFilters: QuickFilter[] = [
@@ -18,6 +20,7 @@ const expenseQuickFilters: QuickFilter[] = [
 export default function ExpensesPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
+  const { role } = useAuth()
   const qc = useQueryClient()
   const { data: vendors = [] } = useVendors()
   const { data: projects = [] } = useProjects()
@@ -94,6 +97,7 @@ export default function ExpensesPage() {
           <Plus className="h-4 w-4" /> New Expense
         </Link>
       </div>
+      {role === 'staff' && <OwnRecordsBanner />}
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search expenses…" persistKey="expenses" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="expenses" queryKeys={['expenses', 'expenses-lookup']} quickFilters={expenseQuickFilters} />}
     </div>
   )

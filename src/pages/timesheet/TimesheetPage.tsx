@@ -7,11 +7,14 @@ import { DataTable } from '@/components/shared/DataTable'
 import { formatDate } from '@/lib/utils'
 import type { Timesheet } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 export default function TimesheetPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
+  const { role } = useAuth()
   const qc = useQueryClient()
 
   const { data = [], isLoading } = useQuery({
@@ -60,6 +63,7 @@ export default function TimesheetPage() {
           <Plus className="h-4 w-4" /> New Entry
         </Link>
       </div>
+      {role === 'staff' && <OwnRecordsBanner />}
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search timesheet…" persistKey="timesheet" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="timesheet" queryKeys={['timesheet']} />}
     </div>
   )

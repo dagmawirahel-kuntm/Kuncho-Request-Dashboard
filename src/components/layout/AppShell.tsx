@@ -42,6 +42,9 @@ const roleBadgeColors: Record<string, string> = {
   manager: 'bg-blue-100 text-blue-700',
   finance: 'bg-green-100 text-green-700',
   staff: 'bg-slate-100 text-slate-600',
+  procurement_officer: 'bg-purple-100 text-purple-700',
+  hr_officer: 'bg-orange-100 text-orange-700',
+  project_manager: 'bg-rose-100 text-rose-700',
 }
 
 export function AppShell() {
@@ -100,7 +103,7 @@ export function AppShell() {
             <NotificationsBell />
             {role && (
               <span className={`hidden rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize sm:inline ${roleBadgeColors[role] ?? 'bg-slate-100 text-slate-600'}`}>
-                {role}
+                {role.replace(/_/g, ' ')}
               </span>
             )}
             <span className="hidden text-sm font-medium text-slate-700 md:inline">{profile?.full_name ?? 'User'}</span>

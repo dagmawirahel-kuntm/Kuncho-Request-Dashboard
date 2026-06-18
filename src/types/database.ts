@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'finance' | 'staff'
+export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager'
 export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'

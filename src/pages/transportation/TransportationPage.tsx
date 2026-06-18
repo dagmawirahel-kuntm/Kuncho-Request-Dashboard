@@ -8,6 +8,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { TransportationRequest } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const transportQuickFilters: QuickFilter[] = [
@@ -17,6 +19,7 @@ const transportQuickFilters: QuickFilter[] = [
 export default function TransportationPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
+  const { role } = useAuth()
   const qc = useQueryClient()
 
   const { data = [], isLoading } = useQuery({
@@ -66,6 +69,7 @@ export default function TransportationPage() {
           <Plus className="h-4 w-4" /> New Request
         </Link>
       </div>
+      {role === 'staff' && <OwnRecordsBanner />}
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search requests…" persistKey="transportation" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="transportation_requests" queryKeys={['transportation']} quickFilters={transportQuickFilters} />}
     </div>
   )

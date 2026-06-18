@@ -44,9 +44,9 @@ const navGroups: NavGroup[] = [
     title: 'Procurement',
     to: '/procurement',
     items: [
-      { label: 'Vendors', to: '/vendors', icon: Building2 },
-      { label: 'Categories', to: '/categories', icon: Tag },
-      { label: 'Vendor Receipts', to: '/vendor-receipts', icon: FileText },
+      { label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
+      { label: 'Categories', to: '/categories', icon: Tag, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
+      { label: 'Vendor Receipts', to: '/vendor-receipts', icon: FileText, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
     ],
   },
   {
@@ -64,21 +64,21 @@ const navGroups: NavGroup[] = [
     title: 'HR',
     to: '/hr',
     items: [
-      { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
+      { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
+      { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
+      { label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
+      { label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
+      { label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
     ],
   },
   {
     title: 'Management',
     to: '/management',
     items: [
-      { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+      { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+      { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance', 'project_manager'] },
     ],
   },
 ]

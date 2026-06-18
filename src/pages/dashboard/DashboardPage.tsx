@@ -1,19 +1,36 @@
 import { useQuery } from '@tanstack/react-query'
+import { Navigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { Receipt, ShoppingCart, Truck, DollarSign, ArrowRight, Building2, Wallet, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { KpiCard } from '@/components/shared/KpiCard'
+import { useAuth } from '@/contexts/AuthContext'
+import MyRequestsDashboardPage from './MyRequestsDashboardPage'
+import type { UserRole } from '@/types/database'
 
 const sections = [
   { label: 'Requests', to: '/requests', icon: Receipt, color: 'bg-blue-50 text-blue-500', desc: 'Expenses, orders, transportation' },
-  { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts' },
-  { label: 'Finance', to: '/finance', icon: DollarSign, color: 'bg-emerald-50 text-emerald-500', desc: 'Accounts, sales, bonds' },
-  { label: 'HR', to: '/hr', icon: Wallet, color: 'bg-orange-50 text-orange-500', desc: 'Staff, payroll, advances' },
-  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations' },
+  { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts', roles: ['admin', 'manager', 'finance', 'procurement_officer'] as UserRole[] },
+  { label: 'Finance', to: '/finance', icon: DollarSign, color: 'bg-emerald-50 text-emerald-500', desc: 'Accounts, sales, bonds', roles: ['admin', 'manager', 'finance'] as UserRole[] },
+  { label: 'HR', to: '/hr', icon: Wallet, color: 'bg-orange-50 text-orange-500', desc: 'Staff, payroll, advances', roles: ['admin', 'manager', 'finance', 'hr_officer'] as UserRole[] },
+  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations', roles: ['admin', 'manager', 'finance', 'project_manager'] as UserRole[] },
 ]
 
 export default function DashboardPage() {
+  const { role } = useAuth()
+
+  if (role === 'staff') return <MyRequestsDashboardPage />
+  if (role === 'procurement_officer') return <Navigate to="/procurement" replace />
+  if (role === 'hr_officer') return <Navigate to="/hr" replace />
+  if (role === 'project_manager') return <Navigate to="/management" replace />
+
+  return <GeneralDashboard role={role} />
+}
+
+function GeneralDashboard({ role }: { role: UserRole | null }) {
+  const visibleSections = sections.filter(s => !s.roles || (role && s.roles.includes(role)))
+
   const { data: expenseStats } = useQuery({
     queryKey: ['dashboard-expenses'],
     queryFn: async () => {
@@ -109,7 +126,7 @@ export default function DashboardPage() {
       <div>
         <h2 className="mb-3 text-sm font-semibold text-slate-600 uppercase tracking-wide">Sections</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {sections.map(section => (
+          {visibleSections.map(section => (
             <Link
               key={section.to}
               to={section.to}
