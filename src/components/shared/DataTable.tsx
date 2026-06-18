@@ -11,7 +11,7 @@ import {
   type VisibilityState,
   type RowSelectionState,
 } from '@tanstack/react-table'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight,
@@ -48,6 +48,13 @@ interface DataTableProps<TData> {
   tableName?: string
   /** React Query keys to invalidate after a bulk delete. */
   queryKeys?: string[]
+  /**
+   * When set, only these column ids (plus select/actions) render in the
+   * collapsed row. Clicking a row reveals the remaining columns as a
+   * label/value detail panel underneath — keeps a wide record skimmable
+   * while hiding the rest until the user asks for it.
+   */
+  expandable?: { summaryColumnIds: string[] }
 }
 
 function useClickOutside(onOutside: () => void) {
@@ -189,10 +196,12 @@ export function DataTable<TData extends { id: string }>({
   quickFilters,
   tableName,
   queryKeys,
+  expandable,
 }: DataTableProps<TData>) {
   const { toast } = useToast()
   const qc = useQueryClient()
 
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '')
@@ -361,7 +370,10 @@ export function DataTable<TData extends { id: string }>({
             <thead className="bg-slate-50 border-b">
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
-                  {hg.headers.map(header => (
+                  {expandable && <th className="w-8 pl-4 pr-1" />}
+                  {hg.headers
+                    .filter(header => !expandable || expandable.summaryColumnIds.includes(header.column.id) || header.column.id === 'select' || header.column.id === 'actions')
+                    .map(header => (
                     <th
                       key={header.id}
                       className={cn('py-3 text-left font-medium text-slate-600 whitespace-nowrap', header.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
@@ -392,15 +404,55 @@ export function DataTable<TData extends { id: string }>({
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map(row => (
-                  <tr key={row.id} className={cn('hover:bg-slate-50 transition-colors', row.getIsSelected() && 'bg-brand/5')}>
-                    {row.getVisibleCells().map(cell => (
-                      <td key={cell.id} className={cn('py-3 text-slate-700', cell.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                table.getRowModel().rows.map(row => {
+                  const allCells = row.getVisibleCells()
+                  const summaryCells = expandable
+                    ? allCells.filter(c => expandable.summaryColumnIds.includes(c.column.id) || c.column.id === 'select' || c.column.id === 'actions')
+                    : allCells
+                  const detailCells = expandable
+                    ? allCells.filter(c => c.column.id !== 'select' && c.column.id !== 'actions' && !expandable.summaryColumnIds.includes(c.column.id))
+                    : []
+                  const isExpanded = !!expandedRows[row.id]
+                  return (
+                    <Fragment key={row.id}>
+                      <tr
+                        className={cn('transition-colors', row.getIsSelected() && 'bg-brand/5', expandable ? 'cursor-pointer hover:bg-slate-50' : 'hover:bg-slate-50')}
+                        onClick={expandable ? () => setExpandedRows(prev => ({ ...prev, [row.id]: !prev[row.id] })) : undefined}
+                      >
+                        {expandable && (
+                          <td className="pl-4 pr-1 w-8 text-slate-400">
+                            <ChevronRight className={cn('h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
+                          </td>
+                        )}
+                        {summaryCells.map(cell => (
+                          <td
+                            key={cell.id}
+                            className={cn('py-3 text-slate-700', cell.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
+                            onClick={cell.column.id === 'select' || cell.column.id === 'actions' ? e => e.stopPropagation() : undefined}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                      {expandable && isExpanded && (
+                        <tr className="bg-slate-50/60">
+                          <td colSpan={summaryCells.length + 1} className="px-6 py-4">
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+                              {detailCells.map(cell => (
+                                <div key={cell.id} className="min-w-0">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                                    {typeof cell.column.columnDef.header === 'string' ? cell.column.columnDef.header : cell.column.id}
+                                  </p>
+                                  <div className="text-sm text-slate-700">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })
               )}
             </tbody>
           </table>

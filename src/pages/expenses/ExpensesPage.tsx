@@ -139,7 +139,7 @@ export default function ExpensesPage() {
         </Link>
       </div>
       {role === 'staff' && <OwnRecordsBanner />}
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search expenses…" persistKey="expenses" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="expenses" queryKeys={['expenses', 'expenses-lookup']} quickFilters={expenseQuickFilters} />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search expenses…" persistKey="expenses" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="expenses" queryKeys={['expenses', 'expenses-lookup']} quickFilters={expenseQuickFilters} expandable={{ summaryColumnIds: ['expense_code', 'amount_etb', 'date', 'approval_status', 'payment_status'] }} />}
     </div>
   )
 }
