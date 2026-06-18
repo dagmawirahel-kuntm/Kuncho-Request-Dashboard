@@ -13,9 +13,10 @@ interface Props {
   options: Option[]
   placeholder?: string
   className?: string
+  disabled?: boolean
 }
 
-export function SearchableSelect({ value, onChange, options, placeholder = 'Select…', className = '' }: Props) {
+export function SearchableSelect({ value, onChange, options, placeholder = 'Select…', className = '', disabled = false }: Props) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -41,18 +42,19 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
-      <div className="flex items-center w-full rounded-md border bg-white text-sm">
+      <div className={`flex items-center w-full rounded-md border text-sm ${disabled ? 'bg-slate-50' : 'bg-white'}`}>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => { setOpen(o => !o); setSearch('') }}
-          className="flex-1 flex items-center justify-between px-3 py-2 text-left min-w-0"
+          className="flex-1 flex items-center justify-between px-3 py-2 text-left min-w-0 disabled:cursor-not-allowed"
         >
-          <span className={`truncate ${selected ? 'text-slate-900' : 'text-slate-400'}`}>
+          <span className={`truncate ${selected ? (disabled ? 'text-slate-400' : 'text-slate-900') : 'text-slate-400'}`}>
             {selected ? selected.label : placeholder}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 ml-1" />
         </button>
-        {value && (
+        {value && !disabled && (
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onChange(null) }}
@@ -63,7 +65,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
           </button>
         )}
       </div>
-      {open && (
+      {open && !disabled && (
         <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg">
           <div className="p-1.5 border-b">
             <input

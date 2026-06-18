@@ -1,22 +1,27 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Expense, ExpenseInsert } from '@/types/database'
-import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations } from '@/hooks/useLookups'
+import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import { Lock } from 'lucide-react'
 
-const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
+function Field({ label, locked, children }: { label: string; locked?: boolean; children: React.ReactNode }) {
   const required = label.endsWith('*')
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-slate-600">
+      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">
         {required ? label.slice(0, -1).trim() : label}
         {required && <span className="text-brand"> *</span>}
+        {locked && <span title="Finance only" className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-normal text-slate-400"><Lock className="h-2.5 w-2.5" /> Finance only</span>}
       </label>
       {children}
     </div>
@@ -49,7 +54,7 @@ export default function ExpenseFormPage() {
 function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) {
   const isEdit = !!id
     const navigate = useNavigate()
-    const { user } = useAuth()
+    const { user, role } = useAuth()
     const { toast } = useToast()
     const qc = useQueryClient()
     const { data: vendors = [] } = useVendors()
@@ -61,6 +66,37 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
     const { data: transfers = [] } = useTransfers()
     const { data: taxSummaries = [] } = useTaxSummaries()
     const { data: locations = [] } = useLocations()
+    const { data: userProfiles = [] } = useUserProfiles()
+
+    const financeLocked = !canEditFinanceFields(role)
+
+    const { data: linkedOrders = [] } = useQuery({
+      queryKey: ['expense-linked-orders', id],
+      queryFn: async () => {
+        const { data, error } = await supabase.from('order_expenses').select('orders(id,order_date,item_service_description)').eq('expense_id', id)
+        if (error) throw error
+        return (data ?? []).map((r: any) => r.orders).filter(Boolean)
+      },
+      enabled: isEdit,
+    })
+    const { data: linkedBatchPayments = [] } = useQuery({
+      queryKey: ['expense-linked-batch-payments', id],
+      queryFn: async () => {
+        const { data, error } = await supabase.from('batch_payment_expenses').select('batch_payments(id,payment_code)').eq('expense_id', id)
+        if (error) throw error
+        return (data ?? []).map((r: any) => r.batch_payments).filter(Boolean)
+      },
+      enabled: isEdit,
+    })
+    const { data: linkedCashAdvances = [] } = useQuery({
+      queryKey: ['expense-linked-cash-advances', id],
+      queryFn: async () => {
+        const { data, error } = await supabase.from('cash_advance_expenses').select('cash_advances(id,advance_id_code,amount_advanced)').eq('expense_id', id)
+        if (error) throw error
+        return (data ?? []).map((r: any) => r.cash_advances).filter(Boolean)
+      },
+      enabled: isEdit,
+    })
 
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
@@ -72,7 +108,10 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
     const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
     const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
 
-
+    function profileName(userId: string | null) {
+      if (!userId) return null
+      return (userProfiles as any[]).find(p => p.id === userId)?.full_name ?? 'Unknown user'
+    }
 
   const [form, setForm] = useState<Partial<ExpenseInsert>>(
     record
@@ -132,12 +171,13 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
     receipt_delivered: false,
     delivery_status: [],
     purchaser_user_id: user?.id,
+    approval_status: 'pending',
   }
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
-  
-    
+    const [rejecting, setRejecting] = useState(false)
+    const [rejectionReason, setRejectionReason] = useState('')
 
     function set(key: keyof ExpenseInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
@@ -171,10 +211,88 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
     navigate('/expenses')
   }
 
+  async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
+    if (!id) return
+    const { error: err } = await supabase.from('expenses').update({ approval_status: nextStatus, ...extra }).eq('id', id)
+    if (err) { toast(err.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['expense', id] })
+    qc.invalidateQueries({ queryKey: ['expenses'] })
+    toast('Approval status updated', 'success')
+    setRejecting(false)
+    setRejectionReason('')
+  }
+
   const deliveryStatuses = (form.delivery_status as string[]) ?? []
+
+  const approvalStatus = record?.approval_status ?? 'pending'
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && record?.requires_finance_approval && canApproveAsFinance(role)
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || record?.purchaser_user_id === user?.id)
 
   return (
     <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo="/expenses" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={handleSave}>
+
+      {isEdit && (
+        <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Request ID</p>
+              <p className="font-mono text-sm text-slate-700">{record?.expense_code ?? '—'}</p>
+            </div>
+            <StatusBadge status={approvalStatus} />
+          </div>
+          {record?.requires_finance_approval && (
+            <p className="text-xs text-amber-600">Amount exceeds 50,000 ETB — requires Finance's final approval before payment.</p>
+          )}
+          {record?.manager_approved_by && (
+            <p className="text-xs text-slate-500">Approved by manager: {profileName(record.manager_approved_by)} on {formatDate(record.manager_approved_at)}</p>
+          )}
+          {record?.finance_approved_by && (
+            <p className="text-xs text-slate-500">Approved by finance: {profileName(record.finance_approved_by)} on {formatDate(record.finance_approved_at)}</p>
+          )}
+          {approvalStatus === 'rejected' && record?.rejection_reason && (
+            <p className="text-xs text-red-600">Rejection reason: {record.rejection_reason}</p>
+          )}
+
+          {(showManagerActions || showFinanceActions) && !rejecting && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
+                className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
+              >
+                {showFinanceActions ? 'Give Final Approval' : 'Approve'}
+              </button>
+              <button type="button" onClick={() => setRejecting(true)} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">
+                Reject
+              </button>
+            </div>
+          )}
+          {(showManagerActions || showFinanceActions) && rejecting && (
+            <div className="space-y-2">
+              <textarea rows={2} className={inputCls} placeholder="Reason for rejection…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!rejectionReason.trim()}
+                  onClick={() => handleApprovalTransition('rejected', { rejection_reason: rejectionReason.trim() })}
+                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Confirm Reject
+                </button>
+                <button type="button" onClick={() => { setRejecting(false); setRejectionReason('') }} className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {canResubmit && (
+            <button type="button" onClick={() => handleApprovalTransition('pending')} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
+              Resubmit for Approval
+            </button>
+          )}
+        </div>
+      )}
 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Basic Info</p>
       <Field label="Description">
@@ -265,28 +383,28 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
         <textarea rows={2} className={inputCls} value={form.description_of_item ?? ''} onChange={e => set('description_of_item', e.target.value)} />
       </Field>
 
-      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Payment & Status</p>
-      <Field label="Bank Reference">
-        <input type="text" className={inputCls} value={form.bank_ref ?? ''} onChange={e => set('bank_ref', e.target.value)} />
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Payment &amp; Status</p>
+      <Field label="Bank Reference" locked={financeLocked}>
+        <input disabled={financeLocked} type="text" className={inputCls} value={form.bank_ref ?? ''} onChange={e => set('bank_ref', e.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Paid Date">
-          <input type="date" className={inputCls} value={form.paid_date ?? ''} onChange={e => set('paid_date', e.target.value)} />
+        <Field label="Paid Date" locked={financeLocked}>
+          <input disabled={financeLocked} type="date" className={inputCls} value={form.paid_date ?? ''} onChange={e => set('paid_date', e.target.value)} />
         </Field>
-        <Field label="Total Payment Date">
-          <input type="date" className={inputCls} value={form.total_payment_date ?? ''} onChange={e => set('total_payment_date', e.target.value)} />
+        <Field label="Total Payment Date" locked={financeLocked}>
+          <input disabled={financeLocked} type="date" className={inputCls} value={form.total_payment_date ?? ''} onChange={e => set('total_payment_date', e.target.value)} />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Partial Paid Amount">
-          <input type="number" step="0.01" className={inputCls} value={form.partial_paid_amount ?? ''} onChange={e => set('partial_paid_amount', e.target.value ? parseFloat(e.target.value) : null)} />
+        <Field label="Partial Paid Amount" locked={financeLocked}>
+          <input disabled={financeLocked} type="number" step="0.01" className={inputCls} value={form.partial_paid_amount ?? ''} onChange={e => set('partial_paid_amount', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
-        <Field label="Partial Payment Date">
-          <input type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />
+        <Field label="Partial Payment Date" locked={financeLocked}>
+          <input disabled={financeLocked} type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />
         </Field>
       </div>
-      <Field label="Partial Payment Notes">
-        <input type="text" className={inputCls} value={form.partial_payment_notes ?? ''} onChange={e => set('partial_payment_notes', e.target.value)} />
+      <Field label="Partial Payment Notes" locked={financeLocked}>
+        <input disabled={financeLocked} type="text" className={inputCls} value={form.partial_payment_notes ?? ''} onChange={e => set('partial_payment_notes', e.target.value)} />
       </Field>
       <Field label="Completion %">
         <input type="number" step="1" min="0" max="100" className={inputCls} value={form.completion_percentage ?? ''} onChange={e => set('completion_percentage', e.target.value ? parseFloat(e.target.value) : null)} />
@@ -296,13 +414,13 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
           <input type="checkbox" checked={!!form.requested} onChange={e => set('requested', e.target.checked)} />
           Requested
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.payment_status} onChange={e => set('payment_status', e.target.checked)} />
-          Paid
+        <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
+          <input disabled={financeLocked} type="checkbox" checked={!!form.payment_status} onChange={e => set('payment_status', e.target.checked)} />
+          Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.partially_paid} onChange={e => set('partially_paid', e.target.checked)} />
-          Partially Paid
+        <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
+          <input disabled={financeLocked} type="checkbox" checked={!!form.partially_paid} onChange={e => set('partially_paid', e.target.checked)} />
+          Partially Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={!!form.receipt_delivered} onChange={e => set('receipt_delivered', e.target.checked)} />
@@ -331,17 +449,17 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">WHT</p>
       <div className="flex items-center gap-4 text-sm">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.verify_wht} onChange={e => set('verify_wht', e.target.checked)} />
-          Verify WHT
+        <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
+          <input disabled={financeLocked} type="checkbox" checked={!!form.verify_wht} onChange={e => set('verify_wht', e.target.checked)} />
+          Verify WHT {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
         </label>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="WHT Handling Method">
-          <input type="text" className={inputCls} value={form.wht_handling_method ?? ''} onChange={e => set('wht_handling_method', e.target.value)} />
+        <Field label="WHT Handling Method" locked={financeLocked}>
+          <input disabled={financeLocked} type="text" className={inputCls} value={form.wht_handling_method ?? ''} onChange={e => set('wht_handling_method', e.target.value)} />
         </Field>
-        <Field label="WHT Fund">
-          <input type="text" className={inputCls} value={form.wht_fund ?? ''} onChange={e => set('wht_fund', e.target.value)} />
+        <Field label="WHT Fund" locked={financeLocked}>
+          <input disabled={financeLocked} type="text" className={inputCls} value={form.wht_fund ?? ''} onChange={e => set('wht_fund', e.target.value)} />
         </Field>
       </div>
 
@@ -350,27 +468,49 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
         <Field label="Sub Ledger">
           <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub ledger…" />
         </Field>
-        <Field label="Account">
-          <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
+        <Field label="Account" locked={financeLocked}>
+          <SearchableSelect disabled={financeLocked} value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Vendor Receipt Facilitation">
           <SearchableSelect value={form.vendor_receipt_facilitation_id ?? null} onChange={id => set('vendor_receipt_facilitation_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Select record…" />
         </Field>
-        <Field label="Transfer">
-          <SearchableSelect value={form.transfer_id ?? null} onChange={id => set('transfer_id', id)} options={transferOptions} placeholder="Select transfer…" />
+        <Field label="Transfer" locked={financeLocked}>
+          <SearchableSelect disabled={financeLocked} value={form.transfer_id ?? null} onChange={id => set('transfer_id', id)} options={transferOptions} placeholder="Select transfer…" />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Tax Month">
-          <SearchableSelect value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
+        <Field label="Tax Month" locked={financeLocked}>
+          <SearchableSelect disabled={financeLocked} value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
         </Field>
         <Field label="Location">
           <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
         </Field>
       </div>
+
+      {isEdit && (linkedOrders.length > 0 || linkedBatchPayments.length > 0 || linkedCashAdvances.length > 0) && (
+        <>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Referenced By</p>
+          <div className="space-y-2 text-sm">
+            {linkedOrders.map((o: any) => (
+              <Link key={o.id} to={`/orders/${o.id}/edit`} className="block rounded-md border px-3 py-2 hover:bg-slate-50">
+                <span className="text-slate-400">Order · </span>{o.item_service_description ?? o.id} {o.order_date && <span className="text-slate-400">({formatDate(o.order_date)})</span>}
+              </Link>
+            ))}
+            {linkedBatchPayments.map((b: any) => (
+              <Link key={b.id} to={`/batch-payments/${b.id}/edit`} className="block rounded-md border px-3 py-2 hover:bg-slate-50">
+                <span className="text-slate-400">Batch Payment · </span>{b.payment_code ?? b.id}
+              </Link>
+            ))}
+            {linkedCashAdvances.map((c: any) => (
+              <Link key={c.id} to={`/cash-advances/${c.id}/edit`} className="block rounded-md border px-3 py-2 hover:bg-slate-50">
+                <span className="text-slate-400">Cash Advance · </span>{c.advance_id_code ?? c.id} {c.amount_advanced != null && <span className="text-slate-400">({formatCurrency(c.amount_advanced)})</span>}
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
     </FormPage>
   )
 }
-

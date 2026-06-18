@@ -15,6 +15,16 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const expenseQuickFilters: QuickFilter[] = [
   { columnId: 'payment_status', label: 'Payment', options: [{ label: 'Paid', value: true }, { label: 'Pending', value: false }] },
+  {
+    columnId: 'approval_status',
+    label: 'Approval',
+    options: [
+      { label: 'Pending', value: 'pending' },
+      { label: 'Manager Approved', value: 'manager_approved' },
+      { label: 'Finance Approved', value: 'finance_approved' },
+      { label: 'Rejected', value: 'rejected' },
+    ],
+  },
 ]
 
 export default function ExpensesPage() {
@@ -70,6 +80,7 @@ export default function ExpensesPage() {
       header: 'General Ledger',
       cell: ({ row }) => (row.original as any).categories?.category_name ?? '—',
     },
+    { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={(getValue() as string) ?? 'pending'} /> },
     { accessorKey: 'payment_status', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
     { accessorKey: 'requested', header: 'Requested', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'requested' : 'draft'} /> },
     {

@@ -2,6 +2,7 @@ export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_
 export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
+export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered'
 
 export interface Database {
@@ -174,10 +175,17 @@ export interface Expense {
   transfer_id: string | null
   tax_summary_id: string | null
   location_id: string | null
+  approval_status: ExpenseApprovalStatus
+  rejection_reason: string | null
+  manager_approved_by: string | null
+  manager_approved_at: string | null
+  finance_approved_by: string | null
+  finance_approved_at: string | null
+  requires_finance_approval: boolean
   created_at: string
   updated_at: string
 }
-export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at'>
+export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval'>
 
 // ── Orders ───────────────────────────────────────────────────────
 export interface Order {
