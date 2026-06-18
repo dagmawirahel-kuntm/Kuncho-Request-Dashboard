@@ -57,7 +57,7 @@ export default function PurchaseAllocationPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase tracking-wide">
               <tr>
-                <th className="px-4 py-3 text-left">Expense / Sub-Category</th>
+                <th className="px-4 py-3 text-left">Expense / Sub Ledger</th>
                 <th className="px-4 py-3 text-left">Qty</th>
                 <th className="px-4 py-3 text-left">UOM</th>
                 <th className="px-4 py-3 text-left">Unit Price</th>

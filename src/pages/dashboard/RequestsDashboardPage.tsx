@@ -81,7 +81,7 @@ export default function RequestsDashboardPage() {
           items={Object.entries(orderStatusCounts).map(([label, value]) => ({ label, value }))}
         />
         <BreakdownBarList
-          title="Expenses by Category"
+          title="Expenses by General Ledger"
           items={[...categoryTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([label, value]) => ({ label, value }))}
           formatValue={formatCurrency}
         />

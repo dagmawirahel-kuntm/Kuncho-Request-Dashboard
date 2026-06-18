@@ -141,8 +141,8 @@ function OrderFormPageBody({ id, record, linkedExpenseIds }: { id?: string; reco
       <Field label="Ordered By (Staff)">
         <SearchableSelect value={form.staff_id ?? null} onChange={id => set('staff_id', id)} options={staffOptions} placeholder="Select staff…" />
       </Field>
-      <Field label="Item Category">
-        <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select category…" />
+      <Field label="General Ledger">
+        <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
       </Field>
       <Field label="Recommended Vendor">
         <SearchableSelect value={form.recommended_vendor_id ?? null} onChange={id => set('recommended_vendor_id', id)} options={vendorOptions} placeholder="Select vendor…" />

@@ -101,11 +101,13 @@ export interface Vendor {
 }
 export type VendorInsert = Omit<Vendor, 'id' | 'created_at' | 'updated_at'>
 
-// ── Categories ──────────────────────────────────────────────────
+// ── Categories (General Ledgers) ──────────────────────────────────
+// `nature` classifies the ledger per the accounting equation
+// Assets = Liabilities + Owner's Equity: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense'
 export interface Category {
   id: string
   category_name: string
-  category_type: string | null
+  nature: string | null
   parent_type: string | null
   created_at: string
 }

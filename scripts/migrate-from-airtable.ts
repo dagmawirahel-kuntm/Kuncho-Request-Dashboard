@@ -200,7 +200,7 @@ async function migrateCategories() {
     const f = r.fields ?? r.cellValuesByFieldId
     return {
       category_name: str(f['fldlc4ObXyvZKIIIN']) ?? 'Unknown',
-      category_type: sel(f['flddT8kOdt6YnWaHQ']),
+      nature: sel(f['flddT8kOdt6YnWaHQ']),
       parent_type: sel(f['fldpsxigSB9x9lVZV']),
     }
   })

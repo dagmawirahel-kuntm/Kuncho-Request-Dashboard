@@ -51,13 +51,13 @@ export default function ProcurementDashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Procurement</h1>
-        <p className="mt-1 text-sm text-slate-500">Vendors, categories &amp; vendor receipts</p>
+        <p className="mt-1 text-sm text-slate-500">Vendors, general ledgers &amp; vendor receipts</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Active Vendors" value={activeVendors} sub={`${vendors.length} total`} icon={Building2} color="bg-blue-50 text-blue-500" to="/vendors" />
         <KpiCard label="WHT Eligible" value={whtVendors} sub="vendors" icon={ShieldCheck} color="bg-emerald-50 text-emerald-500" to="/vendors" />
-        <KpiCard label="Categories" value={data?.categoryCount ?? '—'} sub="defined" icon={Tag} color="bg-purple-50 text-purple-500" to="/categories" />
+        <KpiCard label="General Ledgers" value={data?.categoryCount ?? '—'} sub="defined" icon={Tag} color="bg-purple-50 text-purple-500" to="/general-ledger" />
         <KpiCard label="Facilitation Cost" value={formatCurrency(totalFacilitationCost)} sub="net cost across receipts" icon={FileText} color="bg-orange-50 text-orange-500" to="/vendor-receipts" />
       </div>
 
@@ -70,7 +70,7 @@ export default function ProcurementDashboardPage() {
 
       <div className="flex flex-wrap gap-2">
         <Link to="/vendors" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Vendor</Link>
-        <Link to="/categories" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Category</Link>
+        <Link to="/general-ledger/new" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Ledger</Link>
         <Link to="/vendor-receipts" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Vendor Receipt</Link>
       </div>
     </div>

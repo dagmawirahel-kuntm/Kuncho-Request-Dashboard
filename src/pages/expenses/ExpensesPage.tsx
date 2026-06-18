@@ -67,14 +67,14 @@ export default function ExpensesPage() {
     },
     {
       id: 'category_name',
-      header: 'Category',
+      header: 'General Ledger',
       cell: ({ row }) => (row.original as any).categories?.category_name ?? '—',
     },
     { accessorKey: 'payment_status', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
     { accessorKey: 'requested', header: 'Requested', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'requested' : 'draft'} /> },
     {
       id: 'sub_category_name',
-      header: 'Sub-Category',
+      header: 'Sub Ledger',
       cell: ({ row }) => (row.original as any).sub_categories?.item_name ?? '—',
     },
     {

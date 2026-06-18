@@ -26,8 +26,9 @@ import AccountsPage from '@/pages/accounts/AccountsPage'
 import AccountFormPage from '@/pages/accounts/AccountFormPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
-import CategoriesPage from '@/pages/categories/CategoriesPage'
-import CategoryFormPage from '@/pages/categories/CategoryFormPage'
+import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
+import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
+import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
 import PurchaseAllocationPage from '@/pages/purchase-allocation/PurchaseAllocationPage'
 import AllocationFormPage from '@/pages/purchase-allocation/AllocationFormPage'
 import TimesheetPage from '@/pages/timesheet/TimesheetPage'
@@ -83,9 +84,12 @@ export const router = createBrowserRouter([
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
               { path: 'vendors/:id/edit', element: <VendorFormPage /> },
-              { path: 'categories', element: <CategoriesPage /> },
-              { path: 'categories/new', element: <CategoryFormPage /> },
-              { path: 'categories/:id/edit', element: <CategoryFormPage /> },
+              { path: 'categories', element: <Navigate to="/general-ledger" replace /> },
+              { path: 'general-ledger', element: <GeneralLedgerDashboardPage /> },
+              { path: 'general-ledger/new', element: <GeneralLedgerFormPage /> },
+              { path: 'general-ledger/:id/edit', element: <GeneralLedgerFormPage /> },
+              { path: 'general-ledger/sub-ledgers/new', element: <SubLedgerFormPage /> },
+              { path: 'general-ledger/sub-ledgers/:id/edit', element: <SubLedgerFormPage /> },
               { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
               { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
               { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },

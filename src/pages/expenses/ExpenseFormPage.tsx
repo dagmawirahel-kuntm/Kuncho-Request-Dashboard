@@ -244,8 +244,8 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Classification</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Category">
-          <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select category…" />
+        <Field label="General Ledger">
+          <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
         </Field>
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
@@ -347,8 +347,8 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Linked Records</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Sub-Category">
-          <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub-category…" />
+        <Field label="Sub Ledger">
+          <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub ledger…" />
         </Field>
         <Field label="Account">
           <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />

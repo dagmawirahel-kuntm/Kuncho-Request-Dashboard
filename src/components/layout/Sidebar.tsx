@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban,
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
-  Layers, Tag, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2
+  Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -45,7 +45,7 @@ const navGroups: NavGroup[] = [
     to: '/procurement',
     items: [
       { label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
-      { label: 'Categories', to: '/categories', icon: Tag, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
+      { label: 'General Ledger', to: '/general-ledger', icon: BookOpen, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
       { label: 'Vendor Receipts', to: '/vendor-receipts', icon: FileText, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
     ],
   },

@@ -37,7 +37,7 @@ export function useCategories() {
     queryFn: async () => {
       const { data } = await supabase
         .from('categories')
-        .select('id,category_name,category_type')
+        .select('id,category_name,nature')
         .order('category_name')
       return data ?? []
     },

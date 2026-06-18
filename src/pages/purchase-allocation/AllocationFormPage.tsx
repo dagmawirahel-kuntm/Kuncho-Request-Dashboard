@@ -103,8 +103,8 @@ function AllocationFormPageBody({ id, record }: { id?: string; record?: Purchase
       <Field label="Parent Expense">
         <SearchableSelect value={form.parent_purchase_id ?? null} onChange={id => set('parent_purchase_id', id)} options={expenseOptions} placeholder="Select expense…" />
       </Field>
-      <Field label="Sub-Category">
-        <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Search sub-categories…" />
+      <Field label="Sub Ledger">
+        <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Search sub ledgers…" />
       </Field>
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
