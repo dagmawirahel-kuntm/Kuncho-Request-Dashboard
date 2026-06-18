@@ -9,18 +9,21 @@
 -- and Finance can proceed straight to processing payment.
 -- ═══════════════════════════════════════════════════════════════
 
-CREATE TYPE expense_approval_status AS ENUM ('pending', 'manager_approved', 'finance_approved', 'rejected');
+DO $$ BEGIN
+  CREATE TYPE expense_approval_status AS ENUM ('pending', 'manager_approved', 'finance_approved', 'rejected');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 ALTER TABLE expenses
-  ADD COLUMN approval_status expense_approval_status NOT NULL DEFAULT 'pending',
-  ADD COLUMN rejection_reason TEXT,
-  ADD COLUMN manager_approved_by UUID REFERENCES user_profiles(id),
-  ADD COLUMN manager_approved_at TIMESTAMPTZ,
-  ADD COLUMN finance_approved_by UUID REFERENCES user_profiles(id),
-  ADD COLUMN finance_approved_at TIMESTAMPTZ,
-  ADD COLUMN requires_finance_approval BOOLEAN GENERATED ALWAYS AS (COALESCE(amount_etb, 0) > 50000) STORED;
+  ADD COLUMN IF NOT EXISTS approval_status expense_approval_status NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+  ADD COLUMN IF NOT EXISTS manager_approved_by UUID REFERENCES user_profiles(id),
+  ADD COLUMN IF NOT EXISTS manager_approved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS finance_approved_by UUID REFERENCES user_profiles(id),
+  ADD COLUMN IF NOT EXISTS finance_approved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS requires_finance_approval BOOLEAN GENERATED ALWAYS AS (COALESCE(amount_etb, 0) > 50000) STORED;
 
-CREATE INDEX idx_expenses_approval_status ON expenses(approval_status);
+CREATE INDEX IF NOT EXISTS idx_expenses_approval_status ON expenses(approval_status);
 
 -- ── Descriptive request code: PROJECT-LEDGER-YYYYMMDD-## ────────
 -- Falls back to GEN/MISC when project/ledger aren't set yet, so
@@ -54,6 +57,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_generate_expense_code ON expenses;
 CREATE TRIGGER trg_generate_expense_code
   BEFORE INSERT OR UPDATE OF project_id, category_id, date ON expenses
   FOR EACH ROW EXECUTE FUNCTION generate_expense_code();
@@ -89,6 +93,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+DROP TRIGGER IF EXISTS trg_enforce_expense_finance_fields ON expenses;
 CREATE TRIGGER trg_enforce_expense_finance_fields
   BEFORE UPDATE ON expenses
   FOR EACH ROW EXECUTE FUNCTION enforce_expense_finance_fields();
@@ -133,17 +138,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+DROP TRIGGER IF EXISTS trg_enforce_expense_approval_transitions ON expenses;
 CREATE TRIGGER trg_enforce_expense_approval_transitions
   BEFORE UPDATE ON expenses
   FOR EACH ROW EXECUTE FUNCTION enforce_expense_approval_transitions();
 
 -- ── RLS gaps: Procurement Officer creates requests, Finance pays ─
+DROP POLICY IF EXISTS "procurement_select_expenses" ON expenses;
 CREATE POLICY "procurement_select_expenses" ON expenses FOR SELECT
   USING (get_user_role() = 'procurement_officer');
+DROP POLICY IF EXISTS "procurement_insert_expenses" ON expenses;
 CREATE POLICY "procurement_insert_expenses" ON expenses FOR INSERT
   WITH CHECK (get_user_role() = 'procurement_officer');
+DROP POLICY IF EXISTS "procurement_update_own_expenses" ON expenses;
 CREATE POLICY "procurement_update_own_expenses" ON expenses FOR UPDATE
   USING (get_user_role() = 'procurement_officer' AND purchaser_user_id = auth.uid());
 
+DROP POLICY IF EXISTS "finance_update_expenses" ON expenses;
 CREATE POLICY "finance_update_expenses" ON expenses FOR UPDATE
   USING (get_user_role() = 'finance');
