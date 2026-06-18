@@ -19,7 +19,8 @@ const NATURE_STYLES: Record<string, string> = {
   [UNCLASSIFIED]: 'bg-slate-100 text-slate-600 border-slate-200',
 }
 
-interface ExpenseCostRow { category_id: string | null; sub_category_id: string | null; amount_etb: number | null }
+interface ExpenseCostRow { id: string; category_id: string | null; sub_category_id: string | null; amount_etb: number | null }
+interface AllocationCostRow { parent_purchase_id: string | null; sub_category_id: string | null; quantity: number | null; unit_price: number | null }
 
 export default function GeneralLedgerDashboardPage() {
   const { toast } = useToast()
@@ -31,17 +32,21 @@ export default function GeneralLedgerDashboardPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['general-ledger'],
     queryFn: async () => {
-      const [categories, subCategories, expenses] = await Promise.all([
+      const [categories, subCategories, expenses, allocations] = await Promise.all([
         supabase.from('categories').select('*').order('category_name'),
         supabase.from('sub_categories').select('*').order('item_name'),
-        supabase.from('expenses').select('category_id, sub_category_id, amount_etb'),
+        supabase.from('expenses').select('id, category_id, sub_category_id, amount_etb'),
+        supabase.from('purchase_allocation').select('parent_purchase_id, sub_category_id, quantity, unit_price'),
       ])
       if (categories.error) throw categories.error
       if (subCategories.error) throw subCategories.error
+      if (expenses.error) throw expenses.error
+      if (allocations.error) throw allocations.error
       return {
         categories: (categories.data ?? []) as Category[],
         subCategories: (subCategories.data ?? []) as SubCategory[],
         expenses: (expenses.data ?? []) as ExpenseCostRow[],
+        allocations: (allocations.data ?? []) as AllocationCostRow[],
       }
     },
   })
@@ -49,18 +54,34 @@ export default function GeneralLedgerDashboardPage() {
   const categories = data?.categories ?? []
   const subCategories = data?.subCategories ?? []
   const expenses = data?.expenses ?? []
+  const allocations = data?.allocations ?? []
 
   const tree = useMemo(() => {
+    // Bulk purchases get broken down into Purchase Allocation line items, each tied to
+    // its own sub ledger. Once a purchase is allocated, its parent expense's amount_etb
+    // is just the bulk total — the line items below carry the real per-ledger cost, so
+    // the parent is excluded here to avoid double-counting.
+    const allocatedParentIds = new Set(allocations.map(a => a.parent_purchase_id).filter((id): id is string => !!id))
+    const subCategoryParent = new Map(subCategories.map(s => [s.id, s.parent_category_id]))
+
     const costByCategory = new Map<string, number>()
-    for (const e of expenses) {
-      if (!e.category_id) continue
-      costByCategory.set(e.category_id, (costByCategory.get(e.category_id) ?? 0) + (e.amount_etb ?? 0))
-    }
     const costBySubCategory = new Map<string, number>()
+
     for (const e of expenses) {
-      if (!e.sub_category_id) continue
-      costBySubCategory.set(e.sub_category_id, (costBySubCategory.get(e.sub_category_id) ?? 0) + (e.amount_etb ?? 0))
+      if (allocatedParentIds.has(e.id)) continue
+      const amt = e.amount_etb ?? 0
+      if (e.category_id) costByCategory.set(e.category_id, (costByCategory.get(e.category_id) ?? 0) + amt)
+      if (e.sub_category_id) costBySubCategory.set(e.sub_category_id, (costBySubCategory.get(e.sub_category_id) ?? 0) + amt)
     }
+
+    for (const a of allocations) {
+      if (!a.sub_category_id) continue
+      const amt = (a.quantity ?? 0) * (a.unit_price ?? 0)
+      costBySubCategory.set(a.sub_category_id, (costBySubCategory.get(a.sub_category_id) ?? 0) + amt)
+      const parentCategoryId = subCategoryParent.get(a.sub_category_id)
+      if (parentCategoryId) costByCategory.set(parentCategoryId, (costByCategory.get(parentCategoryId) ?? 0) + amt)
+    }
+
     const subsByParent = new Map<string, SubCategory[]>()
     for (const s of subCategories) {
       const key = s.parent_category_id ?? 'none'
@@ -95,7 +116,7 @@ export default function GeneralLedgerDashboardPage() {
       })
 
     return { natureGroups, costBySubCategory }
-  }, [categories, subCategories, expenses, search])
+  }, [categories, subCategories, expenses, allocations, search])
 
   function toggleNature(nature: string) {
     setExpandedNatures(prev => {
