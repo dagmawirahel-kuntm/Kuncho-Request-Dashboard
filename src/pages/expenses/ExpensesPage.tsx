@@ -58,7 +58,7 @@ export default function ExpensesPage() {
   }
 
   const columns: ColumnDef<Expense>[] = useMemo(() => [
-    { accessorKey: 'expense_code', header: 'Code', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'expense_code', header: 'Request ID', cell: ({ getValue }) => <span className="font-mono text-sm font-bold text-slate-800">{(getValue() as string) ?? '—'}</span> },
     { accessorKey: 'item_service_description', header: 'Description', cell: ({ getValue }) => (
       <span className="max-w-xs truncate block">{(getValue() as string) ?? '—'}</span>
     )},

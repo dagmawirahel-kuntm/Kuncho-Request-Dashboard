@@ -237,7 +237,7 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Request ID</p>
-              <p className="font-mono text-sm text-slate-700">{record?.expense_code ?? '—'}</p>
+              <p className="font-mono text-base font-bold text-slate-800">{record?.expense_code ?? '—'}</p>
             </div>
             <StatusBadge status={approvalStatus} />
           </div>
