@@ -3,6 +3,10 @@ export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type SaleApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type SaleLifecycleStatus = 'Draft' | 'Invoiced' | 'Paid' | 'Cancelled'
 export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered'
 
 export interface Database {
@@ -201,10 +205,16 @@ export interface Order {
   staff_id: string | null
   category_id: string | null
   recommended_vendor_id: string | null
+  approval_status: OrderApprovalStatus
+  rejection_reason: string | null
+  manager_approved_by: string | null
+  manager_approved_at: string | null
+  finance_approved_by: string | null
+  finance_approved_at: string | null
   created_at: string
   updated_at: string
 }
-export type OrderInsert = Omit<Order, 'id' | 'order_name' | 'created_at' | 'updated_at'>
+export type OrderInsert = Omit<Order, 'id' | 'order_name' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
 
 // ── Purchase Allocation ──────────────────────────────────────────
 export interface PurchaseAllocation {
@@ -293,7 +303,7 @@ export type TransferInsert = Omit<Transfer, 'id' | 'created_at'>
 export interface Sale {
   id: string
   sales_description: string
-  sales_status: string | null
+  sales_status: SaleLifecycleStatus | null
   date: string | null
   amount: number | null
   product_or_service: string | null
@@ -303,10 +313,16 @@ export interface Sale {
   project_id: string | null
   account_id: string | null
   tax_summary_id: string | null
+  approval_status: SaleApprovalStatus
+  rejection_reason: string | null
+  manager_approved_by: string | null
+  manager_approved_at: string | null
+  finance_approved_by: string | null
+  finance_approved_at: string | null
   created_at: string
   updated_at: string
 }
-export type SaleInsert = Omit<Sale, 'id' | 'created_at' | 'updated_at'>
+export type SaleInsert = Omit<Sale, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
 
 // ── Clients ──────────────────────────────────────────────────────
 export interface Client {
@@ -383,10 +399,16 @@ export interface CashAdvance {
   staff_id: string | null
   account_used_id: string | null
   payroll_id: string | null
+  approval_status: CashAdvanceApprovalStatus
+  rejection_reason: string | null
+  manager_approved_by: string | null
+  manager_approved_at: string | null
+  finance_approved_by: string | null
+  finance_approved_at: string | null
   created_at: string
   updated_at: string
 }
-export type CashAdvanceInsert = Omit<CashAdvance, 'id' | 'created_at' | 'updated_at'>
+export type CashAdvanceInsert = Omit<CashAdvance, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
 
 // ── Vendor Receipt Facilitation ───────────────────────────────────
 export interface VendorReceiptFacilitation {

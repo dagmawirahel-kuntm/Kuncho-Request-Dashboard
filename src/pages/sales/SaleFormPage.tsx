@@ -4,9 +4,13 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Sale, SaleInsert } from '@/types/database'
-import { useClients, useProjects, useAccounts, useTaxSummaries } from '@/hooks/useLookups'
+import { useClients, useProjects, useAccounts, useTaxSummaries, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { formatDate } from '@/lib/utils'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -45,18 +49,23 @@ export default function SaleFormPage() {
 function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
   const isEdit = !!id
     const navigate = useNavigate()
+    const { role } = useAuth()
     const { toast } = useToast()
     const qc = useQueryClient()
     const { data: clients = [] } = useClients()
     const { data: projects = [] } = useProjects()
     const { data: accounts = [] } = useAccounts()
     const { data: taxSummaries = [] } = useTaxSummaries()
+    const { data: userProfiles = [] } = useUserProfiles()
     const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name, sub: c.phone_number ?? undefined })), [clients])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
     const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
     const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
-  
-    
+
+    function profileName(userId: string | null) {
+      if (!userId) return null
+      return (userProfiles as any[]).find(p => p.id === userId)?.full_name ?? 'Unknown user'
+    }
 
   const [form, setForm] = useState<Partial<SaleInsert>>(
     record
@@ -77,10 +86,26 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
-  
-    
+    const [rejecting, setRejecting] = useState(false)
+    const [rejectionReason, setRejectionReason] = useState('')
 
     function set(key: keyof SaleInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  const approvalStatus = record?.approval_status ?? 'pending'
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'finance')
+
+  async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
+    if (!id) return
+    const { error: err } = await supabase.from('sales').update({ approval_status: nextStatus, ...extra }).eq('id', id)
+    if (err) { toast(err.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['sale', id] })
+    qc.invalidateQueries({ queryKey: ['sales'] })
+    toast('Approval status updated', 'success')
+    setRejecting(false)
+    setRejectionReason('')
+  }
 
   async function handleSave() {
     if (!form.sales_description?.trim()) { setError('Description is required'); return }
@@ -97,6 +122,62 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
 
   return (
     <FormPage title={isEdit ? 'Edit Sale' : 'New Sale'} backTo="/sales" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Sale'} onSave={handleSave}>
+
+      {isEdit && (
+        <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Approval</p>
+            <StatusBadge status={approvalStatus} />
+          </div>
+          {record?.manager_approved_by && (
+            <p className="text-xs text-slate-500">Manager reviewed: {profileName(record.manager_approved_by)} on {formatDate(record.manager_approved_at)}</p>
+          )}
+          {record?.finance_approved_by && (
+            <p className="text-xs text-slate-500">Finance approved: {profileName(record.finance_approved_by)} on {formatDate(record.finance_approved_at)}</p>
+          )}
+          {approvalStatus === 'rejected' && record?.rejection_reason && (
+            <p className="text-xs text-red-600">Rejection reason: {record.rejection_reason}</p>
+          )}
+          {(showManagerActions || showFinanceActions) && !rejecting && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
+                className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
+              >
+                {showFinanceActions ? 'Give Final Approval' : 'Approve'}
+              </button>
+              <button type="button" onClick={() => setRejecting(true)} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">
+                Reject
+              </button>
+            </div>
+          )}
+          {(showManagerActions || showFinanceActions) && rejecting && (
+            <div className="space-y-2">
+              <textarea rows={2} className={inputCls} placeholder="Reason for rejection…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!rejectionReason.trim()}
+                  onClick={() => handleApprovalTransition('rejected', { rejection_reason: rejectionReason.trim() })}
+                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Confirm Reject
+                </button>
+                <button type="button" onClick={() => { setRejecting(false); setRejectionReason('') }} className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {canResubmit && (
+            <button type="button" onClick={() => handleApprovalTransition('pending')} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
+              Resubmit for Approval
+            </button>
+          )}
+        </div>
+      )}
+
       <Field label="Description *">
         <textarea rows={2} className={inputCls} value={form.sales_description ?? ''} onChange={e => set('sales_description', e.target.value)} />
       </Field>
@@ -110,7 +191,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Status">
-          <select className={inputCls} value={form.sales_status ?? ''} onChange={e => set('sales_status', e.target.value)}>
+          <select className={inputCls} value={form.sales_status ?? ''} onChange={e => set('sales_status', e.target.value || null)}>
             <option value="">— Select —</option>
             <option>Draft</option><option>Invoiced</option><option>Paid</option><option>Cancelled</option>
           </select>

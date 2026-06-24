@@ -3,11 +3,25 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
-import { DataTable } from '@/components/shared/DataTable'
+import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
+import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { CashAdvance } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+
+const cashAdvanceQuickFilters: QuickFilter[] = [
+  {
+    columnId: 'approval_status',
+    label: 'Approval',
+    options: [
+      { label: 'Pending', value: 'pending' },
+      { label: 'Manager Approved', value: 'manager_approved' },
+      { label: 'Finance Approved', value: 'finance_approved' },
+      { label: 'Rejected', value: 'rejected' },
+    ],
+  },
+]
 
 export default function CashAdvancesPage() {
   const [searchParams] = useSearchParams()
@@ -39,6 +53,7 @@ export default function CashAdvancesPage() {
     { accessorKey: 'date_given', header: 'Date Given', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
     { id: 'payroll_name', header: 'Payroll', cell: ({ row }) => (row.original as any).payroll?.payroll_record ?? '—' },
+    { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
     {
       id: 'actions',
       header: '',
@@ -60,7 +75,7 @@ export default function CashAdvancesPage() {
           <Plus className="h-4 w-4" /> New Advance
         </Link>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search advances…" persistKey="cash-advances" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="cash_advances" queryKeys={['cash-advances']} />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search advances…" persistKey="cash-advances" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="cash_advances" queryKeys={['cash-advances']} quickFilters={cashAdvanceQuickFilters} />}
     </div>
   )
 }

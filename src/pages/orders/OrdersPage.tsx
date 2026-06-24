@@ -12,13 +12,13 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const orderQuickFilters: QuickFilter[] = [
   {
-    columnId: 'status',
-    label: 'Status',
+    columnId: 'approval_status',
+    label: 'Approval',
     options: [
       { label: 'Pending', value: 'pending' },
-      { label: 'Approved', value: 'approved' },
+      { label: 'Manager Approved', value: 'manager_approved' },
+      { label: 'Finance Approved', value: 'finance_approved' },
       { label: 'Rejected', value: 'rejected' },
-      { label: 'Completed', value: 'completed' },
     ],
   },
 ]
@@ -52,7 +52,8 @@ export default function OrdersPage() {
       <span className="max-w-xs truncate block">{(getValue() as string) ?? '—'}</span>
     )},
     { accessorKey: 'quantity', header: 'Qty', cell: ({ getValue }) => getValue() ?? '—' },
-    { accessorKey: 'status', header: 'Status', filterFn: 'equals', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
+    { accessorKey: 'status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
+    { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
     { accessorKey: 'vendor_recommendation', header: 'Vendor Rec.', cell: ({ getValue }) => getValue() ?? '—' },
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
     { id: 'staff_name', header: 'Ordered By', cell: ({ row }) => (row.original as any).staff?.employee_name ?? '—' },

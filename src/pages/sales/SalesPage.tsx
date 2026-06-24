@@ -3,12 +3,25 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
-import { DataTable } from '@/components/shared/DataTable'
+import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Sale } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+
+const saleQuickFilters: QuickFilter[] = [
+  {
+    columnId: 'approval_status',
+    label: 'Approval',
+    options: [
+      { label: 'Pending', value: 'pending' },
+      { label: 'Manager Approved', value: 'manager_approved' },
+      { label: 'Finance Approved', value: 'finance_approved' },
+      { label: 'Rejected', value: 'rejected' },
+    ],
+  },
+]
 
 export default function SalesPage() {
   const [searchParams] = useSearchParams()
@@ -42,6 +55,7 @@ export default function SalesPage() {
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
     { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
     { id: 'tax_summary_month', header: 'Tax Month', cell: ({ row }) => (row.original as any).tax_summary?.month ?? '—' },
+    { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
     {
       id: 'actions',
       header: '',
@@ -63,7 +77,7 @@ export default function SalesPage() {
           <Plus className="h-4 w-4" /> New Sale
         </Link>
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search sales…" persistKey="sales" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="sales" queryKeys={['sales']} />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search sales…" persistKey="sales" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="sales" queryKeys={['sales']} quickFilters={saleQuickFilters} />}
     </div>
   )
 }
