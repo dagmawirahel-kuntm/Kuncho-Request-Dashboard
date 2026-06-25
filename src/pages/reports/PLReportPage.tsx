@@ -71,7 +71,7 @@ export default function PLReportPage() {
 
   const byCategory = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const e of expensesData as { amount_etb: number | null; categories?: { category_name: string } | null }[]) {
+    for (const e of (expensesData as unknown) as { amount_etb: number | null; categories?: { category_name: string } | null }[]) {
       const name = e.categories?.category_name ?? 'Uncategorized'
       map[name] = (map[name] ?? 0) + (e.amount_etb ?? 0)
     }
