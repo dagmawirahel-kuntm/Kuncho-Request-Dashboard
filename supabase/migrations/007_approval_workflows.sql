@@ -7,6 +7,8 @@
 -- trail automatically; client code only needs to write approval_status.
 -- ═══════════════════════════════════════════════════════════════
 
+SET search_path TO public;
+
 -- ── ORDERS ──────────────────────────────────────────────────────
 
 DO $$ BEGIN
@@ -24,7 +26,7 @@ ALTER TABLE orders
 
 CREATE INDEX IF NOT EXISTS idx_orders_approval_status ON orders(approval_status);
 
-CREATE OR REPLACE FUNCTION enforce_order_approval_transitions()
+CREATE OR REPLACE FUNCTION public.enforce_order_approval_transitions()
 RETURNS TRIGGER AS $$
 DECLARE
   v_role user_role;
@@ -65,7 +67,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 DROP TRIGGER IF EXISTS trg_enforce_order_approval_transitions ON orders;
 CREATE TRIGGER trg_enforce_order_approval_transitions
   BEFORE UPDATE ON orders
-  FOR EACH ROW EXECUTE FUNCTION enforce_order_approval_transitions();
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_order_approval_transitions();
 
 DROP POLICY IF EXISTS "manager_approve_orders" ON orders;
 CREATE POLICY "manager_approve_orders" ON orders FOR UPDATE
@@ -92,7 +94,7 @@ ALTER TABLE cash_advances
 
 CREATE INDEX IF NOT EXISTS idx_cash_advances_approval_status ON cash_advances(approval_status);
 
-CREATE OR REPLACE FUNCTION enforce_cash_advance_approval_transitions()
+CREATE OR REPLACE FUNCTION public.enforce_cash_advance_approval_transitions()
 RETURNS TRIGGER AS $$
 DECLARE
   v_role user_role;
@@ -133,7 +135,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 DROP TRIGGER IF EXISTS trg_enforce_cash_advance_approval_transitions ON cash_advances;
 CREATE TRIGGER trg_enforce_cash_advance_approval_transitions
   BEFORE UPDATE ON cash_advances
-  FOR EACH ROW EXECUTE FUNCTION enforce_cash_advance_approval_transitions();
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_cash_advance_approval_transitions();
 
 DROP POLICY IF EXISTS "manager_approve_cash_advances" ON cash_advances;
 CREATE POLICY "manager_approve_cash_advances" ON cash_advances FOR UPDATE
@@ -180,7 +182,7 @@ ALTER TABLE sales
 
 CREATE INDEX IF NOT EXISTS idx_sales_approval_status ON sales(approval_status);
 
-CREATE OR REPLACE FUNCTION enforce_sale_approval_transitions()
+CREATE OR REPLACE FUNCTION public.enforce_sale_approval_transitions()
 RETURNS TRIGGER AS $$
 DECLARE
   v_role user_role;
@@ -221,7 +223,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 DROP TRIGGER IF EXISTS trg_enforce_sale_approval_transitions ON sales;
 CREATE TRIGGER trg_enforce_sale_approval_transitions
   BEFORE UPDATE ON sales
-  FOR EACH ROW EXECUTE FUNCTION enforce_sale_approval_transitions();
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_sale_approval_transitions();
 
 DROP POLICY IF EXISTS "manager_approve_sales" ON sales;
 CREATE POLICY "manager_approve_sales" ON sales FOR UPDATE

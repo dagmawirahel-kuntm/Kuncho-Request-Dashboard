@@ -115,8 +115,9 @@ export interface Category {
   nature: string | null
   parent_type: string | null
   created_at: string
+  updated_at: string
 }
-export type CategoryInsert = Omit<Category, 'id' | 'created_at'>
+export type CategoryInsert = Omit<Category, 'id' | 'created_at' | 'updated_at'>
 
 // ── Sub-Categories ──────────────────────────────────────────────
 export interface SubCategory {
