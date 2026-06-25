@@ -8,51 +8,93 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard } from 'lucide-react'
 
-// ── Ethiopian bank brand themes ──────────────────────────────────────────────
-const BANK_THEMES: { key: string; initials: string; bg: string; text: string }[] = [
-  { key: 'commercial bank of ethiopia', initials: 'CBE', bg: '#003087', text: '#fff' },
-  { key: 'cbe',                         initials: 'CBE', bg: '#003087', text: '#fff' },
-  { key: 'awash',                        initials: 'AIB', bg: '#E85D04', text: '#fff' },
-  { key: 'zemen',                        initials: 'ZB',  bg: '#0077B6', text: '#fff' },
-  { key: 'abyssinia',                    initials: 'BOA', bg: '#2D6A4F', text: '#fff' },
-  { key: 'dashen',                       initials: 'DB',  bg: '#3A0CA3', text: '#fff' },
-  { key: 'nib',                          initials: 'NIB', bg: '#6A0572', text: '#fff' },
-  { key: 'wegagen',                      initials: 'WB',  bg: '#F72585', text: '#fff' },
-  { key: 'united',                       initials: 'UB',  bg: '#E63946', text: '#fff' },
-  { key: 'cooperative bank of oromia',   initials: 'CBO', bg: '#1B7834', text: '#fff' },
-  { key: 'oromia cooperative',           initials: 'CBO', bg: '#1B7834', text: '#fff' },
-  { key: 'bunna',                        initials: 'BBI', bg: '#D62828', text: '#fff' },
-  { key: 'berhan',                       initials: 'BB',  bg: '#0096C7', text: '#fff' },
-  { key: 'addis international',          initials: 'AIB', bg: '#023E8A', text: '#fff' },
-  { key: 'lion',                         initials: 'LIB', bg: '#D4A017', text: '#fff' },
-  { key: 'buna',                         initials: 'BIB', bg: '#F4A261', text: '#fff' },
-  { key: 'hijra',                        initials: 'HIB', bg: '#2EC4B6', text: '#fff' },
-  { key: 'zamzam',                       initials: 'ZZB', bg: '#4361EE', text: '#fff' },
-  { key: 'siinqee',                      initials: 'SBE', bg: '#7209B7', text: '#fff' },
-  { key: 'gadaa',                        initials: 'GB',  bg: '#2B9348', text: '#fff' },
-  { key: 'tsehay',                       initials: 'TB',  bg: '#F77F00', text: '#fff' },
-  { key: 'ahadu',                        initials: 'AHB', bg: '#560BAD', text: '#fff' },
-  { key: 'enat',                         initials: 'EB',  bg: '#E63946', text: '#fff' },
-  { key: 'hibret',                       initials: 'HB',  bg: '#2B2D42', text: '#fff' },
-  { key: 'amhara',                       initials: 'ABSc',bg: '#0096C7', text: '#fff' },
-  { key: 'petty cash',                   initials: 'PC',  bg: '#40916C', text: '#fff' },
-  { key: 'cash',                         initials: 'CSH', bg: '#2D6A4F', text: '#fff' },
+// ── Bank logo map (open-source + Wikimedia CC-licensed logos) ────────────────
+// Keys are lowercase substrings matched against account_name
+const BANK_LOGO_MAP: { key: string; logo: string; fallbackBg: string; fallbackText: string; fallbackInitials: string }[] = [
+  { key: 'commercial bank of ethiopia', logo: '/bank-logos/cbe.png',          fallbackBg: '#003087', fallbackText: '#fff', fallbackInitials: 'CBE' },
+  { key: 'cbe',                         logo: '/bank-logos/cbe.png',          fallbackBg: '#003087', fallbackText: '#fff', fallbackInitials: 'CBE' },
+  { key: 'awash',                        logo: '/bank-logos/awash.png',        fallbackBg: '#E85D04', fallbackText: '#fff', fallbackInitials: 'AIB' },
+  { key: 'abyssinia',                    logo: '/bank-logos/abyssinia.png',    fallbackBg: '#2D6A4F', fallbackText: '#fff', fallbackInitials: 'BOA' },
+  { key: 'dashen',                       logo: '/bank-logos/dashen.png',       fallbackBg: '#3A0CA3', fallbackText: '#fff', fallbackInitials: 'DB'  },
+  { key: 'zemen',                        logo: '/bank-logos/zemen.png',        fallbackBg: '#0077B6', fallbackText: '#fff', fallbackInitials: 'ZB'  },
+  { key: 'cooperative bank of oromia',   logo: '/bank-logos/oromia_coop.png', fallbackBg: '#1B7834', fallbackText: '#fff', fallbackInitials: 'CBO' },
+  { key: 'oromia cooperative',           logo: '/bank-logos/oromia_coop.png', fallbackBg: '#1B7834', fallbackText: '#fff', fallbackInitials: 'CBO' },
+  { key: 'hibret',                       logo: '/bank-logos/hibret.png',       fallbackBg: '#2B2D42', fallbackText: '#fff', fallbackInitials: 'HB'  },
+  { key: 'amhara bank',                  logo: '/bank-logos/amhara.png',       fallbackBg: '#0096C7', fallbackText: '#fff', fallbackInitials: 'AB'  },
+  { key: 'oromia international',         logo: '/bank-logos/oromia_intl.png', fallbackBg: '#1B7834', fallbackText: '#fff', fallbackInitials: 'OIB' },
+  { key: 'nib',                          logo: '/bank-logos/nib.png',          fallbackBg: '#6A0572', fallbackText: '#fff', fallbackInitials: 'NIB' },
+  { key: 'bunna',                        logo: '/bank-logos/bunna.png',        fallbackBg: '#D62828', fallbackText: '#fff', fallbackInitials: 'BBI' },
+  { key: 'wegagen',                      logo: '/bank-logos/wegagen.png',      fallbackBg: '#F77F00', fallbackText: '#fff', fallbackInitials: 'WB'  },
+  { key: 'berhan',                       logo: '/bank-logos/berhan.jpg',       fallbackBg: '#0096C7', fallbackText: '#fff', fallbackInitials: 'BB'  },
+  // Fallback-only entries (no logo downloaded, colored badge only)
+  { key: 'united',                       logo: '',                             fallbackBg: '#E63946', fallbackText: '#fff', fallbackInitials: 'UB'  },
+  { key: 'addis international',          logo: '',                             fallbackBg: '#023E8A', fallbackText: '#fff', fallbackInitials: 'AIB' },
+  { key: 'lion',                         logo: '',                             fallbackBg: '#D4A017', fallbackText: '#fff', fallbackInitials: 'LIB' },
+  { key: 'buna',                         logo: '',                             fallbackBg: '#F4A261', fallbackText: '#fff', fallbackInitials: 'BIB' },
+  { key: 'hijra',                        logo: '',                             fallbackBg: '#2EC4B6', fallbackText: '#fff', fallbackInitials: 'HIB' },
+  { key: 'zamzam',                       logo: '',                             fallbackBg: '#4361EE', fallbackText: '#fff', fallbackInitials: 'ZZB' },
+  { key: 'siinqee',                      logo: '',                             fallbackBg: '#7209B7', fallbackText: '#fff', fallbackInitials: 'SBE' },
+  { key: 'gadaa',                        logo: '',                             fallbackBg: '#2B9348', fallbackText: '#fff', fallbackInitials: 'GB'  },
+  { key: 'tsehay',                       logo: '',                             fallbackBg: '#F77F00', fallbackText: '#fff', fallbackInitials: 'TB'  },
+  { key: 'ahadu',                        logo: '',                             fallbackBg: '#560BAD', fallbackText: '#fff', fallbackInitials: 'AHB' },
+  { key: 'enat',                         logo: '',                             fallbackBg: '#E63946', fallbackText: '#fff', fallbackInitials: 'EB'  },
+  { key: 'petty cash',                   logo: '',                             fallbackBg: '#40916C', fallbackText: '#fff', fallbackInitials: 'PC'  },
+  { key: 'cash',                         logo: '',                             fallbackBg: '#2D6A4F', fallbackText: '#fff', fallbackInitials: 'CSH' },
 ]
 
-function getBankTheme(name: string): { initials: string; bg: string; text: string } {
+type BankEntry = typeof BANK_LOGO_MAP[0]
+
+function getBankEntry(name: string): BankEntry {
   const lower = name.toLowerCase()
-  for (const t of BANK_THEMES) {
-    if (lower.includes(t.key)) return t
+  for (const entry of BANK_LOGO_MAP) {
+    if (lower.includes(entry.key)) return entry
   }
-  // fallback: first letters of first two words
   const words = name.trim().split(/\s+/)
   const initials = words.length >= 2
     ? (words[0][0] + words[1][0]).toUpperCase()
     : name.slice(0, 2).toUpperCase()
-  return { initials, bg: '#64748B', text: '#fff' }
+  return { key: '', logo: '', fallbackBg: '#64748B', fallbackText: '#fff', fallbackInitials: initials }
 }
 
-// ── Summary stat card ────────────────────────────────────────────────────────
+// ── Bank logo badge component ─────────────────────────────────────────────────
+function BankBadge({ name }: { name: string }) {
+  const entry = getBankEntry(name)
+
+  if (entry.logo) {
+    return (
+      <div className="flex-shrink-0 h-14 w-14 rounded-xl flex items-center justify-center overflow-hidden bg-white dark:bg-slate-100 border border-slate-200 dark:border-slate-300 p-1.5 shadow-sm">
+        <img
+          src={entry.logo}
+          alt={name}
+          className="h-full w-full object-contain"
+          onError={e => {
+            // Fallback to initials if image fails to load
+            const container = (e.target as HTMLImageElement).parentElement!
+            container.style.backgroundColor = entry.fallbackBg
+            container.style.border = 'none'
+            container.style.padding = '0'
+            ;(e.target as HTMLImageElement).style.display = 'none'
+            const span = document.createElement('span')
+            span.textContent = entry.fallbackInitials
+            span.style.cssText = `color:${entry.fallbackText};font-size:11px;font-weight:700;line-height:1`
+            container.appendChild(span)
+          }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="flex-shrink-0 h-14 w-14 rounded-xl flex items-center justify-center text-xs font-bold leading-none shadow-sm select-none"
+      style={{ backgroundColor: entry.fallbackBg, color: entry.fallbackText }}
+    >
+      {entry.fallbackInitials}
+    </div>
+  )
+}
+
+// ── Summary stat card ─────────────────────────────────────────────────────────
 function SummaryCard({
   label,
   value,
@@ -77,7 +119,7 @@ function SummaryCard({
   )
 }
 
-// ── Account card ─────────────────────────────────────────────────────────────
+// ── Account card ──────────────────────────────────────────────────────────────
 function AccountCard({
   account,
   balance,
@@ -89,33 +131,27 @@ function AccountCard({
   totalBalance: number
   onDelete: (id: string, name: string) => void
 }) {
-  const theme = getBankTheme(account.account_name)
   const bal = balance ?? 0
   const share = totalBalance > 0 ? Math.max(0, bal / totalBalance) : 0
   const isNegative = bal < 0
+  const entry = getBankEntry(account.account_name)
 
   return (
     <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 flex flex-col overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       {/* Card header */}
       <div className="flex items-center gap-3 p-4 border-b dark:border-slate-700">
-        {/* Bank logo badge */}
-        <div
-          className="flex-shrink-0 h-12 w-12 rounded-xl flex items-center justify-center text-xs font-bold leading-none shadow-sm select-none"
-          style={{ backgroundColor: theme.bg, color: theme.text }}
-        >
-          {theme.initials}
-        </div>
-        <div className="min-w-0">
-          <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm leading-tight truncate">
+        <BankBadge name={account.account_name} />
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm leading-tight">
             {account.account_name}
           </h3>
           {account.account_number && (
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 font-mono">
               •••• {account.account_number.slice(-4)}
             </p>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-0.5 flex-shrink-0">
           <Link
             to={`/accounts/${account.id}/edit`}
             className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200"
@@ -140,13 +176,12 @@ function AccountCard({
           {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
         </p>
 
-        {/* Share bar (only if positive) */}
         {totalBalance > 0 && !isNegative && (
           <div className="mt-3">
             <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${(share * 100).toFixed(1)}%`, backgroundColor: theme.bg }}
+                style={{ width: `${(share * 100).toFixed(1)}%`, backgroundColor: entry.fallbackBg }}
               />
             </div>
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
@@ -175,7 +210,7 @@ function AccountCard({
   )
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function AccountsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -257,7 +292,7 @@ export default function AccountsPage() {
         />
       </div>
 
-      {/* Account cards grid */}
+      {/* Account cards */}
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
       ) : data.length === 0 ? (
