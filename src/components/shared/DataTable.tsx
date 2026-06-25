@@ -94,14 +94,14 @@ function ColumnVisibilityMenu<TData>({ table }: { table: ReturnType<typeof useRe
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+        className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
       >
         <Columns3 className="h-4 w-4" /> Columns
       </button>
       {open && (
-        <div className="animate-fade-in-up absolute right-0 z-20 mt-1 w-56 max-h-72 overflow-y-auto rounded-md border bg-white p-2 shadow-lg">
+        <div className="animate-fade-in-up absolute right-0 z-20 mt-1 w-56 max-h-72 overflow-y-auto rounded-md border bg-white p-2 shadow-lg dark:bg-slate-800 dark:border-slate-700">
           {table.getAllLeafColumns().filter(c => c.id !== 'actions' && c.id !== 'select').map(column => (
-            <label key={column.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50 cursor-pointer">
+            <label key={column.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50 cursor-pointer dark:hover:bg-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
                 checked={column.getIsVisible()}
@@ -138,22 +138,22 @@ function ViewsMenu({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+        className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
       >
         <Bookmark className="h-4 w-4" /> Views
       </button>
       {open && (
-        <div className="animate-fade-in-up absolute right-0 z-20 mt-1 w-64 rounded-md border bg-white p-2 shadow-lg">
+        <div className="animate-fade-in-up absolute right-0 z-20 mt-1 w-64 rounded-md border bg-white p-2 shadow-lg dark:bg-slate-800 dark:border-slate-700">
           {views.length === 0 && !naming && <p className="px-2 py-3 text-center text-xs text-slate-400">No saved views yet</p>}
           {views.map(v => (
-            <div key={v.name} className="group flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-slate-50">
+            <div key={v.name} className="group flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 dark:text-slate-300">
               <button className="flex-1 truncate text-left" onClick={() => { onApply(v); setOpen(false) }}>{v.name}</button>
               <button onClick={() => onDelete(v.name)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500">
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
-          <div className="mt-1 border-t pt-1">
+          <div className="mt-1 border-t pt-1 dark:border-slate-700">
             {naming ? (
               <div className="flex items-center gap-1 px-1">
                 <input
@@ -168,10 +168,10 @@ function ViewsMenu({
                   onClick={() => { if (name.trim()) { onSave(name.trim()); setNaming(false); setName(''); setOpen(false) } }}
                   className="rounded bg-brand px-2 py-1 text-xs text-white hover:bg-brand/90"
                 >Save</button>
-                <button onClick={() => setNaming(false)} className="rounded p-1 text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>
+                <button onClick={() => setNaming(false)} className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X className="h-3.5 w-3.5" /></button>
               </div>
             ) : (
-              <button onClick={() => setNaming(true)} className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+              <button onClick={() => setNaming(true)} className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700">
                 <BookmarkPlus className="h-4 w-4" /> Save current view
               </button>
             )}
@@ -322,18 +322,18 @@ export function DataTable<TData extends { id: string }>({
     return (
       <Fragment key={row.id}>
         <tr
-          className={cn('transition-colors', row.getIsSelected() && 'bg-brand/5', expandable ? 'cursor-pointer hover:bg-slate-50' : 'hover:bg-slate-50')}
+          className={cn('transition-colors', row.getIsSelected() && 'bg-brand/5 dark:bg-brand/10', expandable ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50')}
           onClick={expandable ? () => setExpandedRows(prev => ({ ...prev, [row.id]: !prev[row.id] })) : undefined}
         >
           {expandable && (
-            <td className="pl-4 pr-1 w-8 text-slate-400">
+            <td className="pl-4 pr-1 w-8 text-slate-400 dark:text-slate-500">
               <ChevronRight className={cn('h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
             </td>
           )}
           {summaryCells.map(cell => (
             <td
               key={cell.id}
-              className={cn('py-3 text-slate-700', cell.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
+              className={cn('py-3 text-slate-700 dark:text-slate-300', cell.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
               onClick={cell.column.id === 'select' || cell.column.id === 'actions' ? e => e.stopPropagation() : undefined}
             >
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -341,15 +341,15 @@ export function DataTable<TData extends { id: string }>({
           ))}
         </tr>
         {expandable && isExpanded && (
-          <tr className="bg-slate-50/60">
+          <tr className="bg-slate-50/60 dark:bg-slate-900/40">
             <td colSpan={summaryCells.length + 1} className="px-6 py-4">
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
                 {detailCells.map(cell => (
                   <div key={cell.id} className="min-w-0">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
                       {typeof cell.column.columnDef.header === 'string' ? cell.column.columnDef.header : cell.column.id}
                     </p>
-                    <div className="text-sm text-slate-700">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>
+                    <div className="text-sm text-slate-700 dark:text-slate-300">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>
                   </div>
                 ))}
               </div>
@@ -382,12 +382,12 @@ export function DataTable<TData extends { id: string }>({
             const active = column?.getFilterValue()
             return (
               <div key={qf.columnId} className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-medium text-slate-400">{qf.label}:</span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">{qf.label}:</span>
                 <button
                   onClick={() => column?.setFilterValue(undefined)}
                   className={cn(
                     'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                    active === undefined ? 'bg-brand text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                    active === undefined ? 'bg-brand text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600',
                   )}
                 >
                   All
@@ -398,7 +398,7 @@ export function DataTable<TData extends { id: string }>({
                     onClick={() => column?.setFilterValue(opt.value)}
                     className={cn(
                       'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                      active === opt.value ? 'bg-brand text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                      active === opt.value ? 'bg-brand text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600',
                     )}
                   >
                     {opt.label}
@@ -413,12 +413,12 @@ export function DataTable<TData extends { id: string }>({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="relative max-w-xs flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
           <input
             value={globalFilter}
             onChange={e => setGlobalFilter(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full rounded-md border bg-white pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+            className="w-full rounded-md border bg-white pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-500"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -426,7 +426,7 @@ export function DataTable<TData extends { id: string }>({
             <button
               onClick={handleBulkDelete}
               disabled={deleting}
-              className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 disabled:opacity-60 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
             >
               <Trash2 className="h-4 w-4" /> Delete {selectedIds.length} selected
             </button>
@@ -442,7 +442,7 @@ export function DataTable<TData extends { id: string }>({
           <ColumnVisibilityMenu table={table} />
           <button
             onClick={() => exportToCsv(table, persistKey ?? 'export')}
-            className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
           >
             <Download className="h-4 w-4" /> Export CSV
           </button>
@@ -450,10 +450,10 @@ export function DataTable<TData extends { id: string }>({
       </div>
 
       {/* Table */}
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b">
+            <thead className="bg-slate-50 border-b dark:bg-slate-900/60 dark:border-slate-700">
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
                   {expandable && <th className="w-8 pl-4 pr-1" />}
@@ -462,11 +462,11 @@ export function DataTable<TData extends { id: string }>({
                     .map(header => (
                     <th
                       key={header.id}
-                      className={cn('py-3 text-left font-medium text-slate-600 whitespace-nowrap', header.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
+                      className={cn('py-3 text-left font-medium text-slate-600 whitespace-nowrap dark:text-slate-300', header.column.id === 'select' ? 'pl-4 pr-1 w-8' : 'px-4')}
                     >
                       {header.isPlaceholder ? null : (
                         <div
-                          className={cn('flex items-center gap-1', header.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-800')}
+                          className={cn('flex items-center gap-1', header.column.getCanSort() && 'cursor-pointer select-none hover:text-slate-800 dark:hover:text-slate-100')}
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -482,10 +482,10 @@ export function DataTable<TData extends { id: string }>({
                 </tr>
               ))}
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y dark:divide-slate-700">
               {(groups ? groups.length === 0 : table.getRowModel().rows.length === 0) ? (
                 <tr>
-                  <td colSpan={visibleHeaderCount} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={visibleHeaderCount} className="px-4 py-12 text-center text-slate-400 dark:text-slate-500">
                     No records found
                   </td>
                 </tr>
@@ -496,18 +496,18 @@ export function DataTable<TData extends { id: string }>({
                   const isHeadline = idx === 0 || idx === 1
                   return (
                     <Fragment key={group.key}>
-                      <tr className={cn('border-t', idx === 0 ? 'bg-brand/10' : idx === 1 ? 'bg-amber-50' : 'bg-slate-50/70')}>
+                      <tr className={cn('border-t dark:border-slate-700', idx === 0 ? 'bg-brand/10 dark:bg-brand/20' : idx === 1 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40')}>
                         <td colSpan={visibleHeaderCount} className={cn('px-4', isHeadline ? 'py-3' : 'py-1.5')}>
                           <div className="flex items-baseline gap-2">
                             <span className={cn(
-                              isHeadline ? (idx === 0 ? 'text-base font-bold text-brand' : 'text-sm font-bold text-amber-700') : 'text-xs font-semibold uppercase tracking-wide text-slate-400',
+                              isHeadline ? (idx === 0 ? 'text-base font-bold text-brand' : 'text-sm font-bold text-amber-700 dark:text-amber-400') : 'text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500',
                             )}>
                               {label}
                             </span>
                             {absolute && label !== absolute && (
-                              <span className={cn('text-xs', isHeadline ? 'text-slate-500' : 'text-slate-400')}>{absolute}</span>
+                              <span className={cn('text-xs', isHeadline ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500')}>{absolute}</span>
                             )}
-                            <span className={cn('text-xs', isHeadline ? 'text-slate-500' : 'text-slate-400')}>
+                            <span className={cn('text-xs', isHeadline ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500')}>
                               · {group.rows.length} record{group.rows.length !== 1 ? 's' : ''}
                             </span>
                           </div>
@@ -526,19 +526,19 @@ export function DataTable<TData extends { id: string }>({
       </div>
 
       {/* Pagination */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
         <span>
           {table.getFilteredRowModel().rows.length} record{table.getFilteredRowModel().rows.length !== 1 ? 's' : ''}
           {selectedIds.length > 0 && ` · ${selectedIds.length} selected`}
         </span>
         {!groupBy && (
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               Rows per page
               <select
                 value={table.getState().pagination.pageSize}
                 onChange={e => table.setPageSize(Number(e.target.value))}
-                className="rounded border bg-white px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-brand"
+                className="rounded border bg-white px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
               >
                 {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
               </select>
@@ -547,7 +547,7 @@ export function DataTable<TData extends { id: string }>({
               <button
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
-                className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
+                className="rounded p-1 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-700"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -555,7 +555,7 @@ export function DataTable<TData extends { id: string }>({
               <button
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
-                className="rounded p-1 hover:bg-slate-100 disabled:opacity-40"
+                className="rounded p-1 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-700"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

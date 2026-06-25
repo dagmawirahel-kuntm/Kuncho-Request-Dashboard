@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode — applied by toggling .dark on <html> */
+@custom-variant dark (&:is(.dark *));
+
 @theme {
   --animate-fade-in: fade-in 200ms ease-out;
   --animate-fade-in-up: fade-in-up 150ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -31,6 +34,17 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+}
+
+/* Dark mode CSS variable overrides */
+.dark {
+  --color-border: hsl(217 19% 27%);
+  --color-background: hsl(222 47% 8%);
+  --color-foreground: hsl(210 40% 96%);
+  --color-card: hsl(222 47% 11%);
+  --color-popover: hsl(222 47% 11%);
+  --color-muted: hsl(217 33% 17%);
+  --color-muted-foreground: hsl(215 20% 65%);
 }
 
 * {
@@ -76,4 +90,13 @@ body {
 input[type='checkbox'],
 input[type='radio'] {
   accent-color: var(--color-brand);
+}
+
+/* Auto-adapt form inputs in dark mode — avoids touching every form page */
+.dark input:not([type='checkbox']):not([type='radio']):not([type='range']),
+.dark textarea,
+.dark select {
+  background-color: hsl(217 33% 17%);
+  color: hsl(210 40% 96%);
+  color-scheme: dark;
 }

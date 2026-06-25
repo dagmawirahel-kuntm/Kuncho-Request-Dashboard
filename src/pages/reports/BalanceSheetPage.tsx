@@ -12,28 +12,28 @@ interface SectionProps {
 
 function Section({ title, rows, total, positive }: SectionProps) {
   const totalColor = positive === undefined
-    ? 'text-slate-800'
-    : total >= 0 && positive ? 'text-green-700' : 'text-red-600'
+    ? 'text-slate-800 dark:text-slate-100'
+    : total >= 0 && positive ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
   return (
-    <div className="rounded-lg border bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b bg-slate-50">
-        <h2 className="font-semibold text-slate-700 text-sm">{title}</h2>
+    <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
+      <div className="px-4 py-3 border-b bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
+        <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">{title}</h2>
       </div>
       <table className="w-full text-sm">
-        <tbody className="divide-y">
+        <tbody className="divide-y dark:divide-slate-700">
           {rows.length === 0
-            ? <tr><td colSpan={2} className="px-4 py-4 text-center text-slate-400 text-xs">No entries</td></tr>
+            ? <tr><td colSpan={2} className="px-4 py-4 text-center text-slate-400 dark:text-slate-500 text-xs">No entries</td></tr>
             : rows.map(r => (
-              <tr key={r.label} className="hover:bg-slate-50">
-                <td className="px-4 py-2.5 text-slate-600">{r.label}</td>
-                <td className="px-4 py-2.5 text-right text-slate-800">{formatCurrency(r.value)}</td>
+              <tr key={r.label} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{r.label}</td>
+                <td className="px-4 py-2.5 text-right text-slate-800 dark:text-slate-200">{formatCurrency(r.value)}</td>
               </tr>
             ))
           }
         </tbody>
-        <tfoot className="border-t bg-slate-50">
+        <tfoot className="border-t bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
           <tr>
-            <td className="px-4 py-3 font-semibold text-slate-700">Total {title}</td>
+            <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">Total {title}</td>
             <td className={`px-4 py-3 text-right font-bold ${totalColor}`}>{formatCurrency(total)}</td>
           </tr>
         </tfoot>
@@ -134,8 +134,8 @@ export default function BalanceSheetPage() {
   if (loadingBalances) {
     return (
       <div className="space-y-4">
-        <div><h1 className="text-xl font-bold text-slate-800">Balance Sheet</h1></div>
-        <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
+        <div><h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1></div>
+        <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
       </div>
     )
   }
@@ -143,22 +143,22 @@ export default function BalanceSheetPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">Balance Sheet</h1>
-        <p className="text-sm text-slate-500">Assets = Liabilities + Equity (all-time snapshot)</p>
+        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Assets = Liabilities + Equity (all-time snapshot)</p>
       </div>
 
-      <div className="rounded-lg border bg-white p-4 flex flex-wrap gap-6 text-sm">
+      <div className="rounded-lg border bg-white p-4 flex flex-wrap gap-6 text-sm dark:bg-slate-800 dark:border-slate-700">
         <div className="flex items-center gap-2">
-          <span className="text-slate-500">Total Assets</span>
-          <span className="font-bold text-slate-800">{formatCurrency(assetTotal)}</span>
+          <span className="text-slate-500 dark:text-slate-400">Total Assets</span>
+          <span className="font-bold text-slate-800 dark:text-slate-100">{formatCurrency(assetTotal)}</span>
         </div>
-        <div className="text-slate-300">/</div>
+        <div className="text-slate-300 dark:text-slate-600">/</div>
         <div className="flex items-center gap-2">
-          <span className="text-slate-500">Liabilities + Equity</span>
-          <span className="font-bold text-slate-800">{formatCurrency(liabPlusEquity)}</span>
+          <span className="text-slate-500 dark:text-slate-400">Liabilities + Equity</span>
+          <span className="font-bold text-slate-800 dark:text-slate-100">{formatCurrency(liabPlusEquity)}</span>
         </div>
-        <div className="text-slate-300">/</div>
-        <div className={`font-semibold text-sm ${isBalanced ? 'text-green-600' : 'text-amber-600'}`}>
+        <div className="text-slate-300 dark:text-slate-600">/</div>
+        <div className={`font-semibold text-sm ${isBalanced ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
           {isBalanced ? 'Balanced' : `Difference: ${formatCurrency(Math.abs(assetTotal - liabPlusEquity))}`}
         </div>
       </div>

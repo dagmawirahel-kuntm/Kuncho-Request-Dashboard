@@ -7,10 +7,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 function StatCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
   return (
-    <div className="rounded-lg border bg-white p-4">
-      <p className="text-xs text-slate-500 uppercase tracking-wide">{label}</p>
-      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(value)}</p>
-      {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+    <div className="rounded-lg border bg-white p-4 dark:bg-slate-800 dark:border-slate-700">
+      <p className="text-xs text-slate-500 uppercase tracking-wide dark:text-slate-400">{label}</p>
+      <p className="mt-1 text-xl font-bold text-slate-800 dark:text-slate-100">{formatCurrency(value)}</p>
+      {sub && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -84,10 +84,10 @@ export default function PLReportPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">P&amp;L Report</h1>
-          <p className="text-sm text-slate-500">Profit &amp; Loss — paid sales vs paid expenses</p>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">P&amp;L Report</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Profit &amp; Loss — paid sales vs paid expenses</p>
         </div>
-        <select className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand" value={year} onChange={e => setYear(Number(e.target.value))}>
+        <select className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100" value={year} onChange={e => setYear(Number(e.target.value))}>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
@@ -99,37 +99,37 @@ export default function PLReportPage() {
       </div>
 
       {isLoading
-        ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
+        ? <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
         : (
           <>
-            <div className="rounded-lg border bg-white overflow-hidden">
+            <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b">
+                <thead className="bg-slate-50 border-b dark:bg-slate-900/60 dark:border-slate-700">
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Month</th>
-                    <th className="text-right px-4 py-3 font-medium text-slate-600">Revenue</th>
-                    <th className="text-right px-4 py-3 font-medium text-slate-600">Expenses</th>
-                    <th className="text-right px-4 py-3 font-medium text-slate-600">Net</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Month</th>
+                    <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Revenue</th>
+                    <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Expenses</th>
+                    <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Net</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y dark:divide-slate-700">
                   {monthlyData.map(row => (
-                    <tr key={row.name} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 text-slate-700">{row.name} {year}</td>
-                      <td className="px-4 py-2.5 text-right text-green-700">{formatCurrency(row.revenue)}</td>
-                      <td className="px-4 py-2.5 text-right text-red-600">{formatCurrency(row.expenses)}</td>
-                      <td className={`px-4 py-2.5 text-right font-medium ${row.net >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
+                    <tr key={row.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{row.name} {year}</td>
+                      <td className="px-4 py-2.5 text-right text-green-700 dark:text-green-400">{formatCurrency(row.revenue)}</td>
+                      <td className="px-4 py-2.5 text-right text-red-600 dark:text-red-400">{formatCurrency(row.expenses)}</td>
+                      <td className={`px-4 py-2.5 text-right font-medium ${row.net >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
                         {row.net < 0 && '−'}{formatCurrency(Math.abs(row.net))}
                       </td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-slate-50 border-t">
+                <tfoot className="bg-slate-50 border-t dark:bg-slate-900/60 dark:border-slate-700">
                   <tr className="font-semibold">
-                    <td className="px-4 py-3 text-slate-700">Total {year}</td>
-                    <td className="px-4 py-3 text-right text-green-700">{formatCurrency(totals.revenue)}</td>
-                    <td className="px-4 py-3 text-right text-red-600">{formatCurrency(totals.expenses)}</td>
-                    <td className={`px-4 py-3 text-right ${totals.net >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">Total {year}</td>
+                    <td className="px-4 py-3 text-right text-green-700 dark:text-green-400">{formatCurrency(totals.revenue)}</td>
+                    <td className="px-4 py-3 text-right text-red-600 dark:text-red-400">{formatCurrency(totals.expenses)}</td>
+                    <td className={`px-4 py-3 text-right ${totals.net >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
                       {totals.net < 0 && '−'}{formatCurrency(Math.abs(totals.net))}
                     </td>
                   </tr>
@@ -138,24 +138,24 @@ export default function PLReportPage() {
             </div>
 
             {byCategory.length > 0 && (
-              <div className="rounded-lg border bg-white overflow-hidden">
-                <div className="px-4 py-3 border-b bg-slate-50">
-                  <h2 className="font-semibold text-slate-700 text-sm">Expenses by Category — {year}</h2>
+              <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
+                <div className="px-4 py-3 border-b bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
+                  <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">Expenses by Category — {year}</h2>
                 </div>
                 <table className="w-full text-sm">
-                  <thead className="border-b">
+                  <thead className="border-b dark:border-slate-700">
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Category</th>
-                      <th className="text-right px-4 py-3 font-medium text-slate-600">Amount</th>
-                      <th className="text-right px-4 py-3 font-medium text-slate-600">% of Expenses</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Category</th>
+                      <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Amount</th>
+                      <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">% of Expenses</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody className="divide-y dark:divide-slate-700">
                     {byCategory.map(([name, amount]) => (
-                      <tr key={name} className="hover:bg-slate-50">
-                        <td className="px-4 py-2.5 text-slate-700">{name}</td>
-                        <td className="px-4 py-2.5 text-right text-red-600">{formatCurrency(amount)}</td>
-                        <td className="px-4 py-2.5 text-right text-slate-500">
+                      <tr key={name} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{name}</td>
+                        <td className="px-4 py-2.5 text-right text-red-600 dark:text-red-400">{formatCurrency(amount)}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400">
                           {totals.expenses > 0 ? ((amount / totals.expenses) * 100).toFixed(1) : '0.0'}%
                         </td>
                       </tr>
