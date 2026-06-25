@@ -7,6 +7,7 @@ import { DataTable } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Account } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { formatCurrency } from '@/lib/utils'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 export default function AccountsPage() {
@@ -23,6 +24,20 @@ export default function AccountsPage() {
     },
   })
 
+  const { data: balancesRaw = [] } = useQuery({
+    queryKey: ['account-balances'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_account_balances').select('id, balance')
+      if (error) throw error
+      return data as { id: string; balance: number }[]
+    },
+  })
+
+  const balanceMap = useMemo(
+    () => Object.fromEntries(balancesRaw.map(b => [b.id, b.balance])),
+    [balancesRaw]
+  )
+
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete account "${name}"? This cannot be undone.`)) return
     const { error } = await supabase.from('accounts').delete().eq('id', id)
@@ -37,6 +52,11 @@ export default function AccountsPage() {
     { accessorKey: 'type', header: 'Type', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'account_number', header: 'Account Number', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
+    { id: 'balance', header: 'Balance (ETB)', cell: ({ row }) => {
+      const bal = balanceMap[row.original.id]
+      if (bal === undefined) return <span className="text-slate-300">—</span>
+      return <span className={`font-medium ${Number(bal) >= 0 ? 'text-slate-800' : 'text-red-600'}`}>{formatCurrency(Number(bal))}</span>
+    }},
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
     {
       id: 'actions',
@@ -49,7 +69,7 @@ export default function AccountsPage() {
       ),
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [])
+  ], [balanceMap])
 
   return (
     <div className="space-y-4">

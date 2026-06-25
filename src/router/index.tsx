@@ -24,6 +24,10 @@ import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import AccountsPage from '@/pages/accounts/AccountsPage'
 import AccountFormPage from '@/pages/accounts/AccountFormPage'
+import TransfersPage from '@/pages/transfers/TransfersPage'
+import TransferFormPage from '@/pages/transfers/TransferFormPage'
+import PLReportPage from '@/pages/reports/PLReportPage'
+import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
 import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
@@ -102,6 +106,9 @@ export const router = createBrowserRouter([
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'accounts/new', element: <AccountFormPage /> },
               { path: 'accounts/:id/edit', element: <AccountFormPage /> },
+              { path: 'transfers', element: <TransfersPage /> },
+              { path: 'transfers/new', element: <TransferFormPage /> },
+              { path: 'transfers/:id/edit', element: <TransferFormPage /> },
               { path: 'sales', element: <SalesPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
               { path: 'sales/:id/edit', element: <SaleFormPage /> },
@@ -114,7 +121,8 @@ export const router = createBrowserRouter([
               { path: 'cpo-bonds', element: <CpoBondsPage /> },
               { path: 'cpo-bonds/new', element: <CpoBondFormPage /> },
               { path: 'cpo-bonds/:id/edit', element: <CpoBondFormPage /> },
-              { path: 'transfers', element: <AccountsPage /> },
+              { path: 'reports/pl', element: <PLReportPage /> },
+              { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
             ],
           },
           {

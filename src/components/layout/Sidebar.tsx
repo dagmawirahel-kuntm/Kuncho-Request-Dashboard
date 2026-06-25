@@ -3,7 +3,8 @@ import {
   LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban,
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
-  Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen
+  Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
+  ArrowLeftRight, PieChart, Scale
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -54,10 +55,18 @@ const navGroups: NavGroup[] = [
     to: '/finance',
     items: [
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'manager', 'finance'] },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'manager', 'finance'] },
+    ],
+  },
+  {
+    title: 'Reports',
+    items: [
+      { label: 'P&L Report', to: '/reports/pl', icon: PieChart, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Balance Sheet', to: '/reports/balance-sheet', icon: Scale, roles: ['admin', 'manager', 'finance'] },
     ],
   },
   {
