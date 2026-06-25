@@ -92,6 +92,31 @@ input[type='radio'] {
   accent-color: var(--color-brand);
 }
 
+/* Smooth color transition only during theme switch — avoids making hover states sluggish */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 300ms ease,
+    border-color 300ms ease,
+    color 200ms ease,
+    fill 200ms ease,
+    stroke 200ms ease !important;
+  transition-delay: 0ms !important;
+}
+
+/* Logo click animation */
+@keyframes logo-toggle {
+  0%   { transform: scale(1) rotate(0deg); }
+  30%  { transform: scale(0.88) rotate(-8deg); }
+  70%  { transform: scale(1.08) rotate(4deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.logo-toggle-anim {
+  animation: logo-toggle 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 /* Auto-adapt form inputs in dark mode — avoids touching every form page */
 .dark input:not([type='checkbox']):not([type='radio']):not([type='range']),
 .dark textarea,

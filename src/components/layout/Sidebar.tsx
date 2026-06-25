@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 interface NavItem {
   label: string
@@ -169,9 +169,24 @@ interface SidebarProps {
   onToggleCollapse: () => void
   mobileOpen: boolean
   onCloseMobile: () => void
+  isDark: boolean
+  onToggleTheme: () => void
 }
 
-export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }: SidebarProps) {
+export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, isDark, onToggleTheme }: SidebarProps) {
+  const logoRef = useRef<HTMLImageElement>(null)
+
+  function handleLogoClick() {
+    const img = logoRef.current
+    if (img) {
+      img.classList.remove('logo-toggle-anim')
+      void img.offsetWidth // reflow to restart animation
+      img.classList.add('logo-toggle-anim')
+      img.addEventListener('animationend', () => img.classList.remove('logo-toggle-anim'), { once: true })
+    }
+    onToggleTheme()
+  }
+
   return (
     <>
       {mobileOpen && (
@@ -189,7 +204,13 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
         )}
       >
         <div className={cn('flex h-14 shrink-0 items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
-          <img src="/kuncho-logo.png" alt="KUNCHO" className="h-9 w-auto" />
+          <button
+            onClick={handleLogoClick}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            <img ref={logoRef} src="/kuncho-logo.png" alt="KUNCHO" className="h-9 w-auto opacity-90 hover:opacity-100 transition-opacity" />
+          </button>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {navGroups.map(group => (
