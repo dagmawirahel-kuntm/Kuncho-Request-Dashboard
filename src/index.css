@@ -125,3 +125,91 @@ html.theme-transition *::after {
   color: hsl(210 40% 96%);
   color-scheme: dark;
 }
+
+/* =============================================================================
+   GLOBAL DARK-MODE AUTO-THEMING
+   Non-layered rules beat @layer utilities so these override Tailwind defaults.
+   :not([class*="dark:bg"]) guards prevent conflicting with explicit dark: variants.
+   ============================================================================= */
+
+/* ── Backgrounds ─────────────────────────────────────────────────────────── */
+.bg-white:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(222 47% 11%);
+}
+.bg-slate-50:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(222 47% 8%);
+}
+.bg-slate-100:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(217 33% 14%);
+}
+
+/* Coloured status/alert backgrounds */
+.bg-red-50:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(0 60% 10%);
+}
+.bg-amber-50:not([class*="dark:bg"]):is(.dark *),
+.bg-yellow-50:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(38 80% 9%);
+}
+.bg-green-50:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(138 40% 9%);
+}
+.bg-blue-50:not([class*="dark:bg"]):is(.dark *) {
+  background-color: hsl(213 80% 9%);
+}
+
+/* ── Text colours ────────────────────────────────────────────────────────── */
+.text-slate-900:not([class*="dark:text"]):is(.dark *),
+.text-slate-800:not([class*="dark:text"]):is(.dark *) {
+  color: hsl(210 40% 96%);
+}
+.text-slate-700:not([class*="dark:text"]):is(.dark *) {
+  color: hsl(210 40% 88%);
+}
+.text-slate-600:not([class*="dark:text"]):is(.dark *) {
+  color: hsl(215 20% 75%);
+}
+.text-slate-500:not([class*="dark:text"]):is(.dark *) {
+  color: hsl(215 20% 65%);
+}
+.text-slate-400:not([class*="dark:text"]):is(.dark *) {
+  color: hsl(215 20% 55%);
+}
+
+/* Coloured status text */
+.text-red-600:not([class*="dark:text"]):is(.dark *) { color: hsl(0 90% 70%); }
+.text-red-700:not([class*="dark:text"]):is(.dark *) { color: hsl(0 85% 65%); }
+.text-green-600:not([class*="dark:text"]):is(.dark *),
+.text-green-700:not([class*="dark:text"]):is(.dark *) { color: hsl(142 60% 55%); }
+.text-amber-600:not([class*="dark:text"]):is(.dark *),
+.text-yellow-600:not([class*="dark:text"]):is(.dark *) { color: hsl(38 90% 60%); }
+.text-blue-600:not([class*="dark:text"]):is(.dark *),
+.text-blue-700:not([class*="dark:text"]):is(.dark *) { color: hsl(213 90% 65%); }
+
+/* ── Borders ─────────────────────────────────────────────────────────────── */
+.border-slate-200:not([class*="dark:border"]):is(.dark *),
+.border-slate-100:not([class*="dark:border"]):is(.dark *) {
+  border-color: hsl(217 19% 27%);
+}
+
+/* ── Hover backgrounds ───────────────────────────────────────────────────── */
+.hover\:bg-slate-50:not([class*="dark:hover"]):hover:is(.dark *),
+.hover\:bg-slate-100:not([class*="dark:hover"]):hover:is(.dark *) {
+  background-color: hsl(217 33% 17%);
+}
+.hover\:bg-red-50:not([class*="dark:hover"]):hover:is(.dark *) {
+  background-color: hsl(0 60% 14%);
+}
+
+/* ── Hover text ──────────────────────────────────────────────────────────── */
+.hover\:text-slate-700:not([class*="dark:hover"]):hover:is(.dark *),
+.hover\:text-slate-800:not([class*="dark:hover"]):hover:is(.dark *),
+.hover\:text-slate-900:not([class*="dark:hover"]):hover:is(.dark *) {
+  color: hsl(210 40% 96%);
+}
+
+/* ── Divide lines ────────────────────────────────────────────────────────── */
+.divide-slate-100:not([class*="dark:divide"]):is(.dark *) > * + *,
+.divide-slate-200:not([class*="dark:divide"]):is(.dark *) > * + * {
+  border-color: hsl(217 19% 27%);
+}
