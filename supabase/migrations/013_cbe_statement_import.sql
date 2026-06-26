@@ -4703,6 +4703,8 @@ WHERE payment_status = false
 -- Below we update sales by amount+date for the identified key credits.
 -- ══════════════════════════════════════════════════════════════════════════
 
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS bank_ref TEXT;
+
 -- Credit: 2025-12-04       897,421.72 ETB — PO 168727208 (ref: FT25338BNDW4)
 UPDATE public.sales
 SET
@@ -4710,7 +4712,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT25338BNDW4'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 897416.72 AND 897426.72
+  AND amount BETWEEN 897416.72 AND 897426.72
   AND date BETWEEN '2025-11-27'::date AND '2025-12-11'::date;
 
 -- Credit: 2025-12-12       138,992.00 ETB — 52495 (ref: FT2534679Y00)
@@ -4720,7 +4722,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT2534679Y00'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 138987.00 AND 138997.00
+  AND amount BETWEEN 138987.00 AND 138997.00
   AND date BETWEEN '2025-12-05'::date AND '2025-12-19'::date;
 
 -- Credit: 2025-12-15     1,417,920.00 ETB — AFCABOOTH (ref: FT25349LWMKN)
@@ -4730,7 +4732,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT25349LWMKN'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 1417915.00 AND 1417925.00
+  AND amount BETWEEN 1417915.00 AND 1417925.00
   AND date BETWEEN '2025-12-08'::date AND '2025-12-22'::date;
 
 -- Credit: 2025-12-17     4,078,406.93 ETB — 67830 (ref: FT25351JZLQZ)
@@ -4740,7 +4742,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT25351JZLQZ'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 4078401.93 AND 4078411.93
+  AND amount BETWEEN 4078401.93 AND 4078411.93
   AND date BETWEEN '2025-12-10'::date AND '2025-12-24'::date;
 
 -- Credit: 2025-12-25     1,416,132.58 ETB — Marketing (ref: FT253599J0LL)
@@ -4750,7 +4752,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT253599J0LL'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 1416127.58 AND 1416137.58
+  AND amount BETWEEN 1416127.58 AND 1416137.58
   AND date BETWEEN '2025-12-18'::date AND '2026-01-01'::date;
 
 -- Credit: 2026-01-28     5,658,240.80 ETB — 69003 (ref: FT260289WB61)
@@ -4760,7 +4762,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT260289WB61'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 5658235.80 AND 5658245.80
+  AND amount BETWEEN 5658235.80 AND 5658245.80
   AND date BETWEEN '2026-01-21'::date AND '2026-02-04'::date;
 
 -- Credit: 2026-02-17    20,537,487.60 ETB — CPV7273 KUNCHO (ref: FT26048Y13RJ)
@@ -4770,7 +4772,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT26048Y13RJ'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 20537482.60 AND 20537492.60
+  AND amount BETWEEN 20537482.60 AND 20537492.60
   AND date BETWEEN '2026-02-10'::date AND '2026-02-24'::date;
 
 -- Credit: 2026-02-19     5,351,116.52 ETB — CPV7288 KUNCHO (ref: FT26050Q3JH2)
@@ -4780,7 +4782,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT26050Q3JH2'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 5351111.52 AND 5351121.52
+  AND amount BETWEEN 5351111.52 AND 5351121.52
   AND date BETWEEN '2026-02-12'::date AND '2026-02-26'::date;
 
 -- Credit: 2026-03-24       347,200.00 ETB — CPV7364 KUNCHO (ref: FT2608335FK6)
@@ -4790,7 +4792,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT2608335FK6'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 347195.00 AND 347205.00
+  AND amount BETWEEN 347195.00 AND 347205.00
   AND date BETWEEN '2026-03-17'::date AND '2026-03-31'::date;
 
 -- Credit: 2026-03-26       593,600.00 ETB — CPV7372 KUNCH (ref: FT26085GXNFW)
@@ -4800,7 +4802,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT26085GXNFW'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 593595.00 AND 593605.00
+  AND amount BETWEEN 593595.00 AND 593605.00
   AND date BETWEEN '2026-03-19'::date AND '2026-04-02'::date;
 
 -- Credit: 2026-04-16     2,500,000.00 ETB — CPV7417 KUNCHO (ref: FT26106HN3W2)
@@ -4810,7 +4812,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT26106HN3W2'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 2499995.00 AND 2500005.00
+  AND amount BETWEEN 2499995.00 AND 2500005.00
   AND date BETWEEN '2026-04-09'::date AND '2026-04-23'::date;
 
 -- Credit: 2026-04-30     2,500,000.00 ETB — CPV7451 KUNCHO (ref: FT26120BRVFX)
@@ -4820,7 +4822,7 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT26120BRVFX'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 2499995.00 AND 2500005.00
+  AND amount BETWEEN 2499995.00 AND 2500005.00
   AND date BETWEEN '2026-04-23'::date AND '2026-05-07'::date;
 
 -- Credit: 2026-05-15    17,931,290.00 ETB — 0001TRA1351953 (ref: FT261357MZ7G)
@@ -4830,5 +4832,5 @@ SET
   account_id   = '890c3473-dc57-4c01-9f39-17518047c463',
   bank_ref     = 'FT261357MZ7G'
 WHERE sales_status != 'Paid'
-  AND amount_etb BETWEEN 17931285.00 AND 17931295.00
+  AND amount BETWEEN 17931285.00 AND 17931295.00
   AND date BETWEEN '2026-05-08'::date AND '2026-05-22'::date;
