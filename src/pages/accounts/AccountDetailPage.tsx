@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -61,7 +61,6 @@ function groupByMonth<T extends { paid_date?: string | null; date?: string | nul
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function AccountDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('expenses')
 
   // account
@@ -159,31 +158,26 @@ export default function AccountDetailPage() {
   const groups = groupByMonth(expenses)
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="space-y-5">
 
-      {/* ── Top nav bar ─────────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 bg-white dark:bg-slate-800 border-b dark:border-slate-700 px-4 py-3 flex items-center justify-between gap-4">
-        <button
-          onClick={() => navigate('/accounts')}
-          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+      {/* ── Back + Edit row ─────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <Link
+          to="/accounts"
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
         >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Accounts</span>
-        </button>
-        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate max-w-[180px]">
-          {account.account_name}
-        </span>
+          <ArrowLeft className="h-4 w-4" /> Accounts
+        </Link>
         <Link
           to={`/accounts/${id}/edit`}
-          className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+          className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
         >
-          <Pencil className="h-3.5 w-3.5" />
-          Edit
+          <Pencil className="h-3.5 w-3.5" /> Edit
         </Link>
       </div>
 
       {/* ── Hero card ───────────────────────────────────────────── */}
-      <div className="px-4 pt-6 pb-0">
+      <div>
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>
           {/* Watermark */}
           <div className="relative px-6 py-7 overflow-hidden">
@@ -256,7 +250,7 @@ export default function AccountDetailPage() {
       </div>
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
-      <div className="px-4 mt-5 flex gap-0 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+      <div className="flex gap-0 border-b dark:border-slate-700">
         {(['expenses', 'transfers'] as Tab[]).map(t => (
           <button
             key={t}
@@ -273,7 +267,7 @@ export default function AccountDetailPage() {
       </div>
 
       {/* ── Tab content ─────────────────────────────────────────── */}
-      <div className="px-4 py-5 space-y-4">
+      <div className="space-y-4">
 
         {/* EXPENSES */}
         {tab === 'expenses' && (

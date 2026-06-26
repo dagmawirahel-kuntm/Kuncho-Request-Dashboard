@@ -61,12 +61,6 @@ import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   {
-    element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
-    children: [
-      { path: 'accounts/:id', element: <AccountDetailPage /> },
-    ],
-  },
-  {
     element: <ProtectedRoute />,
     children: [
       {
@@ -112,6 +106,7 @@ export const router = createBrowserRouter([
               { path: 'finance', element: <FinanceDashboardPage /> },
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'accounts/new', element: <AccountFormPage /> },
+              { path: 'accounts/:id', element: <AccountDetailPage /> },
               { path: 'accounts/:id/edit', element: <AccountFormPage /> },
               { path: 'transfers', element: <TransfersPage /> },
               { path: 'transfers/new', element: <TransferFormPage /> },
