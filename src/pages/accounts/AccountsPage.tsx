@@ -141,7 +141,10 @@ function AccountCard({
   }, [account.id, account.account_name, onDelete])
 
   return (
-    <div className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col">
+    <div
+      className="group rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg active:scale-[0.98] transition-all duration-150 flex flex-col cursor-pointer"
+      onClick={() => navigate(`/accounts/${account.id}`)}
+    >
 
       {/* ── Branded header ─────────────────────────────────────────────────── */}
       <div
@@ -257,15 +260,18 @@ function AccountCard({
         )}
       </div>
 
-      {/* ── View transactions CTA ──────────────────────────────────────────── */}
-      <Link
-        to={`/accounts/${account.id}`}
-        className="flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors"
-        style={{ backgroundColor: entry.bg, color: entry.fg }}
-      >
-        <span>View transactions</span>
-        <ChevronRight className="h-4 w-4 opacity-80" />
-      </Link>
+      {/* ── View transactions CTA — hidden until hover ─────────────────────── */}
+      <div className="max-h-0 group-hover:max-h-14 overflow-hidden transition-all duration-300 ease-out">
+        <Link
+          to={`/accounts/${account.id}`}
+          onClick={e => e.stopPropagation()}
+          className="flex items-center justify-between px-4 py-2.5 text-sm font-medium"
+          style={{ backgroundColor: entry.bg, color: entry.fg }}
+        >
+          <span>View transactions</span>
+          <ChevronRight className="h-4 w-4 opacity-80 transition-transform duration-200 group-hover:translate-x-0.5" />
+        </Link>
+      </div>
     </div>
   )
 }
