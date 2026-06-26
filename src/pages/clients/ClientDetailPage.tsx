@@ -7,7 +7,7 @@ import type { Client, Sale, ClientAttachment, AttachmentCategory } from '@/types
 import {
   ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, FileText,
   TrendingUp, CheckCircle2, Clock, ExternalLink, Upload,
-  FileContract, Receipt, Paperclip, Download, X, RotateCcw, Check,
+  FileBadge, Receipt, Paperclip, Download, X, RotateCcw, Check,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useToast } from '@/contexts/ToastContext'
@@ -28,7 +28,6 @@ function fmtSize(b: number | null) {
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
 function ClientLogo({ client }: { client: Client }) {
-  const color = clientColor(client.client_name)
   const { data: logoUrl } = useClientLogo(client.client_name, client.email)
   const [failed, setFailed] = useState(false)
 
@@ -49,7 +48,7 @@ function ClientLogo({ client }: { client: Client }) {
 // ── Attachment categories ─────────────────────────────────────────────────────
 const CATEGORIES: { value: AttachmentCategory; label: string; icon: React.ReactNode; color: string }[] = [
   { value: 'receipt',  label: 'Receipt',  icon: <Receipt className="h-4 w-4" />,      color: '#10B981' },
-  { value: 'contract', label: 'Contract', icon: <FileContract className="h-4 w-4" />, color: '#3B82F6' },
+  { value: 'contract', label: 'Contract', icon: <FileBadge className="h-4 w-4" />, color: '#3B82F6' },
   { value: 'other',    label: 'Other',    icon: <Paperclip className="h-4 w-4" />,    color: '#8B5CF6' },
 ]
 
