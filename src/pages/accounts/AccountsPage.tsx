@@ -213,8 +213,8 @@ function AccountCard({
         </div>
       </div>
 
-      {/* ── Balance body ───────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
+      {/* ── Balance body (clickable → detail page) ─────────────────────────── */}
+      <Link to={`/accounts/${account.id}`} className="block bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Balance</p>
         <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
           {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
@@ -233,7 +233,7 @@ function AccountCard({
             </p>
           </div>
         )}
-      </div>
+      </Link>
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 px-4 pb-4 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
