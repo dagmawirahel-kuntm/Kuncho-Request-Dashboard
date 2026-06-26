@@ -173,17 +173,17 @@ function AccountCard({
         <div className="relative flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
             {entry.logo ? (
-              <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center p-1.5 shadow flex-shrink-0">
+              <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center p-1.5 shadow flex-shrink-0 transition-all duration-300 group-hover:shadow-[0_0_16px_4px_rgba(255,255,255,0.55)] group-hover:scale-110">
                 <img
                   src={entry.logo}
                   alt={account.account_name}
-                  className="h-full w-full object-contain pointer-events-none"
+                  className="h-full w-full object-contain pointer-events-none transition-[filter] duration-300 group-hover:brightness-110"
                   onError={e => { (e.target as HTMLImageElement).parentElement!.style.backgroundColor = entry.bg }}
                 />
               </div>
             ) : (
               <div
-                className="h-11 w-11 rounded-xl flex items-center justify-center text-xs font-bold shadow flex-shrink-0 border border-white/20"
+                className="h-11 w-11 rounded-xl flex items-center justify-center text-xs font-bold shadow flex-shrink-0 border border-white/20 transition-all duration-300 group-hover:shadow-[0_0_16px_4px_rgba(255,255,255,0.45)] group-hover:scale-110 group-hover:border-white/60"
                 style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: entry.fg }}
               >
                 {entry.initials}

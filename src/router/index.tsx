@@ -31,6 +31,9 @@ import PLReportPage from '@/pages/reports/PLReportPage'
 import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
+import ClientsPage from '@/pages/clients/ClientsPage'
+import ClientDetailPage from '@/pages/clients/ClientDetailPage'
+import ClientFormPage from '@/pages/clients/ClientFormPage'
 import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
 import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
 import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
@@ -114,6 +117,10 @@ export const router = createBrowserRouter([
               { path: 'sales', element: <SalesPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
               { path: 'sales/:id/edit', element: <SaleFormPage /> },
+              { path: 'clients', element: <ClientsPage /> },
+              { path: 'clients/new', element: <ClientFormPage /> },
+              { path: 'clients/:id', element: <ClientDetailPage /> },
+              { path: 'clients/:id/edit', element: <ClientFormPage /> },
               { path: 'tax-summary', element: <TaxSummaryPage /> },
               { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
               { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
