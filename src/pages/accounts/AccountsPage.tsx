@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -122,13 +122,17 @@ function AccountCard({
   totalBalance: number
   onDelete: (id: string, name: string) => void
 }) {
+  const navigate = useNavigate()
   const entry = getBankEntry(account.account_name)
   const bal = balance ?? 0
   const share = totalBalance > 0 ? Math.max(0, bal / totalBalance) : 0
   const isNegative = bal < 0
 
   return (
-    <div className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col">
+    <div
+      className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col cursor-pointer"
+      onClick={() => navigate(`/accounts/${account.id}`)}
+    >
 
       {/* ── Branded header ─────────────────────────────────────────────────── */}
       <div
@@ -198,11 +202,12 @@ function AccountCard({
               title="Edit"
               className="rounded p-1.5 hover:bg-white/20 transition-colors"
               style={{ color: entry.fg, opacity: 0.8 }}
+              onClick={e => e.stopPropagation()}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Link>
             <button
-              onClick={() => onDelete(account.id, account.account_name)}
+              onClick={e => { e.stopPropagation(); onDelete(account.id, account.account_name) }}
               title="Delete"
               className="rounded p-1.5 hover:bg-white/20 transition-colors"
               style={{ color: entry.fg, opacity: 0.8 }}
@@ -213,8 +218,8 @@ function AccountCard({
         </div>
       </div>
 
-      {/* ── Balance body (clickable → detail page) ─────────────────────────── */}
-      <Link to={`/accounts/${account.id}`} className="block bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+      {/* ── Balance body ────────────────────────────────────────────────────── */}
+      <div className="bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Balance</p>
         <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
           {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
@@ -233,7 +238,7 @@ function AccountCard({
             </p>
           </div>
         )}
-      </Link>
+      </div>
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 px-4 pb-4 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">

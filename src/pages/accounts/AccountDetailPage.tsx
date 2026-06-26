@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Pencil, ReceiptText, ArrowLeftRight, TrendingDown, TrendingUp, AlertCircle } from 'lucide-react'
-import type { Account, Expense, Transfer } from '@/types/database'
+import type { Account, Expense } from '@/types/database'
 
 // ── Bank colour map ────────────────────────────────────────────────────────────
 const BANKS: { key: string; bg: string; initials: string }[] = [
