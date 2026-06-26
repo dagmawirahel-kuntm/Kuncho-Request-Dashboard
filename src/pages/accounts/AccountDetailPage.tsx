@@ -328,6 +328,7 @@ export default function AccountDetailPage() {
                           <Link
                             key={e.id}
                             to={`/expenses/${e.id}/edit`}
+                            state={{ returnTo: `/accounts/${id}` }}
                             className={`flex items-stretch gap-0 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${i < rows.length - 1 ? 'border-b dark:border-slate-700' : ''}`}
                           >
                             {/* Date bubble */}

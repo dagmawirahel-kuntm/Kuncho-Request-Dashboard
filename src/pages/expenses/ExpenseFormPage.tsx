@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -34,6 +34,8 @@ const DELIVERY_STATUS_OPTIONS = ['Ordered', 'In Transit', 'Delivered', 'Returned
 export default function ExpenseFormPage() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
+  const location = useLocation()
+  const returnTo: string = (location.state as { returnTo?: string })?.returnTo ?? '/expenses'
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
     queryFn: async () => {
@@ -45,13 +47,13 @@ export default function ExpenseFormPage() {
   })
 
   if (isEdit && isLoading) {
-    return <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo="/expenses" loading onSave={() => {}} />
+    return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
 
-  return <ExpenseFormPageBody id={id} record={record} />
+  return <ExpenseFormPageBody id={id} record={record} returnTo={returnTo} />
 }
 
-function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses' }: { id?: string; record?: Expense; returnTo?: string }) {
   const isEdit = !!id
     const navigate = useNavigate()
     const { user, role } = useAuth()
@@ -208,7 +210,7 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
     toast(isEdit ? 'Expense updated' : 'Expense created', 'success')
-    navigate('/expenses')
+    navigate(returnTo)
   }
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
@@ -230,7 +232,7 @@ function ExpenseFormPageBody({ id, record }: { id?: string; record?: Expense }) 
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || record?.purchaser_user_id === user?.id)
 
   return (
-    <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo="/expenses" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={handleSave}>
+    <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo={returnTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={handleSave}>
 
       {isEdit && (
         <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
