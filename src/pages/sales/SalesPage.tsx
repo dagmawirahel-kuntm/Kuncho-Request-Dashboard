@@ -12,6 +12,17 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const saleQuickFilters: QuickFilter[] = [
   {
+    columnId: 'sales_status',
+    label: 'Status',
+    options: [
+      { label: 'Draft', value: 'Draft' },
+      { label: 'Invoiced', value: 'Invoiced' },
+      { label: 'Paid', value: 'Paid' },
+      { label: 'Refunded', value: 'Refunded' },
+      { label: 'Cancelled', value: 'Cancelled' },
+    ],
+  },
+  {
     columnId: 'approval_status',
     label: 'Approval',
     options: [

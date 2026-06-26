@@ -193,7 +193,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         <Field label="Status">
           <select className={inputCls} value={form.sales_status ?? ''} onChange={e => set('sales_status', e.target.value || null)}>
             <option value="">— Select —</option>
-            <option>Draft</option><option>Invoiced</option><option>Paid</option><option>Cancelled</option>
+            <option>Draft</option><option>Invoiced</option><option>Paid</option><option>Refunded</option><option>Cancelled</option>
           </select>
         </Field>
         <Field label="Payment Method">

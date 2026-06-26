@@ -6,7 +6,7 @@ export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_ap
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
-export type SaleLifecycleStatus = 'Draft' | 'Invoiced' | 'Paid' | 'Cancelled'
+export type SaleLifecycleStatus = 'Draft' | 'Invoiced' | 'Paid' | 'Cancelled' | 'Refunded'
 export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered'
 
 export interface Database {
