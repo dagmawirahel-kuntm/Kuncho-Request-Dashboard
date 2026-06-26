@@ -156,29 +156,6 @@ export function ClientAvatar({ client, size = 'md', tier }: { client: Client; si
   )
 }
 
-// ── Completeness bar ───────────────────────────────────────────────────────────
-function CompletenessBar({ client }: { client: Client }) {
-  const { score, total } = profileScore(client)
-  const pct = score / total
-  const color = scoreColor(pct)
-  const label = pct >= 0.8 ? 'Complete' : pct >= 0.5 ? 'Partial' : 'Incomplete'
-
-  return (
-    <div className="px-4 pb-3 space-y-1">
-      <div className="flex items-center justify-between text-[10px]">
-        <span className="text-slate-400 dark:text-slate-500 uppercase tracking-wide">Profile</span>
-        <span className="font-semibold" style={{ color }}>{score}/{total} · {label}</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-700"
-          style={{ width: `${(pct * 100).toFixed(0)}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  )
-}
-
 // ── Summary stat card ──────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, sub }: { label: string; value: string; icon: React.ReactNode; sub?: string }) {
   return (
@@ -193,84 +170,84 @@ function StatCard({ label, value, icon, sub }: { label: string; value: string; i
   )
 }
 
-// ── Client card ────────────────────────────────────────────────────────────────
-function ClientCard({
+// ── Client row (single-column nav-bar style) ───────────────────────────────────
+function ClientRow({
   client, salesCount, totalRevenue, tier, onDelete,
 }: {
   client: Client; salesCount: number; totalRevenue: number; tier: ClientTier; onDelete: (id: string, name: string) => void
 }) {
   const navigate = useNavigate()
-  const color = clientColor(client.client_name)
+  const { score, total } = profileScore(client)
+  const pct = score / total
 
   const goEdit = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); navigate(`/clients/${client.id}/edit`) }, [client.id, navigate])
   const goDelete = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDelete(client.id, client.client_name) }, [client.id, client.client_name, onDelete])
 
-  const tierStyle: React.CSSProperties = tier ? {
-    outline: `1.5px solid ${TIER_STYLES[tier].color}`,
-    filter: `drop-shadow(0 0 10px ${TIER_STYLES[tier].shadow})`,
-  } : {}
+  const borderColor = tier ? TIER_STYLES[tier].color : 'transparent'
 
   return (
     <div
-      className="group rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-sm hover:shadow-lg active:scale-[0.98] transition-all duration-150 flex flex-col cursor-pointer"
-      style={tier ? tierStyle : { border: '1px solid', borderColor: 'rgb(226 232 240)' }}
+      className="group flex items-center gap-3 px-3 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 active:bg-slate-100 dark:active:bg-slate-700/60 transition-colors duration-100 cursor-pointer"
+      style={{ borderLeft: `4px solid ${borderColor}` }}
       onClick={() => navigate(`/clients/${client.id}`)}
     >
-      {/* Tier accent strip */}
-      {tier && (
-        <div className="h-[3px] w-full flex-shrink-0" style={{ background: TIER_STYLES[tier].bg }} />
-      )}
+      {/* Avatar with tier badge */}
+      <ClientAvatar client={client} size="sm" tier={tier} />
 
-      {/* Header */}
-      <div className="relative px-4 pt-4 pb-4 flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)` }}>
-        <ClientAvatar client={client} size="md" tier={tier} />
-        <div className="flex-1 min-w-0 pt-1">
-          <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate">{client.client_name}</h3>
+      {/* Name + meta */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{client.client_name}</span>
+          {tier && <TierBadge tier={tier} size="sm" />}
+        </div>
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
           {client.business_type && (
-            <span className="inline-flex items-center gap-1 mt-1 text-xs rounded-full px-2 py-0.5 font-medium" style={{ backgroundColor: color + '18', color }}>
+            <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
               <Building2 className="h-3 w-3" />{client.business_type}
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button onClick={goEdit} title="Edit" className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"><Pencil className="h-3.5 w-3.5" /></button>
-          <button onClick={goDelete} title="Delete" className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+          {client.email && (
+            <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 truncate max-w-[200px]">
+              <Mail className="h-3 w-3 flex-shrink-0" />{client.email}
+            </span>
+          )}
+          {client.phone_number && (
+            <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
+              <Phone className="h-3 w-3 flex-shrink-0" />{client.phone_number}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Contact */}
-      <div className="px-4 py-2 flex flex-col gap-1 border-t dark:border-slate-700">
-        {client.email && <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 truncate"><Mail className="h-3 w-3 flex-shrink-0" />{client.email}</div>}
-        {client.phone_number && <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Phone className="h-3 w-3 flex-shrink-0" />{client.phone_number}</div>}
-        {!client.email && !client.phone_number && <p className="text-xs text-slate-300 dark:text-slate-600 italic">No contact info</p>}
-      </div>
-
-      {/* Revenue strip */}
-      <div className="px-4 py-3 flex items-center justify-between border-t dark:border-slate-700">
-        <div>
+      {/* Revenue + sales + completeness */}
+      <div className="hidden sm:flex items-center gap-5 flex-shrink-0">
+        <div className="text-right">
           <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">Revenue</p>
-          <p className="text-base font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalRevenue)}</p>
+          <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalRevenue)}</p>
         </div>
         <div className="text-right">
           <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">Sales</p>
-          <p className="text-base font-bold tabular-nums text-slate-800 dark:text-slate-100">{salesCount}</p>
+          <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{salesCount}</p>
+        </div>
+        <div className="w-16">
+          <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(pct * 100).toFixed(0)}%`, backgroundColor: scoreColor(pct) }} />
+          </div>
+          <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5 text-center">{score}/{total} profile</p>
         </div>
       </div>
 
-      {/* Completeness meter */}
-      <CompletenessBar client={client} />
-
-      {/* Hover CTA */}
-      <div className="max-h-0 group-hover:max-h-14 overflow-hidden transition-all duration-300 ease-out">
-        <Link
-          to={`/clients/${client.id}`}
-          onClick={e => e.stopPropagation()}
-          className="flex items-center justify-between px-4 py-2.5 text-sm font-medium"
-          style={{ backgroundColor: color, color: '#fff' }}
-        >
-          <span>View profile</span>
-          <ChevronRight className="h-4 w-4 opacity-80 transition-transform duration-200 group-hover:translate-x-0.5" />
-        </Link>
+      {/* Action buttons — fade in on hover */}
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        <button onClick={goEdit} title="Edit"
+          className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100">
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={goDelete} title="Delete"
+          className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+        <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400 transition-colors" />
       </div>
     </div>
   )
@@ -370,9 +347,9 @@ export default function ClientsPage() {
           {!search && <Link to="/clients/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline"><Plus className="h-3.5 w-3.5" /> Add your first client</Link>}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-xl border dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 shadow-sm">
           {filtered.map(client => (
-            <ClientCard key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} />
+            <ClientRow key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} />
           ))}
         </div>
       )}
