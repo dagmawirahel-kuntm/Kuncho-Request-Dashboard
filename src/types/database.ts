@@ -336,6 +336,7 @@ export interface Client {
   address: string | null
   notes: string | null
   receipt_vouched: boolean
+  logo_url: string | null
   created_at: string
   updated_at: string
 }

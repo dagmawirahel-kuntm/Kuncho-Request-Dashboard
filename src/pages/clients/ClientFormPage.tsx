@@ -59,8 +59,9 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
           address: record.address,
           notes: record.notes,
           receipt_vouched: record.receipt_vouched,
+          logo_url: record.logo_url,
         }
-      : { receipt_vouched: false }
+      : { receipt_vouched: false, logo_url: null }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -126,6 +127,10 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
 
       <Field label="Notes">
         <textarea rows={3} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value || null)} />
+      </Field>
+
+      <Field label="Logo URL (optional)">
+        <input type="url" className={inputCls} placeholder="https://example.com/logo.png" value={form.logo_url ?? ''} onChange={e => set('logo_url', e.target.value || null)} />
       </Field>
 
       <label className="flex items-center gap-2 cursor-pointer">

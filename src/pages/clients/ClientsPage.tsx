@@ -4,7 +4,7 @@ import { useMemo, useCallback, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Client } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { useClientLogo } from '@/hooks/useClientLogo'
+import { getClientLogoUrl } from '@/hooks/useClientLogo'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone } from 'lucide-react'
 
@@ -45,7 +45,7 @@ function scoreColor(pct: number) {
 export function ClientAvatar({ client, size = 'md' }: { client: Client; size?: 'sm' | 'md' | 'lg' }) {
   const color = clientColor(client.client_name)
   const initials = clientInitials(client.client_name)
-  const { data: logoUrl } = useClientLogo(client.client_name, client.email)
+  const logoUrl = getClientLogoUrl(client.logo_url, client.email)
   const [failed, setFailed] = useState(false)
 
   const dims = size === 'lg' ? 'h-20 w-20 text-3xl' : size === 'sm' ? 'h-9 w-9 text-xs' : 'h-14 w-14 text-lg'

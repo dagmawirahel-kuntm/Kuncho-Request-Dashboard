@@ -12,7 +12,7 @@ import {
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useToast } from '@/contexts/ToastContext'
 import { clientColor, clientInitials, profileScore } from './ClientsPage'
-import { useClientLogo } from '@/hooks/useClientLogo'
+import { getClientLogoUrl } from '@/hooks/useClientLogo'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(d: string | null) {
@@ -28,7 +28,7 @@ function fmtSize(b: number | null) {
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
 function ClientLogo({ client }: { client: Client }) {
-  const { data: logoUrl } = useClientLogo(client.client_name, client.email)
+  const logoUrl = getClientLogoUrl(client.logo_url, client.email)
   const [failed, setFailed] = useState(false)
 
   if (logoUrl && !failed) {
