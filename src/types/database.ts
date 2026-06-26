@@ -343,7 +343,7 @@ export interface Client {
 export type ClientInsert = Omit<Client, 'id' | 'created_at' | 'updated_at'>
 
 // ── Client attachments ────────────────────────────────────────────
-export type AttachmentCategory = 'receipt' | 'contract' | 'other'
+export type AttachmentCategory = 'receipt' | 'contract' | 'wht_receipt' | 'other'
 export interface ClientAttachment {
   id: string
   client_id: string
@@ -353,6 +353,8 @@ export interface ClientAttachment {
   mime_type: string | null
   category: AttachmentCategory
   notes: string | null
+  amount: number | null
+  sale_id: string | null
   uploaded_by: string | null
   created_at: string
 }
