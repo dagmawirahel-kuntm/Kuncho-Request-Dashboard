@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Account } from '@/types/database'
@@ -128,18 +128,34 @@ function AccountCard({
   const share = totalBalance > 0 ? Math.max(0, bal / totalBalance) : 0
   const isNegative = bal < 0
 
+  const goEdit = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    navigate(`/accounts/${account.id}/edit`)
+  }, [account.id, navigate])
+
+  const goDelete = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onDelete(account.id, account.account_name)
+  }, [account.id, account.account_name, onDelete])
+
   return (
-    <div
-      className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col cursor-pointer"
-      onClick={() => navigate(`/accounts/${account.id}`)}
-    >
+    /* Outer wrapper is position:relative so the full-card Link can be absolute */
+    <div className="relative rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col">
+
+      {/* Full-card navigation link — sits at z-0, covers everything */}
+      <Link
+        to={`/accounts/${account.id}`}
+        className="absolute inset-0 z-0"
+        aria-label={`Open ${account.account_name}`}
+      />
 
       {/* ── Branded header ─────────────────────────────────────────────────── */}
       <div
         className="relative overflow-hidden px-4 pt-4 pb-5"
         style={{ backgroundColor: entry.bg }}
       >
-        {/* Watermark logo — large, faded, behind everything */}
         {entry.logo && (
           <img
             src={entry.logo}
@@ -149,8 +165,6 @@ function AccountCard({
             style={{ opacity: 0.18, filter: 'brightness(10)' }}
           />
         )}
-
-        {/* Initials watermark for accounts without logo */}
         {!entry.logo && (
           <span
             className="pointer-events-none absolute -right-2 -bottom-4 select-none font-black leading-none"
@@ -161,16 +175,15 @@ function AccountCard({
           </span>
         )}
 
-        {/* Header content */}
+        {/* z-10 so content sits above the full-card link */}
         <div className="relative z-10 flex items-start justify-between gap-2">
-          {/* Logo badge */}
           <div className="flex items-center gap-3">
             {entry.logo ? (
               <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center p-1.5 shadow flex-shrink-0">
                 <img
                   src={entry.logo}
                   alt={account.account_name}
-                  className="h-full w-full object-contain"
+                  className="h-full w-full object-contain pointer-events-none"
                   onError={e => { (e.target as HTMLImageElement).parentElement!.style.backgroundColor = entry.bg }}
                 />
               </div>
@@ -182,7 +195,6 @@ function AccountCard({
                 {entry.initials}
               </div>
             )}
-
             <div>
               <h3 className="font-bold text-sm leading-tight" style={{ color: entry.fg }}>
                 {account.account_name}
@@ -195,19 +207,18 @@ function AccountCard({
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            <Link
-              to={`/accounts/${account.id}/edit`}
+          {/* Edit / Delete — z-20, above the card link */}
+          <div className="relative z-20 flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={goEdit}
               title="Edit"
               className="rounded p-1.5 hover:bg-white/20 transition-colors"
               style={{ color: entry.fg, opacity: 0.8 }}
-              onClick={e => e.stopPropagation()}
             >
               <Pencil className="h-3.5 w-3.5" />
-            </Link>
+            </button>
             <button
-              onClick={e => { e.stopPropagation(); onDelete(account.id, account.account_name) }}
+              onClick={goDelete}
               title="Delete"
               className="rounded p-1.5 hover:bg-white/20 transition-colors"
               style={{ color: entry.fg, opacity: 0.8 }}
@@ -218,13 +229,12 @@ function AccountCard({
         </div>
       </div>
 
-      {/* ── Balance body ────────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
+      {/* ── Balance body — z-10 so it's clickable via the overlay link ─────── */}
+      <div className="relative z-10 bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Balance</p>
         <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
           {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
         </p>
-
         {totalBalance > 0 && !isNegative && (
           <div className="mt-3">
             <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
@@ -240,8 +250,8 @@ function AccountCard({
         )}
       </div>
 
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 px-4 pb-4 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
+      {/* ── Footer — z-10 ──────────────────────────────────────────────────── */}
+      <div className="relative z-10 bg-white dark:bg-slate-800 px-4 pb-4 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
         {account.type && (
           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
             {account.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}
