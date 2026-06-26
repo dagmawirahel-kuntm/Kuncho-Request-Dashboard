@@ -7,13 +7,6 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone } from 'lucide-react'
 
-function getInitials(name: string) {
-  const words = name.trim().split(/\s+/)
-  return words.length >= 2
-    ? (words[0][0] + words[1][0]).toUpperCase()
-    : name.slice(0, 2).toUpperCase()
-}
-
 const PALETTE = [
   '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444',
   '#06B6D4', '#F97316', '#6366F1', '#EC4899', '#14B8A6',
@@ -23,6 +16,58 @@ function clientColor(name: string) {
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff
   return PALETTE[Math.abs(h) % PALETTE.length]
+}
+
+function getInitials(name: string) {
+  const words = name.trim().split(/\s+/)
+  return words.length >= 2 ? (words[0][0] + words[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
+}
+
+function emailDomain(email: string | null): string | null {
+  if (!email) return null
+  const parts = email.split('@')
+  return parts.length === 2 ? parts[1].toLowerCase() : null
+}
+
+function ClientAvatar({
+  client,
+  size = 'md',
+}: {
+  client: Client
+  size?: 'sm' | 'md' | 'lg'
+}) {
+  const color = clientColor(client.client_name)
+  const initials = getInitials(client.client_name)
+  const domain = emailDomain(client.email)
+  const [logoFailed, setLogoFailed] = useState(false)
+
+  const dims = size === 'lg' ? 'h-20 w-20 text-3xl' : size === 'sm' ? 'h-9 w-9 text-xs' : 'h-14 w-14 text-lg'
+  const radius = size === 'lg' ? 'rounded-2xl' : 'rounded-xl'
+
+  if (domain && !logoFailed) {
+    return (
+      <div
+        className={`${dims} ${radius} bg-white flex items-center justify-center flex-shrink-0 shadow-md overflow-hidden border border-slate-100 transition-all duration-300 group-hover:shadow-[0_0_20px_6px] group-hover:scale-110`}
+        style={{ '--glow': color + '44' } as React.CSSProperties}
+      >
+        <img
+          src={`https://logo.clearbit.com/${domain}`}
+          alt={client.client_name}
+          className="h-full w-full object-contain p-1.5"
+          onError={() => setLogoFailed(true)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`${dims} ${radius} flex items-center justify-center font-black flex-shrink-0 shadow-md transition-all duration-300 group-hover:scale-110 group-hover:brightness-110 group-hover:shadow-lg`}
+      style={{ backgroundColor: color, color: '#fff' }}
+    >
+      {initials}
+    </div>
+  )
 }
 
 function StatCard({ label, value, icon, sub }: { label: string; value: string; icon: React.ReactNode; sub?: string }) {
@@ -51,7 +96,6 @@ function ClientCard({
 }) {
   const navigate = useNavigate()
   const color = clientColor(client.client_name)
-  const initials = getInitials(client.client_name)
 
   const goEdit = useCallback((e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation()
@@ -69,29 +113,11 @@ function ClientCard({
       onClick={() => navigate(`/clients/${client.id}`)}
     >
       {/* Header */}
-      <div className="relative px-4 pt-5 pb-4 flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)` }}>
-        {/* Avatar */}
-        <div
-          className="h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-black flex-shrink-0 shadow-md transition-all duration-300 group-hover:shadow-[0_0_20px_6px] group-hover:scale-110"
-          style={{
-            backgroundColor: color,
-            color: '#fff',
-            boxShadow: undefined,
-          } as React.CSSProperties}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ref={(el: any) => {
-            if (el) {
-              el.style.setProperty('--glow-color', color + '55')
-            }
-          }}
-        >
-          <div
-            className="h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-black flex-shrink-0 shadow-md transition-all duration-300 group-hover:scale-110"
-            style={{ backgroundColor: color, color: '#fff' }}
-          >
-            {initials}
-          </div>
-        </div>
+      <div
+        className="relative px-4 pt-5 pb-4 flex items-start gap-3"
+        style={{ background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)` }}
+      >
+        <ClientAvatar client={client} size="md" />
 
         {/* Name + type */}
         <div className="flex-1 min-w-0 pt-1">
@@ -115,7 +141,7 @@ function ClientCard({
         </div>
       </div>
 
-      {/* Contact row */}
+      {/* Contact */}
       <div className="px-4 py-2 flex flex-col gap-1 border-t dark:border-slate-700">
         {client.email && (
           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 truncate">
@@ -135,7 +161,7 @@ function ClientCard({
       {/* Revenue strip */}
       <div className="px-4 py-3 flex items-center justify-between border-t dark:border-slate-700 flex-1">
         <div>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">Total Revenue</p>
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">Revenue</p>
           <p className="text-base font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalRevenue)}</p>
         </div>
         <div className="text-right">
@@ -144,12 +170,12 @@ function ClientCard({
         </div>
       </div>
 
-      {/* CTA — hidden until hover */}
+      {/* Hover CTA */}
       <div className="max-h-0 group-hover:max-h-14 overflow-hidden transition-all duration-300 ease-out">
         <Link
           to={`/clients/${client.id}`}
           onClick={e => e.stopPropagation()}
-          className="flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors"
+          className="flex items-center justify-between px-4 py-2.5 text-sm font-medium"
           style={{ backgroundColor: color, color: '#fff' }}
         >
           <span>View profile</span>
@@ -177,10 +203,7 @@ export default function ClientsPage() {
   const { data: salesStats = [] } = useQuery({
     queryKey: ['client-sales-stats'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('sales')
-        .select('client_id, amount')
-        .not('client_id', 'is', null)
+      const { data, error } = await supabase.from('sales').select('client_id, amount').not('client_id', 'is', null)
       if (error) throw error
       return data as { client_id: string; amount: number | null }[]
     },
@@ -207,11 +230,10 @@ export default function ClientsPage() {
     )
   }, [clients, search])
 
-  const totals = useMemo(() => {
-    const revenue = Object.values(statsMap).reduce((s, v) => s + v.revenue, 0)
-    const sales = Object.values(statsMap).reduce((s, v) => s + v.count, 0)
-    return { revenue, sales }
-  }, [statsMap])
+  const totals = useMemo(() => ({
+    revenue: Object.values(statsMap).reduce((s, v) => s + v.revenue, 0),
+    sales: Object.values(statsMap).reduce((s, v) => s + v.count, 0),
+  }), [statsMap])
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete client "${name}"? This cannot be undone.`)) return
@@ -224,28 +246,22 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Clients</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Client profiles and revenue history</p>
         </div>
-        <Link
-          to="/clients/new"
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
+        <Link to="/clients/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
           <Plus className="h-4 w-4" /> Add Client
         </Link>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Total Clients" value={String(clients.length)} icon={<Users className="h-5 w-5" />} />
         <StatCard label="Total Revenue" value={formatCurrency(totals.revenue)} icon={<TrendingUp className="h-5 w-5" />} />
         <StatCard label="Total Sales" value={String(totals.sales)} icon={<Building2 className="h-5 w-5" />} sub="across all clients" />
       </div>
 
-      {/* Search */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
         <input
@@ -257,7 +273,6 @@ export default function ClientsPage() {
         />
       </div>
 
-      {/* Grid */}
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
       ) : filtered.length === 0 ? (
