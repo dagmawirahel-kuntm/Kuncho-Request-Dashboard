@@ -6,7 +6,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Account } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard } from 'lucide-react'
+import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard, ChevronRight } from 'lucide-react'
 
 // ── Bank theme map ────────────────────────────────────────────────────────────
 // Keys are lowercase substrings matched against account_name (longest/most
@@ -141,15 +141,7 @@ function AccountCard({
   }, [account.id, account.account_name, onDelete])
 
   return (
-    /* Outer wrapper is position:relative so the full-card Link can be absolute */
-    <div className="relative rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col">
-
-      {/* Full-card navigation link — sits at z-0, covers everything */}
-      <Link
-        to={`/accounts/${account.id}`}
-        className="absolute inset-0 z-0"
-        aria-label={`Open ${account.account_name}`}
-      />
+    <div className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col">
 
       {/* ── Branded header ─────────────────────────────────────────────────── */}
       <div
@@ -175,8 +167,7 @@ function AccountCard({
           </span>
         )}
 
-        {/* z-10 so content sits above the full-card link */}
-        <div className="relative z-10 flex items-start justify-between gap-2">
+        <div className="relative flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
             {entry.logo ? (
               <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center p-1.5 shadow flex-shrink-0">
@@ -207,8 +198,8 @@ function AccountCard({
             </div>
           </div>
 
-          {/* Edit / Delete — z-20, above the card link */}
-          <div className="relative z-20 flex items-center gap-0.5 flex-shrink-0">
+          {/* Edit / Delete */}
+          <div className="flex items-center gap-0.5 flex-shrink-0">
             <button
               onClick={goEdit}
               title="Edit"
@@ -229,8 +220,8 @@ function AccountCard({
         </div>
       </div>
 
-      {/* ── Balance body — z-10 so it's clickable via the overlay link ─────── */}
-      <div className="relative z-10 bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
+      {/* ── Balance body ───────────────────────────────────────────────────── */}
+      <div className="bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Balance</p>
         <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
           {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
@@ -250,8 +241,8 @@ function AccountCard({
         )}
       </div>
 
-      {/* ── Footer — z-10 ──────────────────────────────────────────────────── */}
-      <div className="relative z-10 bg-white dark:bg-slate-800 px-4 pb-4 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <div className="bg-white dark:bg-slate-800 px-4 pb-3 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
         {account.type && (
           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
             {account.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}
@@ -265,6 +256,16 @@ function AccountCard({
           </span>
         )}
       </div>
+
+      {/* ── View transactions CTA ──────────────────────────────────────────── */}
+      <Link
+        to={`/accounts/${account.id}`}
+        className="flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors"
+        style={{ backgroundColor: entry.bg, color: entry.fg }}
+      >
+        <span>View transactions</span>
+        <ChevronRight className="h-4 w-4 opacity-80" />
+      </Link>
     </div>
   )
 }
