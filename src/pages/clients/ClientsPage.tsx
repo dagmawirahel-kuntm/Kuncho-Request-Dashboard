@@ -55,12 +55,13 @@ export function computeClientTiers(
   return result
 }
 
-const TIER_STYLES = {
-  gold:   { label: 'Gold',   Icon: Trophy, bg: 'linear-gradient(135deg,#F59E0B,#D97706)', glow: 'rgba(245,158,11,0.5)' },
-  silver: { label: 'Silver', Icon: Award,  bg: 'linear-gradient(135deg,#94A3B8,#64748B)', glow: 'rgba(100,116,139,0.4)' },
-  bronze: { label: 'Bronze', Icon: Medal,  bg: 'linear-gradient(135deg,#CD7F32,#92400E)', glow: 'rgba(180,100,40,0.45)' },
+export const TIER_STYLES = {
+  gold:   { label: 'Gold',   Icon: Trophy, bg: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#F59E0B', glow: 'rgba(245,158,11,0.5)',  shadow: 'rgba(245,158,11,0.32)' },
+  silver: { label: 'Silver', Icon: Award,  bg: 'linear-gradient(135deg,#94A3B8,#64748B)', color: '#94A3B8', glow: 'rgba(100,116,139,0.4)', shadow: 'rgba(148,163,184,0.26)' },
+  bronze: { label: 'Bronze', Icon: Medal,  bg: 'linear-gradient(135deg,#CD7F32,#92400E)', color: '#CD7F32', glow: 'rgba(180,100,40,0.45)', shadow: 'rgba(205,127,50,0.3)'  },
 }
 
+/** Text + icon pill — use for prominent display (detail hero, etc.) */
 export function TierBadge({ tier, size = 'md' }: { tier: ClientTier; size?: 'sm' | 'md' | 'lg' }) {
   if (!tier) return null
   const { label, Icon, bg, glow } = TIER_STYLES[tier]
@@ -72,6 +73,21 @@ export function TierBadge({ tier, size = 'md' }: { tier: ClientTier; size?: 'sm'
   return (
     <span className={cls} style={{ background: bg, boxShadow: `0 0 10px 2px ${glow}` }}>
       <Icon className={iconCls} />{label}
+    </span>
+  )
+}
+
+/** Floating circular icon badge — sits on the corner of avatars */
+export function TierIconBadge({ tier, size = 'md' }: { tier: ClientTier; size?: 'sm' | 'md' | 'lg' }) {
+  if (!tier) return null
+  const { Icon, bg, glow } = TIER_STYLES[tier]
+  const dims  = size === 'lg' ? 'h-8 w-8'    : size === 'sm' ? 'h-4 w-4'     : 'h-6 w-6'
+  const border= size === 'lg' ? 'border-[2.5px]' : 'border-2'
+  const icon  = size === 'lg' ? 'h-4 w-4'    : size === 'sm' ? 'h-2 w-2'     : 'h-3 w-3'
+  return (
+    <span className={`${dims} ${border} rounded-full flex items-center justify-center border-white dark:border-slate-800 shadow-md`}
+      style={{ background: bg, boxShadow: `0 0 8px 2px ${glow}` }}>
+      <Icon className={`${icon} text-white`} />
     </span>
   )
 }
@@ -105,7 +121,7 @@ function scoreColor(pct: number) {
 }
 
 // ── Logo avatar ────────────────────────────────────────────────────────────────
-export function ClientAvatar({ client, size = 'md' }: { client: Client; size?: 'sm' | 'md' | 'lg' }) {
+export function ClientAvatar({ client, size = 'md', tier }: { client: Client; size?: 'sm' | 'md' | 'lg'; tier?: ClientTier }) {
   const color = clientColor(client.client_name)
   const initials = clientInitials(client.client_name)
   const logoUrl = getClientLogoUrl(client.logo_url, client.email)
@@ -113,27 +129,29 @@ export function ClientAvatar({ client, size = 'md' }: { client: Client; size?: '
 
   const dims = size === 'lg' ? 'h-20 w-20 text-3xl' : size === 'sm' ? 'h-9 w-9 text-xs' : 'h-14 w-14 text-lg'
   const radius = size === 'lg' ? 'rounded-2xl' : 'rounded-xl'
+  const badgePos = size === 'lg' ? '-bottom-2 -right-2' : size === 'sm' ? '-bottom-1 -right-1' : '-bottom-1.5 -right-1.5'
 
-  if (logoUrl && !failed) {
-    return (
-      <div className={`${dims} ${radius} bg-white flex-shrink-0 shadow-md overflow-hidden border border-slate-100 dark:border-slate-600 transition-all duration-300 group-hover:shadow-[0_0_20px_6px] group-hover:scale-110 flex items-center justify-center`}
-        style={{ '--glow': color + '44' } as React.CSSProperties}
-      >
-        <img
-          src={logoUrl}
-          alt={client.client_name}
-          className="h-full w-full object-contain p-1.5"
-          onError={() => setFailed(true)}
-        />
-      </div>
-    )
-  }
-  return (
-    <div
-      className={`${dims} ${radius} flex items-center justify-center font-black text-white flex-shrink-0 shadow-md transition-all duration-300 group-hover:scale-110 group-hover:brightness-110`}
-      style={{ backgroundColor: color }}
+  const inner = logoUrl && !failed ? (
+    <div className={`${dims} ${radius} bg-white shadow-md overflow-hidden border border-slate-100 dark:border-slate-600 transition-all duration-300 group-hover:shadow-[0_0_20px_6px] group-hover:scale-110 flex items-center justify-center`}
+      style={{ '--glow': color + '44' } as React.CSSProperties}
     >
+      <img src={logoUrl} alt={client.client_name} className="h-full w-full object-contain p-1.5" onError={() => setFailed(true)} />
+    </div>
+  ) : (
+    <div className={`${dims} ${radius} flex items-center justify-center font-black text-white shadow-md transition-all duration-300 group-hover:scale-110 group-hover:brightness-110`}
+      style={{ backgroundColor: color }}>
       {initials}
+    </div>
+  )
+
+  return (
+    <div className="relative flex-shrink-0">
+      {inner}
+      {tier && (
+        <span className={`absolute ${badgePos} z-10`}>
+          <TierIconBadge tier={tier} size={size === 'lg' ? 'lg' : size === 'sm' ? 'sm' : 'md'} />
+        </span>
+      )}
     </div>
   )
 }
@@ -187,19 +205,27 @@ function ClientCard({
   const goEdit = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); navigate(`/clients/${client.id}/edit`) }, [client.id, navigate])
   const goDelete = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDelete(client.id, client.client_name) }, [client.id, client.client_name, onDelete])
 
+  const tierStyle: React.CSSProperties = tier ? {
+    outline: `1.5px solid ${TIER_STYLES[tier].color}`,
+    filter: `drop-shadow(0 0 10px ${TIER_STYLES[tier].shadow})`,
+  } : {}
+
   return (
     <div
-      className="group rounded-xl overflow-hidden border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm hover:shadow-lg active:scale-[0.98] transition-all duration-150 flex flex-col cursor-pointer"
+      className="group rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-sm hover:shadow-lg active:scale-[0.98] transition-all duration-150 flex flex-col cursor-pointer"
+      style={tier ? tierStyle : { border: '1px solid', borderColor: 'rgb(226 232 240)' }}
       onClick={() => navigate(`/clients/${client.id}`)}
     >
+      {/* Tier accent strip */}
+      {tier && (
+        <div className="h-[3px] w-full flex-shrink-0" style={{ background: TIER_STYLES[tier].bg }} />
+      )}
+
       {/* Header */}
-      <div className="relative px-4 pt-5 pb-4 flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)` }}>
-        <ClientAvatar client={client} size="md" />
+      <div className="relative px-4 pt-4 pb-4 flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)` }}>
+        <ClientAvatar client={client} size="md" tier={tier} />
         <div className="flex-1 min-w-0 pt-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate">{client.client_name}</h3>
-            <TierBadge tier={tier} size="sm" />
-          </div>
+          <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate">{client.client_name}</h3>
           {client.business_type && (
             <span className="inline-flex items-center gap-1 mt-1 text-xs rounded-full px-2 py-0.5 font-medium" style={{ backgroundColor: color + '18', color }}>
               <Building2 className="h-3 w-3" />{client.business_type}

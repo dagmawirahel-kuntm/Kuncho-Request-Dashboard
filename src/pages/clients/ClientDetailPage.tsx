@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useToast } from '@/contexts/ToastContext'
-import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge } from './ClientsPage'
+import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge, TierIconBadge, TIER_STYLES } from './ClientsPage'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -36,20 +36,28 @@ function daysAgo(dateStr: string | null): number | null {
 }
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
-function ClientLogo({ client }: { client: Client }) {
+function ClientLogo({ client, tier }: { client: Client; tier: import('./ClientsPage').ClientTier }) {
   const logoUrl = getClientLogoUrl(client.logo_url, client.email)
   const [failed, setFailed] = useState(false)
 
-  if (logoUrl && !failed) {
-    return (
-      <div className="h-20 w-20 rounded-2xl bg-white/20 border-2 border-white/40 overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg">
-        <img src={logoUrl} alt={client.client_name} className="h-full w-full object-contain p-2" onError={() => setFailed(true)} />
-      </div>
-    )
-  }
-  return (
+  const avatar = logoUrl && !failed ? (
+    <div className="h-20 w-20 rounded-2xl bg-white/20 border-2 border-white/40 overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg">
+      <img src={logoUrl} alt={client.client_name} className="h-full w-full object-contain p-2" onError={() => setFailed(true)} />
+    </div>
+  ) : (
     <div className="h-20 w-20 rounded-2xl bg-white/20 border-2 border-white/40 flex items-center justify-center text-3xl font-black text-white flex-shrink-0 shadow-lg">
       {clientInitials(client.client_name)}
+    </div>
+  )
+
+  return (
+    <div className="relative flex-shrink-0">
+      {avatar}
+      {tier && (
+        <span className="absolute -bottom-2 -right-2 z-10">
+          <TierIconBadge tier={tier} size="lg" />
+        </span>
+      )}
     </div>
   )
 }
@@ -704,13 +712,25 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Hero */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)` }}>
+      <div className="rounded-2xl overflow-hidden"
+        style={{
+          background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
+          ...(tier ? {
+            outline: `2px solid ${TIER_STYLES[tier].color}`,
+            boxShadow: `0 0 0 2px ${TIER_STYLES[tier].color}, 0 8px 32px ${TIER_STYLES[tier].shadow}`,
+          } : {}),
+        }}
+      >
+        {/* Tier accent strip */}
+        {tier && (
+          <div className="h-1 w-full" style={{ background: TIER_STYLES[tier].bg }} />
+        )}
         <div className="relative px-6 py-7 overflow-hidden">
           <span className="pointer-events-none select-none absolute -right-4 -bottom-4 font-black leading-none opacity-[0.1] text-white" style={{ fontSize: '10rem' }} aria-hidden>
             {clientInitials(client.client_name)}
           </span>
           <div className="relative z-10 flex items-center gap-5">
-            <ClientLogo client={client} />
+            <ClientLogo client={client} tier={tier} />
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-black text-white leading-tight">{client.client_name}</h1>
