@@ -128,36 +128,15 @@ export default function AccountDetailPage() {
     enabled: !!id,
   })
 
-  // Expenses linked to this account
-  // Strategy: try account_id first; also find via bank_ref codes extracted
-  // from transfer notes (works when migration sets bank_ref but not account_id yet)
+  // Expenses paid through this account (account_id is set by the bank import migration)
   const { data: expenses = [], isLoading: loadingExpenses, error: expensesError } = useQuery({
     queryKey: ['account-expenses', id],
     queryFn: async () => {
-      // Step 1: get FT ref codes from this account's transfer notes
-      const { data: txNotes } = await supabase
-        .from('transfers')
-        .select('notes')
-        .or(`from_account_id.eq.${id},to_account_id.eq.${id}`)
-
-      const ftCodes = (txNotes ?? [])
-        .flatMap(t => {
-          const m = t.notes?.match(/\(ref:\s*(FT[A-Z0-9]+)\)/)
-          return m ? [m[1]] : []
-        })
-        .filter(Boolean)
-
-      // Step 2: query expenses — match by account_id OR bank_ref IN ftCodes
-      const select = '*, vendors(vendor_name), projects(project_name), categories(category_name)'
-      let q = supabase.from('expenses').select(select).order('date', { ascending: false })
-
-      if (ftCodes.length > 0) {
-        q = q.or(`account_id.eq.${id},bank_ref.in.(${ftCodes.join(',')})`)
-      } else {
-        q = q.eq('account_id', id!)
-      }
-
-      const { data, error } = await q
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*, vendors(vendor_name), projects(project_name), categories(category_name)')
+        .eq('account_id', id!)
+        .order('date', { ascending: false })
       if (error) throw error
       return (data ?? []) as (Expense & { vendors: any; projects: any; categories: any })[]
     },
@@ -377,7 +356,7 @@ export default function AccountDetailPage() {
               <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
               <p className="text-sm text-slate-500 dark:text-slate-400">No expenses linked to this account.</p>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                Run migration 013 in Supabase to link CBE-paid expenses to this account.
+                Expenses appear here once their payment is recorded against this account.
               </p>
             </div>
           ) : (
