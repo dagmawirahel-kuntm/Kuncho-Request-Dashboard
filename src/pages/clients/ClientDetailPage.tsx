@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import type { Client, Sale, ClientAttachment, AttachmentCategory, Transfer } from '@/types/database'
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useToast } from '@/contexts/ToastContext'
-import { clientColor, clientInitials, profileScore } from './ClientsPage'
+import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge } from './ClientsPage'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -592,6 +592,38 @@ export default function ClientDetailPage() {
     },
   })
 
+  // Shared cache with ClientsPage — used to compute relative tier ranking
+  const { data: allSalesStats = [] } = useQuery({
+    queryKey: ['client-sales-stats'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('sales').select('client_id, amount, sales_status').not('client_id', 'is', null)
+      if (error) throw error
+      return data as { client_id: string; amount: number | null; sales_status: string | null }[]
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+  const { data: allClientIds = [] } = useQuery({
+    queryKey: ['clients-id-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id')
+      if (error) throw error
+      return (data as { id: string }[]).map(c => c.id)
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const tier = useMemo(() => {
+    if (!client || allClientIds.length === 0) return null
+    const m: Record<string, { count: number; paidRevenue: number }> = {}
+    for (const s of allSalesStats) {
+      if (!s.client_id) continue
+      if (!m[s.client_id]) m[s.client_id] = { count: 0, paidRevenue: 0 }
+      m[s.client_id].count++
+      if (s.sales_status === 'Paid') m[s.client_id].paidRevenue += Number(s.amount ?? 0)
+    }
+    return computeClientTiers(m, allClientIds)[client.id] ?? null
+  }, [allSalesStats, allClientIds, client])
+
   async function markRefunded(saleId: string) {
     setRefunding(saleId)
     const { error } = await supabase.from('sales').update({ sales_status: 'Refunded' }).eq('id', saleId)
@@ -680,7 +712,10 @@ export default function ClientDetailPage() {
           <div className="relative z-10 flex items-center gap-5">
             <ClientLogo client={client} />
             <div>
-              <h1 className="text-2xl font-black text-white leading-tight">{client.client_name}</h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl font-black text-white leading-tight">{client.client_name}</h1>
+                <TierBadge tier={tier} size="lg" />
+              </div>
               {client.business_type && (
                 <div className="flex items-center gap-1.5 mt-1"><Building2 className="h-3.5 w-3.5 text-white/70" /><span className="text-sm text-white/80">{client.business_type}</span></div>
               )}

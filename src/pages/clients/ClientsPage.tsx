@@ -6,13 +6,76 @@ import type { Client } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone, Trophy, Award, Medal } from 'lucide-react'
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 const PALETTE = [
   '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444',
   '#06B6D4', '#F97316', '#6366F1', '#EC4899', '#14B8A6',
 ]
+// ── Tier system ───────────────────────────────────────────────────────────────
+export type ClientTier = 'gold' | 'silver' | 'bronze' | null
+
+/**
+ * Assigns tiers relative to the entire client base so thresholds shift
+ * automatically as paid amounts change.
+ * Score = 75% normalised paid revenue + 25% normalised engagement count.
+ * Gold: top 15% (min 1) · Silver: next 25% (min 1) · Bronze: any remaining active client
+ */
+export function computeClientTiers(
+  statsMap: Record<string, { count: number; paidRevenue: number }>,
+  clientIds: string[],
+): Record<string, ClientTier> {
+  const entries = clientIds.map(id => ({
+    id,
+    paidRevenue: statsMap[id]?.paidRevenue ?? 0,
+    count:       statsMap[id]?.count       ?? 0,
+  }))
+
+  const result: Record<string, ClientTier> = {}
+  const active = entries.filter(e => e.paidRevenue > 0 || e.count > 0)
+  entries.filter(e => e.paidRevenue === 0 && e.count === 0).forEach(e => { result[e.id] = null })
+
+  const n = active.length
+  if (n === 0) return result
+
+  const maxRevenue = Math.max(...active.map(e => e.paidRevenue), 1)
+  const maxCount   = Math.max(...active.map(e => e.count), 1)
+  const score = (e: typeof active[0]) =>
+    (e.paidRevenue / maxRevenue) * 0.75 + (e.count / maxCount) * 0.25
+
+  const sorted = [...active].sort((a, b) => score(b) - score(a))
+  const goldCutoff   = Math.max(1, Math.ceil(n * 0.15))
+  const silverCutoff = Math.max(2, Math.ceil(n * 0.40))
+
+  sorted.forEach((e, idx) => {
+    const rank = idx + 1
+    result[e.id] = rank <= goldCutoff ? 'gold' : rank <= silverCutoff ? 'silver' : 'bronze'
+  })
+  return result
+}
+
+const TIER_STYLES = {
+  gold:   { label: 'Gold',   Icon: Trophy, bg: 'linear-gradient(135deg,#F59E0B,#D97706)', glow: 'rgba(245,158,11,0.5)' },
+  silver: { label: 'Silver', Icon: Award,  bg: 'linear-gradient(135deg,#94A3B8,#64748B)', glow: 'rgba(100,116,139,0.4)' },
+  bronze: { label: 'Bronze', Icon: Medal,  bg: 'linear-gradient(135deg,#CD7F32,#92400E)', glow: 'rgba(180,100,40,0.45)' },
+}
+
+export function TierBadge({ tier, size = 'md' }: { tier: ClientTier; size?: 'sm' | 'md' | 'lg' }) {
+  if (!tier) return null
+  const { label, Icon, bg, glow } = TIER_STYLES[tier]
+  const cls =
+    size === 'lg' ? 'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold text-white' :
+    size === 'sm' ? 'flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white' :
+                   'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold text-white'
+  const iconCls = size === 'lg' ? 'h-4 w-4' : size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3'
+  return (
+    <span className={cls} style={{ background: bg, boxShadow: `0 0 10px 2px ${glow}` }}>
+      <Icon className={iconCls} />{label}
+    </span>
+  )
+}
+
 export function clientColor(name: string) {
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff
@@ -114,9 +177,9 @@ function StatCard({ label, value, icon, sub }: { label: string; value: string; i
 
 // ── Client card ────────────────────────────────────────────────────────────────
 function ClientCard({
-  client, salesCount, totalRevenue, onDelete,
+  client, salesCount, totalRevenue, tier, onDelete,
 }: {
-  client: Client; salesCount: number; totalRevenue: number; onDelete: (id: string, name: string) => void
+  client: Client; salesCount: number; totalRevenue: number; tier: ClientTier; onDelete: (id: string, name: string) => void
 }) {
   const navigate = useNavigate()
   const color = clientColor(client.client_name)
@@ -133,7 +196,10 @@ function ClientCard({
       <div className="relative px-4 pt-5 pb-4 flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)` }}>
         <ClientAvatar client={client} size="md" />
         <div className="flex-1 min-w-0 pt-1">
-          <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate">{client.client_name}</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate">{client.client_name}</h3>
+            <TierBadge tier={tier} size="sm" />
+          </div>
           {client.business_type && (
             <span className="inline-flex items-center gap-1 mt-1 text-xs rounded-full px-2 py-0.5 font-medium" style={{ backgroundColor: color + '18', color }}>
               <Building2 className="h-3 w-3" />{client.business_type}
@@ -202,22 +268,28 @@ export default function ClientsPage() {
   const { data: salesStats = [] } = useQuery({
     queryKey: ['client-sales-stats'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('sales').select('client_id, amount').not('client_id', 'is', null)
+      const { data, error } = await supabase.from('sales').select('client_id, amount, sales_status').not('client_id', 'is', null)
       if (error) throw error
-      return data as { client_id: string; amount: number | null }[]
+      return data as { client_id: string; amount: number | null; sales_status: string | null }[]
     },
   })
 
   const statsMap = useMemo(() => {
-    const m: Record<string, { count: number; revenue: number }> = {}
+    const m: Record<string, { count: number; revenue: number; paidRevenue: number }> = {}
     for (const s of salesStats) {
       if (!s.client_id) continue
-      if (!m[s.client_id]) m[s.client_id] = { count: 0, revenue: 0 }
+      if (!m[s.client_id]) m[s.client_id] = { count: 0, revenue: 0, paidRevenue: 0 }
       m[s.client_id].count++
       m[s.client_id].revenue += Number(s.amount ?? 0)
+      if (s.sales_status === 'Paid') m[s.client_id].paidRevenue += Number(s.amount ?? 0)
     }
     return m
   }, [salesStats])
+
+  const tiersMap = useMemo(
+    () => computeClientTiers(statsMap, clients.map(c => c.id)),
+    [statsMap, clients],
+  )
 
   const filtered = useMemo(() => {
     if (!search.trim()) return clients
@@ -274,7 +346,7 @@ export default function ClientsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map(client => (
-            <ClientCard key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} onDelete={handleDelete} />
+            <ClientCard key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} />
           ))}
         </div>
       )}
