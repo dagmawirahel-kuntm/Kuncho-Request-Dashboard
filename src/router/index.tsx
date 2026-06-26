@@ -24,6 +24,7 @@ import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import AccountsPage from '@/pages/accounts/AccountsPage'
 import AccountFormPage from '@/pages/accounts/AccountFormPage'
+import AccountDetailPage from '@/pages/accounts/AccountDetailPage'
 import TransfersPage from '@/pages/transfers/TransfersPage'
 import TransferFormPage from '@/pages/transfers/TransferFormPage'
 import PLReportPage from '@/pages/reports/PLReportPage'
@@ -105,6 +106,7 @@ export const router = createBrowserRouter([
               { path: 'finance', element: <FinanceDashboardPage /> },
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'accounts/new', element: <AccountFormPage /> },
+              { path: 'accounts/:id', element: <AccountDetailPage /> },
               { path: 'accounts/:id/edit', element: <AccountFormPage /> },
               { path: 'transfers', element: <TransfersPage /> },
               { path: 'transfers/new', element: <TransferFormPage /> },

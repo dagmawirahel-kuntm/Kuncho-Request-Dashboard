@@ -1,12 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Account } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard } from 'lucide-react'
+import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard, ChevronRight } from 'lucide-react'
 
 // ── Bank theme map ────────────────────────────────────────────────────────────
 // Keys are lowercase substrings matched against account_name (longest/most
@@ -122,10 +122,23 @@ function AccountCard({
   totalBalance: number
   onDelete: (id: string, name: string) => void
 }) {
+  const navigate = useNavigate()
   const entry = getBankEntry(account.account_name)
   const bal = balance ?? 0
   const share = totalBalance > 0 ? Math.max(0, bal / totalBalance) : 0
   const isNegative = bal < 0
+
+  const goEdit = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    navigate(`/accounts/${account.id}/edit`)
+  }, [account.id, navigate])
+
+  const goDelete = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onDelete(account.id, account.account_name)
+  }, [account.id, account.account_name, onDelete])
 
   return (
     <div className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg transition-shadow flex flex-col">
@@ -135,7 +148,6 @@ function AccountCard({
         className="relative overflow-hidden px-4 pt-4 pb-5"
         style={{ backgroundColor: entry.bg }}
       >
-        {/* Watermark logo — large, faded, behind everything */}
         {entry.logo && (
           <img
             src={entry.logo}
@@ -145,8 +157,6 @@ function AccountCard({
             style={{ opacity: 0.18, filter: 'brightness(10)' }}
           />
         )}
-
-        {/* Initials watermark for accounts without logo */}
         {!entry.logo && (
           <span
             className="pointer-events-none absolute -right-2 -bottom-4 select-none font-black leading-none"
@@ -157,16 +167,14 @@ function AccountCard({
           </span>
         )}
 
-        {/* Header content */}
-        <div className="relative z-10 flex items-start justify-between gap-2">
-          {/* Logo badge */}
+        <div className="relative flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
             {entry.logo ? (
               <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center p-1.5 shadow flex-shrink-0">
                 <img
                   src={entry.logo}
                   alt={account.account_name}
-                  className="h-full w-full object-contain"
+                  className="h-full w-full object-contain pointer-events-none"
                   onError={e => { (e.target as HTMLImageElement).parentElement!.style.backgroundColor = entry.bg }}
                 />
               </div>
@@ -178,7 +186,6 @@ function AccountCard({
                 {entry.initials}
               </div>
             )}
-
             <div>
               <h3 className="font-bold text-sm leading-tight" style={{ color: entry.fg }}>
                 {account.account_name}
@@ -191,18 +198,18 @@ function AccountCard({
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Edit / Delete */}
           <div className="flex items-center gap-0.5 flex-shrink-0">
-            <Link
-              to={`/accounts/${account.id}/edit`}
+            <button
+              onClick={goEdit}
               title="Edit"
               className="rounded p-1.5 hover:bg-white/20 transition-colors"
               style={{ color: entry.fg, opacity: 0.8 }}
             >
               <Pencil className="h-3.5 w-3.5" />
-            </Link>
+            </button>
             <button
-              onClick={() => onDelete(account.id, account.account_name)}
+              onClick={goDelete}
               title="Delete"
               className="rounded p-1.5 hover:bg-white/20 transition-colors"
               style={{ color: entry.fg, opacity: 0.8 }}
@@ -219,7 +226,6 @@ function AccountCard({
         <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
           {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
         </p>
-
         {totalBalance > 0 && !isNegative && (
           <div className="mt-3">
             <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
@@ -236,7 +242,7 @@ function AccountCard({
       </div>
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 px-4 pb-4 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
+      <div className="bg-white dark:bg-slate-800 px-4 pb-3 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
         {account.type && (
           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
             {account.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}
@@ -250,6 +256,16 @@ function AccountCard({
           </span>
         )}
       </div>
+
+      {/* ── View transactions CTA ──────────────────────────────────────────── */}
+      <Link
+        to={`/accounts/${account.id}`}
+        className="flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors"
+        style={{ backgroundColor: entry.bg, color: entry.fg }}
+      >
+        <span>View transactions</span>
+        <ChevronRight className="h-4 w-4 opacity-80" />
+      </Link>
     </div>
   )
 }
