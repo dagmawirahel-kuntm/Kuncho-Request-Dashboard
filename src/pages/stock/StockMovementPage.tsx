@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import JsBarcode from 'jsbarcode'
@@ -8,7 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   ArrowLeft, Search, QrCode, Hash, TrendingUp, TrendingDown,
-  Package, Wrench, ChevronRight, Check, X,
+  Package, Wrench, ChevronRight, Printer, X,
 } from 'lucide-react'
 
 // ── Lookup mode ────────────────────────────────────────────────────────────────
@@ -90,6 +90,7 @@ export default function StockMovementPage() {
   const [unitPrice, setUnitPrice]   = useState('')
   const [destination, setDestination] = useState<'warehouse' | 'site'>('warehouse')
   const [submitting, setSubmitting] = useState(false)
+  const [printItem, setPrintItem]   = useState<StockItem | null>(null)
 
   // ── All stock items for search ──────────────────────────────────────────────
   const { data: allItems = [] } = useQuery({
@@ -175,6 +176,13 @@ export default function StockMovementPage() {
           notes:         notes.trim() || null,
         }])
         if (error) throw error
+        toast('Stock receipt recorded', 'success')
+        // Show barcode print modal for opening balance — stock manager can label the physical item
+        if (receiptType === 'opening_balance' && selectedItem.item_code) {
+          setPrintItem(selectedItem)
+        } else {
+          navigate(`/stock/${selectedItem.id}`)
+        }
       } else {
         const { error } = await supabase.from('stock_issues').insert([{
           stock_item_id:  selectedItem.id,
@@ -185,9 +193,9 @@ export default function StockMovementPage() {
           notes:          notes.trim() || null,
         }])
         if (error) throw error
+        toast('Stock issue recorded', 'success')
+        navigate(`/stock/${selectedItem.id}`)
       }
-      toast(`Stock ${direction === 'in' ? 'receipt' : 'issue'} recorded`, 'success')
-      navigate(`/stock/${selectedItem.id}`)
     } catch (err: any) {
       toast(err.message ?? 'Failed to save', 'error')
     } finally {
@@ -197,6 +205,14 @@ export default function StockMovementPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
+    <>
+    {/* ── Barcode print modal (opening balance) ─────────────────── */}
+    {printItem && (
+      <BarcodePrintModal
+        item={printItem}
+        onDone={() => navigate(`/stock/${printItem.id}`)}
+      />
+    )}
     <div className="max-w-lg mx-auto space-y-5">
 
       {/* Header */}
@@ -557,5 +573,86 @@ export default function StockMovementPage() {
         </form>
       )}
     </div>
+    </>
+  )
+}
+
+// ── Barcode print modal ────────────────────────────────────────────────────────
+function BarcodePrintModal({ item, onDone }: { item: StockItem; onDone: () => void }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  useEffect(() => {
+    if (svgRef.current && item.item_code) {
+      try {
+        JsBarcode(svgRef.current, item.item_code, {
+          format: 'CODE128',
+          lineColor: '#1e293b',
+          background: '#ffffff',
+          displayValue: true,
+          fontSize: 14,
+          textMargin: 5,
+          margin: 10,
+          width: 2,
+          height: 60,
+          fontOptions: 'bold',
+        })
+      } catch { /* ignore */ }
+    }
+  }, [item.item_code])
+
+  return (
+    <>
+      {/* Print-only barcode label — full page when printing */}
+      <div className="hidden print:flex flex-col items-center justify-center min-h-screen gap-3 p-8">
+        <p className="text-lg font-bold">{item.item_name}</p>
+        {item.amharic_name && <p className="text-base">{item.amharic_name}</p>}
+        <svg ref={svgRef} />
+        <p className="text-sm font-mono">{item.item_code}</p>
+        <p className="text-xs text-gray-500 mt-2">Kuncho Trading PLC — Stock Label</p>
+      </div>
+
+      {/* Screen modal */}
+      <div className="print:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-sm w-full overflow-hidden">
+          {/* Header */}
+          <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-slate-800 dark:text-slate-100">Print Stock Label</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Opening balance recorded — print & attach to the item</p>
+            </div>
+            <button
+              onClick={onDone}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Barcode preview */}
+          <div className="px-5 py-6 flex flex-col items-center gap-3 bg-white">
+            <p className="text-sm font-semibold text-slate-800 text-center">{item.item_name}</p>
+            {item.amharic_name && <p className="text-xs text-slate-500">{item.amharic_name}</p>}
+            <svg ref={svgRef} className="max-w-full" />
+            <p className="text-xs font-mono text-slate-500">{item.item_code}</p>
+          </div>
+
+          {/* Actions */}
+          <div className="px-5 py-4 border-t dark:border-slate-700 flex gap-3">
+            <button
+              onClick={onDone}
+              className="flex-1 rounded-xl border dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50"
+            >
+              Skip, go to item
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand/90"
+            >
+              <Printer className="h-4 w-4" /> Print Label
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }

@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { ToolUnit, ToolCondition } from '@/types/database'
-import { Search, Wrench, CheckCircle2, AlertCircle, XCircle, Plus } from 'lucide-react'
+import { Search, Wrench, CheckCircle2, AlertCircle, XCircle, ChevronRight, ArrowRightLeft } from 'lucide-react'
 
 const CONDITION_STYLES: Record<ToolCondition, { label: string; cls: string; icon: React.ReactNode }> = {
   good:    { label: 'Good',    cls: 'text-green-700 bg-green-50 dark:bg-green-900/30',  icon: <CheckCircle2 className="h-3 w-3" /> },
@@ -18,6 +18,7 @@ type ToolUnitWithMeta = ToolUnit & {
 }
 
 export default function StockToolsPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'available' | 'checked_out'>('all')
 
@@ -64,7 +65,12 @@ export default function StockToolsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Tool Inventory</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Individual tool units, asset codes, and check-out status</p>
         </div>
-        <span className="text-xs text-slate-400 italic">Tool registration coming — add from stock item detail</span>
+        <Link
+          to="/stock/movement/new"
+          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
+        >
+          <ArrowRightLeft className="h-4 w-4" /> Record Movement
+        </Link>
       </div>
 
       {/* Stats */}
@@ -116,7 +122,11 @@ export default function StockToolsPage() {
           {filtered.map(tool => {
             const cond = CONDITION_STYLES[tool.condition]
             return (
-              <div key={tool.id} className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+              <div
+                key={tool.id}
+                className="group flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
+                onClick={() => navigate(`/stock/${tool.stock_item_id}`)}
+              >
                 <div className={`flex-shrink-0 rounded-lg p-2 ${tool.current_holder_id ? 'bg-amber-50 text-amber-500' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
                   <Wrench className="h-4 w-4" />
                 </div>
@@ -136,6 +146,7 @@ export default function StockToolsPage() {
                     }
                   </div>
                 </div>
+                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-400 flex-shrink-0 transition-colors" />
               </div>
             )
           })}

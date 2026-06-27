@@ -4,7 +4,30 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { StockItem, StockMainCategory, WarehouseZone } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2, Search, Warehouse, Wrench, Package, Flame, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Warehouse, Wrench, Package, Flame, ChevronRight, AlertTriangle } from 'lucide-react'
+
+// ── Quality grade → badge colour ───────────────────────────────────────────────
+function qualityTheme(grade: string | null): { cls: string; label: string } | null {
+  if (!grade) return null
+  const g = grade.toLowerCase()
+  if (/^a|excellent|premium|first|grade.?a/i.test(g))  return { cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', label: grade }
+  if (/^b|good|standard|second|grade.?b/i.test(g))      return { cls: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',          label: grade }
+  if (/^c|fair|average|third|grade.?c/i.test(g))         return { cls: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',       label: grade }
+  if (/^d|poor|low|reject|damaged|grade.?d/i.test(g))    return { cls: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',              label: grade }
+  return { cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', label: grade }
+}
+
+// ── Stock level badge ──────────────────────────────────────────────────────────
+function stockLevelBadge(current: number | undefined, reorder: number | null): {
+  cls: string; label: string; icon?: React.ReactNode
+} | null {
+  if (current === undefined) return null
+  if (current <= 0)
+    return { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', label: 'Out', icon: <AlertTriangle className="h-2.5 w-2.5" /> }
+  if (reorder !== null && current <= reorder)
+    return { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', label: 'Low', icon: <AlertTriangle className="h-2.5 w-2.5" /> }
+  return null  // In stock and above reorder level → no badge needed
+}
 
 const MAIN_CATEGORY_LABELS: Record<StockMainCategory, string> = {
   wood_work:     'Wood Work',
@@ -53,6 +76,23 @@ export default function StockItemsPage() {
       return data as (StockItem & { sub_categories: { item_name: string; categories: { category_name: string } | null } | null })[]
     },
   })
+
+  // Stock levels (may not exist until migration 030 is applied — tolerate error)
+  const { data: levels = [] } = useQuery({
+    queryKey: ['stock-levels'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('v_stock_levels')
+        .select('id, current_stock, total_in, total_out')
+      return (data ?? []) as { id: string; current_stock: number; total_in: number; total_out: number }[]
+    },
+  })
+
+  const levelMap = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const l of levels) m[l.id] = Number(l.current_stock)
+    return m
+  }, [levels])
 
   const filtered = useMemo(() => {
     let list = data
@@ -175,12 +215,22 @@ export default function StockItemsPage() {
             <div key={category}>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">{category}</p>
               <div className="rounded-xl border dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 shadow-sm">
-                {items.map(item => (
+                {items.map(item => {
+                  const currentStock = levelMap[item.id]
+                  const levelBadge   = stockLevelBadge(currentStock, item.reorder_level ?? null)
+                  const qualBadge    = qualityTheme(item.quality_grade)
+                  return (
                   <div key={item.id}
-                    className="group flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
+                    className={`group flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer ${
+                      levelBadge?.label === 'Out' ? 'border-l-2 border-red-400' :
+                      levelBadge?.label === 'Low' ? 'border-l-2 border-amber-400' : ''
+                    }`}
                     onClick={() => navigate(`/stock/${item.id}`)}
                   >
-                    <div className={`flex-shrink-0 rounded-lg p-2 ${item.is_tool ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
+                    <div className={`flex-shrink-0 rounded-lg p-2 ${
+                      levelBadge?.label === 'Out' ? 'bg-red-50 text-red-400' :
+                      item.is_tool ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'
+                    }`}>
                       {item.is_tool ? <Wrench className="h-4 w-4" /> : <Package className="h-4 w-4" />}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -192,14 +242,34 @@ export default function StockItemsPage() {
                             {item.item_code}
                           </span>
                         )}
+                        {levelBadge && (
+                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${levelBadge.cls}`}>
+                            {levelBadge.icon}{levelBadge.label}
+                          </span>
+                        )}
+                        {qualBadge && (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${qualBadge.cls}`}>
+                            {qualBadge.label}
+                          </span>
+                        )}
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ITEM_TYPE_STYLES[item.item_type].cls}`}>
                           {ITEM_TYPE_STYLES[item.item_type].label}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                        {item.quality_grade && <span className="text-xs text-slate-400">{item.quality_grade}</span>}
+                        {currentStock !== undefined && (
+                          <span className={`text-xs font-medium ${
+                            currentStock <= 0 ? 'text-red-500' :
+                            item.reorder_level && currentStock <= item.reorder_level ? 'text-amber-600' :
+                            'text-slate-400'
+                          }`}>
+                            {currentStock} {item.unit}
+                          </span>
+                        )}
                         {item.sub_categories && <span className="text-xs text-slate-400">GL: {item.sub_categories.item_name}</span>}
-                        <span className="text-xs text-slate-400">Unit: {item.unit}</span>
+                        {!currentStock && item.reorder_level && (
+                          <span className="text-xs text-slate-400">Reorder at {item.reorder_level}</span>
+                        )}
                       </div>
                     </div>
                     <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
@@ -217,7 +287,8 @@ export default function StockItemsPage() {
                       <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-400 transition-colors" />
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}
