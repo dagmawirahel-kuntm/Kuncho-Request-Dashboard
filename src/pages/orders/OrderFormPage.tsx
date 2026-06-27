@@ -218,29 +218,52 @@ function LineItemRow({
     cancelled:         'border-l-slate-200',
   }
 
+  // Show the linked GL account name when a catalog item is selected
+  const linkedAccount = item.sub_category_id
+    ? (subCategories ?? []).find((s: any) => s.id === item.sub_category_id)?.item_name ?? null
+    : null
+
+  const hasFooter = item.showSpecs || (isEdit && item.status !== 'pending')
+
   return (
     <div className={`rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 border-l-4 ${statusBorderCls[item.status]} overflow-visible`}>
-      {/* Main row */}
-      <div className="flex items-start gap-2 p-2.5">
-        <span className="mt-2.5 flex-shrink-0 text-slate-400">
-          <GripVertical className="h-4 w-4" />
-        </span>
 
-        {/* Item picker */}
-        <div className="relative flex-1 min-w-0">
+      {/* ── Grid row: [#] [item] [qty] [unit] [price] [status?] [×] ── */}
+      <div className={`grid items-start gap-x-2 gap-y-0 p-3 ${
+        isEdit
+          ? 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
+          : 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
+      }`}>
+
+        {/* Row index */}
+        <span className="pt-2.5 text-xs text-slate-400 font-mono text-center">{index + 1}</span>
+
+        {/* Item name + catalog picker */}
+        <div className="relative min-w-0">
           <div className="flex items-center gap-1.5">
             <button type="button" onClick={() => setShowCatalog(s => !s)}
-              title="Pick from sub-ledger"
-              className="flex-shrink-0 rounded-md p-1.5 bg-white dark:bg-slate-700 border dark:border-slate-600 text-slate-400 hover:text-brand hover:border-brand transition-colors">
+              title="Pick from sub-ledger catalog"
+              className={`flex-shrink-0 rounded-md p-1.5 border transition-colors ${
+                item.sub_category_id
+                  ? 'bg-brand/10 border-brand/40 text-brand'
+                  : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-400 hover:text-brand hover:border-brand'
+              }`}>
               <Package className="h-3.5 w-3.5" />
             </button>
             <input
-              className={`${inputCls} font-medium`}
+              className={`${inputCls} font-medium flex-1 min-w-0`}
               placeholder={`Item ${index + 1} name…`}
               value={item.item_name}
               onChange={e => onChange({ item_name: e.target.value })}
             />
           </div>
+          {/* Linked GL account badge */}
+          {linkedAccount && (
+            <p className="mt-0.5 pl-8 text-[10px] text-brand truncate" title={linkedAccount}>
+              GL: {linkedAccount}
+            </p>
+          )}
+          {/* Catalog dropdown */}
           {showCatalog && (
             <MiniCatalog
               subCategories={subCategories}
@@ -249,33 +272,26 @@ function LineItemRow({
               onClose={() => setShowCatalog(false)}
             />
           )}
-          {/* Specs toggle */}
-          <button type="button" onClick={() => onChange({ showSpecs: !item.showSpecs })}
-            className="mt-1 text-[10px] text-slate-400 hover:text-brand transition-colors">
-            {item.showSpecs ? '− Hide specs' : '+ Add specs / description'}
-          </button>
-          {item.showSpecs && (
-            <textarea rows={2} className={`${inputCls} mt-1 text-xs`} placeholder="Specifications, grade, dimensions, brand…"
-              value={item.specifications} onChange={e => onChange({ specifications: e.target.value })} />
-          )}
         </div>
 
-        {/* Qty + unit */}
-        <div className="flex gap-1.5 flex-shrink-0 w-44">
-          <input type="number" min="0" step="any" className={`${inputCls} w-20`} placeholder="Qty"
-            value={item.quantity} onChange={e => onChange({ quantity: e.target.value })} />
-          <input type="text" className={`${inputCls} w-20`} placeholder="unit" list={`units-${item._id}`}
+        {/* Qty */}
+        <input type="number" min="0" step="any" className={inputCls} placeholder="Qty"
+          value={item.quantity} onChange={e => onChange({ quantity: e.target.value })} />
+
+        {/* Unit */}
+        <div className="min-w-0">
+          <input type="text" className={inputCls} placeholder="unit" list={`units-${item._id}`}
             value={item.unit} onChange={e => onChange({ unit: e.target.value })} />
           <datalist id={`units-${item._id}`}>{COMMON_UNITS.map(u => <option key={u} value={u} />)}</datalist>
         </div>
 
-        {/* Est price */}
-        <input type="number" min="0" step="0.01" className={`${inputCls} w-28 flex-shrink-0`} placeholder="Est. price"
+        {/* Est. price */}
+        <input type="number" min="0" step="0.01" className={inputCls} placeholder="Est. price"
           value={item.unit_price_est} onChange={e => onChange({ unit_price_est: e.target.value })} />
 
         {/* Status (edit mode only) */}
         {isEdit && (
-          <select className={`${inputCls} w-36 flex-shrink-0 text-xs`} value={item.status}
+          <select className={`${inputCls} text-xs`} value={item.status}
             onChange={e => onChange({ status: e.target.value as OrderItemStatus })}>
             {ITEM_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
@@ -283,16 +299,28 @@ function LineItemRow({
 
         {/* Remove */}
         <button type="button" onClick={onRemove} title="Remove item"
-          className="mt-1.5 flex-shrink-0 rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+          className="mt-1.5 rounded p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Fulfillment notes (edit, non-pending) */}
-      {isEdit && item.status !== 'pending' && (
-        <div className="px-3 pb-2.5">
-          <input type="text" className={`${inputCls} text-xs`} placeholder="Fulfillment notes (e.g. item not found at supplier)…"
-            value={item.fulfillment_notes} onChange={e => onChange({ fulfillment_notes: e.target.value })} />
+      {/* ── Full-width footer: specs toggle + specs textarea + fulfillment notes ── */}
+      {(hasFooter || true) && (
+        <div className="px-3 pb-3 space-y-2">
+          <button type="button" onClick={() => onChange({ showSpecs: !item.showSpecs })}
+            className="text-[10px] text-slate-400 hover:text-brand transition-colors">
+            {item.showSpecs ? '− Hide specs' : '+ Add specs / description'}
+          </button>
+          {item.showSpecs && (
+            <textarea rows={2} className={`${inputCls} text-xs w-full`}
+              placeholder="Specifications, grade, dimensions, brand, quality grade…"
+              value={item.specifications} onChange={e => onChange({ specifications: e.target.value })} />
+          )}
+          {isEdit && item.status !== 'pending' && (
+            <input type="text" className={`${inputCls} text-xs w-full`}
+              placeholder="Fulfillment notes — e.g. sourced from alternative vendor, partial delivery, item unavailable…"
+              value={item.fulfillment_notes} onChange={e => onChange({ fulfillment_notes: e.target.value })} />
+          )}
         </div>
       )}
     </div>
@@ -615,13 +643,19 @@ function PurchaseRequestFormBody({
           <span className="text-xs text-slate-400">{filledCount} item{filledCount !== 1 ? 's' : ''}</span>
         </div>
 
-        {/* Column headers */}
-        <div className="flex gap-2 px-7 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-          <span className="flex-1 min-w-0">Item</span>
-          <span className="w-44">Qty · Unit</span>
-          <span className="w-28">Est. Price</span>
-          {isEdit && <span className="w-36">Status</span>}
-          <span className="w-8" />
+        {/* Column headers — match LineItemRow grid */}
+        <div className={`grid gap-x-2 px-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider ${
+          isEdit
+            ? 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
+            : 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
+        }`}>
+          <span />
+          <span>Item / GL Account</span>
+          <span>Qty</span>
+          <span>Unit</span>
+          <span>Est. Price</span>
+          {isEdit && <span>Status</span>}
+          <span />
         </div>
 
         <div className="space-y-2">
