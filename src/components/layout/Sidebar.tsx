@@ -35,7 +35,7 @@ const navGroups: NavGroup[] = [
     title: 'Requests',
     to: '/requests',
     items: [
-      { label: 'Expenses', to: '/expenses', icon: Receipt },
+      { label: 'Approvals', to: '/expenses', icon: Receipt },
       { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
       { label: 'Transportation', to: '/transportation', icon: Truck },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
