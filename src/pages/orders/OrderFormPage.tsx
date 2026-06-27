@@ -1,8 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Order, OrderInsert, OrderPriority, OrderItem, OrderItemStatus } from '@/types/database'
@@ -14,7 +13,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 import {
-  Plus, Trash2, Package, History, Zap, Search, ChevronRight, GripVertical, AlertCircle,
+  ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, GripVertical, AlertCircle,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
@@ -326,7 +325,7 @@ export default function OrderFormPage() {
   })
 
   if (isEdit && isLoading) {
-    return <FormPage title="Edit Purchase Request" backTo="/purchase-requests" loading onSave={() => {}} />
+    return <div className="py-24 text-center text-sm text-slate-400">Loading…</div>
   }
 
   return <PurchaseRequestFormBody id={id} record={record} existingItems={isEdit ? existingItems : []} />
@@ -477,14 +476,41 @@ function PurchaseRequestFormBody({
   const filledCount = lines.filter(l => l.item_name.trim()).length
 
   return (
-    <FormPage
-      title={isEdit ? `Edit Request${record?.request_code ? ` · ${record.request_code}` : ''}` : 'New Purchase Request'}
-      backTo="/purchase-requests"
-      error={error}
-      saving={saving}
-      saveLabel={isEdit ? 'Save Changes' : 'Submit Request'}
-      onSave={handleSave}
-    >
+    <div className="space-y-5">
+
+      {/* Top bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Link to="/purchase-requests"
+            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand transition-colors flex-shrink-0">
+            <ArrowLeft className="h-4 w-4" />Purchase Requests
+          </Link>
+          <span className="text-slate-300 dark:text-slate-600 flex-shrink-0">/</span>
+          <h1 className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">
+            {isEdit
+              ? `Edit${record?.request_code ? ` · ${record.request_code}` : ' Request'}`
+              : 'New Purchase Request'}
+          </h1>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Link to="/purchase-requests"
+            className="rounded-md border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+            Cancel
+          </Link>
+          <button onClick={handleSave} disabled={saving}
+            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60 transition-colors shadow-sm">
+            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Submit Request'}
+          </button>
+        </div>
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/50 px-4 py-3 text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />{error}
+        </div>
+      )}
+
       {/* Approval panel */}
       {isEdit && (
         <div className="rounded-lg border bg-slate-50 dark:bg-slate-700/30 dark:border-slate-700 p-4 space-y-3">
@@ -635,6 +661,6 @@ function PurchaseRequestFormBody({
           </Field>
         </div>
       </div>
-    </FormPage>
+    </div>
   )
 }
