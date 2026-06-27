@@ -61,6 +61,7 @@ import EmergencyPayrollPage from '@/pages/emergency-payroll/EmergencyPayrollPage
 import EmergencyPayrollFormPage from '@/pages/emergency-payroll/EmergencyPayrollFormPage'
 import VendorReceiptsPage from '@/pages/vendor-receipts/VendorReceiptsPage'
 import VendorReceiptFormPage from '@/pages/vendor-receipts/VendorReceiptFormPage'
+import VendorReceiptDetailPage from '@/pages/vendor-receipts/VendorReceiptDetailPage'
 import LocationsPage from '@/pages/locations/LocationsPage'
 import LocationFormPage from '@/pages/locations/LocationFormPage'
 import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
@@ -116,9 +117,6 @@ export const router = createBrowserRouter([
               { path: 'general-ledger/:id/edit', element: <GeneralLedgerFormPage /> },
               { path: 'general-ledger/sub-ledgers/new', element: <SubLedgerFormPage /> },
               { path: 'general-ledger/sub-ledgers/:id/edit', element: <SubLedgerFormPage /> },
-              { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
-              { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
-              { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
             ],
           },
           {
@@ -145,6 +143,10 @@ export const router = createBrowserRouter([
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
+              { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
+              { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
+              { path: 'vendor-receipts/:id', element: <VendorReceiptDetailPage /> },
+              { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
             ],

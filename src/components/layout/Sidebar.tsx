@@ -48,7 +48,6 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
       { label: 'General Ledger', to: '/general-ledger', icon: BookOpen, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
-      { label: 'Vendor Receipts', to: '/vendor-receipts', icon: FileText, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
     ],
   },
   {
@@ -59,6 +58,7 @@ const navGroups: NavGroup[] = [
       { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'manager', 'finance'] },
     ],
   },

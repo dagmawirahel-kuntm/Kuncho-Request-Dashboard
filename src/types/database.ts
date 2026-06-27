@@ -456,12 +456,18 @@ export interface CashAdvance {
 export type CashAdvanceInsert = Omit<CashAdvance, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
 
 // ── Vendor Receipt Facilitation ───────────────────────────────────
+export type VrfStatus = 'open' | 'partial' | 'settled'
 export interface VendorReceiptFacilitation {
   id: string
   record_name: string | null
+  amount_transferred: number | null
   money_returned: number | null
   notes: string | null
   net_facilitation_cost: number | null
+  commission_rate: number | null
+  commission_amount: number | null
+  facilitator_name: string | null
+  status: VrfStatus
   trxn_date: string | null
   initial_account_id: string | null
   return_account_id: string | null
