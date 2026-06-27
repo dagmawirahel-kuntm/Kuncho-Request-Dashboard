@@ -202,8 +202,8 @@ export default function ExpenseDetailPage() {
           accounts:account_id ( account_name ),
           categories:category_id ( category_name ),
           sub_categories:sub_category_id ( item_name ),
-          manager_profile:manager_approved_by ( full_name ),
-          finance_profile:finance_approved_by ( full_name )
+          manager_profile:user_profiles!manager_approved_by ( full_name ),
+          finance_profile:user_profiles!finance_approved_by ( full_name )
         `)
         .eq('id', id!)
         .single()
