@@ -667,6 +667,7 @@ export interface StockReceipt {
   receipt_type: StockReceiptType
   destination: 'warehouse' | 'site'
   warehouse_zone: WarehouseZone | null
+  project_id: string | null
   expense_id: string | null
   order_item_id: string | null
   transport_request_id: string | null
