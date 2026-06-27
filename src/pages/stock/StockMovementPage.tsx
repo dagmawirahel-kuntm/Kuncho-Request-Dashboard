@@ -519,7 +519,8 @@ export default function StockMovementPage() {
             {/* Project */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">
-                Project <span className="font-normal text-slate-400 normal-case">optional</span>
+                {direction === 'in' ? 'Link to Project' : 'Issued to Project'}
+                <span className="font-normal text-slate-400 normal-case ml-1">optional</span>
               </label>
               <select
                 value={projectId}
@@ -529,6 +530,11 @@ export default function StockMovementPage() {
                 <option value="">— None —</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.project_name}</option>)}
               </select>
+              <p className="mt-1.5 text-[11px] text-slate-400 leading-snug">
+                {direction === 'in'
+                  ? 'Only set this when materials are purchased specifically for a named project (direct procurement). Leave blank for general warehouse restocking — materials will be linked to a project when issued out.'
+                  : 'Which project is consuming these materials or checking out this tool.'}
+              </p>
             </div>
 
             {/* Notes */}
