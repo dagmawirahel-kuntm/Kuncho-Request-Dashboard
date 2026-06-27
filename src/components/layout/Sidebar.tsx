@@ -39,6 +39,7 @@ const navGroups: NavGroup[] = [
       { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
       { label: 'Transportation', to: '/transportation', icon: Truck },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
+      { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
     ],
   },
   {
@@ -59,8 +60,6 @@ const navGroups: NavGroup[] = [
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'manager', 'finance'] },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'manager', 'finance'] },
-      { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
-      { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'manager', 'finance'] },
     ],
   },
   {
@@ -87,6 +86,7 @@ const navGroups: NavGroup[] = [
     to: '/management',
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+      { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance', 'project_manager'] },
     ],
