@@ -10,6 +10,7 @@ import HRDashboardPage from '@/pages/dashboard/HRDashboardPage'
 import ManagementDashboardPage from '@/pages/dashboard/ManagementDashboardPage'
 import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import ExpenseFormPage from '@/pages/expenses/ExpenseFormPage'
+import ExpenseDetailPage from '@/pages/expenses/ExpenseDetailPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import OrderFormPage from '@/pages/orders/OrderFormPage'
 import OrderDetailPage from '@/pages/orders/OrderDetailPage'
@@ -83,6 +84,7 @@ export const router = createBrowserRouter([
           { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },
           { path: 'expenses/new', element: <ExpenseFormPage /> },
+          { path: 'expenses/:id', element: <ExpenseDetailPage /> },
           { path: 'expenses/:id/edit', element: <ExpenseFormPage /> },
           { path: 'orders', element: <Navigate to="/purchase-requests" replace /> },
           { path: 'orders/new', element: <Navigate to="/purchase-requests/new" replace /> },

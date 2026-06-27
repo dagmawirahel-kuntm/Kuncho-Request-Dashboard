@@ -102,8 +102,12 @@ function ViewOnly() {
 // ── Expense rows ─────────────────────────────────────────────────────────────
 
 function ExpenseRow({ e, onDelete, canDelete }: { e: Expense; onDelete: (id: string) => void; canDelete: boolean }) {
+  const nav = useNavigate()
   return (
-    <div className="flex items-center gap-3 px-5 py-3 border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+    <div
+      onClick={() => nav(`/expenses/${e.id}`)}
+      className="flex items-center gap-3 px-5 py-3 border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer"
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs font-bold text-brand">{e.expense_code ?? '—'}</span>
@@ -124,7 +128,7 @@ function ExpenseRow({ e, onDelete, canDelete }: { e: Expense; onDelete: (id: str
         <StatusBadge status={e.payment_status ? 'paid' : 'pending'} />
       </div>
       {canDelete && (
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1 shrink-0" onClick={ev => ev.stopPropagation()}>
           <Link to={`/expenses/${e.id}/edit`}
             className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700">
             <Pencil className="h-3.5 w-3.5" />
@@ -477,7 +481,6 @@ export default function ExpensesPage() {
                 title="General Expenses"
                 subtitle={filterOwn ? 'Your submitted expense requests' : 'All submitted expense requests'}
                 pipeline={<PipelineStrip stages={expensePipeline} />}
-                viewAll={{ label: 'New expense', to: '/expenses/new' }}
               >
                 {recentGeneral.length === 0
                   ? <EmptyState message="No general expenses yet." />
