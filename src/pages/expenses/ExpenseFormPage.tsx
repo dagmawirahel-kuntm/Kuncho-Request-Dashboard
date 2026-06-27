@@ -244,6 +244,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     ...(linkedVrf ? {
       vendor_receipt_facilitation_id: linkedVrf.id,
       account_id: linkedVrf.initial_account_id ?? undefined,
+      expense_type: 'vrf' as const,
     } : {}),
   }
   )
@@ -439,9 +440,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Expense Type">
-          <select className={inputCls} value={form.expense_type ?? ''} onChange={e => set('expense_type', e.target.value)}>
-            <option value="">— Select —</option>
-            <option>Operational</option><option>Capital</option><option>Payroll</option><option>Transportation</option><option>Other</option>
+          <select className={inputCls} value={form.expense_type ?? 'general'} onChange={e => set('expense_type', e.target.value)}>
+            <option value="general">General</option>
+            <option value="purchase_order">Purchase Order</option>
+            <option value="vrf">VRF (Vendor Receipt Facilitation)</option>
+            <option value="cpo_bond">CPO Bond</option>
           </select>
         </Field>
         <Field label="Purchase Type">

@@ -10,6 +10,7 @@ export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -160,7 +161,7 @@ export interface Expense {
   quantity: number | null
   uom: string | null
   receipt_available: string | null
-  expense_type: string | null
+  expense_type: ExpenseType
   notes: string | null
   proposed_item_name: string | null
   project_name: string | null
@@ -191,6 +192,8 @@ export interface Expense {
   sub_category_id: string | null
   account_id: string | null
   vendor_receipt_facilitation_id: string | null
+  cpo_bond_id: string | null
+  sourcing_bundle_id: string | null
   transfer_id: string | null
   tax_summary_id: string | null
   location_id: string | null
