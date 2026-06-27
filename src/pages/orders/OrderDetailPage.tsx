@@ -12,7 +12,7 @@ import { formatDate } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
-  ChevronDown, ChevronRight, Zap, Copy,
+  ChevronDown, ChevronRight, Zap, Copy, Receipt,
 } from 'lucide-react'
 
 type StepStatus = 'done' | 'active' | 'rejected' | 'waiting'
@@ -408,6 +408,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
               <span className="w-28 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Qty</span>
               <span className="w-28 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Est. Price</span>
               <span className="w-32 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Status</span>
+              <span className="w-28 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Expense</span>
             </div>
 
             <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -419,15 +420,22 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                     <div className="flex items-center gap-3 px-4 py-3">
                       <span className="flex-shrink-0 text-xs text-slate-400 font-mono w-6 text-center">{idx + 1}</span>
 
-                      {/* Name + specs toggle */}
+                      {/* Name + specs toggle + market check badge */}
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium ${
-                          item.status === 'cancelled'
-                            ? 'line-through text-slate-400'
-                            : 'text-slate-800 dark:text-slate-100'
-                        }`}>
-                          {item.item_name}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className={`text-sm font-medium ${
+                            item.status === 'cancelled'
+                              ? 'line-through text-slate-400'
+                              : 'text-slate-800 dark:text-slate-100'
+                          }`}>
+                            {item.item_name}
+                          </p>
+                          {(item as any).needs_market_check && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 flex-shrink-0">
+                              <Zap className="h-2.5 w-2.5" />Check price
+                            </span>
+                          )}
+                        </div>
                         {item.specifications && (
                           <button
                             onClick={() => toggleExpand(item.id)}
@@ -473,6 +481,19 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                         <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${st.bg}`}>
                           {st.label}
                         </span>
+                      )}
+
+                      {/* Create Expense link (procurement officer / admin) */}
+                      {canUpdateItems && item.status !== 'cancelled' && (
+                        <Link
+                          to={`/expenses/new?pr_id=${order.id}&line_id=${item.id}`}
+                          title="Create expense for this line item"
+                          className="flex-shrink-0 w-28 inline-flex items-center justify-end gap-1 text-xs text-brand hover:underline">
+                          <Receipt className="h-3.5 w-3.5" />Create expense
+                        </Link>
+                      )}
+                      {(!canUpdateItems || item.status === 'cancelled') && (
+                        <span className="flex-shrink-0 w-28" />
                       )}
                     </div>
 

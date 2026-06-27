@@ -572,6 +572,7 @@ export interface OrderItem {
   quantity: number | null
   unit: string | null
   unit_price_est: number | null
+  needs_market_check: boolean
   status: OrderItemStatus
   fulfillment_notes: string | null
   sort_order: number

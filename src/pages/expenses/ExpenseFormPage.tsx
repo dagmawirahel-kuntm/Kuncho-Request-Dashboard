@@ -1,17 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { Expense, ExpenseInsert } from '@/types/database'
+import type { Expense, ExpenseInsert, Order, OrderItem } from '@/types/database'
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Lock } from 'lucide-react'
+import { Lock, Package } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
 function Field({ label, locked, children }: { label: string; locked?: boolean; children: React.ReactNode }) {
@@ -35,7 +35,11 @@ export default function ExpenseFormPage() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const returnTo: string = (location.state as { returnTo?: string })?.returnTo ?? '/expenses'
+  const prId   = searchParams.get('pr_id')
+  const lineId = searchParams.get('line_id')
+
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
     queryFn: async () => {
@@ -46,14 +50,45 @@ export default function ExpenseFormPage() {
     enabled: isEdit,
   })
 
+  const { data: linkedPr } = useQuery({
+    queryKey: ['pr-for-expense', prId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('orders').select('*').eq('id', prId!).single()
+      if (error) throw error
+      return data as Order
+    },
+    enabled: !isEdit && !!prId,
+  })
+
+  const { data: linkedLineItem } = useQuery({
+    queryKey: ['pr-line-for-expense', lineId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('order_items').select('*').eq('id', lineId!).single()
+      if (error) throw error
+      return data as OrderItem
+    },
+    enabled: !isEdit && !!lineId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
 
-  return <ExpenseFormPageBody id={id} record={record} returnTo={returnTo} />
+  return (
+    <ExpenseFormPageBody
+      id={id}
+      record={record}
+      returnTo={returnTo}
+      linkedPr={linkedPr}
+      linkedLineItem={linkedLineItem}
+    />
+  )
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses' }: { id?: string; record?: Expense; returnTo?: string }) {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem }: {
+  id?: string; record?: Expense; returnTo?: string
+  linkedPr?: Order; linkedLineItem?: OrderItem
+}) {
   const isEdit = !!id
     const navigate = useNavigate()
     const { user, role } = useAuth()
@@ -168,12 +203,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses' }: { id?: stri
     partially_paid: false,
     contacted: false,
     verify_wht: false,
-    is_new_item: false,
+    is_new_item: linkedLineItem?.needs_market_check ? false : false,
     is_allocated: false,
     receipt_delivered: false,
     delivery_status: [],
     purchaser_user_id: user?.id,
     approval_status: 'pending',
+    // pre-fill from linked PR line item
+    ...(linkedLineItem ? {
+      item_service_description: linkedLineItem.item_name,
+      quantity: linkedLineItem.quantity ?? undefined,
+      uom: linkedLineItem.unit ?? undefined,
+      amount_etb: linkedLineItem.unit_price_est != null && linkedLineItem.quantity != null
+        ? linkedLineItem.unit_price_est * linkedLineItem.quantity
+        : undefined,
+      sub_category_id: linkedLineItem.sub_category_id ?? undefined,
+      proposed_item_name: linkedLineItem.item_name,
+      description_of_item: linkedLineItem.specifications ?? undefined,
+    } : {}),
+    ...(linkedPr ? {
+      project_id: linkedPr.project_id ?? undefined,
+    } : {}),
   }
   )
     const [saving, setSaving] = useState(false)
@@ -202,11 +252,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses' }: { id?: stri
 
   async function handleSave() {
     setError(''); setSaving(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('expenses').update(form as any).eq('id', id!) : supabase.from('expenses').insert([form as any])
-    const { error: err } = await op
+    let expenseId = id
+    if (isEdit) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: err } = await supabase.from('expenses').update(form as any).eq('id', id!)
+      if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: err } = await supabase.from('expenses').insert([form as any]).select('id').single()
+      if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
+      expenseId = (data as any).id
+      // Link to PR line item if this expense was created from a purchase request
+      if (linkedLineItem && expenseId) {
+        await supabase.from('expense_order_items').insert([{
+          expense_id: expenseId,
+          order_item_id: linkedLineItem.id,
+          quantity_covered: linkedLineItem.quantity,
+          notes: null,
+        }])
+      }
+    }
     setSaving(false)
-    if (err) { setError(err.message); toast(err.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
     toast(isEdit ? 'Expense updated' : 'Expense created', 'success')
@@ -293,6 +359,26 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses' }: { id?: stri
               Resubmit for Approval
             </button>
           )}
+        </div>
+      )}
+
+      {/* Linked PR banner */}
+      {!isEdit && linkedPr && (
+        <div className="flex items-start gap-3 rounded-lg bg-brand/5 border border-brand/20 px-4 py-3">
+          <Package className="h-4 w-4 text-brand flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-brand">Linked to Purchase Request</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 truncate">
+              {linkedPr.request_code && <span className="font-mono font-bold mr-2">{linkedPr.request_code}</span>}
+              {linkedPr.order_name ?? 'Untitled request'}
+              {linkedLineItem && <span className="text-slate-400"> · Line item: {linkedLineItem.item_name}</span>}
+            </p>
+            <Link
+              to={`/purchase-requests/${linkedPr.id}`}
+              className="text-[11px] text-brand hover:underline mt-0.5 inline-block">
+              View purchase request →
+            </Link>
+          </div>
         </div>
       )}
 

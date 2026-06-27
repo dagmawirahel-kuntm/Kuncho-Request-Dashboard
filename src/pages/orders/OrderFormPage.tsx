@@ -65,6 +65,7 @@ type LineItem = {
   quantity: string
   unit: string
   unit_price_est: string
+  needs_market_check: boolean
   status: OrderItemStatus
   fulfillment_notes: string
   showSpecs: boolean
@@ -79,6 +80,7 @@ function newLine(overrides: Partial<LineItem> = {}): LineItem {
     quantity: '',
     unit: 'pcs',
     unit_price_est: '',
+    needs_market_check: false,
     status: 'pending',
     fulfillment_notes: '',
     showSpecs: false,
@@ -304,13 +306,23 @@ function LineItemRow({
         </button>
       </div>
 
-      {/* ── Full-width footer: specs toggle + specs textarea + fulfillment notes ── */}
+      {/* ── Full-width footer: specs / market check / fulfillment notes ── */}
       {(hasFooter || true) && (
         <div className="px-3 pb-3 space-y-2">
-          <button type="button" onClick={() => onChange({ showSpecs: !item.showSpecs })}
-            className="text-[10px] text-slate-400 hover:text-brand transition-colors">
-            {item.showSpecs ? '− Hide specs' : '+ Add specs / description'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => onChange({ showSpecs: !item.showSpecs })}
+              className="text-[10px] text-slate-400 hover:text-brand transition-colors">
+              {item.showSpecs ? '− Hide specs' : '+ Add specs / description'}
+            </button>
+            <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer select-none transition-colors ${
+              item.needs_market_check ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 hover:text-amber-500'
+            }`}>
+              <input type="checkbox" className="accent-amber-500"
+                checked={item.needs_market_check}
+                onChange={e => onChange({ needs_market_check: e.target.checked })} />
+              Ask procurement: check market price
+            </label>
+          </div>
           {item.showSpecs && (
             <textarea rows={2} className={`${inputCls} text-xs w-full`}
               placeholder="Specifications, grade, dimensions, brand, quality grade…"
@@ -415,6 +427,7 @@ function PurchaseRequestFormBody({
         quantity: item.quantity?.toString() ?? '',
         unit: item.unit ?? 'pcs',
         unit_price_est: item.unit_price_est?.toString() ?? '',
+        needs_market_check: item.needs_market_check ?? false,
         status: item.status,
         fulfillment_notes: item.fulfillment_notes ?? '',
         showSpecs: !!item.specifications,
@@ -485,6 +498,7 @@ function PurchaseRequestFormBody({
       quantity: l.quantity ? parseFloat(l.quantity) : null,
       unit: l.unit || null,
       unit_price_est: l.unit_price_est ? parseFloat(l.unit_price_est) : null,
+      needs_market_check: l.needs_market_check,
       status: l.status,
       fulfillment_notes: l.fulfillment_notes || null,
       sort_order: i,
