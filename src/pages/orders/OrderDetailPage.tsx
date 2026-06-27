@@ -159,7 +159,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const unfilledCount = items.filter(i => i.status === 'unfulfilled').length
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4">
 
       {/* Top bar */}
       <div className="flex items-center justify-between flex-wrap gap-3">
