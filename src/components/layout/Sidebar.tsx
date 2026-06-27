@@ -4,7 +4,7 @@ import {
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
-  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench
+  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -47,6 +47,7 @@ const navGroups: NavGroup[] = [
     to: '/procurement',
     items: [
       { label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
+      { label: 'Sourcing Bundles', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
       { label: 'General Ledger', to: '/general-ledger', icon: BookOpen, roles: ['admin', 'manager', 'finance', 'procurement_officer'] },
     ],
   },

@@ -65,6 +65,9 @@ import VendorReceiptDetailPage from '@/pages/vendor-receipts/VendorReceiptDetail
 import LocationsPage from '@/pages/locations/LocationsPage'
 import LocationFormPage from '@/pages/locations/LocationFormPage'
 import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
+import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
+import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
+import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -117,6 +120,10 @@ export const router = createBrowserRouter([
               { path: 'general-ledger/:id/edit', element: <GeneralLedgerFormPage /> },
               { path: 'general-ledger/sub-ledgers/new', element: <SubLedgerFormPage /> },
               { path: 'general-ledger/sub-ledgers/:id/edit', element: <SubLedgerFormPage /> },
+              { path: 'sourcing', element: <SourcingBundlesPage /> },
+              { path: 'sourcing/new', element: <SourcingBundleFormPage /> },
+              { path: 'sourcing/:id/edit', element: <SourcingBundleFormPage /> },
+              { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
             ],
           },
           {

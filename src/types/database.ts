@@ -476,6 +476,42 @@ export interface VendorReceiptFacilitation {
 }
 export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at'>
 
+// ── Sourcing Bundles ─────────────────────────────────────────────
+export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
+
+export interface SourcingBundle {
+  id: string
+  bundle_code: string
+  vendor_id: string | null
+  vendor_name: string | null
+  status: SourcingBundleStatus
+  procurement_officer_id: string | null
+  submitted_at: string | null
+  approved_by: string | null
+  approved_at: string | null
+  ordered_at: string | null
+  fulfilled_at: string | null
+  expected_delivery_date: string | null
+  notes: string | null
+  finance_notes: string | null
+  expense_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type SourcingBundleInsert = Omit<SourcingBundle, 'id' | 'bundle_code' | 'created_at' | 'updated_at'>
+
+export interface SourcingBundleItem {
+  id: string
+  bundle_id: string
+  order_item_id: string
+  quantity_actual: number | null
+  unit_price_actual: number | null
+  notes: string | null
+  sort_order: number
+  created_at: string
+}
+export type SourcingBundleItemInsert = Omit<SourcingBundleItem, 'id' | 'created_at'>
+
 // ── Tax Summary ───────────────────────────────────────────────────
 export interface TaxSummary {
   id: string
