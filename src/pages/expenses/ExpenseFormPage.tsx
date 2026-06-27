@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { Expense, ExpenseInsert, Order, OrderItem } from '@/types/database'
+import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation } from '@/types/database'
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -39,6 +39,7 @@ export default function ExpenseFormPage() {
   const returnTo: string = (location.state as { returnTo?: string })?.returnTo ?? '/expenses'
   const prId   = searchParams.get('pr_id')
   const lineId = searchParams.get('line_id')
+  const vrfId  = searchParams.get('vrf_id')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -70,6 +71,20 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!lineId,
   })
 
+  const { data: linkedVrf } = useQuery({
+    queryKey: ['vrf-for-expense', vrfId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vendor_receipt_facilitation')
+        .select('*, initial:accounts!initial_account_id(account_name)')
+        .eq('id', vrfId!)
+        .single()
+      if (error) throw error
+      return data as VendorReceiptFacilitation & { initial: { account_name: string } | null }
+    },
+    enabled: !isEdit && !!vrfId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -81,13 +96,15 @@ export default function ExpenseFormPage() {
       returnTo={returnTo}
       linkedPr={linkedPr}
       linkedLineItem={linkedLineItem}
+      linkedVrf={linkedVrf}
     />
   )
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
+  linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -224,6 +241,10 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     ...(linkedPr ? {
       project_id: linkedPr.project_id ?? undefined,
     } : {}),
+    ...(linkedVrf ? {
+      vendor_receipt_facilitation_id: linkedVrf.id,
+      account_id: linkedVrf.initial_account_id ?? undefined,
+    } : {}),
   }
   )
     const [saving, setSaving] = useState(false)
@@ -359,6 +380,28 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
               Resubmit for Approval
             </button>
           )}
+        </div>
+      )}
+
+      {/* Linked VRF banner */}
+      {!isEdit && linkedVrf && (
+        <div className="flex items-start gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700/40 px-4 py-3">
+          <Package className="h-4 w-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Linked to VRF Record</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              {linkedVrf.record_name && <span className="font-mono font-bold mr-2">{linkedVrf.record_name}</span>}
+              {linkedVrf.facilitator_name && <span className="mr-2">· {linkedVrf.facilitator_name}</span>}
+              {linkedVrf.initial?.account_name && (
+                <span className="text-slate-400">Debited from: {linkedVrf.initial.account_name}</span>
+              )}
+            </p>
+            <Link
+              to={`/vendor-receipts/${linkedVrf.id}`}
+              className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5 inline-block">
+              View VRF record →
+            </Link>
+          </div>
         </div>
       )}
 

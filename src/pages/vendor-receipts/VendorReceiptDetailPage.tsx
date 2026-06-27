@@ -4,10 +4,11 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
-  ArrowLeft, Pencil, ReceiptText, AlertCircle, Wallet,
-  ArrowRightLeft, BadgePercent, TrendingDown, User,
+  ArrowLeft, Pencil, ReceiptText, AlertCircle,
+  ArrowRightLeft, User, Plus,
 } from 'lucide-react'
 import type { VendorReceiptFacilitation, Expense } from '@/types/database'
+import { useAuth } from '@/contexts/AuthContext'
 
 type Tab = 'expenses' | 'summary'
 
@@ -48,7 +49,9 @@ function SummaryRow({ label, value, sub, accent }: { label: string; value: strin
 
 export default function VendorReceiptDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { role } = useAuth()
   const [tab, setTab] = useState<Tab>('expenses')
+  const canAddExpense = role === 'admin' || role === 'manager' || role === 'finance'
 
   const { data: vrf, isLoading } = useQuery({
     queryKey: ['vrf', id],
@@ -110,16 +113,25 @@ export default function VendorReceiptDetailPage() {
   return (
     <div className="space-y-5">
 
-      {/* ── Back + Edit ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      {/* ── Back + Actions ──────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link to="/vendor-receipts"
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
           <ArrowLeft className="h-4 w-4" /> VRF Records
         </Link>
-        <Link to={`/vendor-receipts/${id}/edit`}
-          className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Link>
+        <div className="flex items-center gap-2">
+          {canAddExpense && (
+            <Link
+              to={`/expenses/new?vrf_id=${id}`}
+              className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 shadow-sm">
+              <Plus className="h-4 w-4" /> Add Expense
+            </Link>
+          )}
+          <Link to={`/vendor-receipts/${id}/edit`}
+            className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Link>
+        </div>
       </div>
 
       {/* ── Hero card ───────────────────────────────────────────── */}
@@ -228,8 +240,15 @@ export default function VendorReceiptDetailPage() {
               <ReceiptText className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" />
               <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses linked to this VRF record</p>
               <p className="text-xs text-slate-400 dark:text-slate-500 max-w-xs mx-auto leading-relaxed">
-                Link expenses by selecting this VRF record in the expense form's <em>Vendor Receipt Facilitation</em> field.
+                Expenses added here will be deducted from the debited account and tracked against this VRF balance.
               </p>
+              {canAddExpense && (
+                <Link
+                  to={`/expenses/new?vrf_id=${id}`}
+                  className="mt-2 inline-flex items-center gap-1.5 text-sm text-brand font-medium hover:underline">
+                  <Plus className="h-3.5 w-3.5" /> Add first expense
+                </Link>
+              )}
             </div>
           )}
 
