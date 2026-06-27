@@ -4,7 +4,7 @@ import {
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
-  ArrowLeftRight, PieChart, Scale
+  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -36,7 +36,7 @@ const navGroups: NavGroup[] = [
     to: '/requests',
     items: [
       { label: 'Expenses', to: '/expenses', icon: Receipt },
-      { label: 'Orders', to: '/orders', icon: ShoppingCart },
+      { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
       { label: 'Transportation', to: '/transportation', icon: Truck },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
     ],
@@ -89,6 +89,13 @@ const navGroups: NavGroup[] = [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+    ],
+  },
+  {
+    title: 'Stock',
+    items: [
+      { label: 'Stock Catalog', to: '/stock', icon: Warehouse, roles: ['admin', 'manager', 'stock_manager', 'procurement_officer'] },
+      { label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'manager', 'stock_manager'] },
     ],
   },
 ]

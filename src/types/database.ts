@@ -1,4 +1,11 @@
-export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager'
+export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager'
+export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled'
+export type StockItemType = 'raw_material' | 'tool' | 'consumable'
+export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
+export type WarehouseZone = 'Zone A' | 'Zone B' | 'Zone C'
+export type ToolCondition = 'good' | 'fair' | 'damaged' | 'retired'
+export type StockReceiptType = 'purchase' | 'opening_balance' | 'site_return' | 'adjustment'
+export type StockIssueType = 'project_use' | 'tool_checkout' | 'damaged' | 'vendor_return' | 'adjustment'
 export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
@@ -38,6 +45,13 @@ export interface Database {
       batch_payments: { Row: BatchPayment; Insert: BatchPaymentInsert; Update: Partial<BatchPaymentInsert> }
       timesheet: { Row: Timesheet; Insert: TimesheetInsert; Update: Partial<TimesheetInsert> }
       order_expenses: { Row: OrderExpense; Insert: OrderExpense; Update: Partial<OrderExpense> }
+      order_items: { Row: OrderItem; Insert: OrderItemInsert; Update: Partial<OrderItemInsert> }
+      expense_order_items: { Row: ExpenseOrderItem; Insert: ExpenseOrderItem; Update: Partial<ExpenseOrderItem> }
+      stock_items: { Row: StockItem; Insert: StockItemInsert; Update: Partial<StockItemInsert> }
+      stock_receipts: { Row: StockReceipt; Insert: StockReceiptInsert; Update: Partial<StockReceiptInsert> }
+      stock_issues: { Row: StockIssue; Insert: StockIssueInsert; Update: Partial<StockIssueInsert> }
+      tool_units: { Row: ToolUnit; Insert: ToolUnitInsert; Update: Partial<ToolUnitInsert> }
+      tool_checkouts: { Row: ToolCheckout; Insert: ToolCheckoutInsert; Update: Partial<ToolCheckoutInsert> }
       batch_payment_expenses: { Row: BatchPaymentExpense; Insert: BatchPaymentExpense; Update: Partial<BatchPaymentExpense> }
       payroll_staff: { Row: PayrollStaff; Insert: PayrollStaff; Update: Partial<PayrollStaff> }
       cash_advance_expenses: { Row: CashAdvanceExpense; Insert: CashAdvanceExpense; Update: Partial<CashAdvanceExpense> }
@@ -197,6 +211,7 @@ export type OrderPriority = 'normal' | 'urgent' | 'critical'
 
 export interface Order {
   id: string
+  request_code: string | null
   order_name: string | null
   order_date: string | null
   item_service_description: string | null
@@ -543,3 +558,121 @@ export interface CashAdvanceExpense {
   cash_advance_id: string
   expense_id: string
 }
+
+// ── Order Items ───────────────────────────────────────────────────
+export interface OrderItem {
+  id: string
+  order_id: string
+  sub_category_id: string | null
+  stock_item_id: string | null
+  item_name: string
+  specifications: string | null
+  quantity: number | null
+  unit: string | null
+  unit_price_est: number | null
+  status: OrderItemStatus
+  fulfillment_notes: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+export type OrderItemInsert = Omit<OrderItem, 'id' | 'created_at' | 'updated_at'>
+
+export interface ExpenseOrderItem {
+  expense_id: string
+  order_item_id: string
+  quantity_covered: number | null
+  notes: string | null
+}
+
+// ── Stock Items ───────────────────────────────────────────────────
+export interface StockItem {
+  id: string
+  item_name: string
+  amharic_name: string | null
+  sub_category_id: string | null
+  main_category: StockMainCategory | null
+  item_type: StockItemType
+  quality_grade: string | null
+  unit: string
+  warehouse_zone: WarehouseZone | null
+  reorder_level: number | null
+  is_tool: boolean
+  active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type StockItemInsert = Omit<StockItem, 'id' | 'created_at' | 'updated_at'>
+
+// ── Stock Receipts ────────────────────────────────────────────────
+export interface StockReceipt {
+  id: string
+  stock_item_id: string
+  quantity: number
+  unit_price: number | null
+  receipt_type: StockReceiptType
+  destination: 'warehouse' | 'site'
+  warehouse_zone: WarehouseZone | null
+  expense_id: string | null
+  order_item_id: string | null
+  transport_request_id: string | null
+  received_date: string
+  received_by_staff_id: string | null
+  notes: string | null
+  created_at: string
+}
+export type StockReceiptInsert = Omit<StockReceipt, 'id' | 'created_at'>
+
+// ── Stock Issues ──────────────────────────────────────────────────
+export interface StockIssue {
+  id: string
+  stock_item_id: string
+  quantity: number
+  issue_type: StockIssueType
+  project_id: string | null
+  issued_to_staff_id: string | null
+  issued_by_staff_id: string | null
+  order_item_id: string | null
+  issued_date: string
+  notes: string | null
+  created_at: string
+}
+export type StockIssueInsert = Omit<StockIssue, 'id' | 'created_at'>
+
+// ── Tool Units ────────────────────────────────────────────────────
+export interface ToolUnit {
+  id: string
+  stock_item_id: string
+  asset_code: string
+  serial_number: string | null
+  barcode: string | null
+  condition: ToolCondition
+  current_holder_id: string | null
+  checked_out_since: string | null
+  purchase_date: string | null
+  expense_id: string | null
+  notes: string | null
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+export type ToolUnitInsert = Omit<ToolUnit, 'id' | 'created_at' | 'updated_at'>
+
+// ── Tool Checkouts ────────────────────────────────────────────────
+export interface ToolCheckout {
+  id: string
+  tool_unit_id: string
+  issued_to_staff_id: string
+  issued_by_staff_id: string | null
+  project_id: string | null
+  issue_date: string
+  expected_return_date: string | null
+  actual_return_date: string | null
+  condition_on_issue: string | null
+  condition_on_return: string | null
+  returned: boolean
+  notes: string | null
+  created_at: string
+}
+export type ToolCheckoutInsert = Omit<ToolCheckout, 'id' | 'created_at'>

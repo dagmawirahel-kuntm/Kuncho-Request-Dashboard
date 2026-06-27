@@ -12,6 +12,9 @@ import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import ExpenseFormPage from '@/pages/expenses/ExpenseFormPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import OrderFormPage from '@/pages/orders/OrderFormPage'
+import StockItemsPage from '@/pages/stock/StockItemsPage'
+import StockItemFormPage from '@/pages/stock/StockItemFormPage'
+import StockToolsPage from '@/pages/stock/StockToolsPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
 import TransportFormPage from '@/pages/transportation/TransportFormPage'
 import StaffPage from '@/pages/staff/StaffPage'
@@ -76,9 +79,16 @@ export const router = createBrowserRouter([
           { path: 'expenses', element: <ExpensesPage /> },
           { path: 'expenses/new', element: <ExpenseFormPage /> },
           { path: 'expenses/:id/edit', element: <ExpenseFormPage /> },
-          { path: 'orders', element: <OrdersPage /> },
-          { path: 'orders/new', element: <OrderFormPage /> },
-          { path: 'orders/:id/edit', element: <OrderFormPage /> },
+          { path: 'orders', element: <Navigate to="/purchase-requests" replace /> },
+          { path: 'orders/new', element: <Navigate to="/purchase-requests/new" replace /> },
+          { path: 'orders/:id/edit', element: <Navigate to="/purchase-requests" replace /> },
+          { path: 'purchase-requests', element: <OrdersPage /> },
+          { path: 'purchase-requests/new', element: <OrderFormPage /> },
+          { path: 'purchase-requests/:id/edit', element: <OrderFormPage /> },
+          { path: 'stock', element: <StockItemsPage /> },
+          { path: 'stock/new', element: <StockItemFormPage /> },
+          { path: 'stock/:id/edit', element: <StockItemFormPage /> },
+          { path: 'stock/tools', element: <StockToolsPage /> },
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'transportation/new', element: <TransportFormPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
