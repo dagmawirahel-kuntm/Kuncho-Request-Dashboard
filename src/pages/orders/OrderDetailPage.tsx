@@ -153,9 +153,10 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
     ? Math.round((new Date(order.required_by_date).getTime() - today.getTime()) / 86400000)
     : null
 
-  const projectName = lookupName(projects, order.project_id, 'project_name')
-  const staffName   = lookupName(staff, order.staff_id, 'employee_name')
-  const vendorName  = lookupName(vendors, order.recommended_vendor_id, 'vendor_name')
+  const projectName      = lookupName(projects, order.project_id, 'project_name')
+  const procOfficerName  = lookupName(staff, order.staff_id, 'employee_name')
+  const requestedByName  = profileName((order as any).requested_by_user_id)
+  const vendorName       = lookupName(vendors, order.recommended_vendor_id, 'vendor_name')
   const unfilledCount = items.filter(i => i.status === 'unfulfilled').length
 
   return (
@@ -243,10 +244,10 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
       {/* Metadata strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { icon: <Building2 className="h-4 w-4" />, label: 'Project',       value: projectName },
-          { icon: <User className="h-4 w-4" />,      label: 'Requested By',  value: staffName   },
-          { icon: <Calendar className="h-4 w-4" />,  label: 'Submitted',     value: formatDate(order.created_at) ?? '—' },
-          { icon: <Package className="h-4 w-4" />,   label: 'Vendor Hint',   value: vendorName  },
+          { icon: <Building2 className="h-4 w-4" />, label: 'Project',              value: projectName },
+          { icon: <User className="h-4 w-4" />,      label: 'Requested By',         value: requestedByName ?? '—' },
+          { icon: <User className="h-4 w-4" />,      label: 'Procurement Officer',  value: procOfficerName },
+          { icon: <Calendar className="h-4 w-4" />,  label: 'Submitted',            value: formatDate(order.created_at) ?? '—' },
         ].map(m => (
           <div key={m.label} className="flex items-center gap-3 rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 shadow-sm">
             <div className="rounded-lg bg-slate-100 dark:bg-slate-700 p-2 text-slate-500 flex-shrink-0">{m.icon}</div>

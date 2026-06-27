@@ -236,6 +236,8 @@ export interface Order {
   required_by_date: string | null
   priority: OrderPriority | null
   is_new_item: boolean
+  // migration 023: submitter identity; staff_id repurposed as procurement officer
+  requested_by_user_id: string | null
   created_at: string
   updated_at: string
 }

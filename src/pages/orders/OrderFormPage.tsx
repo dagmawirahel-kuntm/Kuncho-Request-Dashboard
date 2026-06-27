@@ -337,7 +337,7 @@ function PurchaseRequestFormBody({
 }: { id?: string; record?: Order; existingItems: OrderItem[] }) {
   const isEdit = !!id
   const navigate = useNavigate()
-  const { role } = useAuth()
+  const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
 
@@ -360,18 +360,19 @@ function PurchaseRequestFormBody({
   // Header form state
   const [header, setHeader] = useState<Partial<OrderInsert>>(
     record ? {
-      order_name:            record.order_name,
-      order_date:            record.order_date,
-      project_id:            record.project_id,
-      staff_id:              record.staff_id,
-      required_by_date:      record.required_by_date,
-      priority:              record.priority ?? 'normal',
-      notes:                 record.notes,
-      recommended_vendor_id: record.recommended_vendor_id,
-      vendor_recommendation: record.vendor_recommendation,
-      status:                record.status,
-      is_new_item:           record.is_new_item ?? false,
-    } : { status: 'pending', priority: 'normal', is_new_item: false }
+      order_name:              record.order_name,
+      order_date:              record.order_date,
+      project_id:              record.project_id,
+      staff_id:                record.staff_id,
+      requested_by_user_id:    record.requested_by_user_id ?? profile?.id ?? null,
+      required_by_date:        record.required_by_date,
+      priority:                record.priority ?? 'normal',
+      notes:                   record.notes,
+      recommended_vendor_id:   record.recommended_vendor_id,
+      vendor_recommendation:   record.vendor_recommendation,
+      status:                  record.status,
+      is_new_item:             record.is_new_item ?? false,
+    } : { status: 'pending', priority: 'normal', is_new_item: false, requested_by_user_id: profile?.id ?? null }
   )
 
   // Line items state
@@ -559,12 +560,17 @@ function PurchaseRequestFormBody({
       {/* Section 1: Header */}
       <div className={sectionCls}>
         <SectionHeader title="Request Details" sub="Project context and urgency" />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Field label="Project">
             <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Select project…" />
           </Field>
           <Field label="Requested By">
-            <SearchableSelect value={header.staff_id ?? null} onChange={v => setHdr('staff_id', v)} options={staffOptions} placeholder="Select staff…" />
+            <div className={`${inputCls} bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 cursor-default select-none`}>
+              {profile?.full_name ?? 'Current User'}
+            </div>
+          </Field>
+          <Field label="Assign Procurement Officer">
+            <SearchableSelect value={header.staff_id ?? null} onChange={v => setHdr('staff_id', v)} options={staffOptions} placeholder="Select officer…" />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
