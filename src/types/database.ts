@@ -636,6 +636,7 @@ export interface ExpenseOrderItem {
 // ── Stock Items ───────────────────────────────────────────────────
 export interface StockItem {
   id: string
+  item_code: string | null
   item_name: string
   amharic_name: string | null
   sub_category_id: string | null
@@ -651,7 +652,7 @@ export interface StockItem {
   created_at: string
   updated_at: string
 }
-export type StockItemInsert = Omit<StockItem, 'id' | 'created_at' | 'updated_at'>
+export type StockItemInsert = Omit<StockItem, 'id' | 'item_code' | 'created_at' | 'updated_at'>
 
 // ── Stock Receipts ────────────────────────────────────────────────
 export interface StockReceipt {

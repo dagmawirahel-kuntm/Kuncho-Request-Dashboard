@@ -63,6 +63,7 @@ export default function StockItemsPage() {
       list = list.filter(i =>
         i.item_name.toLowerCase().includes(q) ||
         (i.amharic_name ?? '').includes(q) ||
+        (i.item_code ?? '').toLowerCase().includes(q) ||
         (i.quality_grade ?? '').toLowerCase().includes(q) ||
         (i.sub_categories?.item_name ?? '').toLowerCase().includes(q)
       )
@@ -177,7 +178,7 @@ export default function StockItemsPage() {
                 {items.map(item => (
                   <div key={item.id}
                     className="group flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/stock/${item.id}/edit`)}
+                    onClick={() => navigate(`/stock/${item.id}`)}
                   >
                     <div className={`flex-shrink-0 rounded-lg p-2 ${item.is_tool ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
                       {item.is_tool ? <Wrench className="h-4 w-4" /> : <Package className="h-4 w-4" />}
@@ -186,6 +187,11 @@ export default function StockItemsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{item.item_name}</span>
                         {item.amharic_name && <span className="text-xs text-slate-400">{item.amharic_name}</span>}
+                        {item.item_code && (
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                            {item.item_code}
+                          </span>
+                        )}
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ITEM_TYPE_STYLES[item.item_type].cls}`}>
                           {ITEM_TYPE_STYLES[item.item_type].label}
                         </span>

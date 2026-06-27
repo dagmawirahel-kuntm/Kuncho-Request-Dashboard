@@ -16,6 +16,8 @@ import OrderFormPage from '@/pages/orders/OrderFormPage'
 import OrderDetailPage from '@/pages/orders/OrderDetailPage'
 import StockItemsPage from '@/pages/stock/StockItemsPage'
 import StockItemFormPage from '@/pages/stock/StockItemFormPage'
+import StockItemDetailPage from '@/pages/stock/StockItemDetailPage'
+import StockMovementPage from '@/pages/stock/StockMovementPage'
 import StockToolsPage from '@/pages/stock/StockToolsPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
 import TransportFormPage from '@/pages/transportation/TransportFormPage'
@@ -101,8 +103,10 @@ export const router = createBrowserRouter([
           },
           { path: 'stock', element: <StockItemsPage /> },
           { path: 'stock/new', element: <StockItemFormPage /> },
-          { path: 'stock/:id/edit', element: <StockItemFormPage /> },
           { path: 'stock/tools', element: <StockToolsPage /> },
+          { path: 'stock/movement/new', element: <StockMovementPage /> },
+          { path: 'stock/:id', element: <StockItemDetailPage /> },
+          { path: 'stock/:id/edit', element: <StockItemFormPage /> },
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'transportation/new', element: <TransportFormPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
