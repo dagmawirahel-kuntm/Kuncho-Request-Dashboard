@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { StockItem, StockItemInsert, StockMainCategory, WarehouseZone } from '@/types/database'
+import type { StockItem, StockItemInsert, StockMainCategory, WarehouseZone, BoothStructureType } from '@/types/database'
 import { useSubCategories } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -38,8 +38,21 @@ const QUALITY_GRADES: Record<StockMainCategory, string[]> = {
   hardware:     ['Heavy Duty', 'Medium Duty', 'Light Duty'],
   construction: ['Grade A', 'Grade B', 'Grade C'],
   tools:        ['Professional', 'Standard'],
-  booth_return: [],
+  booth_return: ['Excellent', 'Good', 'Fair', 'Needs Repair'],
 }
+
+const BOOTH_STRUCTURE_TYPES: { value: BoothStructureType; label: string; desc: string }[] = [
+  {
+    value: 'standalone',
+    label: 'Standalone Structure',
+    desc: 'Large independent piece reusable across any future project (e.g. tower, arch, display wall)',
+  },
+  {
+    value: 'fixed_part',
+    label: 'Fixed Part',
+    desc: 'Structural element designed for a specific booth — may suit similar future events for the same client',
+  },
+]
 
 const COMMON_UNITS = ['pcs', 'kg', 'liters', 'meters', 'sheets', 'bags', 'boxes', 'sets', 'pairs', 'rolls', 'lengths']
 const ZONES: WarehouseZone[] = ['Zone A', 'Zone B', 'Zone C']
@@ -69,19 +82,21 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
 
   const [form, setForm] = useState<Partial<StockItemInsert>>(
     record ? {
-      item_name:      record.item_name,
-      amharic_name:   record.amharic_name,
-      sub_category_id: record.sub_category_id,
-      main_category:  record.main_category,
-      item_type:      record.item_type,
-      quality_grade:  record.quality_grade,
-      unit:           record.unit,
-      warehouse_zone: record.warehouse_zone,
-      reorder_level:  record.reorder_level,
-      is_tool:        record.is_tool,
-      active:         record.active,
-      notes:          record.notes,
-    } : { item_type: 'consumable', unit: 'pcs', is_tool: false, active: true }
+      item_name:         record.item_name,
+      amharic_name:      record.amharic_name,
+      sub_category_id:   record.sub_category_id,
+      main_category:     record.main_category,
+      item_type:         record.item_type,
+      quality_grade:     record.quality_grade,
+      unit:              record.unit,
+      warehouse_zone:    record.warehouse_zone,
+      reorder_level:     record.reorder_level,
+      is_tool:           record.is_tool,
+      active:            record.active,
+      notes:             record.notes,
+      structure_type:    record.structure_type,
+      source_project_id: record.source_project_id,
+    } : { item_type: 'raw_material', unit: 'pcs', is_tool: false, active: true }
   )
 
   const [saving, setSaving] = useState(false)
@@ -89,6 +104,16 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
 
   const { data: subCats = [] } = useSubCategories()
   const subCatOptions = useMemo(() => subCats.map((s: any) => ({ id: s.id, label: s.item_name })), [subCats])
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects-lookup'],
+    queryFn: async () => {
+      const { data } = await supabase.from('projects').select('id, project_name').order('project_name')
+      return (data ?? []) as { id: string; project_name: string }[]
+    },
+  })
+
+  const isBoothReturn = form.main_category === 'booth_return'
 
   function set(key: keyof StockItemInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
@@ -139,7 +164,12 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Main Category" required>
               <select className={inputCls} value={form.main_category ?? ''}
-                onChange={e => { set('main_category', e.target.value || null); set('quality_grade', null) }}>
+                onChange={e => {
+                  const cat = e.target.value || null
+                  set('main_category', cat)
+                  set('quality_grade', null)
+                  if (cat !== 'booth_return') { set('structure_type', null); set('source_project_id', null) }
+                }}>
                 <option value="">Select category…</option>
                 {MAIN_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
@@ -173,6 +203,54 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
             <SearchableSelect value={form.sub_category_id ?? null} onChange={v => set('sub_category_id', v)} options={subCatOptions} placeholder="Link to accounting sub-ledger…" />
           </Field>
         </div>
+
+        {/* Booth Return — structure details */}
+        {isBoothReturn && (
+          <div className="rounded-xl border-2 border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/10 p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Booth Return Details</p>
+              <p className="text-xs text-amber-700/70 dark:text-amber-400/70 mt-0.5">
+                Classify the structure so the team knows how it can be reused for future projects.
+              </p>
+            </div>
+
+            {/* Structure type */}
+            <Field label="Structure Type *">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                {BOOTH_STRUCTURE_TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => set('structure_type', form.structure_type === t.value ? null : t.value)}
+                    className={`text-left rounded-xl border-2 px-4 py-3 transition-all ${
+                      form.structure_type === t.value
+                        ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-amber-300'
+                    }`}
+                  >
+                    <p className={`text-sm font-semibold ${form.structure_type === t.value ? 'text-amber-800 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                      {t.label}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">{t.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            {/* Source project */}
+            <Field label="Source Booth / Project">
+              <select
+                className={inputCls}
+                value={form.source_project_id ?? ''}
+                onChange={e => set('source_project_id', e.target.value || null)}
+              >
+                <option value="">— Select the project this booth came from —</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.project_name}</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-400">Which event or exhibition booth did these structures come from?</p>
+            </Field>
+          </div>
+        )}
 
         {/* Storage */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-3">

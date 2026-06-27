@@ -4,11 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import JsBarcode from 'jsbarcode'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { StockItem, StockReceipt, StockIssue, ToolUnit, StockMainCategory } from '@/types/database'
+import type { StockItem, StockReceipt, StockIssue, ToolUnit, StockMainCategory, BoothStructureType } from '@/types/database'
 import {
   ArrowLeft, Pencil, Package, Wrench, TrendingDown, TrendingUp,
-  Plus, Hash, Layers, ArrowRightLeft,
+  Plus, Hash, Layers, ArrowRightLeft, RotateCcw,
 } from 'lucide-react'
+
+const BOOTH_STRUCTURE_STYLES: Record<BoothStructureType, { label: string; desc: string }> = {
+  standalone: { label: 'Standalone Structure', desc: 'Reusable across future projects' },
+  fixed_part: { label: 'Fixed Part',           desc: 'Designed for a specific booth' },
+}
 
 // ── Category colour map ────────────────────────────────────────────────────────
 const CAT_THEME: Record<StockMainCategory, { bg: string; abbr: string; label: string }> = {
@@ -116,6 +121,20 @@ export default function StockItemDetailPage() {
       return data as StockItem
     },
     enabled: !!id,
+  })
+
+  // ── Source project (booth_return only) ─────────────────────────────────────
+  const { data: sourceProject } = useQuery({
+    queryKey: ['stock-item-source-project', item?.source_project_id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('projects')
+        .select('project_name')
+        .eq('id', item!.source_project_id!)
+        .single()
+      return data as { project_name: string } | null
+    },
+    enabled: !!item?.source_project_id,
   })
 
   // ── Receipts (stock in) ─────────────────────────────────────────────────────
@@ -255,12 +274,23 @@ export default function StockItemDetailPage() {
               >
                 <Hash className="h-3 w-3" /> {itemCode}
               </span>
-              <span
-                className="text-xs px-2 py-1 rounded-lg capitalize"
-                style={{ background: 'rgba(255,255,255,0.14)', color: '#fff' }}
-              >
-                {ITEM_TYPE_STYLES[item.item_type]?.label ?? item.item_type}
-              </span>
+              {/* Booth return — show structure type instead of generic item type */}
+              {item.main_category === 'booth_return' && item.structure_type ? (
+                <span
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.22)', color: '#fff' }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  {BOOTH_STRUCTURE_STYLES[item.structure_type].label}
+                </span>
+              ) : (
+                <span
+                  className="text-xs px-2 py-1 rounded-lg capitalize"
+                  style={{ background: 'rgba(255,255,255,0.14)', color: '#fff' }}
+                >
+                  {ITEM_TYPE_STYLES[item.item_type]?.label ?? item.item_type}
+                </span>
+              )}
               <span
                 className="text-xs px-2 py-1 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.14)', color: '#fff' }}
@@ -276,6 +306,25 @@ export default function StockItemDetailPage() {
                 </span>
               )}
             </div>
+
+            {/* Booth return — source project + reuse description */}
+            {item.main_category === 'booth_return' && (item.structure_type || sourceProject) && (
+              <div
+                className="rounded-xl px-4 py-3 mb-4 space-y-1"
+                style={{ background: 'rgba(255,255,255,0.10)' }}
+              >
+                {item.structure_type && (
+                  <p className="text-white/80 text-xs leading-snug">
+                    {BOOTH_STRUCTURE_STYLES[item.structure_type].desc}
+                  </p>
+                )}
+                {sourceProject && (
+                  <p className="text-white/60 text-xs">
+                    From booth project: <span className="text-white/90 font-medium">{sourceProject.project_name}</span>
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Barcode */}
             {item.item_code && (

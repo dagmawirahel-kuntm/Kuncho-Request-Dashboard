@@ -634,6 +634,8 @@ export interface ExpenseOrderItem {
 }
 
 // ── Stock Items ───────────────────────────────────────────────────
+export type BoothStructureType = 'fixed_part' | 'standalone'
+
 export interface StockItem {
   id: string
   item_code: string | null
@@ -649,6 +651,8 @@ export interface StockItem {
   is_tool: boolean
   active: boolean
   notes: string | null
+  structure_type: BoothStructureType | null
+  source_project_id: string | null
   created_at: string
   updated_at: string
 }

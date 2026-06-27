@@ -2,9 +2,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { StockItem, StockMainCategory, WarehouseZone } from '@/types/database'
+import type { StockItem, StockMainCategory, WarehouseZone, BoothStructureType } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2, Search, Warehouse, Wrench, Package, Flame, ChevronRight, AlertTriangle } from 'lucide-react'
+
+const BOOTH_STRUCTURE_BADGE: Record<BoothStructureType, { label: string; cls: string }> = {
+  standalone:  { label: 'Standalone',  cls: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  fixed_part:  { label: 'Fixed Part',  cls: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+}
 
 // ── Quality grade → badge colour ───────────────────────────────────────────────
 function qualityTheme(grade: string | null): { cls: string; label: string } | null {
@@ -247,14 +252,21 @@ export default function StockItemsPage() {
                             {levelBadge.icon}{levelBadge.label}
                           </span>
                         )}
+                        {item.main_category === 'booth_return' && item.structure_type && (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${BOOTH_STRUCTURE_BADGE[item.structure_type].cls}`}>
+                            {BOOTH_STRUCTURE_BADGE[item.structure_type].label}
+                          </span>
+                        )}
                         {qualBadge && (
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${qualBadge.cls}`}>
                             {qualBadge.label}
                           </span>
                         )}
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ITEM_TYPE_STYLES[item.item_type].cls}`}>
-                          {ITEM_TYPE_STYLES[item.item_type].label}
-                        </span>
+                        {item.main_category !== 'booth_return' && (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ITEM_TYPE_STYLES[item.item_type].cls}`}>
+                            {ITEM_TYPE_STYLES[item.item_type].label}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                         {currentStock !== undefined && (
