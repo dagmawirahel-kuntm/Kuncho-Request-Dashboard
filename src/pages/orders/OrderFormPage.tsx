@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Order, OrderInsert, OrderPriority } from '@/types/database'
 import {
   useProjects, useStaff, useCategories, useVendors,
-  useExpensesList, useUserProfiles, useProducts, useRecentOrderItems,
+  useExpensesList, useUserProfiles, useSubCategoriesAll, useRecentOrderItems,
 } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -55,55 +55,74 @@ const COMMON_UNITS = ['pcs', 'kg', 'liters', 'meters', 'boxes', 'bags', 'sets', 
 type CatalogItem = {
   id: string
   name: string
-  category: string | null
-  price: number | null
+  glCategory: string | null
+  glCategoryId: string | null
   description: string | null
-  source: 'product' | 'history'
+  source: 'sub_ledger' | 'history'
   raw: Record<string, unknown>
 }
 
 function CatalogPicker({
-  products,
+  subCategories,
   recentItems,
   onSelect,
   onNewItem,
 }: {
-  products: { id: string; product_name: string; category: string | null; unit_price: number | null; description: string | null }[]
+  subCategories: { id: string; item_name: string; description: string | null; parent_category_id: string | null; categories: { category_name: string } | null }[]
   recentItems: { order_name: string | null; item_service_description: string | null; unit: string | null; unit_price_estimate: number | null; category_id: string | null; recommended_vendor_id: string | null }[]
   onSelect: (item: CatalogItem) => void
   onNewItem: () => void
 }) {
   const [search, setSearch] = useState('')
-  const [tab, setTab] = useState<'products' | 'history'>('products')
+  const [tab, setTab] = useState<'sub_ledger' | 'history'>('sub_ledger')
 
-  const productItems: CatalogItem[] = useMemo(() =>
-    products.map(p => ({
-      id: p.id,
-      name: p.product_name,
-      category: p.category,
-      price: p.unit_price,
-      description: p.description,
-      source: 'product' as const,
-      raw: p as Record<string, unknown>,
+  const ledgerItems: CatalogItem[] = useMemo(() =>
+    subCategories.map(s => ({
+      id: s.id,
+      name: s.item_name,
+      glCategory: s.categories?.category_name ?? null,
+      glCategoryId: s.parent_category_id,
+      description: s.description,
+      source: 'sub_ledger' as const,
+      raw: s as Record<string, unknown>,
     }))
-  , [products])
+  , [subCategories])
 
   const historyItems: CatalogItem[] = useMemo(() =>
     recentItems.map((o, i) => ({
       id: `hist-${i}`,
       name: o.order_name || (o.item_service_description ?? '').slice(0, 60),
-      category: null,
-      price: o.unit_price_estimate,
+      glCategory: null,
+      glCategoryId: o.category_id,
       description: o.item_service_description,
       source: 'history' as const,
       raw: o as Record<string, unknown>,
     }))
   , [recentItems])
 
-  const allItems = tab === 'products' ? productItems : historyItems
-  const filtered = search.trim()
-    ? allItems.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || (i.category ?? '').toLowerCase().includes(search.toLowerCase()))
+  const allItems = tab === 'sub_ledger' ? ledgerItems : historyItems
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? allItems.filter(i =>
+        i.name.toLowerCase().includes(q) ||
+        (i.glCategory ?? '').toLowerCase().includes(q) ||
+        (i.description ?? '').toLowerCase().includes(q)
+      )
     : allItems
+
+  // Group sub-ledger items by GL category for easy scanning
+  const grouped: { glCategory: string | null; items: CatalogItem[] }[] = useMemo(() => {
+    if (tab !== 'sub_ledger' || q) return []
+    const map = new Map<string, CatalogItem[]>()
+    for (const item of ledgerItems) {
+      const key = item.glCategory ?? 'Uncategorized'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(item)
+    }
+    return Array.from(map.entries()).map(([glCategory, items]) => ({ glCategory, items }))
+  }, [tab, ledgerItems, q])
+
+  const showGrouped = tab === 'sub_ledger' && !q && grouped.length > 0
 
   return (
     <div className="rounded-xl border dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800">
@@ -113,7 +132,7 @@ function CatalogPicker({
         <input
           autoFocus
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 dark:text-slate-100"
-          placeholder="Search catalog…"
+          placeholder="Search sub-ledger accounts…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -130,10 +149,10 @@ function CatalogPicker({
       <div className="flex gap-4 px-3 pt-2 pb-1 text-xs font-medium border-b dark:border-slate-700">
         <button
           type="button"
-          onClick={() => setTab('products')}
-          className={`pb-1 border-b-2 transition-colors ${tab === 'products' ? 'border-brand text-brand' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          onClick={() => setTab('sub_ledger')}
+          className={`pb-1 border-b-2 transition-colors ${tab === 'sub_ledger' ? 'border-brand text-brand' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
         >
-          <span className="flex items-center gap-1"><Package className="h-3 w-3" /> Products catalog</span>
+          <span className="flex items-center gap-1"><Package className="h-3 w-3" /> Sub-ledger accounts</span>
         </button>
         <button
           type="button"
@@ -145,38 +164,55 @@ function CatalogPicker({
       </div>
 
       {/* Items list */}
-      <div className="max-h-64 overflow-y-auto divide-y dark:divide-slate-700/60">
-        {filtered.length === 0 ? (
+      <div className="max-h-72 overflow-y-auto">
+        {showGrouped ? (
+          grouped.map(group => (
+            <div key={group.glCategory ?? 'none'}>
+              <div className="sticky top-0 px-3 py-1.5 bg-slate-50 dark:bg-slate-700/80 border-b dark:border-slate-700">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{group.glCategory ?? 'Uncategorized'}</p>
+              </div>
+              {group.items.map(item => (
+                <CatalogRow key={item.id} item={item} onSelect={onSelect} />
+              ))}
+            </div>
+          ))
+        ) : filtered.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-400">
-            {search ? 'No matches.' : tab === 'products' ? 'No products in catalog.' : 'No order history yet.'}
+            {search ? 'No matches.' : tab === 'sub_ledger' ? 'No sub-ledger accounts found.' : 'No order history yet.'}
             {' '}
-            <button type="button" onClick={onNewItem} className="text-brand font-medium hover:underline">Request new item →</button>
+            <button type="button" onClick={onNewItem} className="text-brand font-medium hover:underline">Register new item →</button>
           </div>
-        ) : filtered.map(item => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSelect(item)}
-            className="w-full text-left flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors group"
-          >
-            <div className="mt-0.5 flex-shrink-0 rounded-lg p-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500">
-              {item.source === 'product' ? <Package className="h-3.5 w-3.5" /> : <History className="h-3.5 w-3.5" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate group-hover:text-brand transition-colors">{item.name}</p>
-              {item.category && <p className="text-xs text-slate-400 mt-0.5">{item.category}</p>}
-              {item.description && item.source === 'history' && (
-                <p className="text-xs text-slate-400 mt-0.5 truncate">{item.description.slice(0, 80)}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {item.price != null && <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(item.price)}</p>}
-              <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-brand transition-colors" />
-            </div>
-          </button>
-        ))}
+        ) : (
+          <div className="divide-y dark:divide-slate-700/60">
+            {filtered.map(item => <CatalogRow key={item.id} item={item} onSelect={onSelect} />)}
+          </div>
+        )}
       </div>
     </div>
+  )
+}
+
+function CatalogRow({ item, onSelect }: { item: CatalogItem; onSelect: (i: CatalogItem) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className="w-full text-left flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors group"
+    >
+      <div className="mt-0.5 flex-shrink-0 rounded-md p-1.5 bg-slate-100 dark:bg-slate-700 text-slate-400">
+        {item.source === 'sub_ledger' ? <Package className="h-3.5 w-3.5" /> : <History className="h-3.5 w-3.5" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate group-hover:text-brand transition-colors">{item.name}</p>
+        {item.glCategory && item.source === 'history' && (
+          <p className="text-xs text-slate-400 mt-0.5">{item.glCategory}</p>
+        )}
+        {item.description && (
+          <p className="text-xs text-slate-400 mt-0.5 truncate">{item.description.slice(0, 80)}</p>
+        )}
+      </div>
+      <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-brand transition-colors flex-shrink-0 mt-0.5" />
+    </button>
   )
 }
 
@@ -246,7 +282,7 @@ function OrderFormPageBody({ id, record, linkedExpenseIds }: { id?: string; reco
   const { data: vendors = [] } = useVendors()
   const { data: expenses = [] } = useExpensesList()
   const { data: userProfiles = [] } = useUserProfiles()
-  const { data: products = [] } = useProducts()
+  const { data: subCategories = [] } = useSubCategoriesAll()
   const { data: recentItems = [] } = useRecentOrderItems()
 
   const projectOptions  = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
@@ -274,7 +310,7 @@ function OrderFormPageBody({ id, record, linkedExpenseIds }: { id?: string; reco
           staff_id:                record.staff_id,
           category_id:             record.category_id,
           recommended_vendor_id:   record.recommended_vendor_id,
-          product_id:              record.product_id,
+          sub_category_id:         record.sub_category_id,
           unit:                    record.unit,
           unit_price_estimate:     record.unit_price_estimate,
           required_by_date:        record.required_by_date,
@@ -299,23 +335,25 @@ function OrderFormPageBody({ id, record, linkedExpenseIds }: { id?: string; reco
       ...f,
       order_name:               item.name,
       item_service_description: item.description ?? f.item_service_description,
-      product_id:               item.source === 'product' ? item.id : null,
-      unit_price_estimate:      item.price ?? f.unit_price_estimate,
+      sub_category_id:          item.source === 'sub_ledger' ? item.id : null,
+      // auto-set GL category from the sub-ledger's parent
+      category_id:              item.glCategoryId ?? f.category_id,
       is_new_item:              false,
     }))
-    if ((item.raw as any).unit)                   setUnitInput((item.raw as any).unit)
-    if ((item.raw as any).category_id)            set('category_id', (item.raw as any).category_id)
-    if ((item.raw as any).recommended_vendor_id)  set('recommended_vendor_id', (item.raw as any).recommended_vendor_id)
+    // restore unit / vendor from history items
+    if ((item.raw as any).unit)                  setUnitInput((item.raw as any).unit)
+    if ((item.raw as any).unit_price_estimate)   set('unit_price_estimate', (item.raw as any).unit_price_estimate)
+    if ((item.raw as any).recommended_vendor_id) set('recommended_vendor_id', (item.raw as any).recommended_vendor_id)
     setShowCatalog(false)
   }
 
   function handleNewItem() {
-    setForm(f => ({ ...f, is_new_item: true, product_id: null, order_name: f.order_name ?? '' }))
+    setForm(f => ({ ...f, is_new_item: true, sub_category_id: null, order_name: f.order_name ?? '' }))
     setShowCatalog(false)
   }
 
   function clearItem() {
-    setForm(f => ({ ...f, order_name: '', item_service_description: '', product_id: null, is_new_item: false }))
+    setForm(f => ({ ...f, order_name: '', item_service_description: '', sub_category_id: null, is_new_item: false }))
     setShowCatalog(true)
   }
 
@@ -421,7 +459,7 @@ function OrderFormPageBody({ id, record, linkedExpenseIds }: { id?: string; reco
 
         {showCatalog ? (
           <CatalogPicker
-            products={products}
+            subCategories={subCategories}
             recentItems={recentItems}
             onSelect={handleCatalogSelect}
             onNewItem={handleNewItem}

@@ -264,18 +264,24 @@ export function useCashAdvancesList() {
   })
 }
 
-export function useProducts() {
+export function useSubCategoriesAll() {
   return useQuery({
-    queryKey: ['products-catalog'],
+    queryKey: ['sub-categories-all'],
     staleTime: 300_000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('products')
-        .select('id,product_name,category,unit_price,description,active')
+        .from('sub_categories')
+        .select('id,item_name,description,parent_category_id,categories(category_name)')
         .eq('active', true)
-        .order('product_name')
+        .order('item_name')
       if (error) throw error
-      return (data ?? []) as { id: string; product_name: string; category: string | null; unit_price: number | null; description: string | null; active: boolean }[]
+      return (data ?? []) as {
+        id: string
+        item_name: string
+        description: string | null
+        parent_category_id: string | null
+        categories: { category_name: string } | null
+      }[]
     },
   })
 }

@@ -214,8 +214,8 @@ export interface Order {
   manager_approved_at: string | null
   finance_approved_by: string | null
   finance_approved_at: string | null
-  // procurement fields (migration 019)
-  product_id: string | null
+  // procurement fields (migrations 019-020)
+  sub_category_id: string | null
   unit: string | null
   unit_price_estimate: number | null
   required_by_date: string | null
