@@ -273,12 +273,12 @@ export default function PurchaseRequestsPage() {
               <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button onClick={e => { e.stopPropagation(); navigate(`/purchase-requests/${order.id}/edit`) }}
                   title="Edit"
-                  className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100">
+                  className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
                 <button onClick={e => { e.stopPropagation(); handleDelete(order.id) }}
                   title="Delete"
-                  className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100">
+                  className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
                 <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-400 transition-colors" />

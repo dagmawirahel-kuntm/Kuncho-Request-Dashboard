@@ -7,8 +7,9 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { StockItem, StockReceipt, StockIssue, ToolUnit, StockMainCategory, BoothStructureType } from '@/types/database'
 import {
   ArrowLeft, Pencil, Package, Wrench, TrendingDown, TrendingUp,
-  Plus, Hash, Layers, ArrowRightLeft, RotateCcw,
+  Plus, Hash, Layers, ArrowRightLeft, RotateCcw, Trash2,
 } from 'lucide-react'
+import { useToast } from '@/contexts/ToastContext'
 
 const BOOTH_STRUCTURE_STYLES: Record<BoothStructureType, { label: string; desc: string }> = {
   standalone: { label: 'Standalone Structure', desc: 'Reusable across future projects' },
@@ -106,7 +107,24 @@ export default function StockItemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { toast } = useToast()
   const [tab, setTab] = useState<Tab>('in')
+
+  async function handleDeleteReceipt(receiptId: string) {
+    if (!window.confirm('Delete this stock receipt? This cannot be undone.')) return
+    const { error } = await supabase.from('stock_receipts').delete().eq('id', receiptId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['stock-receipts', id] })
+    toast('Receipt deleted', 'success')
+  }
+
+  async function handleDeleteIssue(issueId: string) {
+    if (!window.confirm('Delete this stock issue? This cannot be undone.')) return
+    const { error } = await supabase.from('stock_issues').delete().eq('id', issueId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['stock-issues', id] })
+    toast('Issue deleted', 'success')
+  }
 
   // ── Item ────────────────────────────────────────────────────────────────────
   const { data: item, isLoading } = useQuery({
@@ -392,7 +410,7 @@ export default function StockItemDetailPage() {
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">{month}</p>
               <div className="rounded-xl border dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 shadow-sm">
                 {rows.map(r => (
-                  <div key={r.id} className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800">
+                  <div key={r.id} className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 group">
                     <div className="rounded-lg p-2 bg-green-50 text-green-500 flex-shrink-0">
                       <TrendingUp className="h-4 w-4" />
                     </div>
@@ -418,6 +436,13 @@ export default function StockItemDetailPage() {
                         {r.warehouse_zone}
                       </span>
                     )}
+                    <button
+                      onClick={() => handleDeleteReceipt(r.id)}
+                      className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
+                      title="Delete receipt"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -442,7 +467,7 @@ export default function StockItemDetailPage() {
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 px-1">{month}</p>
               <div className="rounded-xl border dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 shadow-sm">
                 {rows.map(r => (
-                  <div key={r.id} className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800">
+                  <div key={r.id} className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 group">
                     <div className="rounded-lg p-2 bg-red-50 text-red-400 flex-shrink-0">
                       <TrendingDown className="h-4 w-4" />
                     </div>
@@ -459,6 +484,13 @@ export default function StockItemDetailPage() {
                         {r.notes && <span className="italic">{r.notes}</span>}
                       </div>
                     </div>
+                    <button
+                      onClick={() => handleDeleteIssue(r.id)}
+                      className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
+                      title="Delete issue"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
