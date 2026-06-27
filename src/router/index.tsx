@@ -12,6 +12,7 @@ import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import ExpenseFormPage from '@/pages/expenses/ExpenseFormPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import OrderFormPage from '@/pages/orders/OrderFormPage'
+import OrderDetailPage from '@/pages/orders/OrderDetailPage'
 import StockItemsPage from '@/pages/stock/StockItemsPage'
 import StockItemFormPage from '@/pages/stock/StockItemFormPage'
 import StockToolsPage from '@/pages/stock/StockToolsPage'
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
           { path: 'orders/:id/edit', element: <Navigate to="/purchase-requests" replace /> },
           { path: 'purchase-requests', element: <OrdersPage /> },
           { path: 'purchase-requests/new', element: <OrderFormPage /> },
+          { path: 'purchase-requests/:id', element: <OrderDetailPage /> },
           { path: 'purchase-requests/:id/edit', element: <OrderFormPage /> },
           { path: 'stock', element: <StockItemsPage /> },
           { path: 'stock/new', element: <StockItemFormPage /> },

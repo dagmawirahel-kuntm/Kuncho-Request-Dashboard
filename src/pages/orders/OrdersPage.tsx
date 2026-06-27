@@ -223,7 +223,7 @@ export default function PurchaseRequestsPage() {
           {filtered.map(order => (
             <div key={order.id}
               className="group flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
-              onClick={() => navigate(`/purchase-requests/${order.id}/edit`)}
+              onClick={() => navigate(`/purchase-requests/${order.id}`)}
             >
               {/* Icon */}
               <div className={`flex-shrink-0 rounded-lg p-2 ${order.is_new_item ? 'bg-amber-50 text-amber-500' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
