@@ -263,3 +263,42 @@ export function useCashAdvancesList() {
     },
   })
 }
+
+export function useProducts() {
+  return useQuery({
+    queryKey: ['products-catalog'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id,product_name,category,unit_price,description,active')
+        .eq('active', true)
+        .order('product_name')
+      if (error) throw error
+      return (data ?? []) as { id: string; product_name: string; category: string | null; unit_price: number | null; description: string | null; active: boolean }[]
+    },
+  })
+}
+
+export function useRecentOrderItems() {
+  return useQuery({
+    queryKey: ['recent-order-items'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('order_name,item_service_description,unit,unit_price_estimate,category_id,recommended_vendor_id')
+        .not('item_service_description', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(300)
+      if (error) throw error
+      const seen = new Set<string>()
+      return (data ?? []).filter(o => {
+        const key = ((o.order_name || o.item_service_description) ?? '').trim().toLowerCase().slice(0, 60)
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      }).slice(0, 40)
+    },
+  })
+}

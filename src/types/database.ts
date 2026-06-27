@@ -193,6 +193,8 @@ export interface Expense {
 export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval'>
 
 // ── Orders ───────────────────────────────────────────────────────
+export type OrderPriority = 'normal' | 'urgent' | 'critical'
+
 export interface Order {
   id: string
   order_name: string | null
@@ -212,10 +214,17 @@ export interface Order {
   manager_approved_at: string | null
   finance_approved_by: string | null
   finance_approved_at: string | null
+  // procurement fields (migration 019)
+  product_id: string | null
+  unit: string | null
+  unit_price_estimate: number | null
+  required_by_date: string | null
+  priority: OrderPriority | null
+  is_new_item: boolean
   created_at: string
   updated_at: string
 }
-export type OrderInsert = Omit<Order, 'id' | 'order_name' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
+export type OrderInsert = Omit<Order, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
 
 // ── Purchase Allocation ──────────────────────────────────────────
 export interface PurchaseAllocation {
