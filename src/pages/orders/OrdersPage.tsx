@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatDate } from '@/lib/utils'
 import type { Order, OrderApprovalStatus, OrderPriority } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import {
   Plus, Pencil, Trash2, Package, Zap, AlertCircle, Clock,
   CheckCircle2, Search, ChevronRight, AlertTriangle, ListChecks,
@@ -86,6 +87,8 @@ export default function PurchaseRequestsPage() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { role } = useAuth()
+  const canCreate = role !== 'procurement_officer'
   const [search, setSearch] = useState('')
   const [approvalFilter, setApprovalFilter] = useState<OrderApprovalStatus | 'all'>('all')
 
@@ -170,10 +173,12 @@ export default function PurchaseRequestsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Purchase Requests</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Initiate and track procurement requests</p>
         </div>
-        <Link to="/purchase-requests/new"
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New Request
-        </Link>
+        {canCreate && (
+          <Link to="/purchase-requests/new"
+            className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New Request
+          </Link>
+        )}
       </div>
 
       {/* Stats */}
@@ -212,7 +217,7 @@ export default function PurchaseRequestsPage() {
         <div className="rounded-xl border-2 border-dashed dark:border-slate-700 bg-white dark:bg-slate-800 py-16 text-center">
           <Package className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
           <p className="text-sm text-slate-500">{search || approvalFilter !== 'all' ? 'No matching requests.' : 'No purchase requests yet.'}</p>
-          {!search && approvalFilter === 'all' && (
+          {!search && approvalFilter === 'all' && canCreate && (
             <Link to="/purchase-requests/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline">
               <Plus className="h-3.5 w-3.5" /> Create first request
             </Link>

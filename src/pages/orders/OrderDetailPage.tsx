@@ -118,7 +118,8 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const approvalStatus   = order.approval_status ?? 'pending'
   const showManagerAct   = approvalStatus === 'pending' && canApproveAsManager(role)
   const showFinanceAct   = approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit      = approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'procurement_officer')
+  const canCreate        = role !== 'procurement_officer'
+  const canResubmit      = approvalStatus === 'rejected' && (role === 'admin' || role === 'manager')
   const canUpdateItems   = role === 'admin' || role === 'manager' || role === 'procurement_officer'
 
   const rejectedAtMgr    = approvalStatus === 'rejected' && !order.manager_approved_by
@@ -168,10 +169,12 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
           className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand transition-colors">
           <ArrowLeft className="h-4 w-4" />Purchase Requests
         </Link>
-        <Link to={`/purchase-requests/${order.id}/edit`}
-          className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:border-brand hover:text-brand transition-colors shadow-sm">
-          <Pencil className="h-3.5 w-3.5" />Edit Request
-        </Link>
+        {canCreate && (
+          <Link to={`/purchase-requests/${order.id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:border-brand hover:text-brand transition-colors shadow-sm">
+            <Pencil className="h-3.5 w-3.5" />Edit Request
+          </Link>
+        )}
       </div>
 
       {/* Hero card */}

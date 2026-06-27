@@ -456,7 +456,7 @@ function PurchaseRequestFormBody({
   const approvalStatus = record?.approval_status ?? 'pending'
   const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'procurement_officer')
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
     if (!id) return

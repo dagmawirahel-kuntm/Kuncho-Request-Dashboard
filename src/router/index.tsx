@@ -84,9 +84,15 @@ export const router = createBrowserRouter([
           { path: 'orders/new', element: <Navigate to="/purchase-requests/new" replace /> },
           { path: 'orders/:id/edit', element: <Navigate to="/purchase-requests" replace /> },
           { path: 'purchase-requests', element: <OrdersPage /> },
-          { path: 'purchase-requests/new', element: <OrderFormPage /> },
           { path: 'purchase-requests/:id', element: <OrderDetailPage /> },
-          { path: 'purchase-requests/:id/edit', element: <OrderFormPage /> },
+          {
+            // Procurement officers may view requests but cannot create or edit them
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'staff', 'project_manager', 'hr_officer']} />,
+            children: [
+              { path: 'purchase-requests/new', element: <OrderFormPage /> },
+              { path: 'purchase-requests/:id/edit', element: <OrderFormPage /> },
+            ],
+          },
           { path: 'stock', element: <StockItemsPage /> },
           { path: 'stock/new', element: <StockItemFormPage /> },
           { path: 'stock/:id/edit', element: <StockItemFormPage /> },
