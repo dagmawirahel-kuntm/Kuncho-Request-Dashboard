@@ -24,6 +24,7 @@ export interface Database {
       staff: { Row: Staff; Insert: StaffInsert; Update: Partial<StaffInsert> }
       projects: { Row: Project; Insert: ProjectInsert; Update: Partial<ProjectInsert> }
       vendors: { Row: Vendor; Insert: VendorInsert; Update: Partial<VendorInsert> }
+      vendor_documents: { Row: VendorDocument; Insert: VendorDocumentInsert; Update: Partial<VendorDocumentInsert> }
       categories: { Row: Category; Insert: CategoryInsert; Update: Partial<CategoryInsert> }
       sub_categories: { Row: SubCategory; Insert: SubCategoryInsert; Update: Partial<SubCategoryInsert> }
       expenses: { Row: Expense; Insert: ExpenseInsert; Update: Partial<ExpenseInsert> }
@@ -127,6 +128,19 @@ export interface Vendor {
 }
 export type VendorInsert = Omit<Vendor, 'id' | 'created_at' | 'updated_at'>
 
+// ── Vendor Documents ──────────────────────────────────────────────
+export interface VendorDocument {
+  id: string
+  vendor_id: string
+  document_type: string
+  document_name: string
+  file_url: string | null
+  expiry_date: string | null
+  notes: string | null
+  created_at: string
+}
+export type VendorDocumentInsert = Omit<VendorDocument, 'id' | 'created_at'>
+
 // ── Categories (General Ledgers) ──────────────────────────────────
 // `nature` classifies the ledger per the accounting equation
 // Assets = Liabilities + Owner's Equity: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense'
@@ -210,6 +224,8 @@ export interface Expense {
   finance_approved_by: string | null
   finance_approved_at: string | null
   requires_finance_approval: boolean
+  receipt_url: string | null
+  receipt_name: string | null
   created_at: string
   updated_at: string
 }

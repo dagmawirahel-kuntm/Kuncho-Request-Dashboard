@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { Vendor, Expense, SourcingBundle, CpoBond } from '@/types/database'
+import type { Vendor, Expense, SourcingBundle, CpoBond, VendorDocument, SourcingBundleItem } from '@/types/database'
+import { FileUpload } from '@/components/shared/FileUpload'
 import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, User, CreditCard,
   FileText, Package, Shield, Check, X, Building2, Tag, ExternalLink,
+  Plus, Trash2, AlertCircle, FileBadge, ScrollText,
 } from 'lucide-react'
 
 const PALETTE = [
@@ -23,7 +25,10 @@ function vendorInitials(name: string) {
   return w.length >= 2 ? (w[0][0] + w[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
 }
 
-type Tab = 'expenses' | 'sourcing' | 'bonds'
+const DOC_TYPES = ['Business License','Trade Registration','TIN Certificate','VAT Certificate',
+  'Professional License','Bank Letter','Insurance Certificate','Other']
+
+type Tab = 'expenses' | 'sourcing' | 'bonds' | 'documents'
 
 function InfoRow({ icon, label, value, href }: { icon: React.ReactNode; label: string; value: string | null | undefined; href?: string }) {
   if (!value) return null
@@ -49,18 +54,26 @@ type SourcingBundleRow = SourcingBundle & { items_count?: number }
 
 function StatusBadge({ value }: { value: string }) {
   const color =
-    value === 'fulfilled' || value === 'approved' || value === 'Paid' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-    value === 'ordered'   ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-    value === 'submitted' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-    value === 'cancelled' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+    value === 'fulfilled' || value === 'approved' || value === 'Paid' || value === 'finance_approved'
+      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+    value === 'ordered' || value === 'manager_approved'
+      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+    value === 'submitted'
+      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+    value === 'cancelled' || value === 'rejected'
+      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
     'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${color}`}>{value}</span>
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${color}`}>{value.replace(/_/g, ' ')}</span>
 }
 
 export default function VendorDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('expenses')
+  const [showAddDoc, setShowAddDoc] = useState(false)
+  const [docForm, setDocForm] = useState({ document_type: 'Business License', document_name: '', expiry_date: '', notes: '', file_url: '', file_name: '' })
+  const [savingDoc, setSavingDoc] = useState(false)
 
   const { data: vendor, isLoading } = useQuery<Vendor>({
     queryKey: ['vendor', id],
@@ -77,7 +90,7 @@ export default function VendorDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, date, description_of_item, amount, approval_status, projects(project_name)')
+        .select('id, date, description_of_item, amount_etb, approval_status, receipt_url, receipt_name, projects(project_name)')
         .eq('vendor_id', id!)
         .order('date', { ascending: false })
         .limit(50)
@@ -102,6 +115,31 @@ export default function VendorDetailPage() {
     enabled: !!id,
   })
 
+  const bundleIds = useMemo(() => bundles.map(b => b.id), [bundles])
+
+  const { data: allBundleItems = [] } = useQuery<SourcingBundleItem[]>({
+    queryKey: ['vendor-bundle-items', id, bundleIds.join(',')],
+    queryFn: async () => {
+      if (!bundleIds.length) return []
+      const { data, error } = await supabase
+        .from('sourcing_bundle_items')
+        .select('bundle_id, quantity_actual, unit_price_actual')
+        .in('bundle_id', bundleIds)
+      if (error) throw error
+      return data as SourcingBundleItem[]
+    },
+    enabled: !!id && bundleIds.length > 0,
+  })
+
+  const bundleTotals = useMemo(() => {
+    const map: Record<string, number> = {}
+    allBundleItems.forEach(item => {
+      const t = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+      map[item.bundle_id] = (map[item.bundle_id] ?? 0) + t
+    })
+    return map
+  }, [allBundleItems])
+
   const { data: bonds = [] } = useQuery<CpoBond[]>({
     queryKey: ['vendor-bonds', id],
     queryFn: async () => {
@@ -117,19 +155,74 @@ export default function VendorDetailPage() {
     enabled: !!id,
   })
 
+  const { data: docs = [] } = useQuery<VendorDocument[]>({
+    queryKey: ['vendor-documents', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vendor_documents')
+        .select('*')
+        .eq('vendor_id', id!)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as VendorDocument[]
+    },
+    enabled: !!id,
+  })
+
   if (isLoading || !vendor) return (
     <div className="flex items-center justify-center h-64 text-sm text-slate-400 dark:text-slate-500">Loading…</div>
   )
 
-  const totalSpend = expenses.reduce((s, e) => s + Number((e as any).amount ?? 0), 0)
+  const totalSpend = expenses.reduce((s, e) => s + Number((e as any).amount_etb ?? 0), 0)
+  const missingReceipts = expenses.filter(e => !(e as any).receipt_url).length
+  const highValueExpenses = expenses.filter(e => Number((e as any).amount_etb ?? 0) >= 100_000)
   const color = vendorColor(vendor.vendor_name)
   const initials = vendorInitials(vendor.vendor_name)
 
-  const TABS: { key: Tab; label: string; count: number; icon: React.ReactNode }[] = [
-    { key: 'expenses', label: 'Expenses', count: expenses.length, icon: <FileText className="h-3.5 w-3.5" /> },
+  const expiringSoon = docs.filter(d => {
+    if (!d.expiry_date) return false
+    const days = Math.ceil((new Date(d.expiry_date).getTime() - Date.now()) / 86400000)
+    return days <= 60 && days >= 0
+  })
+  const expired = docs.filter(d => {
+    if (!d.expiry_date) return false
+    return new Date(d.expiry_date) < new Date()
+  })
+
+  const TABS: { key: Tab; label: string; count: number; icon: React.ReactNode; badge?: string }[] = [
+    { key: 'expenses', label: 'Expenses', count: expenses.length, icon: <FileText className="h-3.5 w-3.5" />,
+      badge: missingReceipts > 0 ? String(missingReceipts) : undefined },
     { key: 'sourcing', label: 'Sourcing Bundles', count: bundles.length, icon: <Package className="h-3.5 w-3.5" /> },
     { key: 'bonds',    label: 'CPO Bonds',        count: bonds.length,   icon: <Shield className="h-3.5 w-3.5" /> },
+    { key: 'documents', label: 'Documents', count: docs.length, icon: <FileBadge className="h-3.5 w-3.5" />,
+      badge: (expired.length + expiringSoon.length) > 0 ? '!' : undefined },
   ]
+
+  async function addDocument() {
+    if (!docForm.document_name.trim()) return
+    setSavingDoc(true)
+    const { error } = await supabase.from('vendor_documents').insert([{
+      vendor_id: id!,
+      document_type: docForm.document_type,
+      document_name: docForm.document_name.trim(),
+      file_url: docForm.file_url || null,
+      expiry_date: docForm.expiry_date || null,
+      notes: docForm.notes || null,
+    }])
+    setSavingDoc(false)
+    if (error) return
+    qc.invalidateQueries({ queryKey: ['vendor-documents', id] })
+    setDocForm({ document_type: 'Business License', document_name: '', expiry_date: '', notes: '', file_url: '', file_name: '' })
+    setShowAddDoc(false)
+  }
+
+  async function deleteDocument(docId: string) {
+    if (!confirm('Delete this document?')) return
+    await supabase.from('vendor_documents').delete().eq('id', docId)
+    qc.invalidateQueries({ queryKey: ['vendor-documents', id] })
+  }
+
+  const inCls = 'w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand'
 
   return (
     <div className="space-y-5">
@@ -139,25 +232,49 @@ export default function VendorDetailPage() {
           className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Vendors
         </button>
-        <Link to={`/vendors/${id}/edit`}
-          className="inline-flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-          <Pencil className="h-3.5 w-3.5" /> Edit Profile
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link to={`/vendors/${id}/contract`}
+            className="inline-flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <ScrollText className="h-3.5 w-3.5" /> Generate Contract
+          </Link>
+          <Link to={`/vendors/${id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Pencil className="h-3.5 w-3.5" /> Edit Profile
+          </Link>
+        </div>
       </div>
+
+      {/* Alerts for high-value or missing receipts */}
+      {(highValueExpenses.length > 0 || missingReceipts > 0) && (
+        <div className="space-y-2">
+          {highValueExpenses.length > 0 && (
+            <div className="flex items-center gap-2.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                <strong>{highValueExpenses.length}</strong> expense{highValueExpenses.length !== 1 ? 's' : ''} ≥ ETB 100,000 with this vendor.
+                {' '}<Link to={`/vendors/${id}/contract`} className="underline font-medium">Generate a contract →</Link>
+              </p>
+            </div>
+          )}
+          {missingReceipts > 0 && (
+            <div className="flex items-center gap-2.5 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-2.5">
+              <AlertCircle className="h-4 w-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+              <p className="text-sm text-rose-700 dark:text-rose-300">
+                <strong>{missingReceipts}</strong> expense{missingReceipts !== 1 ? 's' : ''} missing a receipt attachment. Click the Expenses tab to review.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Hero card ── */}
       <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-        {/* Top colour strip */}
         <div className="h-2" style={{ backgroundColor: color }} />
-
         <div className="px-6 py-5 flex items-start gap-5 flex-wrap">
-          {/* Avatar */}
           <div className="h-16 w-16 rounded-2xl flex items-center justify-center text-2xl font-black text-white shadow-md flex-shrink-0"
             style={{ backgroundColor: color }}>
             {initials}
           </div>
-
-          {/* Name + badges */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{vendor.vendor_name}</h1>
@@ -181,8 +298,6 @@ export default function VendorDetailPage() {
               )}
             </div>
           </div>
-
-          {/* Stats */}
           <div className="flex gap-6 text-right flex-shrink-0">
             <div>
               <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 font-semibold">Total Spend</p>
@@ -202,8 +317,6 @@ export default function VendorDetailPage() {
 
       {/* ── Info grid ── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
-        {/* Contact block */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
           <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Contact</h2>
           <InfoRow icon={<User className="h-4 w-4" />} label="Contact Person" value={vendor.contact_person} />
@@ -222,8 +335,6 @@ export default function VendorDetailPage() {
             <p className="text-sm text-slate-400 dark:text-slate-500 italic">No contact info — <Link to={`/vendors/${id}/edit`} className="text-brand hover:underline">add it</Link></p>
           )}
         </div>
-
-        {/* Financial block */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
           <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Financial</h2>
           <InfoRow icon={<FileText className="h-4 w-4" />} label="TIN Number" value={vendor.tin} />
@@ -244,62 +355,98 @@ export default function VendorDetailPage() {
 
       {/* ── Activity tabs ── */}
       <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-        {/* Tab bar */}
-        <div className="flex border-b dark:border-slate-700">
+        <div className="flex border-b dark:border-slate-700 overflow-x-auto">
           {TABS.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                 tab === t.key
                   ? 'border-brand text-brand dark:text-brand'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
               {t.icon}{t.label}
-              <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">{t.count}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                t.badge ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+              }`}>
+                {t.badge ?? t.count}
+              </span>
             </button>
           ))}
         </div>
 
-        {/* Tab content */}
         <div className="p-0">
 
           {/* Expenses tab */}
           {tab === 'expenses' && (
-            expenses.length === 0
-              ? <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">No expenses linked to this vendor.</p>
-              : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
-                      <tr>
-                        {['Date','Description','Project','Amount','Status'].map(h => (
-                          <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700/60">
-                      {expenses.map(e => (
-                        <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                          <td className="px-4 py-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400">{e.date ? formatDate(e.date) : '—'}</td>
-                          <td className="px-4 py-2.5 max-w-[260px] truncate text-slate-800 dark:text-slate-100">{(e as any).description_of_item || '—'}</td>
-                          <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{(e as any).projects?.project_name ?? '—'}</td>
-                          <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800 dark:text-slate-100">{formatCurrency((e as any).amount ?? 0)}</td>
-                          <td className="px-4 py-2.5"><StatusBadge value={e.approval_status} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60">
-                        <td colSpan={3} className="px-4 py-2.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total</td>
-                        <td className="px-4 py-2.5 tabular-nums font-bold text-slate-800 dark:text-slate-100">{formatCurrency(totalSpend)}</td>
-                        <td />
-                      </tr>
-                    </tfoot>
-                  </table>
+            <div>
+              {missingReceipts > 0 && (
+                <div className="flex items-center gap-2 border-b dark:border-slate-700 px-4 py-2.5 bg-rose-50 dark:bg-rose-900/10">
+                  <AlertCircle className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
+                  <p className="text-xs text-rose-600 dark:text-rose-400">
+                    {missingReceipts} expenses are missing receipt attachments — edit each to attach the receipt.
+                  </p>
                 </div>
-              )
+              )}
+              {expenses.length === 0
+                ? <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">No expenses linked to this vendor.</p>
+                : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+                        <tr>
+                          {['Date','Description','Project','Amount','Status','Receipt',''].map(h => (
+                            <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-slate-700/60">
+                        {expenses.map(e => {
+                          const hasReceipt = !!(e as any).receipt_url
+                          const amount = Number((e as any).amount_etb ?? 0)
+                          return (
+                            <tr key={e.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${!hasReceipt ? 'bg-rose-50/30 dark:bg-rose-900/5' : ''}`}>
+                              <td className="px-4 py-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400">{e.date ? formatDate(e.date) : '—'}</td>
+                              <td className="px-4 py-2.5 max-w-[220px] truncate text-slate-800 dark:text-slate-100">{(e as any).description_of_item || '—'}</td>
+                              <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{(e as any).projects?.project_name ?? '—'}</td>
+                              <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800 dark:text-slate-100">
+                                {formatCurrency(amount)}
+                                {amount >= 100_000 && <span className="ml-1.5 rounded bg-amber-100 dark:bg-amber-900/30 px-1 text-[9px] font-bold text-amber-700 dark:text-amber-400">100K+</span>}
+                              </td>
+                              <td className="px-4 py-2.5"><StatusBadge value={e.approval_status} /></td>
+                              <td className="px-4 py-2.5">
+                                {hasReceipt ? (
+                                  <a href={(e as any).receipt_url} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-xs text-brand hover:underline">
+                                    <FileText className="h-3 w-3" />{(e as any).receipt_name ?? 'View'}
+                                  </a>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-xs text-rose-500">
+                                    <AlertCircle className="h-3 w-3" />Missing
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <Link to={`/expenses/${e.id}/edit`} className="text-xs text-slate-400 hover:text-brand">Edit</Link>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60">
+                          <td colSpan={3} className="px-4 py-2.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total</td>
+                          <td className="px-4 py-2.5 tabular-nums font-bold text-slate-800 dark:text-slate-100">{formatCurrency(totalSpend)}</td>
+                          <td colSpan={3} className="px-4 py-2.5 text-xs text-rose-500">
+                            {missingReceipts > 0 && `${missingReceipts} missing receipt${missingReceipts !== 1 ? 's' : ''}`}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+            </div>
           )}
 
           {/* Sourcing Bundles tab */}
@@ -311,24 +458,43 @@ export default function VendorDetailPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
                       <tr>
-                        {['Bundle','Status','Submitted','Expected Delivery','Notes',''].map(h => (
+                        {['Bundle','Status','Total Value','Submitted','Expected','Notes',''].map(h => (
                           <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/60">
-                      {bundles.map(b => (
-                        <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                          <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-100">{b.bundle_code}</td>
-                          <td className="px-4 py-2.5"><StatusBadge value={b.status} /></td>
-                          <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{b.submitted_at ? formatDate(b.submitted_at) : '—'}</td>
-                          <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{b.expected_delivery_date ? formatDate(b.expected_delivery_date) : '—'}</td>
-                          <td className="px-4 py-2.5 max-w-[200px] truncate text-slate-500 dark:text-slate-400">{b.notes ?? '—'}</td>
-                          <td className="px-4 py-2.5">
-                            <Link to={`/sourcing/${b.id}`} className="text-xs text-brand hover:underline">View →</Link>
-                          </td>
-                        </tr>
-                      ))}
+                      {bundles.map(b => {
+                        const total = bundleTotals[b.id] ?? 0
+                        return (
+                          <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                            <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-100">{b.bundle_code}</td>
+                            <td className="px-4 py-2.5"><StatusBadge value={b.status} /></td>
+                            <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800 dark:text-slate-100">
+                              {total > 0 ? (
+                                <>
+                                  {formatCurrency(total)}
+                                  {total >= 100_000 && <span className="ml-1.5 rounded bg-amber-100 dark:bg-amber-900/30 px-1 text-[9px] font-bold text-amber-700 dark:text-amber-400">100K+</span>}
+                                </>
+                              ) : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{b.submitted_at ? formatDate(b.submitted_at) : '—'}</td>
+                            <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{b.expected_delivery_date ? formatDate(b.expected_delivery_date) : '—'}</td>
+                            <td className="px-4 py-2.5 max-w-[180px] truncate text-slate-500 dark:text-slate-400">{b.notes ?? '—'}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Link to={`/sourcing/${b.id}`} className="text-xs text-brand hover:underline">View</Link>
+                                <Link
+                                  to={`/vendors/${id}/contract?bundle_id=${b.id}`}
+                                  className={`text-xs font-medium hover:underline ${total >= 100_000 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                                >
+                                  {total >= 100_000 ? '⚠ Contract' : 'Contract'}
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -363,6 +529,134 @@ export default function VendorDetailPage() {
                   </table>
                 </div>
               )
+          )}
+
+          {/* Documents tab */}
+          {tab === 'documents' && (
+            <div className="p-4 space-y-4">
+              {(expired.length > 0 || expiringSoon.length > 0) && (
+                <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 space-y-1">
+                  {expired.length > 0 && (
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      {expired.length} document{expired.length !== 1 ? 's' : ''} expired
+                    </p>
+                  )}
+                  {expiringSoon.length > 0 && (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      {expiringSoon.length} document{expiringSoon.length !== 1 ? 's' : ''} expiring within 60 days
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Add document form */}
+              {showAddDoc ? (
+                <div className="rounded-xl border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">New Document</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-500">Document Type</label>
+                      <select className={inCls} value={docForm.document_type} onChange={e => setDocForm(f => ({ ...f, document_type: e.target.value }))}>
+                        {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-500">Document Name *</label>
+                      <input type="text" className={inCls} placeholder="e.g. Business License 2024" value={docForm.document_name} onChange={e => setDocForm(f => ({ ...f, document_name: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-500">Expiry Date</label>
+                      <input type="date" className={inCls} value={docForm.expiry_date} onChange={e => setDocForm(f => ({ ...f, expiry_date: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-500">Notes</label>
+                      <input type="text" className={inCls} placeholder="Optional notes" value={docForm.notes} onChange={e => setDocForm(f => ({ ...f, notes: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Attach File</label>
+                    <FileUpload
+                      bucket="documents"
+                      folder={`vendor-docs/${id}`}
+                      fileUrl={docForm.file_url || null}
+                      fileName={docForm.file_name || null}
+                      onUpload={(url, name) => setDocForm(f => ({ ...f, file_url: url, file_name: name }))}
+                      onClear={() => setDocForm(f => ({ ...f, file_url: '', file_name: '' }))}
+                      accept="image/*,application/pdf,.doc,.docx"
+                      label="Upload Document"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={addDocument}
+                      disabled={savingDoc || !docForm.document_name.trim()}
+                      className="rounded-md bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+                    >
+                      {savingDoc ? 'Saving…' : 'Add Document'}
+                    </button>
+                    <button onClick={() => setShowAddDoc(false)} className="rounded-md border dark:border-slate-600 px-4 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAddDoc(true)}
+                  className="flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  <Plus className="h-4 w-4" /> Add Document
+                </button>
+              )}
+
+              {/* Document list */}
+              {docs.length === 0 && !showAddDoc ? (
+                <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No documents uploaded yet — add licenses, trade registrations, and certificates.</p>
+              ) : (
+                <div className="space-y-2">
+                  {docs.map(doc => {
+                    const isExpired = doc.expiry_date && new Date(doc.expiry_date) < new Date()
+                    const daysLeft = doc.expiry_date
+                      ? Math.ceil((new Date(doc.expiry_date).getTime() - Date.now()) / 86400000)
+                      : null
+
+                    return (
+                      <div key={doc.id} className={`flex items-start gap-3 rounded-xl border p-4 ${isExpired ? 'border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}>
+                        <FileBadge className="h-5 w-5 text-brand flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{doc.document_name}</span>
+                            <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">{doc.document_type}</span>
+                            {isExpired && <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">EXPIRED</span>}
+                            {!isExpired && daysLeft !== null && daysLeft <= 60 && (
+                              <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">Expires in {daysLeft}d</span>
+                            )}
+                          </div>
+                          {doc.expiry_date && (
+                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                              Expiry: {formatDate(doc.expiry_date)}
+                            </p>
+                          )}
+                          {doc.notes && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{doc.notes}</p>}
+                          {doc.file_url && (
+                            <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-brand hover:underline">
+                              <FileText className="h-3 w-3" /> View Document <ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          )}
+                        </div>
+                        <button onClick={() => deleteDocument(doc.id)} className="flex-shrink-0 rounded p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400" title="Delete">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
         </div>

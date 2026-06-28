@@ -11,6 +11,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { FileUpload } from '@/components/shared/FileUpload'
 import { Lock, Package } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
@@ -194,6 +195,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         description_of_item: record.description_of_item,
         is_allocated: record.is_allocated,
         receipt_delivered: record.receipt_delivered,
+        receipt_url: record.receipt_url,
+        receipt_name: record.receipt_name,
         requested: record.requested,
         payment_status: record.payment_status,
         partially_paid: record.partially_paid,
@@ -565,6 +568,18 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           Contacted
         </label>
       </div>
+
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Receipt Attachment</p>
+      <FileUpload
+        bucket="documents"
+        folder="expense-receipts"
+        fileUrl={form.receipt_url ?? null}
+        fileName={form.receipt_name ?? null}
+        onUpload={(url, name) => { set('receipt_url', url); set('receipt_name', name) }}
+        onClear={() => { set('receipt_url', null); set('receipt_name', null) }}
+        accept="image/*,application/pdf"
+        label="Upload Receipt"
+      />
 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide pt-2">Delivery</p>
       <Field label="Delivery Status">
