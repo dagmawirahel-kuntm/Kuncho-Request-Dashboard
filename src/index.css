@@ -45,6 +45,14 @@
   --color-popover: hsl(222 47% 11%);
   --color-muted: hsl(217 33% 17%);
   --color-muted-foreground: hsl(215 20% 65%);
+  --color-brand: #D4AF37;
+  --color-brand-foreground: #1a1100;
+}
+
+/* Gold focus ring in dark mode */
+.dark *:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(212,175,55,0.65) !important;
 }
 
 * {

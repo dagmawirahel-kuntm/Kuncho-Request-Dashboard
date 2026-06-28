@@ -220,8 +220,8 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
           >
             <span
               ref={logoRef}
-              className="inline-block font-black leading-none text-white select-none"
-              style={{ fontSize: '2rem' }}
+              className="inline-block font-black leading-none select-none transition-colors duration-300"
+              style={{ fontSize: '2rem', color: isDark ? '#D4AF37' : 'white' }}
             >
               ቁ
             </span>

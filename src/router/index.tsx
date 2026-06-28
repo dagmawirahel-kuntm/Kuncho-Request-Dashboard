@@ -41,6 +41,8 @@ import SaleFormPage from '@/pages/sales/SaleFormPage'
 import ClientsPage from '@/pages/clients/ClientsPage'
 import ClientDetailPage from '@/pages/clients/ClientDetailPage'
 import ClientFormPage from '@/pages/clients/ClientFormPage'
+import ProformaInvoicePage from '@/pages/clients/ProformaInvoicePage'
+import PaymentRequestPage from '@/pages/clients/PaymentRequestPage'
 import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
 import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
 import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
@@ -150,6 +152,8 @@ export const router = createBrowserRouter([
               { path: 'clients/new', element: <ClientFormPage /> },
               { path: 'clients/:id', element: <ClientDetailPage /> },
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
+              { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
+              { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
               { path: 'tax-summary', element: <TaxSummaryPage /> },
               { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
               { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },

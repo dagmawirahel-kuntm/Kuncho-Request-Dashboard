@@ -6,7 +6,7 @@ import type { Client } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone, Trophy, Award, Medal } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone, Trophy, Award, Medal, MoreHorizontal, ShoppingCart, FileText, FilePlus } from 'lucide-react'
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 const PALETTE = [
@@ -179,9 +179,11 @@ function ClientRow({
   const navigate = useNavigate()
   const { score, total } = profileScore(client)
   const pct = score / total
+  const [actionsOpen, setActionsOpen] = useState(false)
 
   const goEdit = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); navigate(`/clients/${client.id}/edit`) }, [client.id, navigate])
   const goDelete = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onDelete(client.id, client.client_name) }, [client.id, client.client_name, onDelete])
+  const openActions = useCallback((e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setActionsOpen(o => !o) }, [])
 
   const borderColor = tier ? TIER_STYLES[tier].color : 'transparent'
 
@@ -237,7 +239,7 @@ function ClientRow({
         </div>
       </div>
 
-      {/* Action buttons — fade in on hover */}
+      {/* Action buttons */}
       <div className="flex items-center gap-0.5 flex-shrink-0">
         <button onClick={goEdit} title="Edit"
           className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
@@ -247,6 +249,54 @@ function ClientRow({
           className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
+
+        {/* More actions dropdown */}
+        <div className="relative">
+          <button onClick={openActions} title="More actions"
+            className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+          {actionsOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActionsOpen(false) }} />
+              <div
+                className="absolute right-0 top-8 z-50 w-56 rounded-lg border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl py-1"
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => { setActionsOpen(false); navigate(`/sales/new?client_id=${client.id}`) }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <ShoppingCart className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  New Sale
+                </button>
+                <button
+                  onClick={() => { setActionsOpen(false); navigate(`/clients/${client.id}/proforma`) }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <FileText className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  Proforma Invoice
+                </button>
+                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1" />
+                <button
+                  onClick={() => { setActionsOpen(false); navigate(`/clients/${client.id}/payment-request?type=new`) }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <FilePlus className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  Payment Request (New Contract)
+                </button>
+                <button
+                  onClick={() => { setActionsOpen(false); navigate(`/clients/${client.id}/payment-request?type=existing`) }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <FilePlus className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  Payment Request (Existing)
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
         <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400 transition-colors" />
       </div>
     </div>
