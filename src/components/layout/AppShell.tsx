@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
+import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogOut, ChevronRight, Menu, Sun, Moon } from 'lucide-react'
 
@@ -79,7 +80,9 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-900">
+    <>
+    <AnimatedBackground />
+    <div className="relative z-10 flex h-screen overflow-hidden bg-transparent">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(c => !c)}
@@ -149,5 +152,6 @@ export function AppShell() {
         </main>
       </div>
     </div>
+    </>
   )
 }

@@ -183,15 +183,15 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, isDark, onToggleTheme }: SidebarProps) {
-  const logoRef = useRef<HTMLImageElement>(null)
+  const logoRef = useRef<HTMLSpanElement>(null)
 
   function handleLogoClick() {
-    const img = logoRef.current
-    if (img) {
-      img.classList.remove('logo-toggle-anim')
-      void img.offsetWidth // reflow to restart animation
-      img.classList.add('logo-toggle-anim')
-      img.addEventListener('animationend', () => img.classList.remove('logo-toggle-anim'), { once: true })
+    const el = logoRef.current
+    if (el) {
+      el.classList.remove('logo-toggle-anim')
+      void el.offsetWidth
+      el.classList.add('logo-toggle-anim')
+      el.addEventListener('animationend', () => el.classList.remove('logo-toggle-anim'), { once: true })
     }
     onToggleTheme()
   }
@@ -216,9 +216,20 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
           <button
             onClick={handleLogoClick}
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            <img ref={logoRef} src="/kuncho-logo.png" alt="KUNCHO" className="h-9 w-auto opacity-90 hover:opacity-100 transition-opacity" />
+            <span
+              ref={logoRef}
+              className="inline-block font-black leading-none text-white select-none"
+              style={{ fontSize: '2rem' }}
+            >
+              ቁ
+            </span>
+            {!collapsed && (
+              <span className="text-sm font-semibold tracking-widest text-white/60 uppercase">
+                Kuncho
+              </span>
+            )}
           </button>
         </div>
         <nav className="flex-1 p-3 space-y-1">
