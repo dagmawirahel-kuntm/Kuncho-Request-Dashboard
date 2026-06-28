@@ -172,9 +172,9 @@ function StatCard({ label, value, icon, sub }: { label: string; value: string; i
 
 // ── Client row (single-column nav-bar style) ───────────────────────────────────
 function ClientRow({
-  client, salesCount, totalRevenue, tier, onDelete,
+  client, salesCount, totalRevenue, tier, onDelete, outstanding, outstandingAmount,
 }: {
-  client: Client; salesCount: number; totalRevenue: number; tier: ClientTier; onDelete: (id: string, name: string) => void
+  client: Client; salesCount: number; totalRevenue: number; tier: ClientTier; onDelete: (id: string, name: string) => void; outstanding: number; outstandingAmount: number
 }) {
   const navigate = useNavigate()
   const { score, total } = profileScore(client)
@@ -221,7 +221,7 @@ function ClientRow({
         </div>
       </div>
 
-      {/* Revenue + sales + completeness */}
+      {/* Revenue + sales + outstanding + completeness */}
       <div className="hidden sm:flex items-center gap-5 flex-shrink-0">
         <div className="text-right">
           <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">Revenue</p>
@@ -231,6 +231,12 @@ function ClientRow({
           <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">Sales</p>
           <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{salesCount}</p>
         </div>
+        {outstanding > 0 && (
+          <div className="text-right" title={`${outstanding} unpaid invoice${outstanding !== 1 ? 's' : ''} — ${formatCurrency(outstandingAmount)}`}>
+            <p className="text-[10px] text-amber-500 uppercase tracking-wide font-semibold">Outstanding</p>
+            <p className="text-sm font-bold tabular-nums text-amber-600 dark:text-amber-400">{outstanding} · {formatCurrency(outstandingAmount)}</p>
+          </div>
+        )}
         <div className="w-16">
           <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
             <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(pct * 100).toFixed(0)}%`, backgroundColor: scoreColor(pct) }} />
@@ -321,20 +327,24 @@ export default function ClientsPage() {
   const { data: salesStats = [] } = useQuery({
     queryKey: ['client-sales-stats'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('sales').select('client_id, amount, sales_status').not('client_id', 'is', null)
+      const { data, error } = await supabase.from('sales').select('client_id, amount, sales_status, date, created_at').not('client_id', 'is', null)
       if (error) throw error
-      return data as { client_id: string; amount: number | null; sales_status: string | null }[]
+      return data as { client_id: string; amount: number | null; sales_status: string | null; date: string | null; created_at: string }[]
     },
   })
 
   const statsMap = useMemo(() => {
-    const m: Record<string, { count: number; revenue: number; paidRevenue: number }> = {}
+    const m: Record<string, { count: number; revenue: number; paidRevenue: number; outstanding: number; outstandingAmount: number }> = {}
     for (const s of salesStats) {
       if (!s.client_id) continue
-      if (!m[s.client_id]) m[s.client_id] = { count: 0, revenue: 0, paidRevenue: 0 }
+      if (!m[s.client_id]) m[s.client_id] = { count: 0, revenue: 0, paidRevenue: 0, outstanding: 0, outstandingAmount: 0 }
       m[s.client_id].count++
       m[s.client_id].revenue += Number(s.amount ?? 0)
       if (s.sales_status === 'Paid') m[s.client_id].paidRevenue += Number(s.amount ?? 0)
+      if (s.sales_status === 'Draft' || s.sales_status === 'Invoiced') {
+        m[s.client_id].outstanding++
+        m[s.client_id].outstandingAmount += Number(s.amount ?? 0)
+      }
     }
     return m
   }, [salesStats])
@@ -399,7 +409,7 @@ export default function ClientsPage() {
       ) : (
         <div className="rounded-xl border dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 shadow-sm">
           {filtered.map(client => (
-            <ClientRow key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} />
+            <ClientRow key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} outstanding={statsMap[client.id]?.outstanding ?? 0} outstandingAmount={statsMap[client.id]?.outstandingAmount ?? 0} />
           ))}
         </div>
       )}

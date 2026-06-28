@@ -43,6 +43,7 @@ import ClientDetailPage from '@/pages/clients/ClientDetailPage'
 import ClientFormPage from '@/pages/clients/ClientFormPage'
 import ProformaInvoicePage from '@/pages/clients/ProformaInvoicePage'
 import PaymentRequestPage from '@/pages/clients/PaymentRequestPage'
+import InvoicesPage from '@/pages/invoices/InvoicesPage'
 import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
 import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
 import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
@@ -160,6 +161,7 @@ export const router = createBrowserRouter([
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
+              { path: 'invoices', element: <InvoicesPage /> },
               { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
               { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
               { path: 'vendor-receipts/:id', element: <VendorReceiptDetailPage /> },
