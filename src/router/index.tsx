@@ -27,6 +27,7 @@ import PayrollPage from '@/pages/payroll/PayrollPage'
 import PayrollFormPage from '@/pages/payroll/PayrollFormPage'
 import VendorsPage from '@/pages/vendors/VendorsPage'
 import VendorFormPage from '@/pages/vendors/VendorFormPage'
+import VendorDetailPage from '@/pages/vendors/VendorDetailPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import AccountsPage from '@/pages/accounts/AccountsPage'
@@ -122,6 +123,7 @@ export const router = createBrowserRouter([
               { path: 'procurement', element: <ProcurementDashboardPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
+              { path: 'vendors/:id', element: <VendorDetailPage /> },
               { path: 'vendors/:id/edit', element: <VendorFormPage /> },
               { path: 'categories', element: <Navigate to="/general-ledger" replace /> },
               { path: 'general-ledger', element: <GeneralLedgerDashboardPage /> },

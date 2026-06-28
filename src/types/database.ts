@@ -112,10 +112,16 @@ export interface Vendor {
   tin: string | null
   bank_account: string | null
   phone_contact: string | null
+  email: string | null
   category: string | null
   wth_eligible: boolean
   active: boolean
   location: string | null
+  address: string | null
+  contact_person: string | null
+  payment_terms: string | null
+  website: string | null
+  notes: string | null
   created_at: string
   updated_at: string
 }

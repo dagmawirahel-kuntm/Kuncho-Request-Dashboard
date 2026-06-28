@@ -50,7 +50,13 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
 
   const [form, setForm] = useState<Partial<VendorInsert>>(
     record
-      ? { vendor_name: record.vendor_name, vendor_type: record.vendor_type, tin: record.tin, bank_account: record.bank_account, phone_contact: record.phone_contact, category: record.category, wth_eligible: record.wth_eligible, active: record.active, location: record.location }
+      ? {
+          vendor_name: record.vendor_name, vendor_type: record.vendor_type, tin: record.tin,
+          bank_account: record.bank_account, phone_contact: record.phone_contact, category: record.category,
+          wth_eligible: record.wth_eligible, active: record.active, location: record.location,
+          email: record.email, address: record.address, contact_person: record.contact_person,
+          payment_terms: record.payment_terms, website: record.website, notes: record.notes,
+        }
       : { wth_eligible: false, active: true }
   )
     const [saving, setSaving] = useState(false)
@@ -103,6 +109,28 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
       </Field>
       <Field label="Location">
         <input type="text" className={inputCls} value={form.location ?? ''} onChange={e => set('location', e.target.value)} />
+      </Field>
+      <Field label="Address">
+        <input type="text" className={inputCls} value={form.address ?? ''} onChange={e => set('address', e.target.value)} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Contact Person">
+          <input type="text" className={inputCls} value={form.contact_person ?? ''} onChange={e => set('contact_person', e.target.value)} />
+        </Field>
+        <Field label="Email">
+          <input type="email" className={inputCls} value={form.email ?? ''} onChange={e => set('email', e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Website">
+          <input type="url" className={inputCls} value={form.website ?? ''} onChange={e => set('website', e.target.value)} placeholder="https://" />
+        </Field>
+        <Field label="Payment Terms">
+          <input type="text" className={inputCls} value={form.payment_terms ?? ''} onChange={e => set('payment_terms', e.target.value)} placeholder="e.g. Net 30, COD" />
+        </Field>
+      </div>
+      <Field label="Notes">
+        <textarea rows={3} className={inputCls + ' resize-none'} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
       </Field>
       <div className="flex items-center gap-6 text-sm">
         <label className="flex items-center gap-2 cursor-pointer">
