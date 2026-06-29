@@ -1,4 +1,5 @@
 -- Vendor Documents: licences, trade registration, certificates, contracts
+-- Note: superseded by 039_vendor_attachments.sql which replaces this table.
 CREATE TABLE IF NOT EXISTS vendor_documents (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   vendor_id     UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
@@ -23,14 +24,17 @@ VALUES ('documents', 'documents', true, 52428800, ARRAY['image/*','application/p
 ON CONFLICT (id) DO NOTHING;
 
 -- Allow authenticated users to upload
-CREATE POLICY IF NOT EXISTS "auth_upload_documents"
+DROP POLICY IF EXISTS "auth_upload_documents" ON storage.objects;
+CREATE POLICY "auth_upload_documents"
   ON storage.objects FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'documents');
 
-CREATE POLICY IF NOT EXISTS "public_read_documents"
+DROP POLICY IF EXISTS "public_read_documents" ON storage.objects;
+CREATE POLICY "public_read_documents"
   ON storage.objects FOR SELECT TO public
   USING (bucket_id = 'documents');
 
-CREATE POLICY IF NOT EXISTS "auth_delete_documents"
+DROP POLICY IF EXISTS "auth_delete_documents" ON storage.objects;
+CREATE POLICY "auth_delete_documents"
   ON storage.objects FOR DELETE TO authenticated
   USING (bucket_id = 'documents');
