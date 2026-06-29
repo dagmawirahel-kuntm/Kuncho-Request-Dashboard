@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Airtable KUNCH_10 → Supabase Migration Script
+ * Airtable KUNCH_11 → Supabase Migration Script
  *
  * Prerequisites:
  *   npm install -D tsx
@@ -13,6 +13,13 @@
  *
  * The SUPABASE_SERVICE_ROLE_KEY bypasses Row Level Security so data can be
  * seeded without a logged-in user. Never expose this key in the browser.
+ *
+ * Key behaviours:
+ *   - Vendors are UPSERTED by vendor_name (safe to re-run)
+ *   - Expenses are UPSERTED by expense_code (safe to re-run)
+ *   - Paid expenses (Payment Status checkbox = true) are imported as
+ *     approval_status = 'finance_approved', payment_status = true
+ *   - Unpaid expenses are imported as approval_status = 'pending'
  *
  * Run order respects FK dependencies:
  *   categories → locations → accounts → clients → products → vendors →
@@ -29,7 +36,7 @@ import { createClient } from '@supabase/supabase-js'
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY!
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const BASE_ID = 'app4t4gO37no6ER7r'
+const BASE_ID = 'app259PYFy1okC5dS' // KUNCH_11
 
 if (!AIRTABLE_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('Missing required env vars: AIRTABLE_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY')
@@ -147,11 +154,12 @@ function mapId(table: string, airtableId: string): string | null {
   return idMap[table]?.[airtableId] ?? null
 }
 
-// ─── Insert helper with deduplication by chunk ─────────────────────────────
+// ─── Insert/Upsert helpers ─────────────────────────────────────────────────
 async function insertRows(
   table: string,
   rows: Record<string, unknown>[],
   airtableIds: string[],
+  upsertOn?: string,   // column name for ON CONFLICT DO UPDATE
 ): Promise<void> {
   if (rows.length === 0) return
   idMap[table] = idMap[table] ?? {}
@@ -163,14 +171,14 @@ async function insertRows(
     const chunkRows = rows.slice(i, i + CHUNK)
     const chunkIds = airtableIds.slice(i, i + CHUNK)
 
-    const { data, error } = await supabase
-      .from(table)
-      .insert(chunkRows)
-      .select('id')
+    const query = upsertOn
+      ? supabase.from(table).upsert(chunkRows, { onConflict: upsertOn, ignoreDuplicates: false })
+      : supabase.from(table).insert(chunkRows)
+
+    const { data, error } = await query.select('id')
 
     if (error) {
       console.error(`\n  ✗ Error inserting into ${table}:`, error.message)
-      // Continue with next chunk
       continue
     }
 
@@ -182,7 +190,7 @@ async function insertRows(
     }
   }
 
-  console.log(`  ✓ ${table}: ${inserted} rows inserted`)
+  console.log(`  ✓ ${table}: ${inserted} rows upserted`)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -321,7 +329,7 @@ async function migrateVendors() {
     }
   })
 
-  await insertRows('vendors', rows, records.map(r => r.id))
+  await insertRows('vendors', rows, records.map(r => r.id), 'vendor_name')
 }
 
 // ── 7. Projects ───────────────────────────────────────────────────────────────
@@ -396,10 +404,22 @@ async function migrateSubCategories() {
   await insertRows('sub_categories', rows, records.map(r => r.id))
 }
 
+// Map Airtable Expense Type labels → Supabase ExpenseType enum
+const EXPENSE_TYPE_MAP: Record<string, string> = {
+  'Site Purchases': 'general',
+  'Office Expenses': 'general',
+  'General': 'general',
+  'Aggregate Purchases': 'general',
+  'VRF': 'vrf',
+  'CPO Bond': 'cpo_bond',
+  'Purchase Order': 'purchase_order',
+}
+
 // ── 10. Expenses ──────────────────────────────────────────────────────────────
 async function migrateExpenses() {
   console.log('\n→ expenses (large table, may take a while…)')
   const records = await fetchAllRecords('tblsCp3cM0uVjdNrl', [
+    'fldAVHOdE1vuutTYl', // Expense Code (dedup key)
     'fldjMB6A2thwba835', 'fldCxxn66xi7VVD2Q', 'fldze0dGg5lilNQg8',
     'fldrqN1uXquNEDFal', 'fldrrVjIj2Tv3Ip9J', 'fldH1VNhFlfMg05ZA',
     'fldE7XwhIl8Xsb6Y1', 'fldDbaYaneAcP7j5B', 'fldpOXGPzJfKIXjkG',
@@ -422,10 +442,17 @@ async function migrateExpenses() {
     const projAirtableId = linkedId(f['fldMXUlngdf4BolcM'])
     const vendorAirtableId = linkedId(f['fld52AOG0Gh9ZMOC0'])
 
+    const isPaid = bool(f['fldze0dGg5lilNQg8'])
+    const rawExpTypeLabel = sel(f['fldU0bb1DJAPlBYHl'])
+    const expenseType = (rawExpTypeLabel && EXPENSE_TYPE_MAP[rawExpTypeLabel]) || 'general'
+
     return {
+      expense_code: str(f['fldAVHOdE1vuutTYl']),
       item_service_description: str(f['fldjMB6A2thwba835']),
       amount_etb: num(f['fldCxxn66xi7VVD2Q']),
-      payment_status: bool(f['fldze0dGg5lilNQg8']),
+      payment_status: isPaid,
+      // Already-paid expenses are treated as fully finance-approved — no further workflow needed
+      approval_status: isPaid ? 'finance_approved' : 'pending',
       requested: bool(f['fldrqN1uXquNEDFal']),
       partially_paid: bool(f['fldrrVjIj2Tv3Ip9J']),
       bank_ref: str(f['fldH1VNhFlfMg05ZA']),
@@ -435,7 +462,7 @@ async function migrateExpenses() {
       quantity: num(f['fldwExt7fDZfPnNYR']),
       uom: sel(f['fldYuFJVSI7NbAHTK']),
       receipt_available: sel(f['fld9gLlh6z2MFsk96']),
-      expense_type: sel(f['fldU0bb1DJAPlBYHl']),
+      expense_type: expenseType,
       category_id: catAirtableId ? mapId('categories', catAirtableId) : null,
       project_id: projAirtableId ? mapId('projects', projAirtableId) : null,
       vendor_id: vendorAirtableId ? mapId('vendors', vendorAirtableId) : null,
@@ -463,7 +490,8 @@ async function migrateExpenses() {
     }
   })
 
-  await insertRows('expenses', rows, records.map(r => r.id))
+  // Upsert on expense_code so re-runs are safe and vendor_id links are updated
+  await insertRows('expenses', rows, records.map(r => r.id), 'expense_code')
 }
 
 // ── 11. Orders ────────────────────────────────────────────────────────────────
