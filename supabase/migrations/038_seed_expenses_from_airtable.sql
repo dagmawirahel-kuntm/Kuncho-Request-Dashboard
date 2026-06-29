@@ -2678,7 +2678,19 @@ VALUES
   (E'CEM-B-END-MEN-260218-TEN',NULL,40000,E'2026-02-18',true,E'Tenaye Takele',E'general'),
   (E'PAI-A-ET--SIL-260421-ONE',E'Paint',194013.68,E'2026-04-21',false,E'One Stop Building and Finishing Materials',E'general');
 
--- Link expenses to vendors and set approval status
+-- Update existing rows (match on expense_code, preserve FK references)
+UPDATE expenses e
+SET
+  vendor_id       = (SELECT id FROM vendors
+                     WHERE lower(trim(vendor_name)) = lower(trim(i.vendor_name))
+                     LIMIT 1),
+  payment_status  = i.paid,
+  approval_status = CASE WHEN i.paid THEN 'finance_approved' ELSE e.approval_status END,
+  vendors_name    = i.vendor_name
+FROM _exp_import i
+WHERE lower(trim(e.expense_code)) = lower(trim(i.expense_code));
+
+-- Insert rows that don't exist yet
 INSERT INTO expenses (
   expense_code, item_service_description, amount_etb, date,
   payment_status, approval_status, expense_type, vendors_name, vendor_id
@@ -2689,20 +2701,17 @@ SELECT
   i.amount,
   i.expense_date,
   i.paid,
-  CASE WHEN i.paid THEN 'finance_approved'::text ELSE 'pending'::text END,
+  CASE WHEN i.paid THEN 'finance_approved' ELSE 'pending' END,
   i.expense_type,
   i.vendor_name,
   (SELECT id FROM vendors
    WHERE lower(trim(vendor_name)) = lower(trim(i.vendor_name))
    LIMIT 1)
 FROM _exp_import i
-ON CONFLICT (expense_code) DO UPDATE SET
-  vendor_id       = EXCLUDED.vendor_id,
-  payment_status  = EXCLUDED.payment_status,
-  approval_status = CASE
-                      WHEN EXCLUDED.payment_status = true THEN 'finance_approved'
-                      ELSE expenses.approval_status  -- don't downgrade existing approvals
-                    END;
+WHERE NOT EXISTS (
+  SELECT 1 FROM expenses e
+  WHERE lower(trim(e.expense_code)) = lower(trim(i.expense_code))
+);
 
 DROP TABLE IF EXISTS _exp_import;
 
