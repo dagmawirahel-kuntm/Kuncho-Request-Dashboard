@@ -2685,7 +2685,7 @@ SET
                      WHERE lower(trim(vendor_name)) = lower(trim(i.vendor_name))
                      LIMIT 1),
   payment_status  = i.paid,
-  approval_status = CASE WHEN i.paid THEN 'finance_approved' ELSE e.approval_status END,
+  approval_status = CASE WHEN i.paid THEN 'finance_approved'::expense_approval_status ELSE e.approval_status END,
   vendors_name    = i.vendor_name
 FROM _exp_import i
 WHERE lower(trim(e.expense_code)) = lower(trim(i.expense_code));
@@ -2701,7 +2701,7 @@ SELECT
   i.amount,
   i.expense_date,
   i.paid,
-  CASE WHEN i.paid THEN 'finance_approved' ELSE 'pending' END,
+  CASE WHEN i.paid THEN 'finance_approved'::expense_approval_status ELSE 'pending'::expense_approval_status END,
   i.expense_type,
   i.vendor_name,
   (SELECT id FROM vendors
