@@ -25,8 +25,26 @@ ALTER TABLE vendors
 ALTER TABLE vendors
   ADD CONSTRAINT vendors_vendor_name_unique UNIQUE (vendor_name);
 
--- Add unique constraint on expense_code so the Airtable migration can upsert
--- expenses without creating duplicates.
+-- Deduplicate expense_code: keep the row with the earliest created_at,
+-- delete the rest. NULL expense_codes are left untouched.
+WITH ranked AS (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY lower(trim(expense_code))
+           ORDER BY created_at
+         ) AS rn
+  FROM expenses
+  WHERE expense_code IS NOT NULL
+),
+dupes AS (SELECT id FROM ranked WHERE rn > 1)
+DELETE FROM expenses WHERE id IN (SELECT id FROM dupes);
+
+-- Also normalise whitespace on expense_code values
+UPDATE expenses
+SET expense_code = trim(expense_code)
+WHERE expense_code IS NOT NULL AND expense_code != trim(expense_code);
+
+-- Now safe to add the unique constraint on non-null codes
 ALTER TABLE expenses
   DROP CONSTRAINT IF EXISTS expenses_expense_code_unique;
 
