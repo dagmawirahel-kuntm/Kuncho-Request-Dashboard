@@ -1,14 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { Vendor, Expense, SourcingBundle, CpoBond, VendorDocument, SourcingBundleItem } from '@/types/database'
-import { FileUpload } from '@/components/shared/FileUpload'
+import type { Vendor, Expense, SourcingBundle, CpoBond, VendorAttachment, VendorAttachmentCategory, SourcingBundleItem } from '@/types/database'
+import { useToast } from '@/contexts/ToastContext'
 import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, User, CreditCard,
   FileText, Package, Shield, Check, X, Building2, Tag, ExternalLink,
-  Plus, Trash2, AlertCircle, FileBadge, ScrollText,
+  Plus, Trash2, AlertCircle, FileBadge, ScrollText, Upload, Download,
 } from 'lucide-react'
 
 const PALETTE = [
@@ -25,8 +25,15 @@ function vendorInitials(name: string) {
   return w.length >= 2 ? (w[0][0] + w[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
 }
 
-const DOC_TYPES = ['Business License','Trade Registration','TIN Certificate','VAT Certificate',
-  'Professional License','Bank Letter','Insurance Certificate','Other']
+const VENDOR_CATEGORIES: { value: VendorAttachmentCategory; label: string; color: string }[] = [
+  { value: 'business_license',   label: 'Business License',   color: '#3B82F6' },
+  { value: 'trade_registration', label: 'Trade Registration', color: '#10B981' },
+  { value: 'tin_certificate',    label: 'TIN Certificate',    color: '#F59E0B' },
+  { value: 'vat_certificate',    label: 'VAT Certificate',    color: '#EF4444' },
+  { value: 'contract',           label: 'Contract',           color: '#8B5CF6' },
+  { value: 'insurance',          label: 'Insurance',          color: '#06B6D4' },
+  { value: 'other',              label: 'Other',              color: '#6B7280' },
+]
 
 type Tab = 'expenses' | 'sourcing' | 'bonds' | 'documents'
 
@@ -71,9 +78,14 @@ export default function VendorDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('expenses')
+  const { toast } = useToast()
+  const docFileRef = useRef<HTMLInputElement>(null)
   const [showAddDoc, setShowAddDoc] = useState(false)
-  const [docForm, setDocForm] = useState({ document_type: 'Business License', document_name: '', expiry_date: '', notes: '', file_url: '', file_name: '' })
-  const [savingDoc, setSavingDoc] = useState(false)
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [docCategory, setDocCategory] = useState<VendorAttachmentCategory>('other')
+  const [docNotes, setDocNotes] = useState('')
+  const [docExpiry, setDocExpiry] = useState('')
+  const [dragOver, setDragOver] = useState(false)
 
   const { data: vendor, isLoading } = useQuery<Vendor>({
     queryKey: ['vendor', id],
@@ -155,16 +167,16 @@ export default function VendorDetailPage() {
     enabled: !!id,
   })
 
-  const { data: docs = [] } = useQuery<VendorDocument[]>({
+  const { data: docs = [] } = useQuery<VendorAttachment[]>({
     queryKey: ['vendor-documents', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('vendor_documents')
+        .from('vendor_attachments')
         .select('*')
         .eq('vendor_id', id!)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return data as VendorDocument[]
+      return data as VendorAttachment[]
     },
     enabled: !!id,
   })
@@ -198,27 +210,40 @@ export default function VendorDetailPage() {
       badge: (expired.length + expiringSoon.length) > 0 ? '!' : undefined },
   ]
 
-  async function addDocument() {
-    if (!docForm.document_name.trim()) return
-    setSavingDoc(true)
-    const { error } = await supabase.from('vendor_documents').insert([{
-      vendor_id: id!,
-      document_type: docForm.document_type,
-      document_name: docForm.document_name.trim(),
-      file_url: docForm.file_url || null,
-      expiry_date: docForm.expiry_date || null,
-      notes: docForm.notes || null,
-    }])
-    setSavingDoc(false)
-    if (error) return
+  async function uploadDoc(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploadingDoc(true)
+    for (const file of Array.from(files)) {
+      const path = `${id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`
+      const { error: storageErr } = await supabase.storage.from('vendor-documents').upload(path, file, { upsert: false })
+      if (storageErr) { toast(`Upload failed: ${storageErr.message}`, 'error'); setUploadingDoc(false); return }
+      const { error: dbErr } = await supabase.from('vendor_attachments').insert([{
+        vendor_id: id!,
+        file_name: file.name,
+        file_path: path,
+        file_size: file.size,
+        mime_type: file.type || null,
+        category: docCategory,
+        notes: docNotes.trim() || null,
+        expiry_date: docExpiry || null,
+      }])
+      if (dbErr) { toast(`Metadata error: ${dbErr.message}`, 'error'); setUploadingDoc(false); return }
+    }
+    setUploadingDoc(false); setDocNotes(''); setDocExpiry(''); setShowAddDoc(false)
     qc.invalidateQueries({ queryKey: ['vendor-documents', id] })
-    setDocForm({ document_type: 'Business License', document_name: '', expiry_date: '', notes: '', file_url: '', file_name: '' })
-    setShowAddDoc(false)
+    toast(`${files.length} file${files.length > 1 ? 's' : ''} uploaded`, 'success')
   }
 
-  async function deleteDocument(docId: string) {
+  async function openAttachment(filePath: string) {
+    const { data, error } = await supabase.storage.from('vendor-documents').createSignedUrl(filePath, 60)
+    if (error || !data?.signedUrl) { toast('Could not open file', 'error'); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
+  async function deleteAttachment(att: VendorAttachment) {
     if (!confirm('Delete this document?')) return
-    await supabase.from('vendor_documents').delete().eq('id', docId)
+    await supabase.storage.from('vendor-documents').remove([att.file_path])
+    await supabase.from('vendor_attachments').delete().eq('id', att.id)
     qc.invalidateQueries({ queryKey: ['vendor-documents', id] })
   }
 
@@ -551,63 +576,60 @@ export default function VendorDetailPage() {
                 </div>
               )}
 
-              {/* Add document form */}
+              {/* Upload area */}
               {showAddDoc ? (
                 <div className="rounded-xl border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">New Document</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Document Type</label>
-                      <select className={inCls} value={docForm.document_type} onChange={e => setDocForm(f => ({ ...f, document_type: e.target.value }))}>
-                        {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Document Name *</label>
-                      <input type="text" className={inCls} placeholder="e.g. Business License 2024" value={docForm.document_name} onChange={e => setDocForm(f => ({ ...f, document_name: e.target.value }))} />
-                    </div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Upload Document</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {VENDOR_CATEGORIES.map(cat => (
+                      <button key={cat.value} onClick={() => setDocCategory(cat.value)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${docCategory === cat.value ? 'text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}
+                        style={docCategory === cat.value ? { backgroundColor: cat.color } : undefined}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Expiry Date</label>
-                      <input type="date" className={inCls} value={docForm.expiry_date} onChange={e => setDocForm(f => ({ ...f, expiry_date: e.target.value }))} />
+                      <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Notes (optional)</label>
+                      <input type="text" placeholder="e.g. Renewed Jan 2025" value={docNotes}
+                        onChange={e => setDocNotes(e.target.value)} className={inCls} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Notes</label>
-                      <input type="text" className={inCls} placeholder="Optional notes" value={docForm.notes} onChange={e => setDocForm(f => ({ ...f, notes: e.target.value }))} />
+                      <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Expiry Date</label>
+                      <input type="date" value={docExpiry} onChange={e => setDocExpiry(e.target.value)} className={inCls} />
                     </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-500">Attach File</label>
-                    <FileUpload
-                      bucket="documents"
-                      folder={`vendor-docs/${id}`}
-                      fileUrl={docForm.file_url || null}
-                      fileName={docForm.file_name || null}
-                      onUpload={(url, name) => setDocForm(f => ({ ...f, file_url: url, file_name: name }))}
-                      onClear={() => setDocForm(f => ({ ...f, file_url: '', file_name: '' }))}
-                      accept="image/*,application/pdf,.doc,.docx"
-                      label="Upload Document"
-                    />
+                  <div
+                    className={`rounded-xl border-2 border-dashed transition-colors cursor-pointer ${dragOver ? 'border-brand bg-brand/5' : 'border-slate-200 dark:border-slate-600 hover:border-brand/50 hover:bg-slate-50 dark:hover:bg-slate-700/30'}`}
+                    onClick={() => docFileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={e => { e.preventDefault(); setDragOver(false); uploadDoc(e.dataTransfer.files) }}
+                  >
+                    <div className="flex flex-col items-center justify-center py-8 px-4 text-center pointer-events-none">
+                      {uploadingDoc ? (
+                        <p className="text-sm text-slate-500 animate-pulse">Uploading…</p>
+                      ) : (
+                        <>
+                          <Upload className="h-8 w-8 text-slate-300 dark:text-slate-500 mb-2" />
+                          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Drop files here or click to browse</p>
+                          <p className="text-xs text-slate-400 mt-1">PDF, images, Word documents</p>
+                        </>
+                      )}
+                    </div>
+                    <input ref={docFileRef} type="file" className="hidden" multiple
+                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={e => uploadDoc(e.target.files)} />
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={addDocument}
-                      disabled={savingDoc || !docForm.document_name.trim()}
-                      className="rounded-md bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
-                    >
-                      {savingDoc ? 'Saving…' : 'Add Document'}
-                    </button>
-                    <button onClick={() => setShowAddDoc(false)} className="rounded-md border dark:border-slate-600 px-4 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
-                      Cancel
-                    </button>
-                  </div>
+                  <button onClick={() => setShowAddDoc(false)}
+                    className="rounded-md border dark:border-slate-600 px-4 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                    Cancel
+                  </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => setShowAddDoc(true)}
-                  className="flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
+                <button onClick={() => setShowAddDoc(true)}
+                  className="flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
                   <Plus className="h-4 w-4" /> Add Document
                 </button>
               )}
@@ -622,33 +644,34 @@ export default function VendorDetailPage() {
                     const daysLeft = doc.expiry_date
                       ? Math.ceil((new Date(doc.expiry_date).getTime() - Date.now()) / 86400000)
                       : null
+                    const cat = VENDOR_CATEGORIES.find(c => c.value === doc.category)
 
                     return (
                       <div key={doc.id} className={`flex items-start gap-3 rounded-xl border p-4 ${isExpired ? 'border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}>
                         <FileBadge className="h-5 w-5 text-brand flex-shrink-0 mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{doc.document_name}</span>
-                            <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">{doc.document_type}</span>
+                            <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{doc.file_name}</span>
+                            <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                              style={{ backgroundColor: cat?.color ?? '#6B7280' }}>
+                              {cat?.label ?? doc.category}
+                            </span>
                             {isExpired && <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">EXPIRED</span>}
                             {!isExpired && daysLeft !== null && daysLeft <= 60 && (
                               <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">Expires in {daysLeft}d</span>
                             )}
                           </div>
                           {doc.expiry_date && (
-                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                              Expiry: {formatDate(doc.expiry_date)}
-                            </p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Expiry: {formatDate(doc.expiry_date)}</p>
                           )}
                           {doc.notes && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{doc.notes}</p>}
-                          {doc.file_url && (
-                            <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
-                              className="mt-1 inline-flex items-center gap-1 text-xs text-brand hover:underline">
-                              <FileText className="h-3 w-3" /> View Document <ExternalLink className="h-2.5 w-2.5" />
-                            </a>
-                          )}
+                          <button onClick={() => openAttachment(doc.file_path)}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-brand hover:underline">
+                            <Download className="h-3 w-3" /> Download
+                          </button>
                         </div>
-                        <button onClick={() => deleteDocument(doc.id)} className="flex-shrink-0 rounded p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400" title="Delete">
+                        <button onClick={() => deleteAttachment(doc)}
+                          className="flex-shrink-0 rounded p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400" title="Delete">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
