@@ -4524,7 +4524,7 @@ SELECT
   i.expense_date,
   i.paid,
   CASE WHEN i.paid THEN 'finance_approved'::expense_approval_status ELSE 'pending'::expense_approval_status END,
-  i.expense_type,
+  i.expense_type::expense_category,
   i.vendor_name,
   (SELECT id FROM vendors
    WHERE lower(trim(vendor_name)) = lower(trim(i.vendor_name))
