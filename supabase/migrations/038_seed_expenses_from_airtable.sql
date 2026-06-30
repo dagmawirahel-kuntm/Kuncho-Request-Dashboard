@@ -18,16 +18,19 @@
 -- Note: 68 of the 2,805 expense codes are not unique (e.g. the same
 -- driver/vendor/date/category combination occurs 2-3 times for
 -- genuinely distinct expenses, since Expense Code is a formula with
--- no uniqueness guarantee). This is fine for a first run into an empty
--- table -- each row inserts as its own record -- but re-running this
--- migration a second time would collapse repeat codes onto whichever
--- row matched first. Safe to re-run once rows exist, just not a source
--- of perfect idempotency for those 68 codes.
+-- no uniqueness guarantee). The dedup step below keeps one row per
+-- duplicate code so this migration can never violate
+-- expenses_expense_code_unique (added in migration 036), and
+-- ON CONFLICT DO NOTHING on the final insert makes the whole script
+-- safe to run repeatedly against a table that already has some or all
+-- of these rows.
 --
 -- Run AFTER migrations 036 and 037 (vendor unique constraint + vendor seed)
 -- Paid expenses → finance_approved (no further workflow needed)
 -- Unpaid expenses → pending
 -- ============================================================
+
+BEGIN;
 
 CREATE TEMP TABLE IF NOT EXISTS _exp_import (
   expense_code   TEXT,
@@ -4500,6 +4503,14 @@ Addis sultan',18400,E'2026-05-11',true,E'Addis Sultan',E'general'),
   (E'CEM-B-END-MEN-260218-TEN',NULL,40000,E'2026-02-18',true,E'Tenaye Takele',E'general'),
   (E'PAI-A-ET--SIL-260421-ONE',E'Paint',194013.68,E'2026-04-21',false,E'One Stop Building and Finishing Materials',E'general');
 
+-- Deduplicate import rows sharing the same expense_code (Airtable's formula
+-- isn't guaranteed unique). Keep one row per code so the INSERT below can
+-- never collide with itself within a single statement.
+DELETE FROM _exp_import a
+USING _exp_import b
+WHERE a.ctid < b.ctid
+  AND lower(trim(a.expense_code)) = lower(trim(b.expense_code));
+
 -- Update existing rows (match on expense_code, preserve FK references)
 UPDATE expenses e
 SET
@@ -4533,9 +4544,12 @@ FROM _exp_import i
 WHERE NOT EXISTS (
   SELECT 1 FROM expenses e
   WHERE lower(trim(e.expense_code)) = lower(trim(i.expense_code))
-);
+)
+ON CONFLICT (expense_code) DO NOTHING;
 
 DROP TABLE IF EXISTS _exp_import;
+
+COMMIT;
 
 -- Verify
 SELECT
