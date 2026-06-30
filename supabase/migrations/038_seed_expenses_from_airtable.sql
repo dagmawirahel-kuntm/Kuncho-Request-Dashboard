@@ -3,7 +3,8 @@
 -- Run AFTER migrations 036 and 037 (vendor unique constraint + vendor seed)
 -- Paid expenses → finance_approved (no further workflow needed)
 -- Unpaid expenses → pending
--- Safe to re-run: ON CONFLICT (expense_code) DO UPDATE
+-- Safe to re-run: UPDATE existing rows, INSERT only new ones
+-- (no dependency on a UNIQUE constraint / ON CONFLICT)
 -- ============================================================
 
 CREATE TEMP TABLE IF NOT EXISTS _exp_import (
