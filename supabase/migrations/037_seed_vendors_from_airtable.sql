@@ -1,11 +1,25 @@
 -- ============================================================
 -- Vendor seed from Airtable KUNCH_11 (439 unique vendors)
--- Requires migration 036 to have been run first (adds UNIQUE constraint)
--- Safe to re-run: ON CONFLICT DO UPDATE
+-- Safe to re-run: UPDATE existing rows, INSERT only new ones
+-- (no dependency on a UNIQUE constraint / ON CONFLICT)
 -- ============================================================
 
-INSERT INTO vendors (vendor_name, vendor_type, tin, phone_contact, category, wth_eligible, active, bank_account, location)
-VALUES
+DO $$
+BEGIN
+  CREATE TEMP TABLE IF NOT EXISTS _vendor_import (
+    vendor_name    text,
+    vendor_type    text,
+    tin            text,
+    phone_contact  text,
+    category       text,
+    wth_eligible   boolean,
+    active         boolean,
+    bank_account   text,
+    location       text
+  );
+
+  INSERT INTO _vendor_import (vendor_name, vendor_type, tin, phone_contact, category, wth_eligible, active, bank_account, location)
+  VALUES
   ('Fetu Sema','Supplier with VAT',NULL,NULL,'Components',false,true,'1000725166285',NULL),
   ('Alebel Tilahun','Supplier with VAT',NULL,NULL,NULL,false,false,'1000699310496',NULL),
   ('Mensur Eliyas','Supplier with VAT',NULL,NULL,'Electrical Materials',true,true,'1000357901921',NULL),
@@ -464,12 +478,30 @@ CBE 1000640765473',NULL),
   ('Abubeker Nesredin','Supplier with VAT',NULL,NULL,NULL,false,false,'1000454844158',NULL),
   ('Tizta habtu','Supplier with VAT',NULL,NULL,'Building Materials',false,true,'1000221981816',NULL),
   ('Daniel Tsegaye','Supplier with no receipt',NULL,NULL,'Maintainance',false,true,'1000419685945',NULL)
-ON CONFLICT (vendor_name) DO UPDATE SET
-  vendor_type     = COALESCE(EXCLUDED.vendor_type, vendors.vendor_type),
-  tin             = COALESCE(EXCLUDED.tin, vendors.tin),
-  phone_contact   = COALESCE(EXCLUDED.phone_contact, vendors.phone_contact),
-  category        = COALESCE(EXCLUDED.category, vendors.category),
-  wth_eligible    = EXCLUDED.wth_eligible,
-  active          = EXCLUDED.active,
-  bank_account    = COALESCE(EXCLUDED.bank_account, vendors.bank_account),
-  location        = COALESCE(EXCLUDED.location, vendors.location);
+  ;
+
+  -- Update existing vendors (match on normalized vendor_name)
+  UPDATE vendors v
+  SET
+    vendor_type     = COALESCE(i.vendor_type, v.vendor_type),
+    tin             = COALESCE(i.tin, v.tin),
+    phone_contact   = COALESCE(i.phone_contact, v.phone_contact),
+    category        = COALESCE(i.category, v.category),
+    wth_eligible    = i.wth_eligible,
+    active          = i.active,
+    bank_account    = COALESCE(i.bank_account, v.bank_account),
+    location        = COALESCE(i.location, v.location)
+  FROM _vendor_import i
+  WHERE lower(trim(v.vendor_name)) = lower(trim(i.vendor_name));
+
+  -- Insert vendors that don't exist yet
+  INSERT INTO vendors (vendor_name, vendor_type, tin, phone_contact, category, wth_eligible, active, bank_account, location)
+  SELECT i.vendor_name, i.vendor_type, i.tin, i.phone_contact, i.category, i.wth_eligible, i.active, i.bank_account, i.location
+  FROM _vendor_import i
+  WHERE NOT EXISTS (
+    SELECT 1 FROM vendors v
+    WHERE lower(trim(v.vendor_name)) = lower(trim(i.vendor_name))
+  );
+
+  DROP TABLE _vendor_import;
+END $$;
