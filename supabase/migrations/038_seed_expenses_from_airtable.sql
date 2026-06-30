@@ -28,11 +28,18 @@
 -- Run AFTER migrations 036 and 037 (vendor unique constraint + vendor seed)
 -- Paid expenses → finance_approved (no further workflow needed)
 -- Unpaid expenses → pending
+--
+-- This file is ~310KB, which can get silently truncated when copy-pasted
+-- through a browser into the Supabase SQL Editor. If a paste of this whole
+-- file fails partway through (e.g. "unterminated quoted string"), use the
+-- pre-split files in ./038_parts/ instead: run 038_part00_create_table.sql,
+-- then 038_part01.sql through 038_part09.sql in order, then
+-- 038_part10_apply.sql last. Each part is small enough to paste reliably.
 -- ============================================================
 
 BEGIN;
 
-CREATE TEMP TABLE IF NOT EXISTS _exp_import (
+CREATE TABLE IF NOT EXISTS _exp_import (
   expense_code   TEXT,
   description    TEXT,
   amount         NUMERIC,
