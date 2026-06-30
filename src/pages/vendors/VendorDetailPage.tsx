@@ -9,6 +9,7 @@ import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, User, CreditCard,
   FileText, Package, Shield, Check, X, Building2, Tag, ExternalLink,
   Plus, Trash2, AlertCircle, FileBadge, ScrollText, Upload, Download,
+  Eye, Loader2,
 } from 'lucide-react'
 
 const PALETTE = [
@@ -80,8 +81,11 @@ export default function VendorDetailPage() {
   const [tab, setTab] = useState<Tab>('expenses')
   const { toast } = useToast()
   const docFileRef = useRef<HTMLInputElement>(null)
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [showAddDoc, setShowAddDoc] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null)
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([])
   const [docCategory, setDocCategory] = useState<VendorAttachmentCategory>('other')
   const [docNotes, setDocNotes] = useState('')
   const [docExpiry, setDocExpiry] = useState('')
@@ -102,10 +106,10 @@ export default function VendorDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, date, description_of_item, amount_etb, approval_status, receipt_url, receipt_name, projects(project_name)')
+        .select('id, date, description_of_item, item_service_description, amount_etb, approval_status, receipt_url, receipt_name, expense_code, projects(project_name)')
         .eq('vendor_id', id!)
         .order('date', { ascending: false })
-        .limit(50)
+        .limit(200)
       if (error) throw error
       return data as ExpenseWithProject[]
     },
@@ -191,6 +195,16 @@ export default function VendorDetailPage() {
   const color = vendorColor(vendor.vendor_name)
   const initials = vendorInitials(vendor.vendor_name)
 
+  // Engaged = any expense within the last 6 months
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  const isEngaged = expenses.some(e => e.date && new Date(e.date) >= sixMonthsAgo)
+
+  const selectedTotal = selectedExpenseIds.reduce((s, eid) => {
+    const exp = expenses.find(e => e.id === eid)
+    return s + Number((exp as any)?.amount_etb ?? 0)
+  }, 0)
+
   const expiringSoon = docs.filter(d => {
     if (!d.expiry_date) return false
     const days = Math.ceil((new Date(d.expiry_date).getTime() - Date.now()) / 86400000)
@@ -209,6 +223,30 @@ export default function VendorDetailPage() {
     { key: 'documents', label: 'Documents', count: docs.length, icon: <FileBadge className="h-3.5 w-3.5" />,
       badge: (expired.length + expiringSoon.length) > 0 ? '!' : undefined },
   ]
+
+  function toggleSelect(expenseId: string) {
+    setSelectedExpenseIds(ids =>
+      ids.includes(expenseId) ? ids.filter(i => i !== expenseId) : [...ids, expenseId]
+    )
+  }
+
+  function toggleSelectAll() {
+    setSelectedExpenseIds(ids => ids.length === expenses.length ? [] : expenses.map(e => e.id))
+  }
+
+  async function uploadReceipt(expenseId: string, file: File) {
+    setUploadingFor(expenseId)
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path = `uploads/${Date.now()}-${safeName}`
+    const { error: upErr } = await supabase.storage.from('documents').upload(path, file, { upsert: true })
+    if (upErr) { toast(`Upload failed: ${upErr.message}`, 'error'); setUploadingFor(null); return }
+    const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
+    const { error: dbErr } = await supabase.from('expenses').update({ receipt_url: publicUrl, receipt_name: file.name }).eq('id', expenseId)
+    if (dbErr) { toast(`Save failed: ${dbErr.message}`, 'error'); setUploadingFor(null); return }
+    setUploadingFor(null)
+    qc.invalidateQueries({ queryKey: ['vendor-expenses', id] })
+    toast('Receipt uploaded', 'success')
+  }
 
   async function uploadDoc(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -269,7 +307,7 @@ export default function VendorDetailPage() {
         </div>
       </div>
 
-      {/* Alerts for high-value or missing receipts */}
+      {/* Alerts */}
       {(highValueExpenses.length > 0 || missingReceipts > 0) && (
         <div className="space-y-2">
           {highValueExpenses.length > 0 && (
@@ -285,7 +323,7 @@ export default function VendorDetailPage() {
             <div className="flex items-center gap-2.5 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-2.5">
               <AlertCircle className="h-4 w-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
               <p className="text-sm text-rose-700 dark:text-rose-300">
-                <strong>{missingReceipts}</strong> expense{missingReceipts !== 1 ? 's' : ''} missing a receipt attachment. Click the Expenses tab to review.
+                <strong>{missingReceipts}</strong> expense{missingReceipts !== 1 ? 's' : ''} missing a receipt — use the Upload button in the Expenses tab to attach.
               </p>
             </div>
           )}
@@ -305,6 +343,9 @@ export default function VendorDetailPage() {
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{vendor.vendor_name}</h1>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${vendor.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
                 {vendor.active ? 'Active' : 'Inactive'}
+              </span>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isEngaged ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500'}`}>
+                {isEngaged ? '● Engaged' : '○ Dormant'}
               </span>
               {vendor.wth_eligible && (
                 <span className="rounded-full bg-purple-100 dark:bg-purple-900/30 px-2.5 py-0.5 text-xs font-semibold text-purple-700 dark:text-purple-400">WHT</span>
@@ -403,17 +444,18 @@ export default function VendorDetailPage() {
 
         <div className="p-0">
 
-          {/* Expenses tab */}
+          {/* ── Expenses tab ── */}
           {tab === 'expenses' && (
-            <div>
+            <div className="flex flex-col">
               {missingReceipts > 0 && (
                 <div className="flex items-center gap-2 border-b dark:border-slate-700 px-4 py-2.5 bg-rose-50 dark:bg-rose-900/10">
                   <AlertCircle className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
                   <p className="text-xs text-rose-600 dark:text-rose-400">
-                    {missingReceipts} expenses are missing receipt attachments — edit each to attach the receipt.
+                    {missingReceipts} expense{missingReceipts !== 1 ? 's' : ''} missing a receipt — click <strong>Upload</strong> in the Receipt column to attach directly.
                   </p>
                 </div>
               )}
+
               {expenses.length === 0
                 ? <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">No expenses linked to this vendor.</p>
                 : (
@@ -421,6 +463,14 @@ export default function VendorDetailPage() {
                     <table className="w-full text-sm">
                       <thead className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
                         <tr>
+                          <th className="px-3 py-2.5 w-8">
+                            <input
+                              type="checkbox"
+                              checked={selectedExpenseIds.length === expenses.length}
+                              onChange={toggleSelectAll}
+                              className="rounded border-slate-300 dark:border-slate-600"
+                            />
+                          </th>
                           {['Date','Description','Project','Amount','Status','Receipt',''].map(h => (
                             <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{h}</th>
                           ))}
@@ -430,30 +480,87 @@ export default function VendorDetailPage() {
                         {expenses.map(e => {
                           const hasReceipt = !!(e as any).receipt_url
                           const amount = Number((e as any).amount_etb ?? 0)
+                          const isSelected = selectedExpenseIds.includes(e.id)
+                          const desc = (e as any).description_of_item || (e as any).item_service_description || '—'
                           return (
-                            <tr key={e.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${!hasReceipt ? 'bg-rose-50/30 dark:bg-rose-900/5' : ''}`}>
-                              <td className="px-4 py-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400">{e.date ? formatDate(e.date) : '—'}</td>
-                              <td className="px-4 py-2.5 max-w-[220px] truncate text-slate-800 dark:text-slate-100">{(e as any).description_of_item || '—'}</td>
-                              <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{(e as any).projects?.project_name ?? '—'}</td>
-                              <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800 dark:text-slate-100">
+                            <tr key={e.id} className={`transition-colors ${isSelected ? 'bg-blue-50/40 dark:bg-blue-900/10' : !hasReceipt ? 'bg-rose-50/30 dark:bg-rose-900/5' : 'hover:bg-slate-50 dark:hover:bg-slate-700/20'}`}>
+                              <td className="px-3 py-2.5 w-8">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelect(e.id)}
+                                  className="rounded border-slate-300 dark:border-slate-600"
+                                />
+                              </td>
+                              <td className="px-4 py-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                                {e.date ? formatDate(e.date) : '—'}
+                              </td>
+                              <td className="px-4 py-2.5 max-w-[220px]">
+                                <Link
+                                  to={`/expenses/${e.id}`}
+                                  className="block truncate text-slate-800 dark:text-slate-100 hover:text-brand hover:underline"
+                                  title={desc}
+                                >
+                                  {desc}
+                                </Link>
+                                {(e as any).expense_code && (
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{(e as any).expense_code}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">
+                                {(e as any).projects?.project_name ?? '—'}
+                              </td>
+                              <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">
                                 {formatCurrency(amount)}
                                 {amount >= 100_000 && <span className="ml-1.5 rounded bg-amber-100 dark:bg-amber-900/30 px-1 text-[9px] font-bold text-amber-700 dark:text-amber-400">100K+</span>}
                               </td>
-                              <td className="px-4 py-2.5"><StatusBadge value={e.approval_status} /></td>
                               <td className="px-4 py-2.5">
-                                {hasReceipt ? (
-                                  <a href={(e as any).receipt_url} target="_blank" rel="noopener noreferrer"
-                                    className="flex items-center gap-1 text-xs text-brand hover:underline">
-                                    <FileText className="h-3 w-3" />{(e as any).receipt_name ?? 'View'}
-                                  </a>
-                                ) : (
-                                  <span className="flex items-center gap-1 text-xs text-rose-500">
-                                    <AlertCircle className="h-3 w-3" />Missing
-                                  </span>
-                                )}
+                                <StatusBadge value={e.approval_status} />
                               </td>
                               <td className="px-4 py-2.5">
-                                <Link to={`/expenses/${e.id}/edit`} className="text-xs text-slate-400 hover:text-brand">Edit</Link>
+                                {uploadingFor === e.id ? (
+                                  <span className="flex items-center gap-1 text-xs text-slate-400">
+                                    <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+                                  </span>
+                                ) : hasReceipt ? (
+                                  <a
+                                    href={(e as any).receipt_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-xs text-brand hover:underline"
+                                  >
+                                    <FileText className="h-3 w-3" />
+                                    {(e as any).receipt_name ?? 'View'}
+                                  </a>
+                                ) : (
+                                  <button
+                                    onClick={() => fileInputRefs.current[e.id]?.click()}
+                                    className="flex items-center gap-1 text-xs text-rose-500 hover:text-brand font-medium"
+                                    title="Upload receipt"
+                                  >
+                                    <Upload className="h-3 w-3" /> Upload
+                                  </button>
+                                )}
+                                <input
+                                  ref={el => { fileInputRefs.current[e.id] = el }}
+                                  type="file"
+                                  accept="image/*,application/pdf,.doc,.docx"
+                                  className="hidden"
+                                  onChange={ev => {
+                                    const f = ev.target.files?.[0]
+                                    if (f) uploadReceipt(e.id, f)
+                                    ev.target.value = ''
+                                  }}
+                                />
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <Link
+                                  to={`/expenses/${e.id}`}
+                                  className="text-slate-400 hover:text-brand"
+                                  title="View expense"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Link>
                               </td>
                             </tr>
                           )
@@ -461,6 +568,7 @@ export default function VendorDetailPage() {
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60">
+                          <td />
                           <td colSpan={3} className="px-4 py-2.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total</td>
                           <td className="px-4 py-2.5 tabular-nums font-bold text-slate-800 dark:text-slate-100">{formatCurrency(totalSpend)}</td>
                           <td colSpan={3} className="px-4 py-2.5 text-xs text-rose-500">
@@ -470,11 +578,39 @@ export default function VendorDetailPage() {
                       </tfoot>
                     </table>
                   </div>
-                )}
+                )
+              }
+
+              {/* Compose Contract bar — appears when expenses are selected */}
+              {selectedExpenseIds.length > 0 && (
+                <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur px-4 py-3">
+                  <div className="text-sm text-slate-700 dark:text-slate-200">
+                    <span className="font-semibold">{selectedExpenseIds.length}</span> expense{selectedExpenseIds.length !== 1 ? 's' : ''} selected
+                    {selectedTotal > 0 && (
+                      <span className="ml-2 text-slate-500 dark:text-slate-400">— {formatCurrency(selectedTotal)}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedExpenseIds([])}
+                      className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      Clear
+                    </button>
+                    <Link
+                      to={`/vendors/${id}/contract?expense_ids=${selectedExpenseIds.join(',')}`}
+                      className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
+                      onClick={() => setSelectedExpenseIds([])}
+                    >
+                      <ScrollText className="h-4 w-4" /> Compose Contract
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Sourcing Bundles tab */}
+          {/* ── Sourcing Bundles tab ── */}
           {tab === 'sourcing' && (
             bundles.length === 0
               ? <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">No sourcing bundles linked to this vendor.</p>
@@ -526,7 +662,7 @@ export default function VendorDetailPage() {
               )
           )}
 
-          {/* CPO Bonds tab */}
+          {/* ── CPO Bonds tab ── */}
           {tab === 'bonds' && (
             bonds.length === 0
               ? <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">No CPO bonds linked to this vendor.</p>
@@ -556,7 +692,7 @@ export default function VendorDetailPage() {
               )
           )}
 
-          {/* Documents tab */}
+          {/* ── Documents tab ── */}
           {tab === 'documents' && (
             <div className="p-4 space-y-4">
               {(expired.length > 0 || expiringSoon.length > 0) && (
@@ -576,7 +712,6 @@ export default function VendorDetailPage() {
                 </div>
               )}
 
-              {/* Upload area */}
               {showAddDoc ? (
                 <div className="rounded-xl border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Upload Document</p>
@@ -634,7 +769,6 @@ export default function VendorDetailPage() {
                 </button>
               )}
 
-              {/* Document list */}
               {docs.length === 0 && !showAddDoc ? (
                 <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No documents uploaded yet — add licenses, trade registrations, and certificates.</p>
               ) : (
