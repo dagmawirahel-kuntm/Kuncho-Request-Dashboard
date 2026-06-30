@@ -3,8 +3,8 @@ import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
-import type { Vendor, SourcingBundle, SourcingBundleItem } from '@/types/database'
-import { ArrowLeft, Printer } from 'lucide-react'
+import type { Vendor, SourcingBundle, SourcingBundleItem, Expense } from '@/types/database'
+import { ArrowLeft, Printer, FileText } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand text-slate-800 dark:text-slate-100 transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -39,7 +39,7 @@ function buildHtml(f: {
   contractRef: string; contractDate: string; kunchoRep: string; kunchoTitle: string
   vendorName: string; vendorTin: string; vendorAddress: string; vendorPhone: string; contactPerson: string
   scope: string; contractValue: string; paymentTerms: string; startDate: string; endDate: string
-  specialConditions: string; bundleCode: string
+  specialConditions: string; bundleCode: string; linkedExpenses?: string
 }) {
   const val = parseFloat(f.contractValue) || 0
   const valWords = val > 0 ? etbInWords(val) : '—'
@@ -94,6 +94,7 @@ ${isHighValue ? '<div style="text-align:center;margin-bottom:4mm"><span class="h
   &nbsp;&nbsp;|&nbsp;&nbsp;
   <strong>Date:</strong> ${f.contractDate || '—'}
   ${f.bundleCode ? `&nbsp;&nbsp;|&nbsp;&nbsp;<strong>Bundle:</strong> ${f.bundleCode}` : ''}
+  ${f.linkedExpenses ? `<br/><small style="color:#555"><strong>Expenses:</strong> ${f.linkedExpenses}</small>` : ''}
 </div>
 
 <h2>1. Parties to the Agreement</h2>
@@ -215,6 +216,11 @@ export default function VendorContractPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const bundleId = searchParams.get('bundle_id')
+  const expenseIdsParam = searchParams.get('expense_ids')
+  const expenseIds = useMemo(
+    () => expenseIdsParam ? expenseIdsParam.split(',').filter(Boolean) : [],
+    [expenseIdsParam]
+  )
   const navigate = useNavigate()
   const previewRef = useRef<HTMLIFrameElement>(null)
 
@@ -253,6 +259,24 @@ export default function VendorContractPage() {
     [bundleItems]
   )
 
+  const { data: linkedExpenses = [] } = useQuery<Expense[]>({
+    queryKey: ['contract-expenses', expenseIds.join(',')],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('id, expense_code, amount_etb, date, item_service_description, description_of_item')
+        .in('id', expenseIds)
+      if (error) throw error
+      return data as Expense[]
+    },
+    enabled: expenseIds.length > 0,
+  })
+
+  const expenseTotal = useMemo(
+    () => linkedExpenses.reduce((s, e) => s + (e.amount_etb ?? 0), 0),
+    [linkedExpenses]
+  )
+
   const [contractRef] = useState(genRef)
   const [form, setForm] = useState({
     contractDate: todayISO(),
@@ -287,7 +311,20 @@ export default function VendorContractPage() {
     }
   }, [bundle, bundleTotal])
 
+  useEffect(() => {
+    if (expenseIds.length > 0 && expenseTotal > 0) {
+      setForm(f => ({ ...f, contractValue: String(expenseTotal) }))
+    }
+  }, [expenseTotal, expenseIds.length])
+
   function set(k: keyof typeof form, v: string) { setForm(f => ({ ...f, [k]: v })) }
+
+  const linkedExpensesStr = useMemo(() => {
+    if (!linkedExpenses.length) return ''
+    return linkedExpenses
+      .map(e => e.expense_code ?? e.id.slice(0, 8))
+      .join(', ')
+  }, [linkedExpenses])
 
   const previewDoc = useMemo(() => buildHtml({
     contractRef,
@@ -306,7 +343,8 @@ export default function VendorContractPage() {
     endDate: form.endDate,
     specialConditions: form.specialConditions,
     bundleCode: bundle?.bundle_code ?? '',
-  }), [form, vendor, bundle, contractRef])
+    linkedExpenses: linkedExpensesStr,
+  }), [form, vendor, bundle, contractRef, linkedExpensesStr])
 
   function handlePrint() {
     previewRef.current?.contentWindow?.print()
@@ -348,6 +386,29 @@ export default function VendorContractPage() {
             {bundleTotal > 0 && <span className="ml-2 text-blue-600 dark:text-blue-400">— Total: {formatCurrency(bundleTotal)}</span>}
           </p>
           <Link to={`/sourcing/${bundleId}`} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">View bundle →</Link>
+        </div>
+      )}
+
+      {linkedExpenses.length > 0 && (
+        <div className="rounded-lg border dark:border-slate-600 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm space-y-2">
+          <p className="font-medium text-emerald-800 dark:text-emerald-300">
+            Based on {linkedExpenses.length} selected expense{linkedExpenses.length !== 1 ? 's' : ''}
+            {expenseTotal > 0 && <span className="ml-2 text-emerald-700 dark:text-emerald-400">— Contract amount: {formatCurrency(expenseTotal)}</span>}
+          </p>
+          <div className="space-y-1">
+            {linkedExpenses.map(e => (
+              <div key={e.id} className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                <FileText className="h-3 w-3 flex-shrink-0" />
+                <span className="font-mono">{e.expense_code ?? e.id.slice(0, 8)}</span>
+                {e.amount_etb != null && <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(e.amount_etb)}</span>}
+                {((e as any).description_of_item || e.item_service_description) && (
+                  <span className="truncate text-emerald-600/70 dark:text-emerald-500/70">
+                    {(e as any).description_of_item || e.item_service_description}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
