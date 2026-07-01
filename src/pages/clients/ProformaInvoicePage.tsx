@@ -1,8 +1,10 @@
 import { useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, Printer } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Plus, Trash2, Printer, Save, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
 import type { Client } from '@/types/database'
 
 const VAT_RATE = 0.15
@@ -25,9 +27,9 @@ function fmt(n: number): string {
 function buildHtml(p: {
   client?: Client
   items: LineItem[]
-  invoiceNum: string
+  proformaNum: string
   date: string
-  validity: string
+  validityDays: number
   paymentTerms: string
   notes: string
   subtotal: number
@@ -58,67 +60,67 @@ body{font-family:Georgia,serif;padding:40px 52px;color:#111;font-size:11pt;line-
 .meta{text-align:right;font-size:9.5pt;color:#555;line-height:1.6}
 .meta b{font-weight:700}
 hr{border:none;border-top:1.5px solid #111;margin:10px 0 16px}
-.sl{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
-.bn{font-size:12pt;font-weight:700}
-.bs{font-size:9.5pt;color:#555;line-height:1.6}
-.title{font-size:13pt;font-weight:700;text-align:center;text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:7px 0;margin:14px 0 12px}
-table{width:100%;border-collapse:collapse;font-size:9.5pt}
-thead tr{border-bottom:2px solid #111}
-th{padding:5px 6px 5px 0;font-weight:700;text-align:left}
-th.r{text-align:right}
-td{padding:5px 6px 5px 0;color:#222;border-bottom:1px solid #eee;vertical-align:top}
-td.c{color:#777}
-td.r{text-align:right}
-.totals{display:flex;justify-content:flex-end;margin:10px 0 14px}
-.tw{width:210px;font-size:9.5pt}
-.tr{display:flex;justify-content:space-between;padding:2px 0;color:#444}
-.tr.g{font-size:11pt;font-weight:700;color:#111;border-top:2px solid #111;padding-top:5px;margin-top:4px}
-.terms{display:flex;flex-wrap:wrap;gap:20px;font-size:8.5pt;color:#555;border-top:1px solid #ddd;padding-top:8px;margin-bottom:14px}
-.terms b{color:#333}
-.footer{font-size:7.5pt;color:#aaa;border-top:1px solid #e0e0e0;padding-top:6px;line-height:1.6}
-@media print{html{zoom:1}body{padding:32px 40px}}
+.to{font-size:10pt;margin-bottom:20px}
+.to b{font-size:11pt}
+table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:10pt}
+thead tr{background:#1B3A5C;color:#fff}
+th{padding:8px 10px;text-align:left;font-weight:600;font-size:9pt;letter-spacing:.4px}
+th.r,td.r{text-align:right}
+th.c,td.c{text-align:center}
+tbody tr:nth-child(even){background:#f7f9fb}
+td{padding:7px 10px;border-bottom:1px solid #ddd}
+.tot{font-size:11pt;font-weight:700}
+.subtot td{border-top:2px solid #1B3A5C;background:#f0f4f8}
+.foot{margin-top:60px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:10px;display:flex;justify-content:space-between}
+.notice{font-size:9pt;color:#888;margin-top:20px;font-style:italic}
 </style>
 </head>
 <body>
 <div class="lh">
-  <div><div class="brand">ቁ KUNCHO</div><div class="sub">Construction &amp; Events</div></div>
-  <div class="meta"><div>${p.date}</div>${p.invoiceNum ? `<div><b>Invoice #: ${p.invoiceNum}</b></div>` : ''}</div>
+  <div>
+    <div class="brand" style="color:#1B3A5C">KUNCHO</div>
+    <div class="sub">Kuncho Construction & Events PLC</div>
+    <div class="sub" style="margin-top:4px;color:#999">Addis Ababa, Ethiopia</div>
+  </div>
+  <div class="meta">
+    <div style="font-size:16pt;font-weight:900;color:#1B3A5C;letter-spacing:-0.5px">PROFORMA INVOICE</div>
+    <div><b>${p.proformaNum || '—'}</b></div>
+    <div>${p.date}</div>
+    ${p.validityDays ? `<div>Valid for: ${p.validityDays} days</div>` : ''}
+  </div>
 </div>
-<hr>
-<div style="margin-bottom:14px">
-  <div class="sl">Bill To:</div>
-  <div class="bn">${p.client?.client_name ?? '—'}</div>
-  <div class="bs">${[p.client?.address, p.client?.email, p.client?.phone_number].filter(Boolean).join('<br>')}</div>
-</div>
-<div class="title">Proforma Invoice</div>
+<hr/>
+${p.client ? `
+<div class="to">
+  <div style="color:#888;font-size:9pt;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Bill To</div>
+  <b>${p.client.client_name}</b>
+  ${p.client.phone_number ? `<div>${p.client.phone_number}</div>` : ''}
+  ${p.client.email ? `<div>${p.client.email}</div>` : ''}
+</div>` : ''}
 <table>
   <thead>
     <tr>
-      <th style="width:24px">#</th>
+      <th class="c" style="width:36px">#</th>
       <th>Description</th>
-      <th class="r" style="width:40px">Qty</th>
-      <th class="r" style="width:48px">Unit</th>
-      <th class="r" style="width:106px">Unit Price</th>
-      <th class="r" style="width:106px">Total</th>
+      <th class="r" style="width:60px">Qty</th>
+      <th class="r" style="width:60px">Unit</th>
+      <th class="r" style="width:130px">Unit Price</th>
+      <th class="r" style="width:130px">Total</th>
     </tr>
   </thead>
   <tbody>${rows}</tbody>
+  <tbody>
+    <tr><td colspan="5" style="text-align:right;padding-right:12px;color:#555;font-size:10pt">Subtotal</td><td class="r">${fmt(p.subtotal)}</td></tr>
+    <tr><td colspan="5" style="text-align:right;padding-right:12px;color:#555;font-size:10pt">VAT (15%)</td><td class="r">${fmt(p.vat)}</td></tr>
+    <tr class="subtot"><td colspan="5" style="text-align:right;padding-right:12px" class="tot">Grand Total</td><td class="r tot" style="color:#1B3A5C">${fmt(p.total)}</td></tr>
+  </tbody>
 </table>
-<div class="totals">
-  <div class="tw">
-    <div class="tr"><span>Subtotal</span><span>${fmt(p.subtotal)}</span></div>
-    <div class="tr"><span>VAT (15%)</span><span>${fmt(p.vat)}</span></div>
-    <div class="tr g"><span>GRAND TOTAL</span><span>${fmt(p.total)}</span></div>
-  </div>
-</div>
-<div class="terms">
-  <div><b>Validity:</b> ${p.validity || '—'}</div>
-  <div><b>Payment Terms:</b> ${p.paymentTerms || '—'}</div>
-  ${p.notes ? `<div><b>Notes:</b> ${p.notes}</div>` : ''}
-</div>
-<div class="footer">
-  <div>This proforma invoice is not a tax invoice. Subject to change.</div>
-  <div>Kuncho Construction &amp; Events &middot; Addis Ababa, Ethiopia</div>
+${p.paymentTerms ? `<div style="font-size:10pt;margin-bottom:8px"><b>Payment Terms:</b> ${p.paymentTerms}</div>` : ''}
+${p.notes ? `<div style="font-size:10pt;color:#555">${p.notes}</div>` : ''}
+<div class="notice">This proforma invoice is not a tax invoice. Subject to change.</div>
+<div class="foot">
+  <span>Kuncho Construction & Events · Addis Ababa, Ethiopia</span>
+  <span>Ref: ${p.proformaNum || '—'}</span>
 </div>
 </body>
 </html>`
@@ -127,6 +129,9 @@ td.r{text-align:right}
 export default function ProformaInvoicePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
   const previewRef = useRef<HTMLIFrameElement>(null)
 
   const { data: client, isLoading } = useQuery<Client>({
@@ -139,34 +144,107 @@ export default function ProformaInvoicePage() {
     enabled: !!id,
   })
 
-  const [invoiceNum, setInvoiceNum] = useState('')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [validity, setValidity] = useState('30 days')
+  const [proformaNum, setProformaNum]   = useState('')
+  const [date, setDate]                 = useState(() => new Date().toISOString().slice(0, 10))
+  const [validityDays, setValidityDays] = useState(30)
   const [paymentTerms, setPaymentTerms] = useState('Net 30 days')
-  const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<LineItem[]>([
+  const [notes, setNotes]               = useState('')
+  const [items, setItems]               = useState<LineItem[]>([
     { id: crypto.randomUUID(), description: '', qty: 1, unit: 'pcs', unitPrice: 0 },
   ])
 
-  const addItem = () => setItems(prev => [...prev, { id: crypto.randomUUID(), description: '', qty: 1, unit: 'pcs', unitPrice: 0 }])
-  const removeItem = (itemId: string) => setItems(prev => prev.filter(i => i.id !== itemId))
+  const [saving, setSaving]           = useState(false)
+  const [converting, setConverting]   = useState(false)
+  const [savedProforma, setSavedProforma] = useState<{ id: string; proforma_number: string } | null>(null)
+
+  const addItem    = () => setItems(p => [...p, { id: crypto.randomUUID(), description: '', qty: 1, unit: 'pcs', unitPrice: 0 }])
+  const removeItem = (itemId: string) => setItems(p => p.filter(i => i.id !== itemId))
   const updateItem = (itemId: string, field: keyof LineItem, value: string | number) =>
-    setItems(prev => prev.map(i => i.id === itemId ? { ...i, [field]: value } : i))
+    setItems(p => p.map(i => i.id === itemId ? { ...i, [field]: value } : i))
 
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0)
-  const vat = subtotal * VAT_RATE
-  const total = subtotal + vat
+  const vat      = subtotal * VAT_RATE
+  const total    = subtotal + vat
 
   const previewDoc = useMemo(
-    () => buildHtml({ client, items, invoiceNum, date, validity, paymentTerms, notes, subtotal, vat, total }),
-    [client, items, invoiceNum, date, validity, paymentTerms, notes, subtotal, vat, total],
+    () => buildHtml({ client, items, proformaNum, date, validityDays, paymentTerms, notes, subtotal, vat, total }),
+    [client, items, proformaNum, date, validityDays, paymentTerms, notes, subtotal, vat, total],
   )
 
   function handlePrint() {
-    const iframe = previewRef.current
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.print()
+    previewRef.current?.contentWindow?.print()
+  }
+
+  async function handleSave() {
+    if (items.every(i => !i.description.trim())) {
+      toast('Add at least one line item description', 'error'); return
     }
+    setSaving(true)
+    const { data: pf, error: pfErr } = await supabase
+      .from('proformas')
+      .insert([{
+        proforma_number: proformaNum || null,
+        client_id: id,
+        date,
+        validity_days: validityDays,
+        payment_terms: paymentTerms,
+        notes,
+        subtotal,
+        vat_amount: vat,
+        total,
+        status: 'draft',
+        created_by: user?.id ?? null,
+      }])
+      .select('id, proforma_number')
+      .single()
+
+    if (pfErr || !pf) { toast(pfErr?.message ?? 'Save failed', 'error'); setSaving(false); return }
+
+    const { error: itemErr } = await supabase.from('proforma_items').insert(
+      items.map((it, idx) => ({
+        proforma_id: pf.id,
+        description: it.description,
+        qty: it.qty,
+        unit: it.unit,
+        unit_price: it.unitPrice,
+        vat_rate: VAT_RATE,
+        sort_order: idx,
+      }))
+    )
+    if (itemErr) { toast(itemErr.message, 'error'); setSaving(false); return }
+
+    setSavedProforma({ id: pf.id, proforma_number: pf.proforma_number ?? '' })
+    if (!proformaNum) setProformaNum(pf.proforma_number ?? '')
+    qc.invalidateQueries({ queryKey: ['proformas'] })
+    toast(`Proforma ${pf.proforma_number} saved`, 'success')
+    setSaving(false)
+  }
+
+  async function handleConvert() {
+    if (!savedProforma) return
+    setConverting(true)
+    const { data: sale, error: saleErr } = await supabase
+      .from('sales')
+      .insert([{
+        sales_description: `${proformaNum || savedProforma.proforma_number} — ${client?.client_name ?? 'Client'}`,
+        amount: total,
+        date,
+        sales_status: 'Invoiced',
+        client_id: id,
+        payment_method: paymentTerms ? 'Bank Transfer' : null,
+        notes,
+        proforma_id: savedProforma.id,
+      }])
+      .select('id')
+      .single()
+
+    if (saleErr || !sale) { toast(saleErr?.message ?? 'Conversion failed', 'error'); setConverting(false); return }
+
+    await supabase.from('proformas').update({ status: 'converted', converted_sale_id: sale.id }).eq('id', savedProforma.id)
+    qc.invalidateQueries({ queryKey: ['proformas'] })
+    qc.invalidateQueries({ queryKey: ['sales'] })
+    toast('Converted to invoice — redirecting…', 'success')
+    navigate(`/sales/${sale.id}`)
   }
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-slate-500 dark:text-slate-400">Loading…</div>
@@ -179,36 +257,51 @@ export default function ProformaInvoicePage() {
           className="inline-flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
           <ArrowLeft className="w-4 h-4" /> Back to Client
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Proforma Invoice</h1>
+          {savedProforma && (
+            <span className="rounded-full bg-green-100 dark:bg-green-900/30 px-2.5 py-0.5 text-xs font-semibold text-green-700 dark:text-green-300 flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3" /> {savedProforma.proforma_number}
+            </span>
+          )}
           <button onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            <Printer className="w-4 h-4" /> Print / Save PDF
+            className="inline-flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Printer className="w-4 h-4" /> Print
           </button>
+          {!savedProforma ? (
+            <button onClick={handleSave} disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+              <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Proforma'}
+            </button>
+          ) : (
+            <button onClick={handleConvert} disabled={converting}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">
+              <ArrowRight className="w-4 h-4" /> {converting ? 'Converting…' : 'Convert to Invoice'}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Body: form + preview */}
       <div className="flex gap-5 items-start">
-
         {/* ── Form column ── */}
         <div className="flex-1 min-w-0 space-y-4">
 
           {/* Invoice meta */}
           <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Details</h2>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Proforma Details</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Invoice Number</label>
-                <input className={inputCls} placeholder="PI-001" value={invoiceNum} onChange={e => setInvoiceNum(e.target.value)} />
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Proforma Number <span className="text-slate-300">(auto)</span></label>
+                <input className={inputCls} placeholder="PI-2026-001" value={proformaNum} onChange={e => setProformaNum(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date</label>
                 <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Validity</label>
-                <input className={inputCls} placeholder="30 days" value={validity} onChange={e => setValidity(e.target.value)} />
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Validity (days)</label>
+                <input type="number" min={1} className={inputCls} value={validityDays} onChange={e => setValidityDays(Number(e.target.value))} />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Payment Terms</label>
@@ -261,7 +354,7 @@ export default function ProformaInvoicePage() {
                         {fmt(item.qty * item.unitPrice)}
                       </td>
                       <td className="py-2">
-                        <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 transition-colors" aria-label="Remove">
+                        <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
@@ -274,7 +367,6 @@ export default function ProformaInvoicePage() {
 
           {/* Summary */}
           <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Summary</h2>
             <div className="ml-auto max-w-xs space-y-2 text-sm">
               <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
               <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>VAT (15%)</span><span>{fmt(vat)}</span></div>
@@ -291,7 +383,6 @@ export default function ProformaInvoicePage() {
           </div>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-2">Updates live as you type · Print button prints this view</p>
         </div>
-
       </div>
     </div>
   )

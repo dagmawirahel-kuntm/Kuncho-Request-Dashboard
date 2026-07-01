@@ -15,6 +15,7 @@ export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_appr
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleLifecycleStatus = 'Draft' | 'Invoiced' | 'Paid' | 'Cancelled' | 'Refunded'
+export type ProformaStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'expired'
 export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered'
 
 export interface Database {
@@ -377,6 +378,10 @@ export interface Sale {
   project_id: string | null
   account_id: string | null
   tax_summary_id: string | null
+  invoice_number: string | null
+  due_date: string | null
+  payment_date: string | null
+  proforma_id: string | null
   approval_status: SaleApprovalStatus
   rejection_reason: string | null
   manager_approved_by: string | null
@@ -387,6 +392,40 @@ export interface Sale {
   updated_at: string
 }
 export type SaleInsert = Omit<Sale, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
+
+// ── Proformas ─────────────────────────────────────────────────────
+export interface Proforma {
+  id: string
+  proforma_number: string | null
+  client_id: string | null
+  project_id: string | null
+  date: string
+  validity_days: number | null
+  payment_terms: string | null
+  notes: string | null
+  subtotal: number | null
+  vat_amount: number | null
+  total: number | null
+  status: ProformaStatus
+  converted_sale_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+export type ProformaInsert = Omit<Proforma, 'id' | 'created_at' | 'updated_at'>
+
+export interface ProformaItem {
+  id: string
+  proforma_id: string
+  description: string
+  qty: number
+  unit: string | null
+  unit_price: number
+  vat_rate: number | null
+  sort_order: number | null
+  created_at: string
+}
+export type ProformaItemInsert = Omit<ProformaItem, 'id' | 'created_at'>
 
 // ── Clients ──────────────────────────────────────────────────────
 export interface Client {

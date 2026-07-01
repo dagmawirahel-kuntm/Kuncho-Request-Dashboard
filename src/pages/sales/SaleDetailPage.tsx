@@ -8,7 +8,7 @@ import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle,
-  DollarSign, FileText, Users, FolderKanban, CreditCard,
+  DollarSign, FileText, Users, FolderKanban, CreditCard, Hash, CalendarClock, CalendarCheck,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Sale } from '@/types/database'
@@ -290,9 +290,12 @@ export default function SaleDetailPage() {
         </div>
         <div className="divide-y dark:divide-slate-700">
           {([
+            { label: 'Invoice No.',       value: sale.invoice_number,               icon: <Hash className="h-3.5 w-3.5" /> },
             { label: 'Description',      value: sale.sales_description,            icon: <FileText className="h-3.5 w-3.5" /> },
             { label: 'Amount (ETB)',      value: sale.amount != null ? formatCurrency(sale.amount) : null, icon: <DollarSign className="h-3.5 w-3.5" /> },
-            { label: 'Date',             value: sale.date ? formatDate(sale.date) : null,                 icon: null },
+            { label: 'Invoice Date',     value: sale.date ? formatDate(sale.date) : null,                 icon: null },
+            { label: 'Due Date',         value: sale.due_date ? formatDate(sale.due_date) : null,         icon: <CalendarClock className="h-3.5 w-3.5" /> },
+            { label: 'Payment Date',     value: sale.payment_date ? formatDate(sale.payment_date) : null, icon: <CalendarCheck className="h-3.5 w-3.5" /> },
             { label: 'Status',           value: sale.sales_status,                 icon: null },
             { label: 'Product/Service',  value: sale.product_or_service,           icon: null },
             { label: 'Payment Method',   value: sale.payment_method,               icon: <CreditCard className="h-3.5 w-3.5" /> },

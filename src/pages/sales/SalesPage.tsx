@@ -57,8 +57,9 @@ export default function SalesPage() {
   }
 
   const columns: ColumnDef<Sale>[] = useMemo(() => [
-    { accessorKey: 'sales_description', header: 'Description', cell: ({ row }) => <Link to={`/sales/${row.original.id}`} className="max-w-xs truncate block text-brand hover:underline font-medium">{row.original.sales_description ?? '—'}</Link> },
-    { accessorKey: 'date', header: 'Date', cell: ({ getValue }) => formatDate(getValue() as string) },
+    { accessorKey: 'invoice_number', header: 'Invoice #', cell: ({ getValue }) => <span className="font-mono text-xs font-bold text-brand">{(getValue() as string) ?? '—'}</span> },
+    { accessorKey: 'sales_description', header: 'Description', cell: ({ row }) => <Link to={`/sales/${row.original.id}`} className="max-w-xs truncate block text-slate-800 dark:text-slate-100 hover:text-brand hover:underline font-medium">{row.original.sales_description ?? '—'}</Link> },
+    { accessorKey: 'date', header: 'Invoice Date', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'amount', header: 'Amount (ETB)', cell: ({ getValue }) => formatCurrency(getValue() as number) },
     { accessorKey: 'sales_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={(getValue() as string).toLowerCase()} /> : '—' },
     { accessorKey: 'product_or_service', header: 'Product/Service', cell: ({ getValue }) => getValue() ?? '—' },

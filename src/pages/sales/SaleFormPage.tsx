@@ -81,6 +81,8 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         project_id: record.project_id,
         account_id: record.account_id,
         tax_summary_id: record.tax_summary_id,
+        due_date: record.due_date,
+        payment_date: record.payment_date,
       }
       : { sales_status: 'Draft' }
   )
@@ -126,7 +128,10 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
       {isEdit && (
         <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Approval</p>
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Invoice</p>
+              <p className="font-mono text-base font-bold text-slate-800 dark:text-slate-100">{record?.invoice_number ?? '—'}</p>
+            </div>
             <StatusBadge status={approvalStatus} />
           </div>
           {record?.manager_approved_by && (
@@ -187,6 +192,14 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         </Field>
         <Field label="Amount (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Due Date">
+          <input type="date" className={inputCls} value={form.due_date ?? ''} onChange={e => set('due_date', e.target.value || null)} />
+        </Field>
+        <Field label="Payment Date">
+          <input type="date" className={inputCls} value={form.payment_date ?? ''} onChange={e => set('payment_date', e.target.value || null)} />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">

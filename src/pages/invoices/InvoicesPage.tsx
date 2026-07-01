@@ -9,9 +9,13 @@ import type { Sale } from '@/types/database'
 
 type SaleWithClient = Sale & { clients: { client_name: string } | null }
 
-function ageDays(dateStr: string | null, createdAt: string): number {
-  const ref = dateStr ?? createdAt
-  return Math.floor((Date.now() - new Date(ref).getTime()) / 86_400_000)
+// Overdue = days past due_date; if no due_date, fall back to invoice date + 30
+function ageDays(sale: SaleWithClient): number {
+  if (sale.due_date) {
+    return Math.floor((Date.now() - new Date(sale.due_date).getTime()) / 86_400_000)
+  }
+  const ref = sale.date ?? sale.created_at
+  return Math.floor((Date.now() - new Date(ref).getTime()) / 86_400_000) - 30
 }
 
 function AgePill({ days }: { days: number }) {
@@ -60,14 +64,14 @@ export default function InvoicesPage() {
     const map = new Map<string, ClientGroup>()
     for (const s of sales) {
       const key = s.client_id ?? '__no_client__'
-      const clientName = s.clients?.client_name ?? 'No Client'
+      const clientName = (s as SaleWithClient).clients?.client_name ?? 'No Client'
       if (!map.has(key)) {
         map.set(key, { clientId: s.client_id, clientName, invoices: [], totalOutstanding: 0, overdueCount: 0 })
       }
       const g = map.get(key)!
       g.invoices.push(s)
       g.totalOutstanding += Number(s.amount ?? 0)
-      if (ageDays(s.date, s.created_at) > 30) g.overdueCount++
+      if (ageDays(s) > 0) g.overdueCount++
     }
     return [...map.values()].sort((a, b) => b.totalOutstanding - a.totalOutstanding)
   }, [sales])
@@ -75,7 +79,7 @@ export default function InvoicesPage() {
   const totals = useMemo(() => ({
     amount: sales.reduce((s, i) => s + Number(i.amount ?? 0), 0),
     count: sales.length,
-    overdue: sales.filter(s => ageDays(s.date, s.created_at) > 30).length,
+    overdue: sales.filter(s => ageDays(s) > 0).length,
     clients: groups.length,
   }), [sales, groups])
 
@@ -89,7 +93,9 @@ export default function InvoicesPage() {
 
   async function updateStatus(saleId: string, newStatus: string) {
     setUpdating(saleId)
-    const { error } = await supabase.from('sales').update({ sales_status: newStatus }).eq('id', saleId)
+    const update: Record<string, unknown> = { sales_status: newStatus }
+    if (newStatus === 'Paid') update.payment_date = new Date().toISOString().slice(0, 10)
+    const { error } = await supabase.from('sales').update(update).eq('id', saleId)
     setUpdating(null)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['outstanding-invoices'] })
@@ -186,7 +192,7 @@ export default function InvoicesPage() {
                   {isOpen && (
                     <div className="border-t dark:border-slate-700 divide-y divide-slate-50 dark:divide-slate-700/60">
                       {group.invoices.map(inv => {
-                        const days = ageDays(inv.date, inv.created_at)
+                        const days = ageDays(inv)
                         const busy = updating === inv.id
                         return (
                           <div key={inv.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/60 dark:hover:bg-slate-700/20 transition-colors">
@@ -194,11 +200,15 @@ export default function InvoicesPage() {
                             <div className="flex-shrink-0 w-1 self-stretch rounded-full" style={{ backgroundColor: days > 60 ? '#EF4444' : days > 30 ? '#F59E0B' : '#94A3B8' }} />
 
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{inv.sales_description || '—'}</p>
+                              <div className="flex items-center gap-2 min-w-0">
+                                {inv.invoice_number && <span className="font-mono text-[11px] font-bold text-brand flex-shrink-0">{inv.invoice_number}</span>}
+                                <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{inv.sales_description || '—'}</p>
+                              </div>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <StatusChip status={inv.sales_status} />
                                 <AgePill days={days} />
-                                {inv.date && <span className="text-[10px] text-slate-400 dark:text-slate-500">{formatDate(inv.date)}</span>}
+                                {inv.date && <span className="text-[10px] text-slate-400 dark:text-slate-500">Issued {formatDate(inv.date)}</span>}
+                                {inv.due_date && <span className="text-[10px] text-slate-400 dark:text-slate-500">Due {formatDate(inv.due_date)}</span>}
                               </div>
                             </div>
 
@@ -227,10 +237,10 @@ export default function InvoicesPage() {
                                 </button>
                               )}
                               <Link
-                                to={`/sales/${inv.id}/edit`}
+                                to={`/sales/${inv.id}`}
                                 className="rounded-md px-2.5 py-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                               >
-                                Edit
+                                View
                               </Link>
                             </div>
                           </div>
