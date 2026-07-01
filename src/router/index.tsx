@@ -40,6 +40,7 @@ import PLReportPage from '@/pages/reports/PLReportPage'
 import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
+import SaleDetailPage from '@/pages/sales/SaleDetailPage'
 import ClientsPage from '@/pages/clients/ClientsPage'
 import ClientDetailPage from '@/pages/clients/ClientDetailPage'
 import ClientFormPage from '@/pages/clients/ClientFormPage'
@@ -152,6 +153,7 @@ export const router = createBrowserRouter([
               { path: 'transfers/:id/edit', element: <TransferFormPage /> },
               { path: 'sales', element: <SalesPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
+              { path: 'sales/:id', element: <SaleDetailPage /> },
               { path: 'sales/:id/edit', element: <SaleFormPage /> },
               { path: 'clients', element: <ClientsPage /> },
               { path: 'clients/new', element: <ClientFormPage /> },

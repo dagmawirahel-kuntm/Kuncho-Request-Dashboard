@@ -1,8 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { useToast } from '@/contexts/ToastContext'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
@@ -188,7 +191,12 @@ function PrintInvoice({ expense }: { expense: ExpenseWithJoins }) {
 export default function ExpenseDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
+  const { toast } = useToast()
   const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const [rejecting, setRejecting] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState('')
 
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense-detail', id],
@@ -233,6 +241,22 @@ export default function ExpenseDetailPage() {
   const theme = TYPE_THEME[expense.expense_type ?? 'general'] ?? TYPE_THEME.general
   const canEdit = role === 'admin' || role === 'manager' || role === 'finance'
 
+  const approvalStatus = expense.approval_status ?? 'pending'
+  const showManagerActions = approvalStatus === 'pending' && canApproveAsManager(role)
+  const showFinanceActions = approvalStatus === 'manager_approved' && expense.requires_finance_approval && canApproveAsFinance(role)
+  const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'manager')
+
+  async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
+    if (!id) return
+    const { error } = await supabase.from('expenses').update({ approval_status: nextStatus, ...extra }).eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['expense-detail', id] })
+    qc.invalidateQueries({ queryKey: ['expenses'] })
+    toast('Approval updated', 'success')
+    setRejecting(false)
+    setRejectionReason('')
+  }
+
   const projectName = expense.projects?.project_name ?? expense.project_name
   const vendorName  = expense.vendors?.vendor_name ?? expense.vendors_name
   const vendorBank  = expense.vendors?.bank_account ?? expense.vendors_bank_account
@@ -276,7 +300,32 @@ export default function ExpenseDetailPage() {
           >
             <ArrowLeft className="h-4 w-4" /> Approvals
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {(showManagerActions || showFinanceActions) && !rejecting && (
+              <>
+                <button
+                  onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
+                  className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {showFinanceActions ? 'Final Approve' : 'Approve'}
+                </button>
+                <button
+                  onClick={() => setRejecting(true)}
+                  className="flex items-center gap-1.5 rounded-md border border-red-200 dark:border-red-800 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  <XCircle className="h-3.5 w-3.5" /> Reject
+                </button>
+              </>
+            )}
+            {canResubmit && !rejecting && (
+              <button
+                onClick={() => handleApprovalTransition('pending', { rejection_reason: null })}
+                className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50"
+              >
+                Resubmit
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
@@ -293,6 +342,35 @@ export default function ExpenseDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Rejection panel */}
+        {rejecting && (
+          <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 space-y-3">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Provide a reason for rejection</p>
+            <textarea
+              rows={2}
+              className="w-full rounded-md border border-red-200 dark:border-red-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400"
+              placeholder="Rejection reason…"
+              value={rejectionReason}
+              onChange={e => setRejectionReason(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                disabled={!rejectionReason.trim()}
+                onClick={() => handleApprovalTransition('rejected', { rejection_reason: rejectionReason.trim() })}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Confirm Reject
+              </button>
+              <button
+                onClick={() => { setRejecting(false); setRejectionReason('') }}
+                className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Hero card */}
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>

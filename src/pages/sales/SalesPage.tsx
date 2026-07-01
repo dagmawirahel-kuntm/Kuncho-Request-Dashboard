@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Sale } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
 
 const saleQuickFilters: QuickFilter[] = [
   {
@@ -57,7 +57,7 @@ export default function SalesPage() {
   }
 
   const columns: ColumnDef<Sale>[] = useMemo(() => [
-    { accessorKey: 'sales_description', header: 'Description', cell: ({ getValue }) => <span className="max-w-xs truncate block">{(getValue() as string) ?? '—'}</span> },
+    { accessorKey: 'sales_description', header: 'Description', cell: ({ row }) => <Link to={`/sales/${row.original.id}`} className="max-w-xs truncate block text-brand hover:underline font-medium">{row.original.sales_description ?? '—'}</Link> },
     { accessorKey: 'date', header: 'Date', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'amount', header: 'Amount (ETB)', cell: ({ getValue }) => formatCurrency(getValue() as number) },
     { accessorKey: 'sales_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={(getValue() as string).toLowerCase()} /> : '—' },
@@ -72,6 +72,7 @@ export default function SalesPage() {
       header: '',
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
+          <Link to={`/sales/${row.original.id}`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="View"><Eye className="h-3.5 w-3.5" /></Link>
           <Link to={`/sales/${row.original.id}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></Link>
           <button onClick={() => handleDelete(row.original.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
