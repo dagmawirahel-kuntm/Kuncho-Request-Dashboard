@@ -13,13 +13,17 @@ ALTER TABLE staff
 CREATE INDEX IF NOT EXISTS idx_staff_user_id ON staff(user_id) WHERE user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_staff_email   ON staff(email)   WHERE email IS NOT NULL;
 
--- Staff users can read their own record (used for profile page + dashboard redirect)
+-- Staff users can read their own record (used for profile page + dashboard redirect).
+-- Match by explicit user_id link OR by the email they logged in with.
 DROP POLICY IF EXISTS "staff_view_own" ON staff;
 CREATE POLICY "staff_view_own" ON staff
   FOR SELECT
   USING (
     get_user_role() = 'staff'
-    AND user_id = auth.uid()
+    AND (
+      user_id = auth.uid()
+      OR lower(email) = lower(auth.jwt() ->> 'email')
+    )
   );
 
 -- HR officers need full write access to staff table
@@ -28,6 +32,9 @@ CREATE POLICY "hr_officer_all_staff" ON staff
   FOR ALL
   USING (get_user_role() = 'hr_officer');
 
+-- Helper: staff record id(s) belonging to the current auth user (by link or email)
+-- Reused by the child-record policies below so email-matched staff see their data.
+
 -- Staff can view their own cash advances (needed for profile page tab)
 DROP POLICY IF EXISTS "staff_view_own_advances" ON cash_advances;
 CREATE POLICY "staff_view_own_advances" ON cash_advances
@@ -35,7 +42,9 @@ CREATE POLICY "staff_view_own_advances" ON cash_advances
   USING (
     get_user_role() = 'staff'
     AND staff_id IN (
-      SELECT id FROM staff WHERE user_id = auth.uid()
+      SELECT id FROM staff
+      WHERE user_id = auth.uid()
+         OR lower(email) = lower(auth.jwt() ->> 'email')
     )
   );
 
@@ -46,7 +55,9 @@ CREATE POLICY "staff_own_timesheet_select" ON timesheet
   USING (
     get_user_role() = 'staff'
     AND staff_id IN (
-      SELECT id FROM staff WHERE user_id = auth.uid()
+      SELECT id FROM staff
+      WHERE user_id = auth.uid()
+         OR lower(email) = lower(auth.jwt() ->> 'email')
     )
   );
 
@@ -57,6 +68,8 @@ CREATE POLICY "staff_view_own_payroll_summary" ON emergency_payroll_summary
   USING (
     get_user_role() = 'staff'
     AND staff_id IN (
-      SELECT id FROM staff WHERE user_id = auth.uid()
+      SELECT id FROM staff
+      WHERE user_id = auth.uid()
+         OR lower(email) = lower(auth.jwt() ->> 'email')
     )
   );

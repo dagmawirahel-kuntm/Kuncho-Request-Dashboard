@@ -15,12 +15,22 @@ function StaffProfileRedirect() {
   const { data: staffId, isLoading } = useQuery({
     queryKey: ['my-staff-profile-id', user?.id],
     queryFn: async () => {
+      const email = user!.email?.toLowerCase() ?? ''
+      // Match the logged-in user to their staff record by explicit link (user_id)
+      // or, more commonly, by the email they registered/logged in with.
+      const orFilter = email
+        ? `user_id.eq.${user!.id},email.ilike.${email}`
+        : `user_id.eq.${user!.id}`
       const { data } = await supabase
         .from('staff')
-        .select('id')
-        .eq('user_id', user!.id)
-        .maybeSingle()
-      return data?.id ?? null
+        .select('id, user_id, email')
+        .or(orFilter)
+        .limit(5)
+      if (!data || data.length === 0) return null
+      // Prefer an explicit user_id link; fall back to an email match.
+      const linked = data.find(r => r.user_id === user!.id)
+      const byEmail = data.find(r => (r.email ?? '').toLowerCase() === email)
+      return (linked ?? byEmail ?? data[0]).id ?? null
     },
     enabled: !!user,
   })
