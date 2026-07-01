@@ -275,7 +275,7 @@ export function useSubCategoriesAll() {
         .eq('active', true)
         .order('item_name')
       if (error) throw error
-      return (data ?? []) as {
+      return (data ?? []) as unknown as {
         id: string
         item_name: string
         description: string | null

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Order, OrderItem, OrderItemStatus } from '@/types/database'
-import { useProjects, useStaff, useVendors, useUserProfiles } from '@/hooks/useLookups'
+import { useProjects, useStaff, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -94,7 +94,6 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
 
   const { data: projects = [] }     = useProjects()
   const { data: staff = [] }        = useStaff()
-  const { data: vendors = [] }      = useVendors()
   const { data: userProfiles = [] } = useUserProfiles()
 
   const [rejecting, setRejecting]         = useState(false)
@@ -157,7 +156,6 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const projectName      = lookupName(projects, order.project_id, 'project_name')
   const procOfficerName  = lookupName(staff, order.staff_id, 'employee_name')
   const requestedByName  = profileName((order as any).requested_by_user_id)
-  const vendorName       = lookupName(vendors, order.recommended_vendor_id, 'vendor_name')
   const unfilledCount = items.filter(i => i.status === 'unfulfilled').length
 
   return (

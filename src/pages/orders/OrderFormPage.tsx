@@ -13,7 +13,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 import {
-  ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, GripVertical, AlertCircle,
+  ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'

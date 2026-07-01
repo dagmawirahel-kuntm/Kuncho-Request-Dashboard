@@ -27,7 +27,6 @@ const CAT_LABEL: Record<StockMainCategory, string> = {
 
 type Tab = 'catalog' | 'units'
 
-type ToolItemRow = StockItem & { current_stock?: number }
 type ToolUnitRow = ToolUnit & {
   stock_items: { item_name: string; item_code: string | null; main_category: string | null } | null
   staff: { employee_name: string } | null

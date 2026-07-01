@@ -111,7 +111,7 @@ export default function VendorDetailPage() {
         .order('date', { ascending: false })
         .limit(200)
       if (error) throw error
-      return data as ExpenseWithProject[]
+      return data as unknown as ExpenseWithProject[]
     },
     enabled: !!id,
   })

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { SourcingBundle, SourcingBundleStatus } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2, FileText, Clock, CheckCircle2, Package, TruckIcon, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileText, Clock, CheckCircle2, Package, TruckIcon } from 'lucide-react'
 
 type BundleRow = SourcingBundle & {
   vendors: { vendor_name: string } | null

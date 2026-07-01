@@ -90,7 +90,7 @@ export default function SourcingBundleFormPage() {
         .eq('approval_status', 'finance_approved')
         .order('created_at', { ascending: false })
       if (error) throw error
-      return (data ?? []) as OrderRow[]
+      return (data ?? []) as unknown as OrderRow[]
     },
   })
 

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import JsBarcode from 'jsbarcode'
 import { supabase } from '@/lib/supabase'
 import type { StockItem, StockMainCategory, StockReceiptType, StockIssueType } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { useAuth } from '@/contexts/AuthContext'
 import {
   ArrowLeft, Search, QrCode, Hash, TrendingUp, TrendingDown,
   Package, Wrench, ChevronRight, Printer, X,
@@ -66,8 +65,6 @@ export default function StockMovementPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { toast } = useToast()
-  const { profile } = useAuth()
-
   const preselectedId  = params.get('item')   ?? ''
   const preselectedDir = (params.get('dir') as Direction | null) ?? 'in'
 
