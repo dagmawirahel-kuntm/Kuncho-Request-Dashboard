@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import type { Staff } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye } from 'lucide-react'
 
 // ── Department colour palette ─────────────────────────────────────────────────
 const DEPT_COLORS: Record<string, { bg: string; text: string; pill: string }> = {
@@ -208,9 +208,11 @@ export default function StaffPage() {
                             {ini}
                           </div>
                           <div>
-                            <p className="font-medium text-slate-800 dark:text-slate-100 leading-tight">{s.employee_name}</p>
+                            <Link to={`/staff/${s.id}`} className="font-medium text-slate-800 dark:text-slate-100 leading-tight hover:text-brand hover:underline">
+                              {s.employee_name}
+                            </Link>
                             {s.payment_frequency && (
-                              <span className="text-xs text-slate-400 dark:text-slate-500">{s.payment_frequency}</span>
+                              <span className="text-xs text-slate-400 dark:text-slate-500 block">{s.payment_frequency}</span>
                             )}
                           </div>
                         </div>
@@ -279,6 +281,13 @@ export default function StaffPage() {
                       {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 justify-end">
+                          <Link
+                            to={`/staff/${s.id}`}
+                            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200"
+                            title="View Profile"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Link>
                           <Link
                             to={`/staff/${s.id}/edit`}
                             className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200"

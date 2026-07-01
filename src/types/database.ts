@@ -74,10 +74,13 @@ export interface UserProfile {
 export type UserProfileInsert = Omit<UserProfile, 'created_at'>
 
 // ── Staff ──────────────────────────────────────────────────────
+export type StaffStatus = 'active' | 'on_leave' | 'terminated'
+
 export interface Staff {
   id: string
   employee_name: string
-  staff_type: StaffType | null
+  staff_type: string | null        // department (Office, Work Shop, Field, etc.)
+  employment_type: string | null   // Full Time, Part Time, Contract, Freelance
   role: string | null
   monthly_salary: number | null
   day_rate: number | null
@@ -86,7 +89,12 @@ export interface Staff {
   starting_date: string | null
   termination_date: string | null
   phone_number: string | null
+  email: string | null
+  national_id: string | null
   experience: string | null
+  status: StaffStatus
+  photo_url: string | null
+  user_id: string | null
   created_at: string
   updated_at: string
 }

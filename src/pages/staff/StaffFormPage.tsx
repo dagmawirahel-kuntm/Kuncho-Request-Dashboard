@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
-import type { Staff, StaffInsert } from '@/types/database'
+import type { Staff, StaffInsert, UserProfile } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -40,37 +40,48 @@ export default function StaffFormPage() {
   return <StaffFormPageBody id={id} record={record} />
 }
 
+type UserProfileRow = Pick<UserProfile, 'id' | 'full_name' | 'role'>
+
 function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const isEdit = !!id
-    const navigate = useNavigate()
-    const { toast } = useToast()
-    const qc = useQueryClient()
-  
-    
+  const navigate = useNavigate()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+
+  const { data: userProfiles = [] } = useQuery({
+    queryKey: ['user-profiles-lookup'],
+    queryFn: async () => {
+      const { data } = await supabase.from('user_profiles').select('id, full_name, role').order('full_name')
+      return (data ?? []) as UserProfileRow[]
+    },
+  })
 
   const [form, setForm] = useState<Partial<StaffInsert>>(
     record
       ? {
-        employee_name: record.employee_name,
-        staff_type: record.staff_type,
-        role: record.role,
-        monthly_salary: record.monthly_salary ?? undefined,
-        day_rate: record.day_rate ?? undefined,
-        payment_frequency: record.payment_frequency,
-        bank_account: record.bank_account,
-        starting_date: record.starting_date,
-        termination_date: record.termination_date,
-        phone_number: record.phone_number,
-        experience: record.experience,
-      }
-      : {}
+          employee_name: record.employee_name,
+          staff_type: record.staff_type,
+          employment_type: record.employment_type,
+          role: record.role,
+          monthly_salary: record.monthly_salary ?? undefined,
+          day_rate: record.day_rate ?? undefined,
+          payment_frequency: record.payment_frequency,
+          bank_account: record.bank_account,
+          starting_date: record.starting_date,
+          termination_date: record.termination_date,
+          phone_number: record.phone_number,
+          email: record.email,
+          national_id: record.national_id,
+          experience: record.experience,
+          status: record.status ?? 'active',
+          user_id: record.user_id,
+        }
+      : { status: 'active' }
   )
-    const [saving, setSaving] = useState(false)
-    const [error, setError] = useState('')
-  
-    
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-    function set(key: keyof StaffInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+  function set(key: keyof StaffInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   async function handleSave() {
     if (!form.employee_name?.trim()) { setError('Employee name is required'); return }
@@ -91,17 +102,42 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
       <Field label="Employee Name *">
         <input type="text" className={inputCls} value={form.employee_name ?? ''} onChange={e => set('employee_name', e.target.value)} />
       </Field>
+
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Staff Type">
-          <select className={inputCls} value={form.staff_type ?? ''} onChange={e => set('staff_type', e.target.value as Staff['staff_type'])}>
+        <Field label="Department">
+          <select className={inputCls} value={form.staff_type ?? ''} onChange={e => set('staff_type', e.target.value || null)}>
             <option value="">— Select —</option>
-            <option>Full Time</option><option>Part Time</option><option>Contract</option><option>Freelance</option>
+            <option>Office</option>
+            <option>Work Shop</option>
+            <option>Field</option>
+            <option>Leather Workshop</option>
+            <option>Site</option>
           </select>
         </Field>
+        <Field label="Employment Type">
+          <select className={inputCls} value={form.employment_type ?? ''} onChange={e => set('employment_type', e.target.value || null)}>
+            <option value="">— Select —</option>
+            <option>Full Time</option>
+            <option>Part Time</option>
+            <option>Contract</option>
+            <option>Freelance</option>
+          </select>
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Role / Position">
           <input type="text" className={inputCls} value={form.role ?? ''} onChange={e => set('role', e.target.value)} />
         </Field>
+        <Field label="Status">
+          <select className={inputCls} value={form.status ?? 'active'} onChange={e => set('status', e.target.value)}>
+            <option value="active">Active</option>
+            <option value="on_leave">On Leave</option>
+            <option value="terminated">Terminated</option>
+          </select>
+        </Field>
       </div>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Monthly Salary (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.monthly_salary ?? ''} onChange={e => set('monthly_salary', e.target.value ? parseFloat(e.target.value) : null)} />
@@ -110,15 +146,29 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           <input type="number" step="0.01" className={inputCls} value={form.day_rate ?? ''} onChange={e => set('day_rate', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
+
       <Field label="Payment Frequency">
         <input type="text" className={inputCls} value={form.payment_frequency ?? ''} onChange={e => set('payment_frequency', e.target.value)} placeholder="e.g. Monthly, Bi-weekly" />
       </Field>
-      <Field label="Bank Account">
-        <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
-      </Field>
-      <Field label="Phone Number">
-        <input type="tel" className={inputCls} value={form.phone_number ?? ''} onChange={e => set('phone_number', e.target.value)} />
-      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Phone Number">
+          <input type="tel" className={inputCls} value={form.phone_number ?? ''} onChange={e => set('phone_number', e.target.value)} />
+        </Field>
+        <Field label="Email">
+          <input type="email" className={inputCls} value={form.email ?? ''} onChange={e => set('email', e.target.value)} placeholder="staff@company.com" />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="National ID">
+          <input type="text" className={inputCls} value={form.national_id ?? ''} onChange={e => set('national_id', e.target.value)} />
+        </Field>
+        <Field label="Bank Account">
+          <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
+        </Field>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Starting Date">
           <input type="date" className={inputCls} value={form.starting_date ?? ''} onChange={e => set('starting_date', e.target.value)} />
@@ -127,8 +177,18 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           <input type="date" className={inputCls} value={form.termination_date ?? ''} onChange={e => set('termination_date', e.target.value)} />
         </Field>
       </div>
-      <Field label="Experience">
-        <textarea rows={2} className={inputCls} value={form.experience ?? ''} onChange={e => set('experience', e.target.value)} />
+
+      <Field label="Linked User Account">
+        <select className={inputCls} value={form.user_id ?? ''} onChange={e => set('user_id', e.target.value || null)}>
+          <option value="">— Not linked —</option>
+          {userProfiles.map(u => (
+            <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Experience / Notes">
+        <textarea rows={3} className={inputCls} value={form.experience ?? ''} onChange={e => set('experience', e.target.value)} />
       </Field>
     </FormPage>
   )

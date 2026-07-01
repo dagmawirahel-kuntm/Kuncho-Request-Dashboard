@@ -9,6 +9,29 @@ import { useAuth } from '@/contexts/AuthContext'
 import MyRequestsDashboardPage from './MyRequestsDashboardPage'
 import type { UserRole } from '@/types/database'
 
+function StaffProfileRedirect() {
+  const { user } = useAuth()
+
+  const { data: staffId, isLoading } = useQuery({
+    queryKey: ['my-staff-profile-id', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('user_id', user!.id)
+        .maybeSingle()
+      return data?.id ?? null
+    },
+    enabled: !!user,
+  })
+
+  if (isLoading) {
+    return <div className="py-24 text-center text-sm text-slate-400">Loading your profile…</div>
+  }
+  if (staffId) return <Navigate to={`/staff/${staffId}`} replace />
+  return <MyRequestsDashboardPage />
+}
+
 const sections = [
   { label: 'Requests', to: '/requests', icon: Receipt, color: 'bg-blue-50 text-blue-500', desc: 'Expenses, orders, transportation' },
   { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts', roles: ['admin', 'manager', 'finance', 'procurement_officer'] as UserRole[] },
@@ -20,7 +43,7 @@ const sections = [
 export default function DashboardPage() {
   const { role } = useAuth()
 
-  if (role === 'staff') return <MyRequestsDashboardPage />
+  if (role === 'staff') return <StaffProfileRedirect />
   if (role === 'procurement_officer') return <Navigate to="/procurement" replace />
   if (role === 'hr_officer') return <Navigate to="/hr" replace />
   if (role === 'project_manager') return <Navigate to="/management" replace />
