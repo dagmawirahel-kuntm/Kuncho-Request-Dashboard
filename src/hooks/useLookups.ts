@@ -69,7 +69,7 @@ export function useStaff() {
     queryFn: async () => {
       const { data } = await supabase
         .from('staff')
-        .select('id,employee_name,role,bank_account')
+        .select('id,employee_name,role,bank_account,monthly_salary')
         .order('employee_name')
       return data ?? []
     },

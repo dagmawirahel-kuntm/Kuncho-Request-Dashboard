@@ -13,6 +13,7 @@ export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_ap
 export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type PayrollApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleLifecycleStatus = 'Draft' | 'Invoiced' | 'Paid' | 'Cancelled' | 'Refunded'
 export type ProformaStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'expired'
@@ -490,14 +491,20 @@ export interface Payroll {
   start_date: string | null
   end_date: string | null
   payroll_type: string | null
-  payment_status: string | null
+  payment_status: 'pending' | 'processing' | 'paid'
   payment_method: string | null
   notes: string | null
   account_id: string | null
+  approval_status: PayrollApprovalStatus
+  rejection_reason: string | null
+  manager_approved_by: string | null
+  manager_approved_at: string | null
+  finance_approved_by: string | null
+  finance_approved_at: string | null
   created_at: string
   updated_at: string
 }
-export type PayrollInsert = Omit<Payroll, 'id' | 'payroll_record' | 'created_at' | 'updated_at'>
+export type PayrollInsert = Omit<Payroll, 'id' | 'payroll_record' | 'created_at' | 'updated_at' | 'approval_status' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'rejection_reason'>
 
 // ── Emergency Payroll Summary ─────────────────────────────────────
 export interface EmergencyPayrollSummary {
@@ -680,6 +687,9 @@ export interface BatchPaymentExpense {
 export interface PayrollStaff {
   payroll_id: string
   staff_id: string
+  gross_amount: number | null
+  deductions: number | null
+  net_amount: number | null
 }
 
 export interface CashAdvanceExpense {

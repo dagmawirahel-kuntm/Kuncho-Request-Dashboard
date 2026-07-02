@@ -5,10 +5,12 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Payroll } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+
+type PayrollRow = Payroll & { payroll_staff: { staff_id: string; net_amount: number | null }[] | null }
 
 export default function PayrollPage() {
   const [searchParams] = useSearchParams()
@@ -18,9 +20,9 @@ export default function PayrollPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['payroll'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id, net_amount)').order('created_at', { ascending: false })
       if (error) throw error
-      return data as Payroll[]
+      return data as PayrollRow[]
     },
   })
 
@@ -33,16 +35,26 @@ export default function PayrollPage() {
     toast('Payroll deleted', 'success')
   }
 
-  const columns: ColumnDef<Payroll>[] = useMemo(() => [
-    { accessorKey: 'payroll_record', header: 'Record', cell: ({ getValue }) => getValue() ?? '—' },
+  const columns: ColumnDef<PayrollRow>[] = useMemo(() => [
+    { accessorKey: 'payroll_record', header: 'Record', cell: ({ getValue }) => <span className="font-mono text-xs font-bold text-brand">{(getValue() as string) ?? '—'}</span> },
     { accessorKey: 'pay_period', header: 'Pay Period', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'payroll_type', header: 'Type', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'start_date', header: 'Start', cell: ({ getValue }) => formatDate(getValue() as string) },
     { accessorKey: 'end_date', header: 'End', cell: ({ getValue }) => formatDate(getValue() as string) },
+    {
+      id: 'total_net', header: 'Total Net (ETB)',
+      cell: ({ row }) => {
+        const links = row.original.payroll_staff ?? []
+        const total = links.reduce((s, l) => s + Number(l.net_amount ?? 0), 0)
+        return total > 0
+          ? <span className="font-semibold tabular-nums">{formatCurrency(total)}</span>
+          : <span className="text-slate-300">—</span>
+      },
+    },
     { accessorKey: 'payment_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
-    { accessorKey: 'payment_method', header: 'Method', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
     { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
-    { id: 'staff_count', header: 'Employees', cell: ({ row }) => (row.original as any).payroll_staff?.length ?? 0 },
+    { id: 'staff_count', header: 'Employees', cell: ({ row }) => row.original.payroll_staff?.length ?? 0 },
     {
       id: 'actions',
       header: '',
