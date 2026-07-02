@@ -3,6 +3,7 @@ import { ProtectedRoute } from './ProtectedRoute'
 import { AppShell } from '@/components/layout/AppShell'
 import LoginPage from '@/pages/auth/LoginPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
+import MyRequestsDashboardPage from '@/pages/dashboard/MyRequestsDashboardPage'
 import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
 import ProcurementDashboardPage from '@/pages/dashboard/ProcurementDashboardPage'
 import FinanceDashboardPage from '@/pages/dashboard/FinanceDashboardPage'
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: 'dashboard', element: <DashboardPage /> },
+          { path: 'my-home', element: <MyRequestsDashboardPage /> },
           { path: 'overview', element: <OverviewDashboardPage /> },
           { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },
