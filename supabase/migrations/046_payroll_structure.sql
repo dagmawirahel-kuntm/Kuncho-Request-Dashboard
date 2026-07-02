@@ -143,7 +143,10 @@ CREATE POLICY "manager_approve_payroll" ON payroll FOR UPDATE
   USING (get_user_role() = 'manager');
 
 -- ── 4. Paid payroll debits its account in the balances view ──────
-CREATE OR REPLACE VIEW public.v_account_balances AS
+-- DROP + CREATE (not OR REPLACE): the new total_payroll_out column sits
+-- mid-list, and Postgres forbids changing column order via OR REPLACE.
+DROP VIEW IF EXISTS public.v_account_balances;
+CREATE VIEW public.v_account_balances AS
 WITH
   sales_in AS (
     SELECT account_id, COALESCE(SUM(amount), 0) AS total
