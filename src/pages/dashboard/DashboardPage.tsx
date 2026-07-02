@@ -34,13 +34,12 @@ function GeneralDashboard({ role }: { role: UserRole | null }) {
   const { data: expenseStats } = useQuery({
     queryKey: ['dashboard-expenses'],
     queryFn: async () => {
-      const { data, count } = await supabase
-        .from('expenses')
-        .select('amount_etb, payment_status', { count: 'exact' })
-        .eq('payment_status', false)
-      const rows = data as { amount_etb: number | null }[] | null
-      const total = rows?.reduce((sum, r) => sum + (r.amount_etb ?? 0), 0) ?? 0
-      return { pending: count ?? 0, total }
+      // Summed in the DB — client-side sums cap out at 1,000 rows
+      const { data } = await supabase
+        .from('v_expense_pending_totals')
+        .select('pending_count, pending_total_etb')
+        .single()
+      return { pending: data?.pending_count ?? 0, total: Number(data?.pending_total_etb ?? 0) }
     },
   })
 

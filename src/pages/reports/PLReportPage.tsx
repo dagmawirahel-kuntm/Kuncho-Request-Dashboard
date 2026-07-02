@@ -19,49 +19,42 @@ export default function PLReportPage() {
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
 
-  const { data: salesData = [], isLoading: loadingSales } = useQuery({
-    queryKey: ['pl-sales', year],
+  // Aggregation happens in the database (v_pl_monthly / v_expenses_by_category)
+  // so totals stay exact regardless of how many records a year holds.
+  const { data: monthlyRows = [], isLoading: loadingMonthly } = useQuery({
+    queryKey: ['pl-monthly', year],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sales')
-        .select('date, amount')
-        .eq('sales_status', 'Paid')
-        .gte('date', `${year}-01-01`)
-        .lte('date', `${year}-12-31`)
+        .from('v_pl_monthly')
+        .select('month, revenue, expenses')
+        .eq('year', year)
       if (error) throw error
-      return data
+      return data as { month: number; revenue: number; expenses: number }[]
     },
   })
 
-  const { data: expensesData = [], isLoading: loadingExpenses } = useQuery({
-    queryKey: ['pl-expenses', year],
+  const { data: categoryRows = [], isLoading: loadingCategories } = useQuery({
+    queryKey: ['pl-categories', year],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('expenses')
-        .select('date, amount_etb, categories(category_name)')
-        .eq('payment_status', true)
-        .gte('date', `${year}-01-01`)
-        .lte('date', `${year}-12-31`)
+        .from('v_expenses_by_category')
+        .select('category_name, total_etb')
+        .eq('year', year)
       if (error) throw error
-      return data
+      return data as { category_name: string; total_etb: number }[]
     },
   })
 
-  const isLoading = loadingSales || loadingExpenses
+  const isLoading = loadingMonthly || loadingCategories
 
   const monthlyData = useMemo(() => {
     return MONTHS.map((name, idx) => {
-      const month = String(idx + 1).padStart(2, '0')
-      const prefix = `${year}-${month}`
-      const revenue = (salesData as { date: string | null; amount: number | null }[])
-        .filter(s => s.date?.startsWith(prefix))
-        .reduce((sum, s) => sum + (s.amount ?? 0), 0)
-      const expenses = (expensesData as { date: string | null; amount_etb: number | null }[])
-        .filter(e => e.date?.startsWith(prefix))
-        .reduce((sum, e) => sum + (e.amount_etb ?? 0), 0)
+      const row = monthlyRows.find(r => r.month === idx + 1)
+      const revenue = Number(row?.revenue ?? 0)
+      const expenses = Number(row?.expenses ?? 0)
       return { name, revenue, expenses, net: revenue - expenses }
     })
-  }, [salesData, expensesData, year])
+  }, [monthlyRows])
 
   const totals = useMemo(() => ({
     revenue: monthlyData.reduce((s, m) => s + m.revenue, 0),
@@ -70,13 +63,10 @@ export default function PLReportPage() {
   }), [monthlyData])
 
   const byCategory = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const e of (expensesData as unknown) as { amount_etb: number | null; categories?: { category_name: string } | null }[]) {
-      const name = e.categories?.category_name ?? 'Uncategorized'
-      map[name] = (map[name] ?? 0) + (e.amount_etb ?? 0)
-    }
-    return Object.entries(map).sort((a, b) => b[1] - a[1])
-  }, [expensesData])
+    return categoryRows
+      .map(r => [r.category_name, Number(r.total_etb)] as [string, number])
+      .sort((a, b) => b[1] - a[1])
+  }, [categoryRows])
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
 
