@@ -100,6 +100,12 @@ const navGroups: NavGroup[] = [
       { label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'manager', 'stock_manager'] },
     ],
   },
+  {
+    title: 'Admin',
+    items: [
+      { label: 'Users & Roles', to: '/users', icon: Shield, roles: ['admin'] },
+    ],
+  },
 ]
 
 function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {

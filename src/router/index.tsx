@@ -77,6 +77,7 @@ import VendorReceiptDetailPage from '@/pages/vendor-receipts/VendorReceiptDetail
 import LocationsPage from '@/pages/locations/LocationsPage'
 import LocationFormPage from '@/pages/locations/LocationFormPage'
 import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
+import UsersPage from '@/pages/users/UsersPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
@@ -180,6 +181,12 @@ export const router = createBrowserRouter([
               { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin']} />,
+            children: [
+              { path: 'users', element: <UsersPage /> },
             ],
           },
           {

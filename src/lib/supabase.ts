@@ -11,3 +11,12 @@ export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-key',
 )
+
+// Secondary client for the admin "create user" flow: signUp() on the main
+// client would replace the admin's own session with the new user's.
+// This client never persists a session, so the admin stays logged in.
+export const signupClient = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key',
+  { auth: { persistSession: false, autoRefreshToken: false } },
+)
