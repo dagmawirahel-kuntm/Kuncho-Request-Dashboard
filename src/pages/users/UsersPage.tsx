@@ -65,12 +65,26 @@ export default function UsersPage() {
     if (!email.trim() || !password.trim()) { toast('Email and password are required', 'error'); return }
     if (password.length < 6) { toast('Password must be at least 6 characters', 'error'); return }
     setCreating(true)
+    const cleanEmail = email.trim().toLowerCase()
+
+    // The DB signup gate only allows emails registered in the company
+    // directory — admin-created accounts get allowlisted first.
+    const { error: allowErr } = await supabase
+      .from('signup_allowlist')
+      .upsert({ email: cleanEmail, note: 'created via Users & Roles' }, { onConflict: 'email' })
+    if (allowErr && !allowErr.message.includes('does not exist')) {
+      // table missing (migration 050 not run yet) is tolerable pre-gate;
+      // anything else is a real failure
+      setCreating(false)
+      toast(`Could not allowlist email: ${allowErr.message}`, 'error')
+      return
+    }
 
     // signup via the secondary client so the admin session is untouched
     const { data, error } = await signupClient.auth.signUp({
-      email: email.trim(),
+      email: cleanEmail,
       password,
-      options: { data: { full_name: fullName.trim() || email.trim() } },
+      options: { data: { full_name: fullName.trim() || cleanEmail } },
     })
     if (error) {
       setCreating(false)
@@ -81,16 +95,18 @@ export default function UsersPage() {
     const newUserId = data.user?.id
     // New accounts always start as 'staff' (enforced in the DB trigger);
     // apply the chosen role now with admin rights.
+    let roleApplied = newRole === 'staff'
     if (newUserId && newRole !== 'staff') {
-      // brief retry: the profile row is created by a DB trigger and can lag
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const { data: updated } = await supabase
+      // retry: the profile row is created by a DB trigger and can lag
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: updated, error: roleErr } = await supabase
           .from('user_profiles')
           .update({ role: newRole })
           .eq('id', newUserId)
           .select('id')
-        if (updated && updated.length > 0) break
-        await new Promise(r => setTimeout(r, 700))
+        if (roleErr) { toast(`Role assignment failed: ${roleErr.message}`, 'error'); break }
+        if (updated && updated.length > 0) { roleApplied = true; break }
+        await new Promise(r => setTimeout(r, 800))
       }
     }
 
@@ -100,6 +116,8 @@ export default function UsersPage() {
     qc.invalidateQueries({ queryKey: ['user-profiles'] })
     if (data.session === null && data.user && !data.user.confirmed_at) {
       toast('User created, but email confirmation is ON in Supabase — they cannot log in until confirmed. Disable "Confirm email" in Auth settings.', 'info')
+    } else if (!roleApplied) {
+      toast(`User created as Staff — the ${ROLE_LABELS[newRole]} role did not apply. Set it in the list below.`, 'info')
     } else {
       toast('User created — they can log in now', 'success')
     }

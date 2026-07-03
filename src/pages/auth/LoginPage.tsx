@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 // Target matches the sidebar logo slot: h-14 header, px-4 padding, font-size 2rem
 const LOGO_TOP  = 10   // (56px header - ~36px letter) / 2
@@ -15,16 +16,27 @@ export default function LoginPage() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
+  const [info, setInfo]         = useState('')
   const [loading, setLoading]   = useState(false)
   const [showForm, setShowForm] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
+    setError(''); setInfo('')
     setLoading(true)
     const { error } = await signIn(email, password)
     setLoading(false)
     if (error) { setError(error.message) } else { navigate(from, { replace: true }) }
+  }
+
+  async function handleForgotPassword() {
+    setError(''); setInfo('')
+    if (!email.trim()) { setError('Type your email above first, then tap "Forgot password?"'); return }
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/update-password`,
+    })
+    if (error) { setError(error.message); return }
+    setInfo('Password reset link sent — check your email inbox (and spam folder).')
   }
 
   return (
@@ -224,6 +236,11 @@ export default function LoginPage() {
                 {error}
               </p>
             )}
+            {info && (
+              <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-2.5 text-sm text-emerald-400">
+                {info}
+              </p>
+            )}
 
             <button
               type="submit"
@@ -233,6 +250,16 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+
+          <div className="mt-5 flex items-center justify-between text-[11px]">
+            <button type="button" onClick={handleForgotPassword}
+              className="text-white/30 hover:text-white/60 transition uppercase tracking-widest">
+              Forgot password?
+            </button>
+            <Link to="/signup" className="text-white/30 hover:text-white/60 transition uppercase tracking-widest">
+              First time? Sign up
+            </Link>
+          </div>
 
           <button
             onClick={() => setShowForm(false)}

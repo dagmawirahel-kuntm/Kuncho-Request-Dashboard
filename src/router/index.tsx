@@ -2,6 +2,8 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './ProtectedRoute'
 import { AppShell } from '@/components/layout/AppShell'
 import LoginPage from '@/pages/auth/LoginPage'
+import SignupPage from '@/pages/auth/SignupPage'
+import UpdatePasswordPage from '@/pages/auth/UpdatePasswordPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import MyRequestsDashboardPage from '@/pages/dashboard/MyRequestsDashboardPage'
 import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
@@ -84,6 +86,8 @@ import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/signup', element: <SignupPage /> },
+  { path: '/update-password', element: <UpdatePasswordPage /> },
   {
     element: <ProtectedRoute />,
     children: [
