@@ -58,7 +58,7 @@ export default function SignupPage() {
           <span className="text-5xl font-black text-white select-none">ቁ</span>
           <h1 className="mt-4 text-white text-xl font-bold">Create your account</h1>
           <p className="mt-1 text-white/35 text-sm">
-            Works only with your registered company email
+            Use your registered company email. An admin approves new accounts before access is granted.
           </p>
         </div>
 

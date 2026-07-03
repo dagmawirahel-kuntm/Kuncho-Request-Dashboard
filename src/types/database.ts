@@ -64,12 +64,15 @@ export interface Database {
 }
 
 // ── User Profiles ──────────────────────────────────────────────
+export type AccountStatus = 'pending' | 'active' | 'disabled'
+
 export interface UserProfile {
   id: string
   full_name: string
   role: UserRole
   department: string | null
   phone_number: string | null
+  account_status: AccountStatus
   created_at: string
 }
 export type UserProfileInsert = Omit<UserProfile, 'created_at'>

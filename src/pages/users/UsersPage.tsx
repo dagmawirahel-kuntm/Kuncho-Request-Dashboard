@@ -4,8 +4,8 @@ import { supabase, signupClient } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import type { UserProfile, UserRole } from '@/types/database'
-import { UserPlus, Shield, Info } from 'lucide-react'
+import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
+import { UserPlus, Shield, Info, UserCheck, UserX, Clock } from 'lucide-react'
 
 const ROLES: UserRole[] = [
   'admin', 'manager', 'finance', 'staff',
@@ -93,15 +93,16 @@ export default function UsersPage() {
     }
 
     const newUserId = data.user?.id
-    // New accounts always start as 'staff' (enforced in the DB trigger);
-    // apply the chosen role now with admin rights.
-    let roleApplied = newRole === 'staff'
-    if (newUserId && newRole !== 'staff') {
+    // New accounts start as 'staff' + 'pending' (enforced in the DB
+    // trigger); admin-created accounts get their role and immediate
+    // activation applied here with admin rights.
+    let roleApplied = false
+    if (newUserId) {
       // retry: the profile row is created by a DB trigger and can lag
       for (let attempt = 0; attempt < 5; attempt++) {
         const { data: updated, error: roleErr } = await supabase
           .from('user_profiles')
-          .update({ role: newRole })
+          .update({ role: newRole, account_status: 'active' })
           .eq('id', newUserId)
           .select('id')
         if (roleErr) { toast(`Role assignment failed: ${roleErr.message}`, 'error'); break }
@@ -117,9 +118,9 @@ export default function UsersPage() {
     if (data.session === null && data.user && !data.user.confirmed_at) {
       toast('User created, but email confirmation is ON in Supabase — they cannot log in until confirmed. Disable "Confirm email" in Auth settings.', 'info')
     } else if (!roleApplied) {
-      toast(`User created as Staff — the ${ROLE_LABELS[newRole]} role did not apply. Set it in the list below.`, 'info')
+      toast('User created but is still Pending — approve them in the list below and set their role.', 'info')
     } else {
-      toast('User created — they can log in now', 'success')
+      toast('User created and activated — they can log in now', 'success')
     }
   }
 
@@ -130,6 +131,18 @@ export default function UsersPage() {
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['user-profiles'] })
     toast('Role updated', 'success')
+  }
+
+  async function handleStatusChange(id: string, account_status: AccountStatus) {
+    setUpdatingId(id)
+    const { error } = await supabase.from('user_profiles').update({ account_status }).eq('id', id)
+    setUpdatingId(null)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['user-profiles'] })
+    toast(
+      account_status === 'active' ? 'Account activated — they can use the system now'
+      : account_status === 'disabled' ? 'Account deactivated — login is blocked'
+      : 'Account set to pending', 'success')
   }
 
   return (
@@ -188,19 +201,66 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* ── Pending approval queue ── */}
+      {!isLoading && profiles.some(p => p.account_status === 'pending') && (
+        <div className="rounded-2xl border-2 border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-900/10 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-200/70 dark:border-amber-900/40">
+            <Clock className="h-4 w-4 text-amber-500" />
+            <h2 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+              Waiting for your approval
+            </h2>
+          </div>
+          {profiles.filter(p => p.account_status === 'pending').map(p => (
+            <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 border-b last:border-0 border-amber-100 dark:border-amber-900/30">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{p.full_name}</p>
+                <p className="text-xs text-slate-400">Signed up {formatDate(p.created_at)}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <select
+                  className="rounded-md border px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                  value={p.role}
+                  disabled={updatingId === p.id}
+                  onChange={e => handleRoleChange(p.id, e.target.value as UserRole)}
+                >
+                  {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                </select>
+                <button
+                  onClick={() => handleStatusChange(p.id, 'active')}
+                  disabled={updatingId === p.id}
+                  className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  <UserCheck className="h-3.5 w-3.5" /> Approve
+                </button>
+                <button
+                  onClick={() => handleStatusChange(p.id, 'disabled')}
+                  disabled={updatingId === p.id}
+                  className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 disabled:opacity-50"
+                >
+                  <UserX className="h-3.5 w-3.5" /> Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
       ) : (
         <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-          <div className="hidden sm:grid grid-cols-[1fr_11rem_8rem] gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          <div className="hidden sm:grid grid-cols-[1fr_10rem_6rem_7rem_7rem] gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
             <span>User</span>
             <span>Role</span>
+            <span>Status</span>
             <span>Created</span>
+            <span></span>
           </div>
-          {profiles.map((p, i) => {
+          {profiles.filter(p => p.account_status !== 'pending').map((p, i, arr) => {
             const isSelf = p.id === me?.id
+            const isDisabled = p.account_status === 'disabled'
             return (
-              <div key={p.id} className={`sm:grid sm:grid-cols-[1fr_11rem_8rem] sm:gap-3 flex flex-col gap-2 px-4 py-3 items-start sm:items-center ${i < profiles.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
+              <div key={p.id} className={`sm:grid sm:grid-cols-[1fr_10rem_6rem_7rem_7rem] sm:gap-3 flex flex-col gap-2 px-4 py-3 items-start sm:items-center ${i < arr.length - 1 ? 'border-b dark:border-slate-700' : ''} ${isDisabled ? 'opacity-60' : ''}`}>
                 <div className="min-w-0 flex items-center gap-2">
                   <Shield className={`h-3.5 w-3.5 flex-shrink-0 ${p.role === 'admin' ? 'text-red-400' : 'text-slate-300 dark:text-slate-600'}`} />
                   <div className="min-w-0">
@@ -227,7 +287,35 @@ export default function UsersPage() {
                     </select>
                   )}
                 </div>
+                <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  isDisabled
+                    ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                }`}>
+                  {isDisabled ? 'Disabled' : 'Active'}
+                </span>
                 <span className="text-xs text-slate-400">{formatDate(p.created_at)}</span>
+                <div>
+                  {!isSelf && (
+                    isDisabled ? (
+                      <button
+                        onClick={() => handleStatusChange(p.id, 'active')}
+                        disabled={updatingId === p.id}
+                        className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-900/40 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        <UserCheck className="h-3 w-3" /> Reactivate
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleStatusChange(p.id, 'disabled')}
+                        disabled={updatingId === p.id}
+                        className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900/40 px-2.5 py-1 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 disabled:opacity-50"
+                      >
+                        <UserX className="h-3 w-3" /> Deactivate
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
             )
           })}
@@ -235,8 +323,9 @@ export default function UsersPage() {
       )}
 
       <p className="text-xs text-slate-400 dark:text-slate-500">
-        Your own role is locked here so you can't accidentally lock yourself out.
-        New users start as Staff; the role you pick in the form is applied right after creation.
+        Self-signups wait in the approval queue until you approve them; accounts you create here are active immediately.
+        Deactivating blocks all access instantly but keeps the person's records and approval history intact.
+        Your own row is locked so you can't lock yourself out.
       </p>
     </div>
   )
