@@ -31,3 +31,16 @@ export function initials(name: string): string {
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : name.slice(0, 2).toUpperCase()
 }
+
+// Management seniority tier — independent of department, shown as a badge.
+export const MANAGEMENT_LEVELS = ['upper', 'medium', 'low'] as const
+
+export const MANAGEMENT_LEVEL_META: Record<string, { label: string; pill: string }> = {
+  upper:  { label: 'Upper Management',  pill: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+  medium: { label: 'Medium Management', pill: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+  low:    { label: 'Low Level',         pill: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
+}
+
+export function getManagementLevelMeta(level: string | null | undefined) {
+  return level ? MANAGEMENT_LEVEL_META[level] ?? null : null
+}

@@ -8,7 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye } from 'lucide-react'
 
 // ── Department colour palette (shared) ────────────────────────────────────────
-import { DEPT_COLORS, getDeptColor, initials } from '@/lib/departments'
+import { DEPT_COLORS, getDeptColor, getManagementLevelMeta, initials } from '@/lib/departments'
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, sub }: { label: string; value: string; icon: React.ReactNode; sub?: string }) {
@@ -159,7 +159,8 @@ export default function StaffPage() {
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300 w-8">#</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Employee</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Department</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Role</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Workplace</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Level</th>
                   <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Salary</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Contact / Bank</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300 font-mono text-xs">Employee ID</th>
@@ -169,7 +170,7 @@ export default function StaffPage() {
               <tbody className="divide-y dark:divide-slate-700">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-400 dark:text-slate-500">
+                    <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400 dark:text-slate-500">
                       No staff match your filter.
                     </td>
                   </tr>
@@ -208,9 +209,19 @@ export default function StaffPage() {
                         </span>
                       </td>
 
-                      {/* Role */}
+                      {/* Workplace */}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {s.role ?? <span className="text-slate-300 dark:text-slate-600">—</span>}
+                      </td>
+
+                      {/* Management Level */}
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const meta = getManagementLevelMeta(s.management_level)
+                          return meta
+                            ? <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${meta.pill}`}>{meta.label}</span>
+                            : <span className="text-slate-300 dark:text-slate-600">—</span>
+                        })()}
                       </td>
 
                       {/* Salary */}
@@ -294,7 +305,7 @@ export default function StaffPage() {
               {rows.length > 0 && (
                 <tfoot className="bg-slate-50 dark:bg-slate-900/60 border-t dark:border-slate-700">
                   <tr>
-                    <td colSpan={4} className="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+                    <td colSpan={5} className="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
                       {rows.length} {rows.length === 1 ? 'employee' : 'employees'}
                       {deptFilter !== 'All' && ` in ${deptFilter}`}
                       {search && ` matching "${search}"`}

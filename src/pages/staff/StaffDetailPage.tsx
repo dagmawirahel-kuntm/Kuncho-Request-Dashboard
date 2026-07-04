@@ -8,12 +8,12 @@ import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/t
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
   Building2, Clock, DollarSign, Briefcase, Hash, User,
-  CheckCircle2, Wallet,
+  CheckCircle2, Wallet, Shield,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-import { getDeptColor, initials } from '@/lib/departments'
+import { getDeptColor, getManagementLevelMeta, initials } from '@/lib/departments'
 
 function computeTenure(startDate: string): string {
   const start = new Date(startDate)
@@ -78,6 +78,7 @@ function DetailRow({ label, value, icon }: { label: string; value: React.ReactNo
 // ── Tab content ───────────────────────────────────────────────────
 
 function OverviewTab({ staff }: { staff: Staff }) {
+  const managementMeta = getManagementLevelMeta(staff.management_level)
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
       {/* Employment details */}
@@ -88,8 +89,12 @@ function OverviewTab({ staff }: { staff: Staff }) {
             value={staff.staff_type ?? null} />
           <DetailRow label="Employment Type" icon={<Briefcase className="h-3.5 w-3.5" />}
             value={staff.employment_type ?? null} />
-          <DetailRow label="Role / Position" icon={<User className="h-3.5 w-3.5" />}
+          <DetailRow label="Workplace" icon={<User className="h-3.5 w-3.5" />}
             value={staff.role ?? null} />
+          <DetailRow label="Management Level" icon={<Shield className="h-3.5 w-3.5" />}
+            value={managementMeta
+              ? <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${managementMeta.pill}`}>{managementMeta.label}</span>
+              : null} />
           <DetailRow label="Payment Frequency" icon={<Clock className="h-3.5 w-3.5" />}
             value={staff.payment_frequency ?? null} />
           <DetailRow label="Monthly Salary" icon={<DollarSign className="h-3.5 w-3.5" />}
@@ -366,6 +371,7 @@ export default function StaffDetailPage() {
   const isOwnProfile = staff.user_id === user?.id
   const status = staff.status ?? 'active'
   const statusCls = STATUS_CHIP[status] ?? STATUS_CHIP.active
+  const heroManagementMeta = getManagementLevelMeta(staff.management_level)
   const backTo = role === 'staff' ? '/dashboard' : '/staff'
   const backLabel = role === 'staff' ? 'Dashboard' : 'Staff'
 
@@ -442,6 +448,11 @@ export default function StaffDetailPage() {
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${statusCls}`}>
                 {status.replace('_', ' ')}
               </span>
+              {heroManagementMeta && (
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${heroManagementMeta.pill}`}>
+                  {heroManagementMeta.label}
+                </span>
+              )}
               {staff.starting_date && (
                 <span className="flex items-center gap-1 text-white/55 text-xs">
                   <Calendar className="h-3 w-3" />

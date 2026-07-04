@@ -84,7 +84,17 @@ export default function CalendarPage() {
       created_by: user?.id ?? null,
     }])
     setSaving(false)
-    if (error) { toast(error.message, 'error'); return }
+    if (error) {
+      const msg = error.message.toLowerCase()
+      if (msg.includes('does not exist') || msg.includes('schema cache')) {
+        toast('The calendar table isn\'t set up yet — run migration 052_company_calendar.sql in Supabase, then try again.', 'error')
+      } else if (msg.includes('row-level security') || msg.includes('permission denied')) {
+        toast('Your account isn\'t allowed to post (admin/manager/HR only). If your role looks right, run migration 052 — it may not have applied yet.', 'error')
+      } else {
+        toast(error.message, 'error')
+      }
+      return
+    }
     setForm({ title: '', description: '', event_date: todayStr, start_time: '', end_time: '', event_type: 'announcement', department: '' })
     setShowForm(false)
     qc.invalidateQueries({ queryKey: ['company-events'] })
@@ -112,6 +122,13 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-5">
+      <style>{`
+        @keyframes glow-purple {
+          0%, 100% { box-shadow: 0 0 14px 2px rgba(168, 85, 247, 0.45); }
+          50%      { box-shadow: 0 0 24px 6px rgba(168, 85, 247, 0.7); }
+        }
+        .animate-glow-purple { animation: glow-purple 1.8s ease-in-out infinite; }
+      `}</style>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Company Calendar</h1>
@@ -178,9 +195,16 @@ export default function CalendarPage() {
               <textarea rows={2} className={inputCls} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
             </div>
           </div>
-          <button onClick={handlePost} disabled={saving}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
-            {saving ? 'Posting…' : 'Post'}
+          <button
+            onClick={handlePost}
+            disabled={saving || !form.title.trim()}
+            className={`rounded-md px-5 py-2.5 text-sm font-semibold transition-all duration-300 ${
+              form.title.trim() && !saving
+                ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-purple-500/50 hover:shadow-xl hover:shadow-purple-500/60 hover:scale-[1.02] animate-glow-purple'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {saving ? 'Posting…' : 'Post to Calendar'}
           </button>
         </div>
       )}

@@ -64,6 +64,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           staff_type: record.staff_type,
           employment_type: record.employment_type,
           role: record.role,
+          management_level: record.management_level,
           monthly_salary: record.monthly_salary ?? undefined,
           day_rate: record.day_rate ?? undefined,
           payment_frequency: record.payment_frequency,
@@ -130,17 +131,26 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Role / Position">
-          <input type="text" className={inputCls} value={form.role ?? ''} onChange={e => set('role', e.target.value)} />
+        <Field label="Workplace">
+          <input type="text" className={inputCls} value={form.role ?? ''} onChange={e => set('role', e.target.value)} placeholder="e.g. Front Desk, Site A, Carpentry Bench 3" />
         </Field>
-        <Field label="Status">
-          <select className={inputCls} value={form.status ?? 'active'} onChange={e => set('status', e.target.value)}>
-            <option value="active">Active</option>
-            <option value="on_leave">On Leave</option>
-            <option value="terminated">Terminated</option>
+        <Field label="Management Level">
+          <select className={inputCls} value={form.management_level ?? ''} onChange={e => set('management_level', e.target.value || null)}>
+            <option value="">— Select —</option>
+            <option value="upper">Upper Management</option>
+            <option value="medium">Medium Management</option>
+            <option value="low">Low Level</option>
           </select>
         </Field>
       </div>
+
+      <Field label="Status">
+        <select className={inputCls} value={form.status ?? 'active'} onChange={e => set('status', e.target.value)}>
+          <option value="active">Active</option>
+          <option value="on_leave">On Leave</option>
+          <option value="terminated">Terminated</option>
+        </select>
+      </Field>
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Monthly Salary (ETB)">

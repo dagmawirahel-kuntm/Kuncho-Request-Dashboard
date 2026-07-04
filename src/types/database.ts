@@ -79,13 +79,15 @@ export type UserProfileInsert = Omit<UserProfile, 'created_at'>
 
 // ── Staff ──────────────────────────────────────────────────────
 export type StaffStatus = 'active' | 'on_leave' | 'terminated'
+export type ManagementLevel = 'upper' | 'medium' | 'low'
 
 export interface Staff {
   id: string
   employee_name: string
-  staff_type: string | null        // department (Office, Work Shop, Field, etc.)
+  staff_type: string | null        // department (Office, Work Shop, Field, etc.) — the bigger group
   employment_type: string | null   // Full Time, Part Time, Contract, Freelance
-  role: string | null
+  role: string | null              // workplace — the employee's specific role/position
+  management_level: ManagementLevel | null  // seniority tier: Upper / Medium / Low
   monthly_salary: number | null
   day_rate: number | null
   payment_frequency: string | null
