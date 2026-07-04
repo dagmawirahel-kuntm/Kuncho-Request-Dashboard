@@ -13,24 +13,7 @@ import {
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-const DEPT_COLORS: Record<string, { bg: string; text: string; pill: string }> = {
-  'Office':           { bg: '#1D4ED8', text: '#fff', pill: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-  'Work Shop':        { bg: '#D97706', text: '#fff', pill: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  'Field':            { bg: '#059669', text: '#fff', pill: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-  'Leather Workshop': { bg: '#7C3AED', text: '#fff', pill: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300' },
-  'Site':             { bg: '#0891B2', text: '#fff', pill: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300' },
-}
-
-function getDeptColor(dept: string | null) {
-  return DEPT_COLORS[dept ?? ''] ?? { bg: '#475569', text: '#fff', pill: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' }
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/)
-  return parts.length >= 2
-    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-    : name.slice(0, 2).toUpperCase()
-}
+import { getDeptColor, initials } from '@/lib/departments'
 
 function computeTenure(startDate: string): string {
   const start = new Date(startDate)
@@ -135,6 +118,12 @@ function OverviewTab({ staff }: { staff: Staff }) {
               value={staff.email ?? null} />
             <DetailRow label="National ID" icon={<Hash className="h-3.5 w-3.5" />}
               value={staff.national_id ?? null} />
+            <DetailRow label="ID Document" icon={<Hash className="h-3.5 w-3.5" />}
+              value={staff.id_document_url
+                ? <a href={staff.id_document_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                    {staff.id_document_name ?? 'View attached ID'}
+                  </a>
+                : null} />
             <DetailRow label="Bank Account" icon={<CreditCard className="h-3.5 w-3.5" />}
               value={staff.bank_account ? `•••• ${staff.bank_account.slice(-4)}` : null} />
           </div>
@@ -420,13 +409,21 @@ export default function StaffDetailPage() {
 
         {/* Profile content */}
         <div className="relative z-10 px-6 pb-8 pt-5 flex flex-col sm:flex-row items-start sm:items-end gap-5">
-          {/* Avatar */}
-          <div
-            className="h-20 w-20 rounded-2xl flex items-center justify-center text-2xl font-bold flex-shrink-0 shadow-xl border-2 border-white/25 select-none"
-            style={{ backgroundColor: deptColor.bg, color: deptColor.text }}
-          >
-            {ini}
-          </div>
+          {/* Avatar: photo if uploaded, else initials in department color */}
+          {staff.photo_url ? (
+            <img
+              src={staff.photo_url}
+              alt={staff.employee_name}
+              className="h-20 w-20 rounded-2xl object-cover flex-shrink-0 shadow-xl border-2 border-white/25"
+            />
+          ) : (
+            <div
+              className="h-20 w-20 rounded-2xl flex items-center justify-center text-2xl font-bold flex-shrink-0 shadow-xl border-2 border-white/25 select-none"
+              style={{ backgroundColor: deptColor.bg, color: deptColor.text }}
+            >
+              {ini}
+            </div>
+          )}
 
           {/* Name + info */}
           <div className="flex-1 min-w-0">

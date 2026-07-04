@@ -7,25 +7,11 @@ import {
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { getDeptColor, initials } from '@/lib/departments'
+import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
 import type { Staff, EmergencyPayrollSummary, CashAdvance } from '@/types/database'
 
 // ── Helpers ───────────────────────────────────────────────────────
-
-const DEPT_COLORS: Record<string, string> = {
-  'Office': '#1D4ED8', 'Work Shop': '#D97706', 'Field': '#059669',
-  'Leather Workshop': '#7C3AED', 'Site': '#0891B2',
-}
-
-function deptColor(dept: string | null) {
-  return DEPT_COLORS[dept ?? ''] ?? '#475569'
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/)
-  return parts.length >= 2
-    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-    : name.slice(0, 2).toUpperCase()
-}
 
 function greeting() {
   const h = new Date().getHours()
@@ -170,12 +156,20 @@ export default function MyRequestsDashboardPage() {
       >
         <div className="relative z-10 flex items-center gap-4">
           {staff && (
-            <div
-              className="h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-bold flex-shrink-0 shadow-lg border-2 border-white/20 select-none text-white"
-              style={{ backgroundColor: deptColor(staff.staff_type) }}
-            >
-              {initials(staff.employee_name)}
-            </div>
+            staff.photo_url ? (
+              <img
+                src={staff.photo_url}
+                alt={staff.employee_name}
+                className="h-14 w-14 rounded-2xl object-cover flex-shrink-0 shadow-lg border-2 border-white/20"
+              />
+            ) : (
+              <div
+                className="h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-bold flex-shrink-0 shadow-lg border-2 border-white/20 select-none text-white"
+                style={{ backgroundColor: getDeptColor(staff.staff_type).bg }}
+              >
+                {initials(staff.employee_name)}
+              </div>
+            )
           )}
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-white leading-tight">
@@ -197,6 +191,9 @@ export default function MyRequestsDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ── Department board: today, this week, announcements ── */}
+      <DepartmentBoard department={staff?.staff_type ?? null} />
 
       {/* ── Pay snapshot (only if linked to a staff record) ── */}
       {staff && (

@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { Navigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { Receipt, ShoppingCart, Truck, DollarSign, ArrowRight, Building2, Wallet, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { KpiCard } from '@/components/shared/KpiCard'
+import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
 import { useAuth } from '@/contexts/AuthContext'
 import MyRequestsDashboardPage from './MyRequestsDashboardPage'
 import type { UserRole } from '@/types/database'
@@ -20,10 +20,11 @@ const sections = [
 export default function DashboardPage() {
   const { role } = useAuth()
 
-  if (role === 'staff') return <MyRequestsDashboardPage />
-  if (role === 'procurement_officer') return <Navigate to="/procurement" replace />
-  if (role === 'hr_officer') return <Navigate to="/hr" replace />
-  if (role === 'project_manager') return <Navigate to="/management" replace />
+  // Everyone below the ops roles lands on their personal home, which
+  // includes their department board and links into their section.
+  if (role === 'staff' || role === 'procurement_officer' || role === 'hr_officer' || role === 'project_manager' || role === 'stock_manager') {
+    return <MyRequestsDashboardPage />
+  }
 
   return <GeneralDashboard role={role} />
 }
@@ -120,6 +121,9 @@ function GeneralDashboard({ role }: { role: UserRole | null }) {
           <KpiCard key={stat.label} {...stat} />
         ))}
       </div>
+
+      {/* Company board: calendar, announcements, to-dos */}
+      <DepartmentBoard />
 
       {/* Section Dashboards */}
       <div>

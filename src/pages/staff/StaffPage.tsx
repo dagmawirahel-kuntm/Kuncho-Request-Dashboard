@@ -7,25 +7,8 @@ import type { Staff } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye } from 'lucide-react'
 
-// ── Department colour palette ─────────────────────────────────────────────────
-const DEPT_COLORS: Record<string, { bg: string; text: string; pill: string }> = {
-  'Office':           { bg: '#1D4ED8', text: '#fff', pill: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-  'Work Shop':        { bg: '#D97706', text: '#fff', pill: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  'Field':            { bg: '#059669', text: '#fff', pill: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-  'Leather Workshop': { bg: '#7C3AED', text: '#fff', pill: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300' },
-  'Site':             { bg: '#0891B2', text: '#fff', pill: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300' },
-}
-
-function getDeptColor(type: string | null) {
-  return DEPT_COLORS[type ?? ''] ?? { bg: '#64748B', text: '#fff', pill: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' }
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/)
-  return parts.length >= 2
-    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-    : name.slice(0, 2).toUpperCase()
-}
+// ── Department colour palette (shared) ────────────────────────────────────────
+import { DEPT_COLORS, getDeptColor, initials } from '@/lib/departments'
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, sub }: { label: string; value: string; icon: React.ReactNode; sub?: string }) {

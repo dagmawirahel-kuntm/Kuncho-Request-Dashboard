@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
+import { FileUpload } from '@/components/shared/FileUpload'
 import type { Staff, StaffInsert, UserProfile } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -74,6 +75,9 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           national_id: record.national_id,
           experience: record.experience,
           status: record.status ?? 'active',
+          photo_url: record.photo_url,
+          id_document_url: record.id_document_url,
+          id_document_name: record.id_document_name,
           user_id: record.user_id,
         }
       : { status: 'active' }
@@ -175,6 +179,38 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         </Field>
         <Field label="Termination Date">
           <input type="date" className={inputCls} value={form.termination_date ?? ''} onChange={e => set('termination_date', e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Profile Photo">
+          {form.photo_url ? (
+            <div className="flex items-center gap-3">
+              <img src={form.photo_url} alt="Profile" className="h-14 w-14 rounded-xl object-cover border" />
+              <button type="button" onClick={() => set('photo_url', null)}
+                className="text-xs text-red-500 hover:underline">Remove</button>
+            </div>
+          ) : (
+            <FileUpload
+              folder="staff-photos"
+              accept="image/*"
+              label="Upload Photo"
+              fileUrl={null}
+              fileName={null}
+              onUpload={url => set('photo_url', url)}
+              onClear={() => set('photo_url', null)}
+            />
+          )}
+        </Field>
+        <Field label="ID Document (national ID / passport)">
+          <FileUpload
+            folder="staff-ids"
+            label="Upload ID"
+            fileUrl={form.id_document_url ?? null}
+            fileName={form.id_document_name ?? null}
+            onUpload={(url, name) => setForm(f => ({ ...f, id_document_url: url, id_document_name: name }))}
+            onClear={() => setForm(f => ({ ...f, id_document_url: null, id_document_name: null }))}
+          />
         </Field>
       </div>
 

@@ -4,7 +4,7 @@ import {
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
-  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList
+  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,6 +28,7 @@ const navGroups: NavGroup[] = [
     title: 'Overview',
     items: [
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
+      { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2 },
     ],
   },

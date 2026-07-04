@@ -80,6 +80,7 @@ import LocationsPage from '@/pages/locations/LocationsPage'
 import LocationFormPage from '@/pages/locations/LocationFormPage'
 import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
 import UsersPage from '@/pages/users/UsersPage'
+import CalendarPage from '@/pages/calendar/CalendarPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
@@ -97,6 +98,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'my-home', element: <MyRequestsDashboardPage /> },
+          { path: 'calendar', element: <CalendarPage /> },
           { path: 'overview', element: <OverviewDashboardPage /> },
           { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },

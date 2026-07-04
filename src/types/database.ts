@@ -98,11 +98,31 @@ export interface Staff {
   experience: string | null
   status: StaffStatus
   photo_url: string | null
+  id_document_url: string | null
+  id_document_name: string | null
   user_id: string | null
   created_at: string
   updated_at: string
 }
 export type StaffInsert = Omit<Staff, 'id' | 'created_at' | 'updated_at'>
+
+// ── Company Events (shared calendar) ─────────────────────────────
+export type CompanyEventType = 'announcement' | 'event' | 'task' | 'holiday'
+
+export interface CompanyEvent {
+  id: string
+  title: string
+  description: string | null
+  event_date: string
+  start_time: string | null
+  end_time: string | null
+  event_type: CompanyEventType
+  department: string | null   // null = company-wide
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+export type CompanyEventInsert = Omit<CompanyEvent, 'id' | 'created_at' | 'updated_at'>
 
 // ── Projects ────────────────────────────────────────────────────
 export interface Project {
