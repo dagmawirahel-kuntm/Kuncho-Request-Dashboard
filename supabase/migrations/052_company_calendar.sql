@@ -14,7 +14,10 @@ ALTER TABLE staff
   ADD COLUMN IF NOT EXISTS id_document_name TEXT;
 
 CREATE TABLE IF NOT EXISTS company_events (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  -- gen_random_uuid() is built into Postgres core (13+) — no extension
+  -- needed. uuid_generate_v4() lives in the `extensions` schema on
+  -- Supabase, which `SET search_path TO public` above hides.
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title       TEXT NOT NULL,
   description TEXT,
   event_date  DATE NOT NULL,
