@@ -20,10 +20,10 @@ type OrderItemRow = {
   id: string
   order_id: string
   item_name: string
-  description: string | null
+  specifications: string | null
   quantity: number
   unit: string | null
-  estimated_unit_price: number | null
+  unit_price_est: number | null
   status: string
 }
 
@@ -216,7 +216,7 @@ export default function SourcingBundleFormPage() {
       source_pr_code: order?.request_code ?? '—',
       project_name: order?.projects?.project_name ?? null,
       quantity_actual: String(item.quantity),
-      unit_price_actual: item.estimated_unit_price != null ? String(item.estimated_unit_price) : '',
+      unit_price_actual: item.unit_price_est != null ? String(item.unit_price_est) : '',
       notes: '',
       sort_order: prev.length,
     }])
@@ -245,8 +245,16 @@ export default function SourcingBundleFormPage() {
         vendor_name: vendorId ? null : (vendorName || null),
         expected_delivery_date: deliveryDate || null,
         notes: notes || null,
-        procurement_officer_id: profile?.id ?? null,
       }
+      // Only stamp the procurement officer at creation — editing
+      // shouldn't silently reassign attribution to whoever last saved.
+      if (!isEdit) bundleData.procurement_officer_id = profile?.id ?? null
+
+      // Track which items were in the bundle before this save, so we
+      // can revert any that got removed back to 'pending'.
+      const previousItemIds: string[] = isEdit
+        ? ((existingBundle?.sourcing_bundle_items ?? []) as { order_item_id: string }[]).map(i => i.order_item_id)
+        : []
 
       if (isEdit) {
         const { error } = await supabase.from('sourcing_bundles').update(bundleData).eq('id', id!)
@@ -274,8 +282,30 @@ export default function SourcingBundleFormPage() {
       )
       if (itemError) throw itemError
 
+      // Sync order_items.status: items now bundled become sourced (or
+      // partially_sourced if less than the requested quantity was
+      // actually sourced); items removed from this bundle go back to
+      // pending so they're available to re-source.
+      const currentIds = new Set(bundleItems.map(i => i.order_item_id))
+      const removedIds = previousItemIds.filter(pid => !currentIds.has(pid))
+
+      const sourcedUpdates = bundleItems.map(item => {
+        const requested = item.quantity_requested
+        const actual = parseFloat(item.quantity_actual) || 0
+        const status = requested > 0 && actual < requested ? 'partially_sourced' : 'sourced'
+        return supabase.from('order_items').update({ status }).eq('id', item.order_item_id)
+      })
+      const revertUpdates = removedIds.length > 0
+        ? [supabase.from('order_items').update({ status: 'pending' }).in('id', removedIds)]
+        : []
+      const statusResults = await Promise.all([...sourcedUpdates, ...revertUpdates])
+      const statusError = statusResults.find(r => r.error)?.error
+      if (statusError) throw statusError
+
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
       qc.invalidateQueries({ queryKey: ['bundled-order-item-ids'] })
+      qc.invalidateQueries({ queryKey: ['order-item-counts'] })
+      qc.invalidateQueries({ queryKey: ['order-items-for-sourcing'] })
       toast(isEdit ? 'Bundle updated' : 'Bundle created', 'success')
       navigate(`/sourcing/${bundleId}`)
     } catch (err: any) {
@@ -283,6 +313,27 @@ export default function SourcingBundleFormPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (isEdit && existingBundle && existingBundle.status !== 'drafting') {
+    return (
+      <div className="space-y-4">
+        <Link to={`/sourcing/${id}`} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 w-fit">
+          <ChevronLeft className="h-4 w-4" /> Back to bundle
+        </Link>
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10 p-5 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">This bundle can no longer be edited</p>
+            <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+              It has moved past drafting (currently <strong>{existingBundle.status}</strong>). Only bundles still in
+              drafting can have their vendor, items, or amounts changed — this keeps the purchase order that finance
+              approved and the vendor received from changing after the fact.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -399,7 +450,7 @@ export default function SourcingBundleFormPage() {
                       <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{item.item_name}</p>
                       <p className="text-[11px] text-slate-400">
                         Qty {item.quantity} {item.unit ?? ''}
-                        {item.estimated_unit_price != null && ` · Est. ${formatCurrency(item.estimated_unit_price)}`}
+                        {item.unit_price_est != null && ` · Est. ${formatCurrency(item.unit_price_est)}`}
                       </p>
                     </div>
                     <button onClick={() => addItem(item)}

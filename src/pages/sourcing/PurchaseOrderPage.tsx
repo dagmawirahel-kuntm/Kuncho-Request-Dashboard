@@ -5,10 +5,11 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { SourcingBundleStatus } from '@/types/database'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off
 } from 'lucide-react'
 
 type BundleDetail = {
@@ -26,10 +27,12 @@ type BundleDetail = {
   expected_delivery_date: string | null
   notes: string | null
   finance_notes: string | null
+  expense_id: string | null
   created_at: string
   vendors: { vendor_name: string } | null
   procurement_officer: { full_name: string } | null
   approver: { full_name: string } | null
+  expenses: { expense_code: string | null; item_service_description: string | null; amount_etb: number | null } | null
   sourcing_bundle_items: {
     id: string
     order_item_id: string
@@ -40,10 +43,10 @@ type BundleDetail = {
     order_items: {
       id: string
       item_name: string
-      description: string | null
+      specifications: string | null
       unit: string | null
       quantity: number
-      estimated_unit_price: number | null
+      unit_price_est: number | null
       order_id: string
       orders: {
         request_code: string
@@ -94,10 +97,11 @@ export default function PurchaseOrderPage() {
           vendors(vendor_name),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
+          expenses(expense_code, item_service_description, amount_etb),
           sourcing_bundle_items(
             *,
             order_items(
-              id, item_name, description, unit, quantity, estimated_unit_price, order_id,
+              id, item_name, specifications, unit, quantity, unit_price_est, order_id,
               orders(request_code, order_name, projects(project_name))
             )
           )
@@ -106,6 +110,23 @@ export default function PurchaseOrderPage() {
         .single()
       if (error) throw error
       return data as BundleDetail
+    },
+  })
+
+  const { data: expenseOptions = [] } = useQuery({
+    queryKey: ['expenses-lookup-for-bundle'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('id, expense_code, item_service_description, amount_etb')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (error) throw error
+      return (data ?? []).map(e => ({
+        id: e.id,
+        label: e.expense_code ?? '(no code)',
+        sub: [e.item_service_description, e.amount_etb != null ? formatCurrency(e.amount_etb) : null].filter(Boolean).join(' · '),
+      }))
     },
   })
 
@@ -154,8 +175,23 @@ export default function PurchaseOrderPage() {
 
       const { error } = await supabase.from('sourcing_bundles').update(patch).eq('id', id!)
       if (error) throw error
+
+      if (nextStatus === 'cancelled') {
+        // Release this bundle's line items so they can be re-sourced:
+        // delete the bundle_items rows (allowed once cancelled — see
+        // migration 056) and revert their order_items back to pending.
+        const itemIds = (bundle?.sourcing_bundle_items ?? []).map(i => i.order_item_id)
+        const { error: delErr } = await supabase.from('sourcing_bundle_items').delete().eq('bundle_id', id!)
+        if (delErr) throw delErr
+        if (itemIds.length > 0) {
+          const { error: revertErr } = await supabase.from('order_items').update({ status: 'pending' }).in('id', itemIds)
+          if (revertErr) throw revertErr
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
+      qc.invalidateQueries({ queryKey: ['order-item-counts'] })
       toast(`Bundle moved to ${nextStatus}`, 'success')
       setShowRejectPanel(false)
       setFinanceNotes('')
@@ -164,6 +200,13 @@ export default function PurchaseOrderPage() {
     } finally {
       setTransitioning(false)
     }
+  }
+
+  async function linkExpense(expenseId: string | null) {
+    const { error } = await supabase.from('sourcing_bundles').update({ expense_id: expenseId }).eq('id', id!)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
+    toast(expenseId ? 'Linked to expense' : 'Expense link removed', 'success')
   }
 
   async function handleDelete() {
@@ -339,7 +382,7 @@ export default function PurchaseOrderPage() {
                     <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800 dark:text-slate-100">{oi?.item_name ?? '—'}</p>
-                      {oi?.description && <p className="text-xs text-slate-400 mt-0.5">{oi.description}</p>}
+                      {oi?.specifications && <p className="text-xs text-slate-400 mt-0.5">{oi.specifications}</p>}
                       {item.notes && <p className="text-xs text-slate-400 italic mt-0.5">{item.notes}</p>}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
@@ -502,6 +545,36 @@ export default function PurchaseOrderPage() {
 
         {status === 'cancelled' && (
           <p className="text-sm text-slate-400">This bundle has been cancelled.</p>
+        )}
+
+        {/* Reconcile to an expense once the order has actually been placed */}
+        {['ordered', 'fulfilled'].includes(status) && (isAdmin || isManager || isFinance || isProcurement) && (
+          <div className="space-y-1.5 pt-2 border-t dark:border-slate-700">
+            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <Receipt className="h-3.5 w-3.5" /> Reconciled Expense
+            </label>
+            {bundle.expenses ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">
+                  <span className="font-mono text-xs font-semibold text-brand mr-1.5">{bundle.expenses.expense_code}</span>
+                  {bundle.expenses.item_service_description}
+                  {bundle.expenses.amount_etb != null && ` — ${formatCurrency(bundle.expenses.amount_etb)}`}
+                </span>
+                <button onClick={() => linkExpense(null)}
+                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
+                  <Link2Off className="h-3 w-3" /> Unlink
+                </button>
+              </div>
+            ) : (
+              <SearchableSelect
+                value={null}
+                onChange={linkExpense}
+                options={expenseOptions}
+                placeholder="Search expenses to link…"
+              />
+            )}
+            <p className="text-[11px] text-slate-400">Link the expense record where this vendor payment was recorded, for audit traceability.</p>
+          </div>
         )}
 
         {/* Finance notes input for approve action */}

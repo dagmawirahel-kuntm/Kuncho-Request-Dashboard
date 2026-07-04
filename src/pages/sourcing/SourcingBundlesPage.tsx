@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { SourcingBundle, SourcingBundleStatus } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, FileText, Clock, CheckCircle2, Package, TruckIcon } from 'lucide-react'
 
 type BundleRow = SourcingBundle & {
@@ -47,6 +48,11 @@ export default function SourcingBundlesPage() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { role } = useAuth()
+  // Matches the drafting-only, admin/manager-only delete rule on the
+  // bundle detail page (PurchaseOrderPage) — this list view previously
+  // allowed finance/procurement to delete a bundle of any status.
+  const canDelete = (b: BundleRow) => (role === 'admin' || role === 'manager') && b.status === 'drafting'
 
   const { data: bundles = [], isLoading } = useQuery({
     queryKey: ['sourcing-bundles'],
@@ -173,10 +179,12 @@ export default function SourcingBundlesPage() {
                     <Pencil className="h-3.5 w-3.5" />
                   </Link>
                 )}
-                <button onClick={e => handleDelete(e, b.id)}
-                  className="rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {canDelete(b) && (
+                  <button onClick={e => handleDelete(e, b.id)}
+                    className="rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
