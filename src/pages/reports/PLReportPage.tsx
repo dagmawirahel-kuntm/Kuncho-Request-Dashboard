@@ -2,25 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
-import { ETHIOPIAN_MONTHS_SHORT, toEthiopian } from '@/lib/ethiopianCalendar'
+import { ETHIOPIAN_MONTHS, toEthiopian } from '@/lib/ethiopianCalendar'
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const GC_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// A Gregorian month usually spans parts of two Ethiopian months — shown
-// as a range so the Gregorian-bucketed report still reads in both
-// calendars (reporting periods themselves stay Gregorian; ask before
-// changing to Ethiopian fiscal-year bucketing, a bigger structural call).
-function ethiopianRangeForMonth(year: number, monthIdx0: number): string {
-  const first = new Date(year, monthIdx0, 1)
-  const last = new Date(year, monthIdx0 + 1, 0)
-  const a = toEthiopian(first)
-  const b = toEthiopian(last)
-  const an = ETHIOPIAN_MONTHS_SHORT[a.month - 1]
-  const bn = ETHIOPIAN_MONTHS_SHORT[b.month - 1]
-  if (a.year === b.year && a.month === b.month) return `${an} ${a.year}`
-  if (a.year === b.year) return `${an}–${bn} ${a.year}`
-  return `${an} ${a.year}–${bn} ${b.year}`
-}
+type CalendarMode = 'GC' | 'ET'
 
 function StatCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
   return (
@@ -33,30 +19,51 @@ function StatCard({ label, value, sub }: { label: string; value: number; sub?: s
 }
 
 export default function PLReportPage() {
-  const currentYear = new Date().getFullYear()
-  const [year, setYear] = useState(currentYear)
+  const currentGCYear = new Date().getFullYear()
+  const currentETYear = toEthiopian(new Date()).year
 
-  // Aggregation happens in the database (v_pl_monthly / v_expenses_by_category)
-  // so totals stay exact regardless of how many records a year holds.
+  const [mode, setMode] = useState<CalendarMode>('GC')
+  const [gcYear, setGcYear] = useState(currentGCYear)
+  const [etYear, setEtYear] = useState(currentETYear)
+  const year = mode === 'GC' ? gcYear : etYear
+
+  // Aggregation happens in the database — both the Gregorian views
+  // (v_pl_monthly / v_expenses_by_category) and the Ethiopian ones
+  // (v_pl_monthly_et / v_expenses_by_category_et, migration 053) so
+  // totals stay exact regardless of how many records a year holds, and
+  // every Ethiopian month is bucketed from real transaction dates
+  // (Ethiopian tax law reports by Ethiopian month) rather than just
+  // re-labeled Gregorian buckets.
   const { data: monthlyRows = [], isLoading: loadingMonthly } = useQuery({
-    queryKey: ['pl-monthly', year],
+    queryKey: ['pl-monthly', mode, year],
     queryFn: async () => {
+      if (mode === 'GC') {
+        const { data, error } = await supabase
+          .from('v_pl_monthly')
+          .select('month, revenue, expenses')
+          .eq('year', year)
+        if (error) throw error
+        return data as { month: number; revenue: number; expenses: number }[]
+      }
       const { data, error } = await supabase
-        .from('v_pl_monthly')
-        .select('month, revenue, expenses')
-        .eq('year', year)
+        .from('v_pl_monthly_et')
+        .select('et_month, revenue, expenses')
+        .eq('et_year', year)
       if (error) throw error
-      return data as { month: number; revenue: number; expenses: number }[]
+      return (data as { et_month: number; revenue: number; expenses: number }[])
+        .map(r => ({ month: r.et_month, revenue: r.revenue, expenses: r.expenses }))
     },
   })
 
   const { data: categoryRows = [], isLoading: loadingCategories } = useQuery({
-    queryKey: ['pl-categories', year],
+    queryKey: ['pl-categories', mode, year],
     queryFn: async () => {
+      const table = mode === 'GC' ? 'v_expenses_by_category' : 'v_expenses_by_category_et'
+      const yearCol = mode === 'GC' ? 'year' : 'et_year'
       const { data, error } = await supabase
-        .from('v_expenses_by_category')
-        .select('category_name, total_etb')
-        .eq('year', year)
+        .from(table)
+        .select(`category_name, total_etb`)
+        .eq(yearCol, year)
       if (error) throw error
       return data as { category_name: string; total_etb: number }[]
     },
@@ -64,14 +71,16 @@ export default function PLReportPage() {
 
   const isLoading = loadingMonthly || loadingCategories
 
+  const monthNames = mode === 'GC' ? GC_MONTHS : ETHIOPIAN_MONTHS
+
   const monthlyData = useMemo(() => {
-    return MONTHS.map((name, idx) => {
+    return monthNames.map((name, idx) => {
       const row = monthlyRows.find(r => r.month === idx + 1)
       const revenue = Number(row?.revenue ?? 0)
       const expenses = Number(row?.expenses ?? 0)
       return { name, revenue, expenses, net: revenue - expenses }
     })
-  }, [monthlyRows])
+  }, [monthlyRows, monthNames])
 
   const totals = useMemo(() => ({
     revenue: monthlyData.reduce((s, m) => s + m.revenue, 0),
@@ -85,18 +94,45 @@ export default function PLReportPage() {
       .sort((a, b) => b[1] - a[1])
   }, [categoryRows])
 
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
+  const gcYears = Array.from({ length: 5 }, (_, i) => currentGCYear - i)
+  const etYears = Array.from({ length: 5 }, (_, i) => currentETYear - i)
+  const yearLabel = mode === 'GC' ? String(year) : `${year} EC`
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">P&amp;L Report</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Profit &amp; Loss — paid sales vs paid expenses</p>
         </div>
-        <select className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100" value={year} onChange={e => setYear(Number(e.target.value))}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
+
+        <div className="flex items-center gap-2">
+          {/* Calendar mode toggle — Ethiopian for tax filing, Gregorian for budgeting */}
+          <div className="flex rounded-md border dark:border-slate-700 overflow-hidden text-sm">
+            <button
+              onClick={() => setMode('GC')}
+              className={`px-3 py-2 font-medium transition-colors ${mode === 'GC' ? 'bg-brand text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+            >
+              Gregorian
+            </button>
+            <button
+              onClick={() => setMode('ET')}
+              className={`px-3 py-2 font-medium transition-colors ${mode === 'ET' ? 'bg-brand text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+            >
+              Ethiopian
+            </button>
+          </div>
+
+          <select
+            className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"
+            value={year}
+            onChange={e => mode === 'GC' ? setGcYear(Number(e.target.value)) : setEtYear(Number(e.target.value))}
+          >
+            {(mode === 'GC' ? gcYears : etYears).map(y => (
+              <option key={y} value={y}>{mode === 'GC' ? y : `${y} EC`}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -113,19 +149,18 @@ export default function PLReportPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b dark:bg-slate-900/60 dark:border-slate-700">
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Month</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">
+                      {mode === 'GC' ? 'Month' : 'Ethiopian Month'}
+                    </th>
                     <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Revenue</th>
                     <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Expenses</th>
                     <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Net</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-slate-700">
-                  {monthlyData.map((row, idx) => (
+                  {monthlyData.map(row => (
                     <tr key={row.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">
-                        {row.name} {year}
-                        <span className="block text-[10px] text-slate-400 dark:text-slate-500">{ethiopianRangeForMonth(year, idx)}</span>
-                      </td>
+                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{row.name} {yearLabel}</td>
                       <td className="px-4 py-2.5 text-right text-green-700 dark:text-green-400">{formatCurrency(row.revenue)}</td>
                       <td className="px-4 py-2.5 text-right text-red-600 dark:text-red-400">{formatCurrency(row.expenses)}</td>
                       <td className={`px-4 py-2.5 text-right font-medium ${row.net >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
@@ -136,7 +171,7 @@ export default function PLReportPage() {
                 </tbody>
                 <tfoot className="bg-slate-50 border-t dark:bg-slate-900/60 dark:border-slate-700">
                   <tr className="font-semibold">
-                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">Total {year}</td>
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">Total {yearLabel}</td>
                     <td className="px-4 py-3 text-right text-green-700 dark:text-green-400">{formatCurrency(totals.revenue)}</td>
                     <td className="px-4 py-3 text-right text-red-600 dark:text-red-400">{formatCurrency(totals.expenses)}</td>
                     <td className={`px-4 py-3 text-right ${totals.net >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
@@ -150,7 +185,7 @@ export default function PLReportPage() {
             {byCategory.length > 0 && (
               <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
                 <div className="px-4 py-3 border-b bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
-                  <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">Expenses by Category — {year}</h2>
+                  <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">Expenses by Category — {yearLabel}</h2>
                 </div>
                 <table className="w-full text-sm">
                   <thead className="border-b dark:border-slate-700">
