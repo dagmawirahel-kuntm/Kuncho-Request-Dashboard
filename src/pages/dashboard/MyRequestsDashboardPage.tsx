@@ -2,12 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Receipt, Truck, Clock, ArrowRight, Wallet, DollarSign,
-  User, CalendarDays, CheckCircle2, Plus,
+  CalendarDays, CheckCircle2, Plus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { getDeptColor, initials } from '@/lib/departments'
 import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
 import type { Staff, EmergencyPayrollSummary, CashAdvance } from '@/types/database'
 
@@ -149,51 +148,20 @@ export default function MyRequestsDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Greeting hero ── */}
-      <div
-        className="relative rounded-2xl overflow-hidden px-6 py-6"
-        style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%)' }}
-      >
-        <div className="relative z-10 flex items-center gap-4">
-          {staff && (
-            staff.photo_url ? (
-              <img
-                src={staff.photo_url}
-                alt={staff.employee_name}
-                className="h-14 w-14 rounded-2xl object-cover flex-shrink-0 shadow-lg border-2 border-white/20"
-              />
-            ) : (
-              <div
-                className="h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-bold flex-shrink-0 shadow-lg border-2 border-white/20 select-none text-white"
-                style={{ backgroundColor: getDeptColor(staff.staff_type).bg }}
-              >
-                {initials(staff.employee_name)}
-              </div>
-            )
-          )}
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-white leading-tight">
-              {greeting()}, {firstName}
-            </h1>
-            <p className="text-white/60 text-sm mt-0.5">
-              {staff
-                ? [staff.role, staff.staff_type].filter(Boolean).join(' · ') || 'Welcome back'
-                : 'Welcome back'}
-            </p>
-          </div>
-          {staff && (
-            <Link
-              to={`/staff/${staff.id}`}
-              className="ml-auto flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3.5 py-2 text-sm text-white transition-colors backdrop-blur-sm flex-shrink-0"
-            >
-              <User className="h-4 w-4" /> My Profile
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* ── Department board: today, this week, announcements ── */}
-      <DepartmentBoard department={staff?.staff_type ?? null} />
+      {/* ── The department board is the centerpiece: greeting merged into
+           its hero, department-colored, live clock, today + this week ── */}
+      <DepartmentBoard
+        department={staff?.staff_type ?? null}
+        greeting={{
+          name: displayName,
+          headline: `${greeting()}, ${firstName}`,
+          subtitle: staff
+            ? [staff.role, staff.staff_type].filter(Boolean).join(' · ') || 'Welcome back'
+            : 'Welcome back',
+          photoUrl: staff?.photo_url,
+          profileTo: staff ? `/staff/${staff.id}` : undefined,
+        }}
+      />
 
       {/* ── Pay snapshot (only if linked to a staff record) ── */}
       {staff && (

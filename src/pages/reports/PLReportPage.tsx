@@ -2,8 +2,25 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
+import { ETHIOPIAN_MONTHS_SHORT, toEthiopian } from '@/lib/ethiopianCalendar'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// A Gregorian month usually spans parts of two Ethiopian months — shown
+// as a range so the Gregorian-bucketed report still reads in both
+// calendars (reporting periods themselves stay Gregorian; ask before
+// changing to Ethiopian fiscal-year bucketing, a bigger structural call).
+function ethiopianRangeForMonth(year: number, monthIdx0: number): string {
+  const first = new Date(year, monthIdx0, 1)
+  const last = new Date(year, monthIdx0 + 1, 0)
+  const a = toEthiopian(first)
+  const b = toEthiopian(last)
+  const an = ETHIOPIAN_MONTHS_SHORT[a.month - 1]
+  const bn = ETHIOPIAN_MONTHS_SHORT[b.month - 1]
+  if (a.year === b.year && a.month === b.month) return `${an} ${a.year}`
+  if (a.year === b.year) return `${an}–${bn} ${a.year}`
+  return `${an} ${a.year}–${bn} ${b.year}`
+}
 
 function StatCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
   return (
@@ -103,9 +120,12 @@ export default function PLReportPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-slate-700">
-                  {monthlyData.map(row => (
+                  {monthlyData.map((row, idx) => (
                     <tr key={row.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{row.name} {year}</td>
+                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">
+                        {row.name} {year}
+                        <span className="block text-[10px] text-slate-400 dark:text-slate-500">{ethiopianRangeForMonth(year, idx)}</span>
+                      </td>
                       <td className="px-4 py-2.5 text-right text-green-700 dark:text-green-400">{formatCurrency(row.revenue)}</td>
                       <td className="px-4 py-2.5 text-right text-red-600 dark:text-red-400">{formatCurrency(row.expenses)}</td>
                       <td className={`px-4 py-2.5 text-right font-medium ${row.net >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>

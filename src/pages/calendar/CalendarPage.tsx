@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { getDeptColor, DEPARTMENTS } from '@/lib/departments'
+import { formatEthiopian } from '@/lib/ethiopianCalendar'
 import type { CompanyEvent, CompanyEventType } from '@/types/database'
 import { Megaphone, CalendarDays, CheckSquare, Sun, Plus, Trash2, Clock } from 'lucide-react'
 
@@ -104,9 +105,9 @@ export default function CalendarPage() {
     const d = new Date(dateStr + 'T00:00:00')
     const diff = Math.round((d.getTime() - new Date(todayStr + 'T00:00:00').getTime()) / 86_400_000)
     const nice = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-    if (diff === 0) return `Today — ${nice}`
-    if (diff === 1) return `Tomorrow — ${nice}`
-    return nice
+    const et = formatEthiopian(d)
+    const prefix = diff === 0 ? 'Today — ' : diff === 1 ? 'Tomorrow — ' : ''
+    return `${prefix}${nice} · ${et}`
   }
 
   return (
@@ -115,6 +116,9 @@ export default function CalendarPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Company Calendar</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Announcements, events, to-dos and holidays — company-wide and per department</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+            Today: {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })} · {formatEthiopian(new Date())} (Ethiopian)
+          </p>
         </div>
         {canPost && (
           <button
@@ -153,6 +157,11 @@ export default function CalendarPage() {
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Date</label>
               <input type="date" className={inputCls} value={form.event_date} onChange={e => setForm(f => ({ ...f, event_date: e.target.value }))} />
+              {form.event_date && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Ethiopian: <span className="font-medium text-slate-500 dark:text-slate-400">{formatEthiopian(form.event_date)}</span>
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>

@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { formatEthiopian } from './ethiopianCalendar'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -14,24 +15,29 @@ export function formatCurrency(amount: number | null | undefined, currency = 'ET
   }).format(amount)
 }
 
+// Every date in the app is shown in both calendars — Gregorian first,
+// Ethiopian alongside — company-wide (lists, detail pages, reports).
 export function formatDate(date: string | null | undefined) {
   if (!date) return '—'
-  return new Date(date).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  const d = new Date(date)
+  const gregorian = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return `${gregorian} · ${formatEthiopian(d, true)}`
+}
+
+// Gregorian-only variant for tight spaces (e.g. dense table columns)
+// where the dual format would overflow.
+export function formatDateGC(date: string | null | undefined) {
+  if (!date) return '—'
+  return new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export function formatDateTime(date: string | null | undefined) {
   if (!date) return '—'
-  return new Date(date).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+  const d = new Date(date)
+  const gregorian = d.toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+  return `${gregorian} · ${formatEthiopian(d, true)}`
 }
 
 export function buildMonthlyTrend(
