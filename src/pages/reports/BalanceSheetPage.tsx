@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
+import { formatEthiopian, toEthiopian, toGregorian, isEthiopianLeapYear } from '@/lib/ethiopianCalendar'
+import { CalendarDays } from 'lucide-react'
 
 interface SectionProps {
   title: string
@@ -42,96 +44,90 @@ function Section({ title, rows, total, positive }: SectionProps) {
   )
 }
 
+function toISODate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
 export default function BalanceSheetPage() {
+  const today = useMemo(() => new Date(), [])
+  const [asOfDate, setAsOfDate] = useState(() => toISODate(today))
+
+  // Quick presets: Ethiopian fiscal year-end (for tax filing) and
+  // Gregorian year-end (for budgeting), both computed from "today".
+  const gregorianYearEnd = `${today.getFullYear()}-12-31`
+  const ethiopianYearNow = toEthiopian(today).year
+  const ethiopianYearEnd = useMemo(() => {
+    const lastDay = isEthiopianLeapYear(ethiopianYearNow) ? 6 : 5
+    return toISODate(toGregorian(ethiopianYearNow, 13, lastDay))
+  }, [ethiopianYearNow])
+
   const { data: balances = [], isLoading: loadingBalances } = useQuery({
-    queryKey: ['account-balances'],
+    queryKey: ['bs-account-balances-asof', asOfDate],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('v_account_balances')
-        .select('id, account_name, type, balance')
-        .order('account_name')
+      const { data, error } = await supabase.rpc('account_balances_asof', { p_cutoff: asOfDate })
       if (error) throw error
-      return data
+      return data as { id: string; account_name: string; type: string | null; balance: number }[]
     },
   })
 
-  const { data: unpaidSales = [] } = useQuery({
-    queryKey: ['bs-unpaid-sales'],
+  const { data: arTotal = 0 } = useQuery({
+    queryKey: ['bs-ar-asof', asOfDate],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('sales')
-        .select('amount')
-        .eq('sales_status', 'Invoiced')
+      const { data, error } = await supabase.rpc('ar_total_asof', { p_cutoff: asOfDate })
       if (error) throw error
-      return data
+      return Number(data ?? 0)
     },
   })
 
-  const { data: unpaidExpenses = [] } = useQuery({
-    queryKey: ['bs-unpaid-expenses'],
+  const { data: apRows = [] } = useQuery({
+    queryKey: ['bs-ap-asof', asOfDate],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('amount_etb, categories(category_name)')
-        .eq('payment_status', false)
+      const { data, error } = await supabase.rpc('ap_by_category_asof', { p_cutoff: asOfDate })
       if (error) throw error
-      return data
+      return data as { category_name: string; total_etb: number }[]
     },
   })
 
-  const { data: paidSalesTotal = 0 } = useQuery({
-    queryKey: ['bs-paid-sales-total'],
+  const { data: retainedEarnings = 0, isLoading: loadingRE } = useQuery({
+    queryKey: ['bs-retained-earnings-asof', asOfDate],
     queryFn: async () => {
-      const { data, error } = await supabase.from('sales').select('amount').eq('sales_status', 'Paid')
+      const { data, error } = await supabase.rpc('retained_earnings_asof', { p_cutoff: asOfDate })
       if (error) throw error
-      return (data as { amount: number | null }[]).reduce((s, r) => s + (r.amount ?? 0), 0)
+      return Number(data ?? 0)
     },
   })
 
-  const { data: paidExpensesTotal = 0 } = useQuery({
-    queryKey: ['bs-paid-expenses-total'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('expenses').select('amount_etb').eq('payment_status', true)
-      if (error) throw error
-      return (data as { amount_etb: number | null }[]).reduce((s, r) => s + (r.amount_etb ?? 0), 0)
-    },
-  })
+  const isLoading = loadingBalances || loadingRE
 
   const assetRows = useMemo(() => {
-    const rows = (balances as { account_name: string; type: string | null; balance: number }[]).map(a => ({
+    const rows = balances.map(a => ({
       label: a.type ? `${a.account_name} (${a.type})` : a.account_name,
       value: Number(a.balance ?? 0),
     }))
-    const arTotal = (unpaidSales as { amount: number | null }[]).reduce((s, r) => s + (r.amount ?? 0), 0)
-    if (arTotal > 0) {
-      rows.push({ label: 'Accounts Receivable (Invoiced Sales)', value: arTotal })
-    }
+    if (arTotal > 0) rows.push({ label: 'Accounts Receivable (Invoiced Sales)', value: Number(arTotal) })
     return rows
-  }, [balances, unpaidSales])
+  }, [balances, arTotal])
 
   const assetTotal = assetRows.reduce((s, r) => s + r.value, 0)
 
   const liabRows = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const e of (unpaidExpenses as unknown) as { amount_etb: number | null; categories?: { category_name: string } | null }[]) {
-      const name = e.categories?.category_name ?? 'Uncategorized'
-      map[name] = (map[name] ?? 0) + (e.amount_etb ?? 0)
-    }
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([label, value]) => ({ label: `Accounts Payable: ${label}`, value }))
-  }, [unpaidExpenses])
+    return apRows
+      .filter(r => Number(r.total_etb) > 0)
+      .sort((a, b) => Number(b.total_etb) - Number(a.total_etb))
+      .map(r => ({ label: `Accounts Payable: ${r.category_name}`, value: Number(r.total_etb) }))
+  }, [apRows])
 
   const liabTotal = liabRows.reduce((s, r) => s + r.value, 0)
 
-  const retainedEarnings = (paidSalesTotal as number) - (paidExpensesTotal as number)
-  const equityRows = [{ label: 'Retained Earnings (cumulative)', value: retainedEarnings }]
-  const equityTotal = retainedEarnings
+  const equityRows = [{ label: 'Retained Earnings (cumulative)', value: Number(retainedEarnings) }]
+  const equityTotal = Number(retainedEarnings)
 
   const liabPlusEquity = liabTotal + equityTotal
   const isBalanced = Math.abs(assetTotal - liabPlusEquity) < 0.01
 
-  if (loadingBalances) {
+  const isToday = asOfDate === toISODate(today)
+
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div><h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1></div>
@@ -142,10 +138,50 @@ export default function BalanceSheetPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Assets = Liabilities + Equity (all-time snapshot)</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Assets = Liabilities + Equity</p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setAsOfDate(gregorianYearEnd)}
+            className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${asOfDate === gregorianYearEnd ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+          >
+            Gregorian Year-End
+          </button>
+          <button
+            onClick={() => setAsOfDate(ethiopianYearEnd)}
+            className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${asOfDate === ethiopianYearEnd ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+          >
+            Ethiopian Year-End ({ethiopianYearNow} EC)
+          </button>
+          {!isToday && (
+            <button
+              onClick={() => setAsOfDate(toISODate(today))}
+              className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              Today
+            </button>
+          )}
+          <div className="flex items-center gap-1.5 rounded-md border dark:border-slate-700 px-2.5 py-1.5 bg-white dark:bg-slate-800">
+            <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="date"
+              value={asOfDate}
+              max={toISODate(today)}
+              onChange={e => setAsOfDate(e.target.value)}
+              className="text-xs outline-none bg-transparent dark:text-slate-100"
+            />
+          </div>
+        </div>
       </div>
+
+      <p className="text-xs text-slate-400 dark:text-slate-500 -mt-3">
+        As of {new Date(asOfDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
+        {' · '}{formatEthiopian(asOfDate)} (Ethiopian)
+      </p>
 
       <div className="rounded-lg border bg-white p-4 flex flex-wrap gap-6 text-sm dark:bg-slate-800 dark:border-slate-700">
         <div className="flex items-center gap-2">
