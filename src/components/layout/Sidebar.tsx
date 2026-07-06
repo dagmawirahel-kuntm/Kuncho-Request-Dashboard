@@ -4,7 +4,7 @@ import {
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
-  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays
+  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -15,6 +15,7 @@ interface NavItem {
   to: string
   icon: React.ElementType
   roles?: string[]
+  animateIcon?: string
 }
 
 interface NavGroup {
@@ -39,7 +40,7 @@ const navGroups: NavGroup[] = [
       { label: 'Approvals', to: '/expenses', icon: Receipt },
       { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
       { label: 'Transport Jobs', to: '/transportation', icon: Truck },
-      { label: 'Fleet & Logistics', to: '/logistics', icon: Truck },
+      { label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
     ],
@@ -137,7 +138,7 @@ function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean })
               )
             }
           >
-            <item.icon className="h-4 w-4 shrink-0" />
+            <item.icon className={cn('h-4 w-4 shrink-0', item.animateIcon)} />
           </NavLink>
         ))}
       </div>
@@ -173,7 +174,7 @@ function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean })
                 )
               }
             >
-              <item.icon className="h-4 w-4 shrink-0" />
+              <item.icon className={cn('h-4 w-4 shrink-0', item.animateIcon)} />
               {item.label}
             </NavLink>
           ))}

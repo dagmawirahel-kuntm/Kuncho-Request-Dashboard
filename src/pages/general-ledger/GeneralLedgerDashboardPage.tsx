@@ -11,12 +11,12 @@ const NATURE_ORDER = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'] as c
 const UNCLASSIFIED = 'Unclassified'
 
 const NATURE_STYLES: Record<string, string> = {
-  Asset: 'bg-blue-50 text-blue-700 border-blue-200',
-  Liability: 'bg-red-50 text-red-700 border-red-200',
-  Equity: 'bg-purple-50 text-purple-700 border-purple-200',
-  Revenue: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Expense: 'bg-orange-50 text-orange-700 border-orange-200',
-  [UNCLASSIFIED]: 'bg-slate-100 text-slate-600 border-slate-200',
+  Asset: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-900/50',
+  Liability: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-900/50',
+  Equity: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-900/50',
+  Revenue: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-900/50',
+  Expense: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-900/50',
+  [UNCLASSIFIED]: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600',
 }
 
 interface ExpenseCostRow { id: string; category_id: string | null; sub_category_id: string | null; amount_etb: number | null }
@@ -204,7 +204,7 @@ export default function GeneralLedgerDashboardPage() {
                     {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     <BookOpen className="h-4 w-4" />
                     {nature}
-                    <span className="rounded-full bg-white/60 px-2 py-0.5 text-xs font-medium">{ledgers.length} ledger{ledgers.length === 1 ? '' : 's'}</span>
+                    <span className="rounded-full bg-white/60 dark:bg-black/20 px-2 py-0.5 text-xs font-medium">{ledgers.length} ledger{ledgers.length === 1 ? '' : 's'}</span>
                   </span>
                   <span className="font-semibold">{formatCurrency(natureTotal)}</span>
                 </button>
@@ -233,14 +233,14 @@ export default function GeneralLedgerDashboardPage() {
                             </div>
                           </div>
                           {ledgerOpen && (
-                            <div className="space-y-0.5 bg-slate-50/60 py-1 pl-10 pr-4">
+                            <div className="space-y-0.5 bg-slate-50/60 dark:bg-slate-900/40 py-1 pl-10 pr-4">
                               {subs.length === 0 ? (
                                 <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs text-slate-400">
                                   <span>No sub ledgers yet</span>
                                   <Link to={`/general-ledger/sub-ledgers/new?parent=${category.id}`} className="font-medium text-brand hover:underline">+ Add Sub Ledger</Link>
                                 </div>
                               ) : subs.map(sub => (
-                                <div key={sub.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-white">
+                                <div key={sub.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-white dark:hover:bg-slate-700">
                                   <div className="flex min-w-0 items-center gap-2">
                                     <span className="truncate text-sm text-slate-700">{sub.item_name}</span>
                                     {!sub.active && <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-500">Inactive</span>}

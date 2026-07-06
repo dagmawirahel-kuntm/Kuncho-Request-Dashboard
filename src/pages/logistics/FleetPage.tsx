@@ -85,7 +85,14 @@ export default function FleetPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Fleet & Logistics</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-100">
+            Fleet & Logistics
+            {vehicles.some(v => v.status === 'available') && (
+              <span title="A vehicle is available right now">
+                <Car className="car-twist-anim h-5 w-5 text-emerald-500" />
+              </span>
+            )}
+          </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Own vehicles, live availability, and what each is doing right now</p>
         </div>
         <div className="flex items-center gap-2">
