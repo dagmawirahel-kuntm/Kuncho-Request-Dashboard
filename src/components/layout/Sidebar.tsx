@@ -38,7 +38,8 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Approvals', to: '/expenses', icon: Receipt },
       { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
-      { label: 'Transportation', to: '/transportation', icon: Truck },
+      { label: 'Transport Jobs', to: '/transportation', icon: Truck },
+      { label: 'Fleet & Logistics', to: '/logistics', icon: Truck },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
     ],
@@ -92,6 +93,7 @@ const navGroups: NavGroup[] = [
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+      { label: 'Locations Map', to: '/locations/map', icon: Globe2 },
     ],
   },
   {

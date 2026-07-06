@@ -74,6 +74,8 @@ export interface UserProfile {
   phone_number: string | null
   account_status: AccountStatus
   is_vrf_manager: boolean
+  is_logistics_officer: boolean
+  is_ride_hailing_authorized: boolean
   created_at: string
 }
 export type UserProfileInsert = Omit<UserProfile, 'created_at'>
@@ -334,6 +336,11 @@ export interface PurchaseAllocation {
 export type PurchaseAllocationInsert = Omit<PurchaseAllocation, 'id' | 'allocation_name' | 'created_at' | 'updated_at'>
 
 // ── Transportation Requests ──────────────────────────────────────
+export type TransportJobType = 'material_move' | 'purchase_pickup' | 'document_courier' | 'people_move'
+export type TransportMode = 'own_fleet' | 'ride_hailing' | 'hired'
+export type HiredVehicleClass = 'lada' | 'mini_isuzu' | 'isuzu' | 'toyota_carryon' | 'other'
+export type TransportJobStatus = 'requested' | 'assigned' | 'in_progress' | 'completed' | 'cancelled'
+
 export interface TransportationRequest {
   id: string
   request_name: string | null
@@ -358,20 +365,49 @@ export interface TransportationRequest {
   pickup_location_id: string | null
   dropoff_location_id: string | null
   vendor_id: string | null
+  job_type: TransportJobType
+  transport_mode: TransportMode
+  vehicle_id: string | null
+  hired_vehicle_class: HiredVehicleClass | null
+  assigned_staff_id: string | null
+  job_status: TransportJobStatus
+  priority: 'normal' | 'urgent' | 'critical'
   created_at: string
   updated_at: string
 }
-export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'request_name' | 'created_at' | 'updated_at'>
+export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at'>
 
 // ── Locations ────────────────────────────────────────────────────
+export type LocationKind = 'site' | 'vendor_shop' | 'office' | 'workshop' | 'warehouse' | 'client' | 'other'
+
 export interface Location {
   id: string
   location_name: string
   location_type: string | null
   notes: string | null
+  latitude: number | null
+  longitude: number | null
+  kind: LocationKind
   created_at: string
 }
 export type LocationInsert = Omit<Location, 'id' | 'created_at'>
+
+// ── Vehicles (owned fleet) ────────────────────────────────────────
+export type VehicleStatus = 'available' | 'on_job' | 'maintenance' | 'offline'
+
+export interface Vehicle {
+  id: string
+  name: string
+  vehicle_type: 'truck' | 'pickup' | 'motorbike' | 'van' | 'other'
+  plate_number: string | null
+  recognized_in_books: boolean
+  status: VehicleStatus
+  purpose_notes: string | null
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+export type VehicleInsert = Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>
 
 // ── Accounts ─────────────────────────────────────────────────────
 export interface Account {

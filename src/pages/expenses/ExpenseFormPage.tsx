@@ -41,6 +41,7 @@ export default function ExpenseFormPage() {
   const prId   = searchParams.get('pr_id')
   const lineId = searchParams.get('line_id')
   const vrfId  = searchParams.get('vrf_id')
+  const transportId = searchParams.get('transport_id')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -86,6 +87,20 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!vrfId,
   })
 
+  const { data: linkedTransport } = useQuery({
+    queryKey: ['transport-for-expense', transportId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transportation_requests')
+        .select('id, request_name, amount, project_id, vendor_id, vendor_name')
+        .eq('id', transportId!)
+        .single()
+      if (error) throw error
+      return data as { id: string; request_name: string | null; amount: number | null; project_id: string | null; vendor_id: string | null; vendor_name: string | null }
+    },
+    enabled: !isEdit && !!transportId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -98,14 +113,16 @@ export default function ExpenseFormPage() {
       linkedPr={linkedPr}
       linkedLineItem={linkedLineItem}
       linkedVrf={linkedVrf}
+      linkedTransport={linkedTransport}
     />
   )
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedTransport }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
+  linkedTransport?: { id: string; request_name: string | null; amount: number | null; project_id: string | null; vendor_id: string | null; vendor_name: string | null }
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -249,6 +266,13 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       account_id: linkedVrf.initial_account_id ?? undefined,
       expense_type: 'vrf' as const,
     } : {}),
+    ...(linkedTransport ? {
+      item_service_description: `Transport: ${linkedTransport.request_name ?? 'job'}`,
+      amount_etb: linkedTransport.amount ?? undefined,
+      project_id: linkedTransport.project_id ?? undefined,
+      vendor_id: linkedTransport.vendor_id ?? undefined,
+      vendors_name: linkedTransport.vendor_name ?? undefined,
+    } : {}),
   }
   )
     const [saving, setSaving] = useState(false)
@@ -295,6 +319,15 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           quantity_covered: linkedLineItem.quantity,
           notes: null,
         }])
+      }
+      // Link back to the transport job this expense pays for — its "Paid"
+      // state now derives from this expense (the real, finance-gated ledger)
+      if (linkedTransport && expenseId) {
+        const { error: linkErr } = await supabase
+          .from('transportation_requests')
+          .update({ expense_id: expenseId })
+          .eq('id', linkedTransport.id)
+        if (linkErr) toast(`Expense saved but linking to the transport job failed: ${linkErr.message}`, 'error')
       }
     }
     setSaving(false)

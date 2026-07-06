@@ -5,7 +5,7 @@ import { formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
-import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote } from 'lucide-react'
+import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, Truck as TruckIcon, CarTaxiFront } from 'lucide-react'
 
 const ROLES: UserRole[] = [
   'admin', 'manager', 'finance', 'staff',
@@ -133,13 +133,13 @@ export default function UsersPage() {
     toast('Role updated', 'success')
   }
 
-  async function handleVrfBadgeToggle(id: string, next: boolean) {
+  async function handleBadgeToggle(id: string, field: 'is_vrf_manager' | 'is_logistics_officer' | 'is_ride_hailing_authorized', next: boolean, label: string) {
     setUpdatingId(id)
-    const { error } = await supabase.from('user_profiles').update({ is_vrf_manager: next }).eq('id', id)
+    const { error } = await supabase.from('user_profiles').update({ [field]: next }).eq('id', id)
     setUpdatingId(null)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['user-profiles'] })
-    toast(next ? 'VRF Manager badge granted' : 'VRF Manager badge removed', 'success')
+    toast(next ? `${label} badge granted` : `${label} badge removed`, 'success')
   }
 
   async function handleStatusChange(id: string, account_status: AccountStatus) {
@@ -295,20 +295,46 @@ export default function UsersPage() {
                       {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                     </select>
                   )}
-                  {p.role === 'manager' && (
+                  <div className="flex flex-wrap gap-1">
+                    {p.role === 'manager' && (
+                      <button
+                        onClick={() => handleBadgeToggle(p.id, 'is_vrf_manager', !p.is_vrf_manager, 'VRF Manager')}
+                        disabled={updatingId === p.id}
+                        title="VRF Manager: can manage VRF records and mark VRF-linked expenses as paid"
+                        className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                          p.is_vrf_manager
+                            ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                            : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        }`}
+                      >
+                        <Banknote className="h-2.5 w-2.5" /> VRF{p.is_vrf_manager ? '' : ' (off)'}
+                      </button>
+                    )}
                     <button
-                      onClick={() => handleVrfBadgeToggle(p.id, !p.is_vrf_manager)}
+                      onClick={() => handleBadgeToggle(p.id, 'is_logistics_officer', !p.is_logistics_officer, 'Logistics Officer')}
                       disabled={updatingId === p.id}
-                      title="VRF Manager: can manage VRF records and mark VRF-linked expenses as paid"
+                      title="Logistics Officer: can dispatch transport jobs, assign vehicles/staff, and manage the fleet"
                       className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
-                        p.is_vrf_manager
-                          ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                        p.is_logistics_officer
+                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
                           : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
                       }`}
                     >
-                      <Banknote className="h-2.5 w-2.5" /> VRF Manager{p.is_vrf_manager ? '' : ' (off)'}
+                      <TruckIcon className="h-2.5 w-2.5" /> Logistics{p.is_logistics_officer ? '' : ' (off)'}
                     </button>
-                  )}
+                    <button
+                      onClick={() => handleBadgeToggle(p.id, 'is_ride_hailing_authorized', !p.is_ride_hailing_authorized, 'Ride-hailing')}
+                      disabled={updatingId === p.id}
+                      title="Ride-hailing: authorized to book ride-hailing transport for site/office movement"
+                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                        p.is_ride_hailing_authorized
+                          ? 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
+                          : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                      }`}
+                    >
+                      <CarTaxiFront className="h-2.5 w-2.5" /> Ride-hail{p.is_ride_hailing_authorized ? '' : ' (off)'}
+                    </button>
+                  </div>
                 </div>
                 <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                   isDisabled

@@ -81,6 +81,8 @@ import LocationFormPage from '@/pages/locations/LocationFormPage'
 import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
 import UsersPage from '@/pages/users/UsersPage'
 import CalendarPage from '@/pages/calendar/CalendarPage'
+import FleetPage from '@/pages/logistics/FleetPage'
+import LocationsMapPage from '@/pages/locations/LocationsMapPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
@@ -134,6 +136,8 @@ export const router = createBrowserRouter([
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'transportation/new', element: <TransportFormPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
+          { path: 'logistics', element: <FleetPage /> },
+          { path: 'locations/map', element: <LocationsMapPage /> },
           { path: 'purchase-allocation', element: <PurchaseAllocationPage /> },
           { path: 'purchase-allocation/new', element: <AllocationFormPage /> },
           { path: 'purchase-allocation/:id/edit', element: <AllocationFormPage /> },
