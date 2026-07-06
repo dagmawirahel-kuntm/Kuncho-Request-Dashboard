@@ -27,7 +27,7 @@ export default function FleetPage() {
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'manager' || !!profile?.is_logistics_officer
+  const canManage = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
 
   const [showAdd, setShowAdd] = useState(false)
   const [name, setName] = useState('')

@@ -22,7 +22,7 @@ export default function DashboardPage() {
 
   // Everyone below the ops roles lands on their personal home, which
   // includes their department board and links into their section.
-  if (role === 'staff' || role === 'procurement_officer' || role === 'hr_officer' || role === 'project_manager' || role === 'stock_manager') {
+  if (role === 'staff' || role === 'procurement_officer' || role === 'hr_officer' || role === 'project_manager' || role === 'stock_manager' || role === 'logistics_officer') {
     return <MyRequestsDashboardPage />
   }
 

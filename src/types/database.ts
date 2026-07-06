@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager'
+export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer'
 export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
@@ -388,6 +388,8 @@ export interface Location {
   latitude: number | null
   longitude: number | null
   kind: LocationKind
+  project_id: string | null
+  vendor_id: string | null
   created_at: string
 }
 export type LocationInsert = Omit<Location, 'id' | 'created_at'>

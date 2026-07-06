@@ -82,12 +82,13 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const { data: vendors = [] } = useVendors()
   const { data: staff = [] } = useStaff()
 
-  const canDispatch = role === 'admin' || role === 'manager' || !!profile?.is_logistics_officer
+  const canDispatch = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const rideHailingAllowed = canDispatch || !!profile?.is_ride_hailing_authorized
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const projectOptions  = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
   const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+  const locationById    = useMemo(() => new Map(locations.map((l: any) => [l.id, l])), [locations])
   const vendorOptions   = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
   const staffOptions    = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -150,6 +151,18 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const [error, setError] = useState('')
 
   function set(key: keyof TransportationRequestInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  // Picking a pinned location auto-fills project/vendor if that place
+  // is already linked to one and the job hasn't set its own yet.
+  function pickLocation(field: 'pickup_location_id' | 'dropoff_location_id', locationId: string | null) {
+    setForm(f => {
+      const next = { ...f, [field]: locationId }
+      const loc = locationId ? (locationById.get(locationId) as any) : null
+      if (loc?.project_id && !f.project_id) next.project_id = loc.project_id
+      if (loc?.vendor_id && !f.vendor_id) next.vendor_id = loc.vendor_id
+      return next
+    })
+  }
 
   const jobStatus: TransportJobStatus = record?.job_status ?? 'requested'
   const flow = STATUS_FLOW[jobStatus]
@@ -295,10 +308,10 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       {/* ── Route ── */}
       <div className="grid grid-cols-2 gap-3">
         <Field label="From (pinned location)">
-          <SearchableSelect value={form.pickup_location_id ?? null} onChange={lid => set('pickup_location_id', lid)} options={locationOptions} placeholder="Pickup…" />
+          <SearchableSelect value={form.pickup_location_id ?? null} onChange={lid => pickLocation('pickup_location_id', lid)} options={locationOptions} placeholder="Pickup…" />
         </Field>
         <Field label="To (pinned location)">
-          <SearchableSelect value={form.dropoff_location_id ?? null} onChange={lid => set('dropoff_location_id', lid)} options={locationOptions} placeholder="Dropoff…" />
+          <SearchableSelect value={form.dropoff_location_id ?? null} onChange={lid => pickLocation('dropoff_location_id', lid)} options={locationOptions} placeholder="Dropoff…" />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">

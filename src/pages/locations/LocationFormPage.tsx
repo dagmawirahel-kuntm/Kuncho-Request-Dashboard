@@ -1,11 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { LocationMap } from '@/components/shared/LocationMap'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { useProjects, useVendors } from '@/hooks/useLookups'
 import type { Location, LocationInsert, LocationKind } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { LocateFixed } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -57,6 +60,13 @@ function LocationFormPageBody({ id, record }: { id?: string; record?: Location }
   const { toast } = useToast()
   const qc = useQueryClient()
 
+  const { data: projects = [] } = useProjects()
+  const { data: vendors = [] } = useVendors()
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+  const vendorOptions  = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
   const [form, setForm] = useState<Partial<LocationInsert>>(
     record
       ? {
@@ -66,13 +76,34 @@ function LocationFormPageBody({ id, record }: { id?: string; record?: Location }
           kind: record.kind ?? 'other',
           latitude: record.latitude,
           longitude: record.longitude,
+          project_id: record.project_id,
+          vendor_id: record.vendor_id,
         }
       : { kind: 'other' }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [locating, setLocating] = useState(false)
 
   function set(key: keyof LocationInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) { toast('Your browser does not support location services', 'error'); return }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        set('latitude', pos.coords.latitude)
+        set('longitude', pos.coords.longitude)
+        setLocating(false)
+        toast('Pinned your current location', 'success')
+      },
+      err => {
+        setLocating(false)
+        toast(`Could not get your location: ${err.message}`, 'error')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
 
   async function handleSave() {
     if (!form.location_name?.trim()) { setError('Location name is required'); return }
@@ -110,7 +141,22 @@ function LocationFormPageBody({ id, record }: { id?: string; record?: Location }
         </Field>
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Linked Project (if this is a site)">
+          <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
+        </Field>
+        <Field label="Linked Vendor (if this is a shop)">
+          <SearchableSelect value={form.vendor_id ?? null} onChange={id => set('vendor_id', id)} options={vendorOptions} placeholder="Select vendor…" />
+        </Field>
+      </div>
+
       <Field label="Map Pin — tap the map to drop or move the pin">
+        <div className="mb-2">
+          <button type="button" onClick={useCurrentLocation} disabled={locating}
+            className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
+            <LocateFixed className="h-3.5 w-3.5" /> {locating ? 'Locating…' : 'Use my current location'}
+          </button>
+        </div>
         <LocationMap
           height={320}
           zoom={hasPin ? 14 : 12}

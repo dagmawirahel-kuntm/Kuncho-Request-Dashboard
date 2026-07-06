@@ -141,7 +141,7 @@ export function useLocations() {
     queryFn: async () => {
       const { data } = await supabase
         .from('locations')
-        .select('id,location_name,location_type')
+        .select('id,location_name,location_type,project_id,vendor_id')
         .order('location_name')
       return data ?? []
     },

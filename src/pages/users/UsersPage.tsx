@@ -5,11 +5,11 @@ import { formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
-import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, Truck as TruckIcon, CarTaxiFront } from 'lucide-react'
+import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront } from 'lucide-react'
 
 const ROLES: UserRole[] = [
   'admin', 'manager', 'finance', 'staff',
-  'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager',
+  'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager', 'logistics_officer',
 ]
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -21,6 +21,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   hr_officer: 'HR Officer',
   project_manager: 'Project Manager',
   stock_manager: 'Stock Manager',
+  logistics_officer: 'Logistics Officer',
 }
 
 const ROLE_CLS: Record<UserRole, string> = {
@@ -32,6 +33,7 @@ const ROLE_CLS: Record<UserRole, string> = {
   hr_officer:          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   project_manager:     'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
   stock_manager:       'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  logistics_officer:   'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
 }
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -311,18 +313,6 @@ export default function UsersPage() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleBadgeToggle(p.id, 'is_logistics_officer', !p.is_logistics_officer, 'Logistics Officer')}
-                      disabled={updatingId === p.id}
-                      title="Logistics Officer: can dispatch transport jobs, assign vehicles/staff, and manage the fleet"
-                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
-                        p.is_logistics_officer
-                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
-                          : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
-                      }`}
-                    >
-                      <TruckIcon className="h-2.5 w-2.5" /> Logistics{p.is_logistics_officer ? '' : ' (off)'}
-                    </button>
-                    <button
                       onClick={() => handleBadgeToggle(p.id, 'is_ride_hailing_authorized', !p.is_ride_hailing_authorized, 'Ride-hailing')}
                       disabled={updatingId === p.id}
                       title="Ride-hailing: authorized to book ride-hailing transport for site/office movement"
@@ -377,6 +367,9 @@ export default function UsersPage() {
         Your own row is locked so you can't lock yourself out.
         The <strong>VRF Manager</strong> badge (managers only) grants full access to VRF records and lets that person
         mark VRF-linked expenses as paid — without giving them finance's full authority over every expense.
+        <strong> Logistics Officer</strong> is a dedicated role (pick it above) rather than a badge — it's meant for
+        individual staff whose job is dispatching the fleet. <strong>Ride-hailing</strong> stays a badge, since it's
+        an authorization that can sit on top of any role.
       </p>
     </div>
   )
