@@ -28,6 +28,15 @@ type OrderItemRow = {
   status: string
 }
 
+const VAT_RATE = 0.15
+const WHT_RATE = 0.03
+
+type VendorRow = {
+  id: string
+  vendor_name: string
+  wth_eligible: boolean | null
+}
+
 type BundleLineItem = {
   _key: string
   order_item_id: string
@@ -76,11 +85,13 @@ export default function SourcingBundleFormPage() {
   const { data: vendors = [] } = useQuery({
     queryKey: ['vendors-list'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('vendors').select('id, vendor_name').order('vendor_name')
+      const { data, error } = await supabase.from('vendors').select('id, vendor_name, wth_eligible').order('vendor_name')
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as VendorRow[]
     },
   })
+
+  const selectedVendor = useMemo(() => vendors.find(v => v.id === vendorId), [vendors, vendorId])
 
   // Sourcing can start as soon as a manager has approved the request —
   // it no longer waits for finance's PR-level sign-off too. Finance's
@@ -242,6 +253,11 @@ export default function SourcingBundleFormPage() {
     [bundleItems]
   )
 
+  const whtEligible = !!selectedVendor?.wth_eligible
+  const vatAmount = runningTotal * VAT_RATE
+  const whtAmount = whtEligible ? runningTotal * WHT_RATE : 0
+  const netPayable = runningTotal + vatAmount - whtAmount
+
   async function handleSave() {
     if (bundleItems.length === 0) { toast('Add at least one item to the bundle', 'error'); return }
     setSaving(true)
@@ -378,8 +394,13 @@ export default function SourcingBundleFormPage() {
               onChange={e => { setVendorId(e.target.value); if (e.target.value) setVendorName('') }}
               className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40">
               <option value="">— Select vendor or type below —</option>
-              {vendors.map((v: any) => <option key={v.id} value={v.id}>{v.vendor_name}</option>)}
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.vendor_name}</option>)}
             </select>
+            {vendorId && (
+              <p className="text-[11px] text-slate-400">
+                {whtEligible ? 'WHT-eligible vendor — 3% will be withheld from payment' : 'Not registered for withholding tax'}
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -553,11 +574,27 @@ export default function SourcingBundleFormPage() {
             )}
           </div>
           {bundleItems.length > 0 && (
-            <div className="px-4 py-3 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 flex items-center justify-between shrink-0">
-              <span className="text-xs text-slate-500">{bundleItems.length} item{bundleItems.length !== 1 ? 's' : ''}</span>
-              <span className="text-lg font-bold text-slate-800 dark:text-slate-100 tabular-nums">
-                {formatCurrency(runningTotal)}
-              </span>
+            <div className="px-4 py-3 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 shrink-0 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>{bundleItems.length} item{bundleItems.length !== 1 ? 's' : ''} · Subtotal</span>
+                <span className="tabular-nums">{formatCurrency(runningTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>VAT (15%, added)</span>
+                <span className="tabular-nums">+{formatCurrency(vatAmount)}</span>
+              </div>
+              {whtEligible && (
+                <div className="flex items-center justify-between text-xs text-amber-600 dark:text-amber-400">
+                  <span>WHT (3%, withheld)</span>
+                  <span className="tabular-nums">−{formatCurrency(whtAmount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t dark:border-slate-600 pt-1.5">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Net Payable to Vendor</span>
+                <span className="text-lg font-bold text-slate-800 dark:text-slate-100 tabular-nums">
+                  {formatCurrency(netPayable)}
+                </span>
+              </div>
             </div>
           )}
         </div>

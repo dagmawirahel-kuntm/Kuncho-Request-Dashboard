@@ -1,16 +1,19 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { SourcingBundleStatus } from '@/types/database'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save
 } from 'lucide-react'
+
+const VAT_RATE = 0.15
+const WHT_RATE = 0.03
 
 type BundleDetail = {
   id: string
@@ -29,7 +32,7 @@ type BundleDetail = {
   finance_notes: string | null
   expense_id: string | null
   created_at: string
-  vendors: { vendor_name: string } | null
+  vendors: { vendor_name: string; wth_eligible: boolean | null } | null
   procurement_officer: { full_name: string } | null
   approver: { full_name: string } | null
   expenses: { expense_code: string | null; item_service_description: string | null; amount_etb: number | null } | null
@@ -76,6 +79,131 @@ const STATUS_CLS: Record<SourcingBundleStatus, string> = {
   cancelled: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 }
 
+function fmt(n: number): string {
+  return `ETB ${n.toLocaleString('en-ET', { minimumFractionDigits: 2 })}`
+}
+
+function buildPoHtml(p: {
+  bundle: BundleDetail
+  vendorDisplay: string
+  sortedItems: BundleDetail['sourcing_bundle_items']
+  grandTotal: number
+  vatAmount: number
+  whtAmount: number
+  whtEligible: boolean
+  netPayable: number
+}): string {
+  const { bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, whtAmount, whtEligible, netPayable } = p
+
+  const rows = sortedItems.map((item, i) => {
+    const oi = item.order_items
+    const lineTotal = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+    return `
+    <tr>
+      <td class="c">${i + 1}</td>
+      <td>
+        <div class="item-name">${oi?.item_name ?? '—'}</div>
+        ${oi?.specifications ? `<div class="item-spec">${oi.specifications}</div>` : ''}
+      </td>
+      <td>${oi?.orders?.request_code ?? '—'}</td>
+      <td class="r">${item.quantity_actual ?? oi?.quantity ?? '—'}</td>
+      <td>${oi?.unit ?? '—'}</td>
+      <td class="r">${item.unit_price_actual != null ? fmt(item.unit_price_actual) : '—'}</td>
+      <td class="r">${lineTotal > 0 ? fmt(lineTotal) : '—'}</td>
+    </tr>`
+  }).join('')
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Georgia,serif;padding:40px 52px;color:#111;font-size:11pt;line-height:1.5}
+.lh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.brand{font-size:26pt;font-weight:900;font-family:Arial,sans-serif}
+.sub{font-size:10pt;color:#666;margin-top:2px}
+.meta{text-align:right;font-size:9.5pt;color:#555;line-height:1.6}
+.meta b{font-weight:700}
+hr{border:none;border-top:1.5px solid #111;margin:10px 0 16px}
+.parties{display:flex;justify-content:space-between;gap:24px;margin-bottom:20px}
+.party{font-size:10pt}
+.party .label{color:#888;font-size:9pt;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.party b{font-size:11pt}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10pt}
+thead tr{background:#1B3A5C;color:#fff}
+th{padding:8px 10px;text-align:left;font-weight:600;font-size:9pt;letter-spacing:.4px}
+th.r,td.r{text-align:right}
+th.c,td.c{text-align:center}
+tbody tr:nth-child(even){background:#f7f9fb}
+td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
+.item-name{font-weight:600}
+.item-spec{font-size:8.5pt;color:#888;margin-top:2px}
+.totals{width:320px;margin-left:auto;font-size:10pt}
+.totals tr td{border-bottom:none;padding:4px 0}
+.totals .lbl{color:#555}
+.totals .val{text-align:right}
+.totals .net td{border-top:2px solid #1B3A5C;padding-top:8px;font-weight:700;font-size:12pt;color:#1B3A5C}
+.wht{color:#b45309}
+.notes{font-size:9.5pt;color:#555;margin-top:16px}
+.foot{margin-top:50px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:10px;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="lh">
+  <div>
+    <div class="brand" style="color:#1B3A5C">KUNCHO</div>
+    <div class="sub">Kuncho Construction & Events PLC</div>
+    <div class="sub" style="margin-top:4px;color:#999">Addis Ababa, Ethiopia</div>
+  </div>
+  <div class="meta">
+    <div style="font-size:16pt;font-weight:900;color:#1B3A5C;letter-spacing:-0.5px">PURCHASE ORDER</div>
+    <div><b>${bundle.bundle_code}</b></div>
+    <div>${formatDateGC(bundle.created_at)}</div>
+    ${bundle.expected_delivery_date ? `<div>Expected delivery: ${formatDateGC(bundle.expected_delivery_date)}</div>` : ''}
+  </div>
+</div>
+<hr/>
+<div class="parties">
+  <div class="party">
+    <div class="label">Vendor / Supplier</div>
+    <b>${vendorDisplay}</b>
+  </div>
+  <div class="party">
+    <div class="label">Procurement Officer</div>
+    <b>${bundle.procurement_officer?.full_name ?? '—'}</b>
+    ${bundle.approver ? `<div class="label" style="margin-top:8px">Approved By</div><b>${bundle.approver.full_name}</b>` : ''}
+  </div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th class="c" style="width:30px">#</th>
+      <th>Item Description</th>
+      <th style="width:90px">Source PR</th>
+      <th class="r" style="width:50px">Qty</th>
+      <th style="width:50px">Unit</th>
+      <th class="r" style="width:100px">Unit Price</th>
+      <th class="r" style="width:110px">Total</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>
+<table class="totals">
+  <tr><td class="lbl">Subtotal</td><td class="val">${fmt(grandTotal)}</td></tr>
+  <tr><td class="lbl">VAT (15%, added)</td><td class="val">${fmt(vatAmount)}</td></tr>
+  ${whtEligible ? `<tr class="wht"><td class="lbl">WHT (3%, withheld)</td><td class="val">−${fmt(whtAmount)}</td></tr>` : ''}
+  <tr class="net"><td>Net Payable to Vendor</td><td class="val">${fmt(netPayable)}</td></tr>
+</table>
+${bundle.notes ? `<div class="notes"><b>Notes:</b> ${bundle.notes}</div>` : ''}
+<div class="foot">
+  <span>Kuncho Construction & Events · Addis Ababa, Ethiopia</span>
+  <span>Ref: ${bundle.bundle_code}</span>
+</div>
+</body>
+</html>`
+}
+
 export default function PurchaseOrderPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -86,6 +214,7 @@ export default function PurchaseOrderPage() {
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
+  const printRef = useRef<HTMLIFrameElement>(null)
 
   const { data: bundle, isLoading, error: bundleError } = useQuery({
     queryKey: ['sourcing-bundle-detail', id],
@@ -95,7 +224,7 @@ export default function PurchaseOrderPage() {
         .from('sourcing_bundles')
         .select(`
           *,
-          vendors(vendor_name),
+          vendors(vendor_name, wth_eligible),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
           expenses!sourcing_bundles_expense_id_fkey(expense_code, item_service_description, amount_etb),
@@ -164,6 +293,29 @@ export default function PurchaseOrderPage() {
   const grandTotal = sortedItems.reduce((sum, item) =>
     sum + (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0), 0)
 
+  const whtEligible = !!bundle.vendors?.wth_eligible
+  const vatAmount = grandTotal * VAT_RATE
+  const whtAmount = whtEligible ? grandTotal * WHT_RATE : 0
+  const netPayable = grandTotal + vatAmount - whtAmount
+
+  const poHtml = buildPoHtml({ bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, whtAmount, whtEligible, netPayable })
+
+  function handlePrint() {
+    printRef.current?.contentWindow?.print()
+  }
+
+  const bundleCode = bundle.bundle_code
+
+  function handleSaveFile() {
+    const blob = new Blob([poHtml], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${bundleCode}.html`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // Group by project for cost allocation
   const projectAllocations = sortedItems.reduce<Record<string, { name: string; total: number }>>((acc, item) => {
     const project = item.order_items?.orders?.projects?.project_name ?? 'No project'
@@ -229,6 +381,8 @@ export default function PurchaseOrderPage() {
 
   return (
     <div className="space-y-5">
+      <iframe ref={printRef} srcDoc={poHtml} title="Purchase Order Print" style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }} />
+
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
@@ -246,7 +400,11 @@ export default function PurchaseOrderPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => window.print()}
+          <button onClick={handleSaveFile}
+            className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Save className="h-3.5 w-3.5" /> Save PO
+          </button>
+          <button onClick={handlePrint}
             className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Printer className="h-3.5 w-3.5" /> Print PO
           </button>
@@ -421,12 +579,26 @@ export default function PurchaseOrderPage() {
               })}
             </tbody>
             <tfoot>
+              <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
+                <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">Subtotal</td>
+                <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(grandTotal)}</td>
+              </tr>
+              <tr className="bg-slate-50 dark:bg-slate-700/30">
+                <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">VAT (15%, added)</td>
+                <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(vatAmount)}</td>
+              </tr>
+              {whtEligible && (
+                <tr className="bg-slate-50 dark:bg-slate-700/30">
+                  <td colSpan={7} className="px-4 py-2 text-right text-xs text-amber-600 dark:text-amber-400">WHT (3%, withheld)</td>
+                  <td className="px-4 py-2 text-right text-sm text-amber-600 dark:text-amber-400 tabular-nums">−{formatCurrency(whtAmount)}</td>
+                </tr>
+              )}
               <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
                 <td colSpan={7} className="px-4 py-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  Grand Total
+                  Net Payable to Vendor
                 </td>
                 <td className="px-4 py-3 text-right text-base font-bold text-slate-800 dark:text-slate-100 tabular-nums">
-                  {formatCurrency(grandTotal)}
+                  {formatCurrency(netPayable)}
                 </td>
               </tr>
             </tfoot>
