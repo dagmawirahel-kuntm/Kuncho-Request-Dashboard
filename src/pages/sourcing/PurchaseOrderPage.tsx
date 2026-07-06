@@ -98,7 +98,7 @@ export default function PurchaseOrderPage() {
           vendors(vendor_name),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
-          expenses(expense_code, item_service_description, amount_etb),
+          expenses!sourcing_bundles_expense_id_fkey(expense_code, item_service_description, amount_etb),
           sourcing_bundle_items(
             *,
             order_items(
