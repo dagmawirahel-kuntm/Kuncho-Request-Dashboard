@@ -1,13 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { formatDateGC } from '@/lib/utils'
-import { Vehicle3D } from '@/components/shared/Vehicle3D'
+import { FileUpload } from '@/components/shared/FileUpload'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
-import { ChevronLeft, BookOpen, BookX, History, Move3d, ArrowRight } from 'lucide-react'
+import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
   available:   { label: 'Available',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -19,12 +20,19 @@ const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
 type JobRow = Pick<TransportationRequest,
   'id' | 'request_name' | 'job_status' | 'job_type' | 'dropoff_location_text' | 'pickup_location_text' | 'created_at' | 'priority'>
 
+function vehicleIcon(type: Vehicle['vehicle_type']) {
+  if (type === 'motorbike') return <Bike className="h-16 w-16" />
+  if (type === 'truck') return <Truck className="h-16 w-16" />
+  return <Car className="h-16 w-16" />
+}
+
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const canManage = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const [editingPhoto, setEditingPhoto] = useState(false)
 
   const { data: vehicle, isLoading, error } = useQuery({
     queryKey: ['vehicle', id],
@@ -59,6 +67,15 @@ export default function VehicleDetailPage() {
     toast('Vehicle status updated', 'success')
   }
 
+  async function setImage(url: string) {
+    const { error } = await supabase.from('vehicles').update({ image_url: url }).eq('id', id!)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vehicle', id] })
+    qc.invalidateQueries({ queryKey: ['vehicles'] })
+    toast('Photo updated', 'success')
+    setEditingPhoto(false)
+  }
+
   if (isLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
   if (error) {
     return (
@@ -79,14 +96,38 @@ export default function VehicleDetailPage() {
         <ChevronLeft className="h-4 w-4" /> Back to Fleet
       </Link>
 
-      {/* Hero: interactive 3D model */}
+      {/* Hero: vehicle photo */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
         <div className="lg:col-span-3 relative overflow-hidden rounded-2xl border dark:border-slate-700 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900/70 dark:to-slate-900"
           style={{ minHeight: 300 }}>
-          <Vehicle3D type={vehicle.vehicle_type} size={1.5} interactive className="absolute inset-0" />
-          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-black/30 px-3 py-1 text-[11px] font-medium text-white/90">
-            <Move3d className="h-3.5 w-3.5" /> Drag to rotate
-          </div>
+          {vehicle.image_url ? (
+            <img src={vehicle.image_url} alt={vehicle.name} className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-600">{vehicleIcon(vehicle.vehicle_type)}</div>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setEditingPhoto(v => !v)}
+              className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-1.5 text-xs font-medium text-white hover:bg-black/60"
+            >
+              <Camera className="h-3.5 w-3.5" /> Change photo
+            </button>
+          )}
+          {editingPhoto && (
+            <div className="absolute inset-x-3 bottom-3 rounded-lg bg-black/60 backdrop-blur px-3 py-3">
+              <FileUpload
+                bucket="documents"
+                folder="vehicle-photos"
+                fileUrl={null}
+                fileName={null}
+                accept="image/*"
+                label="Upload photo"
+                onUpload={setImage}
+                onClear={() => {}}
+              />
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
