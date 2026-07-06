@@ -73,6 +73,7 @@ export interface UserProfile {
   department: string | null
   phone_number: string | null
   account_status: AccountStatus
+  is_vrf_manager: boolean
   created_at: string
 }
 export type UserProfileInsert = Omit<UserProfile, 'created_at'>

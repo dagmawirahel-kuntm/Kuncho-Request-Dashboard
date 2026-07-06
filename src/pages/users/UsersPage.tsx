@@ -5,7 +5,7 @@ import { formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
-import { UserPlus, Shield, Info, UserCheck, UserX, Clock } from 'lucide-react'
+import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote } from 'lucide-react'
 
 const ROLES: UserRole[] = [
   'admin', 'manager', 'finance', 'staff',
@@ -131,6 +131,15 @@ export default function UsersPage() {
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['user-profiles'] })
     toast('Role updated', 'success')
+  }
+
+  async function handleVrfBadgeToggle(id: string, next: boolean) {
+    setUpdatingId(id)
+    const { error } = await supabase.from('user_profiles').update({ is_vrf_manager: next }).eq('id', id)
+    setUpdatingId(null)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['user-profiles'] })
+    toast(next ? 'VRF Manager badge granted' : 'VRF Manager badge removed', 'success')
   }
 
   async function handleStatusChange(id: string, account_status: AccountStatus) {
@@ -271,7 +280,7 @@ export default function UsersPage() {
                     {p.department && <p className="text-xs text-slate-400 truncate">{p.department}</p>}
                   </div>
                 </div>
-                <div>
+                <div className="space-y-1">
                   {isSelf ? (
                     <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${ROLE_CLS[p.role]}`}>
                       {ROLE_LABELS[p.role]}
@@ -285,6 +294,20 @@ export default function UsersPage() {
                     >
                       {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                     </select>
+                  )}
+                  {p.role === 'manager' && (
+                    <button
+                      onClick={() => handleVrfBadgeToggle(p.id, !p.is_vrf_manager)}
+                      disabled={updatingId === p.id}
+                      title="VRF Manager: can manage VRF records and mark VRF-linked expenses as paid"
+                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                        p.is_vrf_manager
+                          ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                          : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                      }`}
+                    >
+                      <Banknote className="h-2.5 w-2.5" /> VRF Manager{p.is_vrf_manager ? '' : ' (off)'}
+                    </button>
                   )}
                 </div>
                 <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -326,6 +349,8 @@ export default function UsersPage() {
         Self-signups wait in the approval queue until you approve them; accounts you create here are active immediately.
         Deactivating blocks all access instantly but keeps the person's records and approval history intact.
         Your own row is locked so you can't lock yourself out.
+        The <strong>VRF Manager</strong> badge (managers only) grants full access to VRF records and lets that person
+        mark VRF-linked expenses as paid — without giving them finance's full authority over every expense.
       </p>
     </div>
   )
