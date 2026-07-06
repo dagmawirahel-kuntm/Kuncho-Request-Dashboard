@@ -13,6 +13,7 @@ type OrderRow = {
   request_code: string
   order_name: string
   project_id: string | null
+  approval_status: string
   projects: { project_name: string } | null
 }
 
@@ -81,13 +82,19 @@ export default function SourcingBundleFormPage() {
     },
   })
 
+  // Sourcing can start as soon as a manager has approved the request —
+  // it no longer waits for finance's PR-level sign-off too. Finance's
+  // real check happens once at the bundle stage, against the actual
+  // vendor price, instead of twice (once on the estimate, once on the
+  // real cost). Finance-approved requests are included too, since a
+  // request further along the chain is obviously still sourceable.
   const { data: approvedOrders = [] } = useQuery({
-    queryKey: ['approved-orders-for-sourcing'],
+    queryKey: ['sourceable-orders'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, request_code, order_name, project_id, projects(project_name)')
-        .eq('approval_status', 'finance_approved')
+        .select('id, request_code, order_name, project_id, approval_status, projects(project_name)')
+        .in('approval_status', ['manager_approved', 'finance_approved'])
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as unknown as OrderRow[]
@@ -437,6 +444,11 @@ export default function SourcingBundleFormPage() {
                 <div className="px-4 py-2 bg-slate-50 dark:bg-slate-700/30 flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs font-bold text-brand">{order.request_code}</span>
                   <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">{order.order_name}</span>
+                  {order.approval_status === 'manager_approved' && (
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded px-1.5 py-0.5 whitespace-nowrap" title="Manager-approved; finance hasn't signed off on this request yet — that review now happens on the bundle instead">
+                      Awaiting Finance (PR)
+                    </span>
+                  )}
                   {order.projects && (
                     <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 rounded px-1.5 py-0.5 whitespace-nowrap">
                       {order.projects.project_name}
