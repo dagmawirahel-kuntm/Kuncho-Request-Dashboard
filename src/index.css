@@ -138,6 +138,40 @@ html.theme-transition *::after {
   animation: car-twist 2.4s ease-in-out infinite;
 }
 
+/* Fleet vehicle card — press nudges forward, click turns the card to
+   reveal the ቁ mark on the back */
+.veh-flip-perspective { perspective: 900px; }
+.veh-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 620ms cubic-bezier(0.65, 0.1, 0.25, 1);
+}
+.veh-flip-inner.pressed {
+  transition: transform 140ms cubic-bezier(0.34, 1.1, 0.64, 1);
+  transform: translateX(8px) scale(1.015);
+}
+.veh-flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+.veh-flip-inner.flipped.pressed {
+  transform: rotateY(180deg) translateX(-8px) scale(1.015);
+}
+.veh-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.veh-flip-face.veh-flip-back {
+  transform: rotateY(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .veh-flip-inner { transition-duration: 1ms !important; }
+}
+
 /* Auto-adapt form inputs in dark mode — avoids touching every form page */
 .dark input:not([type='checkbox']):not([type='radio']):not([type='range']),
 .dark textarea,

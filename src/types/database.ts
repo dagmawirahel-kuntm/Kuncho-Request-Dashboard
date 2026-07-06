@@ -405,6 +405,7 @@ export interface Vehicle {
   recognized_in_books: boolean
   status: VehicleStatus
   purpose_notes: string | null
+  image_url: string | null
   active: boolean
   created_at: string
   updated_at: string
