@@ -1,14 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { formatDateGC } from '@/lib/utils'
+import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
-import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera } from 'lucide-react'
+import type { Expense, Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
+import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera, Fuel, Pencil } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
   available:   { label: 'Available',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -20,6 +20,8 @@ const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
 type JobRow = Pick<TransportationRequest,
   'id' | 'request_name' | 'job_status' | 'job_type' | 'dropoff_location_text' | 'pickup_location_text' | 'created_at' | 'priority'>
 
+type FuelExpenseRow = Pick<Expense, 'id' | 'expense_code' | 'amount_etb' | 'fuel_liters' | 'date' | 'approval_status'>
+
 function vehicleIcon(type: Vehicle['vehicle_type']) {
   if (type === 'motorbike') return <Bike className="h-16 w-16" />
   if (type === 'truck') return <Truck className="h-16 w-16" />
@@ -28,11 +30,17 @@ function vehicleIcon(type: Vehicle['vehicle_type']) {
 
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const canManage = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const [editingPhoto, setEditingPhoto] = useState(false)
+  const [editingTank, setEditingTank] = useState(false)
+  const [tankInput, setTankInput] = useState('')
+  const [showFuelPanel, setShowFuelPanel] = useState(false)
+  const [fuelMode, setFuelMode] = useState<'custom' | null>(null)
+  const [customLiters, setCustomLiters] = useState('')
 
   const { data: vehicle, isLoading, error } = useQuery({
     queryKey: ['vehicle', id],
@@ -74,6 +82,37 @@ export default function VehicleDetailPage() {
     qc.invalidateQueries({ queryKey: ['vehicles'] })
     toast('Photo updated', 'success')
     setEditingPhoto(false)
+  }
+
+  const { data: fuelExpenses = [] } = useQuery({
+    queryKey: ['vehicle-fuel-expenses', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('id, expense_code, amount_etb, fuel_liters, date, approval_status')
+        .eq('vehicle_id', id!)
+        .eq('expense_type', 'fuel')
+        .order('date', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      return data as FuelExpenseRow[]
+    },
+    enabled: !!id,
+  })
+
+  async function saveTank() {
+    const liters = parseFloat(tankInput)
+    if (!tankInput || Number.isNaN(liters) || liters <= 0) { toast('Enter a valid tank capacity', 'error'); return }
+    const { error } = await supabase.from('vehicles').update({ fuel_tank_liters: liters }).eq('id', id!)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vehicle', id] })
+    qc.invalidateQueries({ queryKey: ['vehicles'] })
+    toast('Tank capacity saved', 'success')
+    setEditingTank(false)
+  }
+
+  function requestFuel(liters: number) {
+    navigate(`/expenses/new?vehicle_id=${id}&fuel_liters=${liters}`)
   }
 
   if (isLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
@@ -169,6 +208,98 @@ export default function VehicleDetailPage() {
               </select>
             </div>
           )}
+
+          {/* Fuel tank capacity */}
+          <div>
+            <p className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Fuel Tank Capacity
+              {canManage && !editingTank && (
+                <button
+                  onClick={() => { setEditingTank(true); setTankInput(vehicle.fuel_tank_liters != null ? String(vehicle.fuel_tank_liters) : '') }}
+                  className="flex items-center gap-1 text-brand normal-case font-medium hover:underline"
+                >
+                  <Pencil className="h-3 w-3" /> {vehicle.fuel_tank_liters != null ? 'Edit' : 'Set'}
+                </button>
+              )}
+            </p>
+            {editingTank ? (
+              <div className="flex gap-2">
+                <input
+                  type="number" min={0} step="any" autoFocus
+                  value={tankInput} onChange={e => setTankInput(e.target.value)}
+                  placeholder="e.g. 80"
+                  className="flex-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                />
+                <button onClick={saveTank} className="rounded-md bg-brand px-3 py-2 text-xs font-medium text-white hover:bg-brand/90">Save</button>
+                <button onClick={() => setEditingTank(false)} className="rounded-md border px-3 py-2 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {vehicle.fuel_tank_liters != null ? `${vehicle.fuel_tank_liters} L to fill completely` : 'Not set yet'}
+              </p>
+            )}
+          </div>
+
+          {/* Fuel request — fleet managers only */}
+          {canManage && (
+            <div className="border-t dark:border-slate-700 pt-4">
+              {!showFuelPanel ? (
+                <>
+                  <button
+                    onClick={() => setShowFuelPanel(true)}
+                    disabled={vehicle.fuel_tank_liters == null}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Fuel className="h-4 w-4" /> Request Fuel
+                  </button>
+                  {vehicle.fuel_tank_liters == null && (
+                    <p className="mt-1.5 text-center text-[11px] text-slate-400">Set the tank capacity above first</p>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-2.5 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">Fill the tank completely?</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => requestFuel(vehicle.fuel_tank_liters!)}
+                      className="flex-1 rounded-md bg-brand px-3 py-2 text-xs font-medium text-white hover:bg-brand/90"
+                    >
+                      Yes — Full Tank ({vehicle.fuel_tank_liters} L)
+                    </button>
+                    <button
+                      onClick={() => setFuelMode('custom')}
+                      className={`flex-1 rounded-md border px-3 py-2 text-xs font-medium hover:bg-white dark:hover:bg-slate-800 ${fuelMode === 'custom' ? 'border-brand text-brand' : 'dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}
+                    >
+                      No — Custom Amount
+                    </button>
+                  </div>
+                  {fuelMode === 'custom' && (
+                    <div className="flex gap-2 pt-1">
+                      <input
+                        type="number" min={0} step="any" max={vehicle.fuel_tank_liters ?? undefined} autoFocus
+                        value={customLiters} onChange={e => setCustomLiters(e.target.value)}
+                        placeholder={`Up to ${vehicle.fuel_tank_liters} L`}
+                        className="flex-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                      />
+                      <button
+                        onClick={() => customLiters && requestFuel(parseFloat(customLiters))}
+                        disabled={!customLiters || Number.isNaN(parseFloat(customLiters)) || parseFloat(customLiters) <= 0}
+                        className="rounded-md bg-brand px-3 py-2 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setShowFuelPanel(false); setFuelMode(null); setCustomLiters('') }}
+                    className="text-[11px] text-slate-400 hover:underline"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -215,6 +346,51 @@ export default function VehicleDetailPage() {
                     <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDateGC(j.created_at)}</td>
                     <td className="px-4 py-3">
                       <Link to={`/transportation/${j.id}/edit`} className="text-slate-400 hover:text-brand" title="Open job">
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Fuel history */}
+      <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-2 border-b dark:border-slate-700 px-5 py-3.5">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <Fuel className="h-4 w-4 text-slate-400" /> Fuel History
+          </h2>
+          <span className="text-xs text-slate-400">{fuelExpenses.length} request{fuelExpenses.length === 1 ? '' : 's'}</span>
+        </div>
+
+        {fuelExpenses.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-400">No fuel requests recorded for this vehicle yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-700/40 border-b dark:border-slate-700 text-left">
+                  <th className="px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Expense</th>
+                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Liters</th>
+                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Amount</th>
+                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Date</th>
+                  <th className="px-4 py-2.5 w-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y dark:divide-slate-700">
+                {fuelExpenses.map(f => (
+                  <tr key={f.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-700/20 transition-colors">
+                    <td className="px-5 py-3 font-mono text-xs text-brand">{f.expense_code ?? '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-300">{f.fuel_liters != null ? `${f.fuel_liters} L` : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(f.amount_etb)}</td>
+                    <td className="px-4 py-3"><StatusBadge status={f.approval_status} /></td>
+                    <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDateGC(f.date)}</td>
+                    <td className="px-4 py-3">
+                      <Link to={`/expenses/${f.id}`} className="text-slate-400 hover:text-brand" title="Open expense">
                         <ArrowRight className="h-4 w-4" />
                       </Link>
                     </td>

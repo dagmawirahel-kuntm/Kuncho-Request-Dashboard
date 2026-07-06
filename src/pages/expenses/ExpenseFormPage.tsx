@@ -42,6 +42,8 @@ export default function ExpenseFormPage() {
   const lineId = searchParams.get('line_id')
   const vrfId  = searchParams.get('vrf_id')
   const transportId = searchParams.get('transport_id')
+  const vehicleId = searchParams.get('vehicle_id')
+  const fuelLiters = searchParams.get('fuel_liters')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -101,6 +103,20 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!transportId,
   })
 
+  const { data: linkedVehicle } = useQuery({
+    queryKey: ['vehicle-for-expense', vehicleId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('id, name')
+        .eq('id', vehicleId!)
+        .single()
+      if (error) throw error
+      return data as { id: string; name: string }
+    },
+    enabled: !isEdit && !!vehicleId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -114,15 +130,19 @@ export default function ExpenseFormPage() {
       linkedLineItem={linkedLineItem}
       linkedVrf={linkedVrf}
       linkedTransport={linkedTransport}
+      linkedVehicle={linkedVehicle}
+      fuelLiters={fuelLiters}
     />
   )
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedTransport }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedTransport, linkedVehicle, fuelLiters }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
   linkedTransport?: { id: string; request_name: string | null; amount: number | null; project_id: string | null; vendor_id: string | null; vendor_name: string | null }
+  linkedVehicle?: { id: string; name: string }
+  fuelLiters?: string | null
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -233,6 +253,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         transfer_id: record.transfer_id,
         tax_summary_id: record.tax_summary_id,
         location_id: record.location_id,
+        vehicle_id: record.vehicle_id,
+        fuel_liters: record.fuel_liters ?? undefined,
       }
       : {
     payment_status: false,
@@ -272,6 +294,14 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       project_id: linkedTransport.project_id ?? undefined,
       vendor_id: linkedTransport.vendor_id ?? undefined,
       vendors_name: linkedTransport.vendor_name ?? undefined,
+    } : {}),
+    ...(linkedVehicle && fuelLiters ? {
+      expense_type: 'fuel' as const,
+      item_service_description: `Fuel — ${linkedVehicle.name} (${fuelLiters} L)`,
+      quantity: parseFloat(fuelLiters),
+      uom: 'L',
+      vehicle_id: linkedVehicle.id,
+      fuel_liters: parseFloat(fuelLiters),
     } : {}),
   }
   )

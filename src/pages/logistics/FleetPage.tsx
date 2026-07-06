@@ -142,6 +142,7 @@ export default function FleetPage() {
   const [inBooks, setInBooks] = useState(false)
   const [notes, setNotes] = useState('')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [fuelTankLiters, setFuelTankLiters] = useState('')
   const [saving, setSaving] = useState(false)
 
   const { data: vehicles = [], isLoading } = useQuery({
@@ -186,11 +187,12 @@ export default function FleetPage() {
     const { error } = await supabase.from('vehicles').insert([{
       name: name.trim(), vehicle_type: vehicleType, plate_number: plate.trim() || null,
       recognized_in_books: inBooks, purpose_notes: notes.trim() || null, image_url: imageUrl,
+      fuel_tank_liters: fuelTankLiters ? parseFloat(fuelTankLiters) : null,
       status: 'available', active: true,
     }])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
-    setShowAdd(false); setName(''); setPlate(''); setNotes(''); setInBooks(false); setImageUrl(null)
+    setShowAdd(false); setName(''); setPlate(''); setNotes(''); setInBooks(false); setImageUrl(null); setFuelTankLiters('')
     qc.invalidateQueries({ queryKey: ['vehicles'] })
     toast('Vehicle added', 'success')
   }
@@ -242,6 +244,10 @@ export default function FleetPage() {
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Plate Number</label>
               <input type="text" className={inputCls} value={plate} onChange={e => setPlate(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Fuel Tank Capacity (Liters)</label>
+              <input type="number" min={0} step="any" className={inputCls} value={fuelTankLiters} onChange={e => setFuelTankLiters(e.target.value)} placeholder="e.g. 80" />
             </div>
           </div>
           <div>

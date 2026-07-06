@@ -382,9 +382,10 @@ export default function ExpensesPage() {
     purchase_order: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
     vrf:            'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
     cpo_bond:       'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    fuel:           'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   }
   const TYPE_LABEL: Record<ExpenseType, string> = {
-    general: 'General', purchase_order: 'Purchase Order', vrf: 'VRF', cpo_bond: 'CPO Bond',
+    general: 'General', purchase_order: 'Purchase Order', vrf: 'VRF', cpo_bond: 'CPO Bond', fuel: 'Fuel',
   }
 
   const tableColumns: ColumnDef<Expense>[] = useMemo(() => [

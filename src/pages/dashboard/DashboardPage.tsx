@@ -7,6 +7,7 @@ import { KpiCard } from '@/components/shared/KpiCard'
 import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
 import { useAuth } from '@/contexts/AuthContext'
 import MyRequestsDashboardPage from './MyRequestsDashboardPage'
+import LogisticsDashboardPage from './LogisticsDashboardPage'
 import type { UserRole } from '@/types/database'
 
 const sections = [
@@ -20,9 +21,16 @@ const sections = [
 export default function DashboardPage() {
   const { role } = useAuth()
 
+  // Logistics officers get a fleet/dispatch-focused dashboard instead of
+  // the generic "my requests" home — their day is about the fleet, not
+  // personal expense/payroll tracking.
+  if (role === 'logistics_officer') {
+    return <LogisticsDashboardPage />
+  }
+
   // Everyone below the ops roles lands on their personal home, which
   // includes their department board and links into their section.
-  if (role === 'staff' || role === 'procurement_officer' || role === 'hr_officer' || role === 'project_manager' || role === 'stock_manager' || role === 'logistics_officer') {
+  if (role === 'staff' || role === 'procurement_officer' || role === 'hr_officer' || role === 'project_manager' || role === 'stock_manager') {
     return <MyRequestsDashboardPage />
   }
 

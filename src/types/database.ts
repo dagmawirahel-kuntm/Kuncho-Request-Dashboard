@@ -10,7 +10,7 @@ export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
-export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond'
+export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type PayrollApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -267,6 +267,8 @@ export interface Expense {
   transfer_id: string | null
   tax_summary_id: string | null
   location_id: string | null
+  vehicle_id: string | null
+  fuel_liters: number | null
   approval_status: ExpenseApprovalStatus
   rejection_reason: string | null
   manager_approved_by: string | null
@@ -406,6 +408,7 @@ export interface Vehicle {
   status: VehicleStatus
   purpose_notes: string | null
   image_url: string | null
+  fuel_tank_liters: number | null
   active: boolean
   created_at: string
   updated_at: string

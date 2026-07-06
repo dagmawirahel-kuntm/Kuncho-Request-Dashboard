@@ -20,6 +20,7 @@ const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string 
   purchase_order: { bg: '#0C4A6E', label: 'Purchase Order',   abbr: 'PO'  },
   vrf:            { bg: '#312E81', label: 'Vendor Receipt',    abbr: 'VRF' },
   cpo_bond:       { bg: '#4C1D95', label: 'CPO Bond',          abbr: 'CPO' },
+  fuel:           { bg: '#92400E', label: 'Fuel',               abbr: 'FUEL' },
 }
 
 type ExpenseWithJoins = Expense & {
