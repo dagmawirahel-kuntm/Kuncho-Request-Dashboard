@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { cn, formatDate, formatDateGC } from '@/lib/utils'
-import { VehicleGraphic } from '@/components/shared/VehicleGraphic'
+import { formatDate } from '@/lib/utils'
+import { Vehicle3D } from '@/components/shared/Vehicle3D'
 import type { Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
-import { Car, Plus, BookOpen, BookX, ArrowRight, MapPin, History } from 'lucide-react'
+import { Car, Plus, BookOpen, BookX, ArrowRight, MapPin } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string; dot: string }> = {
   available:   { label: 'Available',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', dot: '#10B981' },
@@ -21,67 +21,32 @@ const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:
 type JobRow = Pick<TransportationRequest, 'id' | 'request_name' | 'job_status' | 'vehicle_id' | 'job_type' | 'dropoff_location_text' | 'created_at'>
 
 function VehicleCard({
-  vehicle, jobs, recentJobs, canManage, onStatusChange,
+  vehicle, jobs, canManage, onStatusChange,
 }: {
   vehicle: Vehicle
   jobs: JobRow[]
-  recentJobs: JobRow[]
   canManage: boolean
   onStatusChange: (id: string, status: VehicleStatus) => void
 }) {
   const meta = STATUS_META[vehicle.status]
-  const [flipped, setFlipped] = useState(false)
-  const [pressed, setPressed] = useState(false)
 
   return (
     <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-      <div className="veh-flip-perspective relative h-40 w-full">
-        <button
-          type="button"
-          onClick={() => setFlipped(f => !f)}
-          onPointerDown={() => setPressed(true)}
-          onPointerUp={() => setPressed(false)}
-          onPointerLeave={() => setPressed(false)}
-          className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
-          aria-label={`${vehicle.name}. Press and hold to nudge forward. Click to view recent engagements.`}
-        >
-          <div className={cn('veh-flip-inner', flipped && 'flipped', pressed && 'pressed')}>
-            <div className="veh-flip-face bg-slate-100 dark:bg-slate-900/40">
-              <VehicleGraphic type={vehicle.vehicle_type} className="h-full w-full" />
-              <span className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${meta.cls}`}>{meta.label}</span>
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-3 pb-2 pt-6 text-left">
-                <p className="font-semibold text-white text-sm truncate">{vehicle.name}</p>
-                <p className="text-[11px] text-white/70 capitalize">{vehicle.vehicle_type}{vehicle.plate_number ? ` · ${vehicle.plate_number}` : ''}</p>
-              </div>
-            </div>
-            <div className="veh-flip-face veh-flip-back flex flex-col items-center justify-center bg-[#151a1f]">
-              <span style={{ fontFamily: 'Kefa, Nyala, "Noto Sans Ethiopic", "Abyssinica SIL", sans-serif', fontSize: 42, fontWeight: 700, color: '#D4AF37', textShadow: '0 0 20px rgba(212,175,55,0.45)', lineHeight: 1 }}>ቁ</span>
-              <span className="mt-1.5 text-[9px] font-bold tracking-[0.3em] text-slate-400">KUNCHO</span>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {flipped && (
-        <div className="animate-fade-in-up border-b dark:border-slate-700 px-4 py-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            <History className="h-3 w-3" /> Recent Engagements
-          </p>
-          {recentJobs.length === 0 ? (
-            <p className="text-xs text-slate-300 dark:text-slate-600">No jobs recorded yet</p>
-          ) : (
-            <div className="divide-y dark:divide-slate-700">
-              {recentJobs.map(j => (
-                <Link key={j.id} to={`/transportation/${j.id}/edit`}
-                  className="flex items-center justify-between gap-2 py-1.5 text-xs hover:text-brand">
-                  <span className="truncate text-slate-600 dark:text-slate-300">{j.request_name ?? 'Untitled job'}</span>
-                  <span className="shrink-0 text-slate-400">{formatDateGC(j.created_at)}</span>
-                </Link>
-              ))}
-            </div>
-          )}
+      <Link
+        to={`/logistics/vehicles/${vehicle.id}`}
+        className="group relative block h-40 w-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900/60 dark:to-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+        aria-label={`Open ${vehicle.name} details`}
+      >
+        <Vehicle3D type={vehicle.vehicle_type} size={0.82} className="h-full w-full" />
+        <span className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${meta.cls}`}>{meta.label}</span>
+        <span className="absolute top-2 left-2 rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-medium text-white/90 opacity-0 transition-opacity group-hover:opacity-100">
+          Open →
+        </span>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-3 pb-2 pt-6">
+          <p className="font-semibold text-white text-sm truncate">{vehicle.name}</p>
+          <p className="text-[11px] text-white/70 capitalize">{vehicle.vehicle_type}{vehicle.plate_number ? ` · ${vehicle.plate_number}` : ''}</p>
         </div>
-      )}
+      </Link>
 
       <div className="p-4">
         <p className="flex items-center gap-1 text-[10px] font-medium">
@@ -160,32 +125,6 @@ export default function FleetPage() {
       return data as JobRow[]
     },
   })
-
-  // Recent jobs per vehicle (any status), for the "recent engagements" flip reveal
-  const { data: recentJobsAll = [] } = useQuery({
-    queryKey: ['fleet-recent-jobs'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transportation_requests')
-        .select('id, request_name, job_status, vehicle_id, job_type, dropoff_location_text, created_at')
-        .not('vehicle_id', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(300)
-      if (error) throw error
-      return data as JobRow[]
-    },
-  })
-
-  const recentJobsByVehicle = useMemo(() => {
-    const m = new Map<string, JobRow[]>()
-    for (const j of recentJobsAll) {
-      if (!j.vehicle_id) continue
-      const list = m.get(j.vehicle_id) ?? []
-      if (list.length < 4) list.push(j)
-      m.set(j.vehicle_id, list)
-    }
-    return m
-  }, [recentJobsAll])
 
   async function setStatus(id: string, status: VehicleStatus) {
     const { error } = await supabase.from('vehicles').update({ status }).eq('id', id)
@@ -283,7 +222,6 @@ export default function FleetPage() {
               key={v.id}
               vehicle={v}
               jobs={activeJobs.filter(j => j.vehicle_id === v.id)}
-              recentJobs={recentJobsByVehicle.get(v.id) ?? []}
               canManage={canManage}
               onStatusChange={setStatus}
             />

@@ -82,6 +82,7 @@ import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
 import UsersPage from '@/pages/users/UsersPage'
 import CalendarPage from '@/pages/calendar/CalendarPage'
 import FleetPage from '@/pages/logistics/FleetPage'
+import VehicleDetailPage from '@/pages/logistics/VehicleDetailPage'
 import LocationsMapPage from '@/pages/locations/LocationsMapPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
@@ -137,6 +138,7 @@ export const router = createBrowserRouter([
           { path: 'transportation/new', element: <TransportFormPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
           { path: 'logistics', element: <FleetPage /> },
+          { path: 'logistics/vehicles/:id', element: <VehicleDetailPage /> },
           { path: 'locations/map', element: <LocationsMapPage /> },
           { path: 'purchase-allocation', element: <PurchaseAllocationPage /> },
           { path: 'purchase-allocation/new', element: <AllocationFormPage /> },
