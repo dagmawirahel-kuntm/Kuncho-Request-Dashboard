@@ -87,8 +87,9 @@ export default function PurchaseOrderPage() {
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
 
-  const { data: bundle, isLoading } = useQuery({
+  const { data: bundle, isLoading, error: bundleError } = useQuery({
     queryKey: ['sourcing-bundle-detail', id],
+    retry: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sourcing_bundles')
@@ -131,6 +132,14 @@ export default function PurchaseOrderPage() {
   })
 
   if (isLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
+  if (bundleError) {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-sm font-medium text-red-500">Couldn't load this bundle</p>
+        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">{(bundleError as { message?: string }).message ?? String(bundleError)}</p>
+      </div>
+    )
+  }
   if (!bundle) return <div className="py-16 text-center text-sm text-slate-400">Bundle not found.</div>
 
   const status = bundle.status
