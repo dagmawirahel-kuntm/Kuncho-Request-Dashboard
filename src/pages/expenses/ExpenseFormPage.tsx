@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
-import { Lock, Package } from 'lucide-react'
+import { Lock, Package, Fuel } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
 function Field({ label, locked, children }: { label: string; locked?: boolean; children: React.ReactNode }) {
@@ -151,6 +151,15 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         return (data ?? []).map((r: any) => r.cash_advances).filter(Boolean)
       },
       enabled: isEdit,
+    })
+    const { data: fuelVehicle } = useQuery({
+      queryKey: ['expense-fuel-vehicle', record?.vehicle_id],
+      queryFn: async () => {
+        const { data, error } = await supabase.from('vehicles').select('id, name, plate_number').eq('id', record!.vehicle_id!).single()
+        if (error) throw error
+        return data as { id: string; name: string; plate_number: string | null }
+      },
+      enabled: isEdit && record?.expense_type === 'fuel' && !!record?.vehicle_id,
     })
 
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
@@ -389,6 +398,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </div>
       )}
 
+      {/* Fuel vehicle banner (fuel expenses can only be created via the Fuel Request gateway, but still get edited/approved here) */}
+      {isEdit && record?.expense_type === 'fuel' && (
+        <div className="flex items-start gap-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 px-4 py-3">
+          <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Fuel Request</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              {fuelVehicle ? <><span className="font-semibold">{fuelVehicle.name}</span>{fuelVehicle.plate_number ? ` · ${fuelVehicle.plate_number}` : ''}</> : 'Vehicle unavailable'}
+              {record.fuel_liters != null && <span className="text-slate-400"> · {record.fuel_liters} L</span>}
+            </p>
+            {fuelVehicle && (
+              <Link
+                to={`/logistics/vehicles/${fuelVehicle.id}`}
+                className="text-[11px] text-amber-700 dark:text-amber-400 hover:underline mt-0.5 inline-block">
+                View vehicle →
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Linked VRF banner */}
       {!isEdit && linkedVrf && (
         <div className="flex items-start gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700/40 px-4 py-3">
@@ -450,6 +480,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <option value="purchase_order">Purchase Order</option>
             <option value="vrf">VRF (Vendor Receipt Facilitation)</option>
             <option value="cpo_bond">CPO Bond</option>
+            <option value="fuel">Fuel</option>
           </select>
         </Field>
         <Field label="Purchase Type">
