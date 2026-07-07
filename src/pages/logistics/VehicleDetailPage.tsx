@@ -112,7 +112,7 @@ export default function VehicleDetailPage() {
   }
 
   function requestFuel(liters: number) {
-    navigate(`/expenses/new?vehicle_id=${id}&fuel_liters=${liters}`)
+    navigate(`/expenses/fuel/new?vehicle_id=${id}&fuel_liters=${liters}`)
   }
 
   if (isLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>

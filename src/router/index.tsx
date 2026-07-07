@@ -14,6 +14,7 @@ import ManagementDashboardPage from '@/pages/dashboard/ManagementDashboardPage'
 import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import ExpenseFormPage from '@/pages/expenses/ExpenseFormPage'
 import ExpenseDetailPage from '@/pages/expenses/ExpenseDetailPage'
+import FuelRequestFormPage from '@/pages/expenses/FuelRequestFormPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import OrderFormPage from '@/pages/orders/OrderFormPage'
 import OrderDetailPage from '@/pages/orders/OrderDetailPage'
@@ -24,6 +25,7 @@ import StockMovementPage from '@/pages/stock/StockMovementPage'
 import StockToolsPage from '@/pages/stock/StockToolsPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
 import TransportFormPage from '@/pages/transportation/TransportFormPage'
+import TransportPaymentFormPage from '@/pages/transportation/TransportPaymentFormPage'
 import StaffPage from '@/pages/staff/StaffPage'
 import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
@@ -106,6 +108,7 @@ export const router = createBrowserRouter([
           { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },
           { path: 'expenses/new', element: <ExpenseFormPage /> },
+          { path: 'expenses/fuel/new', element: <FuelRequestFormPage /> },
           { path: 'expenses/:id', element: <ExpenseDetailPage /> },
           { path: 'expenses/:id/edit', element: <ExpenseFormPage /> },
           { path: 'orders', element: <Navigate to="/purchase-requests" replace /> },
@@ -137,6 +140,7 @@ export const router = createBrowserRouter([
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'transportation/new', element: <TransportFormPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
+          { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },
           { path: 'logistics', element: <FleetPage /> },
           { path: 'logistics/vehicles/:id', element: <VehicleDetailPage /> },
           { path: 'locations/map', element: <LocationsMapPage /> },

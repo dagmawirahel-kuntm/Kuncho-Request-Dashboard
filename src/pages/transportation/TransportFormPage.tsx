@@ -373,7 +373,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
                 No expense linked yet — payment happens through a real, finance-gated expense.
               </p>
               <Link
-                to={`/expenses/new?transport_id=${id}`}
+                to={`/transportation/${id}/pay`}
                 className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
               >
                 Create Expense for this job
