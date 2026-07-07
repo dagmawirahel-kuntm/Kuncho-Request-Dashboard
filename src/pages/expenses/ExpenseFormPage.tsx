@@ -40,6 +40,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 
 const UOM_OPTIONS = ['Pcs', 'Kg', 'L', 'm', 'm²', 'm³', 'Hr', 'Day', 'Month', 'Set', 'Other']
 const DELIVERY_STATUS_OPTIONS = ['Ordered', 'In Transit', 'Delivered', 'Returned']
+const WHT_HANDLING_OPTIONS = ['Withheld & Remitted', 'Vendor Exempt', 'Company Absorbs', 'Not Applicable']
 
 export default function ExpenseFormPage() {
   const { id } = useParams<{ id: string }>()
@@ -219,18 +220,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         delivery_status: record.delivery_status,
         delivery_notes: record.delivery_notes,
         notes: record.notes,
-        proposed_item_name: record.proposed_item_name,
-        contacted: record.contacted,
         verify_wht: record.verify_wht,
         wht_handling_method: record.wht_handling_method,
-        wht_fund: record.wht_fund,
-        is_new_item: record.is_new_item,
         description_of_item: record.description_of_item,
-        is_allocated: record.is_allocated,
-        receipt_delivered: record.receipt_delivered,
         receipt_url: record.receipt_url,
         receipt_name: record.receipt_name,
-        requested: record.requested,
         payment_status: record.payment_status,
         partially_paid: record.partially_paid,
         partial_paid_amount: record.partial_paid_amount ?? undefined,
@@ -254,13 +248,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       }
       : {
     payment_status: false,
-    requested: false,
     partially_paid: false,
-    contacted: false,
     verify_wht: false,
-    is_new_item: linkedLineItem?.needs_market_check ? false : false,
-    is_allocated: false,
-    receipt_delivered: false,
     delivery_status: [],
     purchaser_user_id: user?.id,
     approval_status: 'pending',
@@ -273,7 +262,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         ? linkedLineItem.unit_price_est * linkedLineItem.quantity
         : undefined,
       sub_category_id: linkedLineItem.sub_category_id ?? undefined,
-      proposed_item_name: linkedLineItem.item_name,
       description_of_item: linkedLineItem.specifications ?? undefined,
     } : {}),
     ...(linkedPr ? {
@@ -302,12 +290,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         set('vendors_bank_account', v.bank_account ?? '')
       }
     }
-  }
-
-  function toggleDeliveryStatus(status: string) {
-    const current = (form.delivery_status as string[]) ?? []
-    const updated = current.includes(status) ? current.filter(s => s !== status) : [...current, status]
-    set('delivery_status', updated)
   }
 
   async function handleSave() {
@@ -566,10 +548,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           </select>
         </Field>
       </div>
-      {showFullFieldSet && (
-        <Field label="Proposed Item Name">
-          <input type="text" className={inputCls} value={form.proposed_item_name ?? ''} onChange={e => set('proposed_item_name', e.target.value)} />
-        </Field>
+      {showFullFieldSet && !!form.quantity && form.amount_etb != null && (
+        <p className="text-xs text-slate-400">Unit price: {formatCurrency(form.amount_etb / form.quantity)}</p>
       )}
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
@@ -605,21 +585,9 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </Field>
       </div>
       {showFullFieldSet && (
-        <>
-          <div className="flex flex-wrap items-center gap-4 text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={!!form.is_new_item} onChange={e => set('is_new_item', e.target.checked)} />
-              New Item
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={!!form.is_allocated} onChange={e => set('is_allocated', e.target.checked)} />
-              Allocated
-            </label>
-          </div>
-          <Field label="Description of Item">
-            <textarea rows={2} className={inputCls} value={form.description_of_item ?? ''} onChange={e => set('description_of_item', e.target.value)} />
-          </Field>
-        </>
+        <Field label="Description of Item">
+          <textarea rows={2} className={inputCls} value={form.description_of_item ?? ''} onChange={e => set('description_of_item', e.target.value)} />
+        </Field>
       )}
 
       <SectionHeader title="Payment & Status" />
@@ -634,27 +602,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <input disabled={financeLocked} type="date" className={inputCls} value={form.total_payment_date ?? ''} onChange={e => set('total_payment_date', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Partial Paid Amount" locked={financeLocked}>
-          <input disabled={financeLocked} type="number" step="0.01" className={inputCls} value={form.partial_paid_amount ?? ''} onChange={e => set('partial_paid_amount', e.target.value ? parseFloat(e.target.value) : null)} />
-        </Field>
-        <Field label="Partial Payment Date" locked={financeLocked}>
-          <input disabled={financeLocked} type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />
-        </Field>
-      </div>
-      <Field label="Partial Payment Notes" locked={financeLocked}>
-        <input disabled={financeLocked} type="text" className={inputCls} value={form.partial_payment_notes ?? ''} onChange={e => set('partial_payment_notes', e.target.value)} />
-      </Field>
-      {showFullFieldSet && (
-        <Field label="Completion %">
-          <input type="number" step="1" min="0" max="100" className={inputCls} value={form.completion_percentage ?? ''} onChange={e => set('completion_percentage', e.target.value ? parseFloat(e.target.value) : null)} />
-        </Field>
-      )}
       <div className="flex flex-wrap items-center gap-4 text-sm">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.requested} onChange={e => set('requested', e.target.checked)} />
-          Requested
-        </label>
         <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
           <input disabled={financeLocked} type="checkbox" checked={!!form.payment_status} onChange={e => set('payment_status', e.target.checked)} />
           Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
@@ -663,15 +611,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <input disabled={financeLocked} type="checkbox" checked={!!form.partially_paid} onChange={e => set('partially_paid', e.target.checked)} />
           Partially Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.receipt_delivered} onChange={e => set('receipt_delivered', e.target.checked)} />
-          Receipt Delivered
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.contacted} onChange={e => set('contacted', e.target.checked)} />
-          Contacted
-        </label>
       </div>
+      {!!form.partially_paid && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Partial Paid Amount" locked={financeLocked}>
+              <input disabled={financeLocked} type="number" step="0.01" className={inputCls} value={form.partial_paid_amount ?? ''} onChange={e => set('partial_paid_amount', e.target.value ? parseFloat(e.target.value) : null)} />
+            </Field>
+            <Field label="Partial Payment Date" locked={financeLocked}>
+              <input disabled={financeLocked} type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Partial Payment Notes" locked={financeLocked}>
+            <input disabled={financeLocked} type="text" className={inputCls} value={form.partial_payment_notes ?? ''} onChange={e => set('partial_payment_notes', e.target.value)} />
+          </Field>
+        </>
+      )}
+      {showFullFieldSet && (
+        <Field label="Completion %">
+          <input type="number" step="1" min="0" max="100" className={inputCls} value={form.completion_percentage ?? ''} onChange={e => set('completion_percentage', e.target.value ? parseFloat(e.target.value) : null)} />
+        </Field>
+      )}
 
       <SectionHeader title="Receipt Attachment" />
       <FileUpload
@@ -689,14 +649,14 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         <>
           <SectionHeader title="Delivery" subtitle={isCuratedGateway ? 'Doesn\'t apply here, shown because "Show all fields" is on' : undefined} />
           <Field label="Delivery Status">
-            <div className="flex flex-wrap gap-3 text-sm">
-              {DELIVERY_STATUS_OPTIONS.map(s => (
-                <label key={s} className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={deliveryStatuses.includes(s)} onChange={() => toggleDeliveryStatus(s)} />
-                  {s}
-                </label>
-              ))}
-            </div>
+            <select
+              className={inputCls}
+              value={deliveryStatuses[0] ?? ''}
+              onChange={e => set('delivery_status', e.target.value ? [e.target.value] : [])}
+            >
+              <option value="">— Select —</option>
+              {DELIVERY_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
           </Field>
           <Field label="Delivery Notes">
             <textarea rows={2} className={inputCls} value={form.delivery_notes ?? ''} onChange={e => set('delivery_notes', e.target.value)} />
@@ -711,14 +671,15 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           Verify WHT {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="WHT Handling Method" locked={financeLocked}>
-          <input disabled={financeLocked} type="text" className={inputCls} value={form.wht_handling_method ?? ''} onChange={e => set('wht_handling_method', e.target.value)} />
-        </Field>
-        <Field label="WHT Fund" locked={financeLocked}>
-          <input disabled={financeLocked} type="text" className={inputCls} value={form.wht_fund ?? ''} onChange={e => set('wht_fund', e.target.value)} />
-        </Field>
-      </div>
+      <Field label="WHT Handling Method" locked={financeLocked}>
+        <select disabled={financeLocked} className={inputCls} value={form.wht_handling_method ?? ''} onChange={e => set('wht_handling_method', e.target.value)}>
+          <option value="">— Select —</option>
+          {WHT_HANDLING_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          {form.wht_handling_method && !WHT_HANDLING_OPTIONS.includes(form.wht_handling_method) && (
+            <option value={form.wht_handling_method}>{form.wht_handling_method} (as entered)</option>
+          )}
+        </select>
+      </Field>
 
       <SectionHeader title="Linked Records" />
       <div className="grid grid-cols-2 gap-3">
