@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -51,10 +51,37 @@ export default function FuelRequestFormPage() {
   const { data: vendors = [] } = useVendors()
   const vendorOptions = vendors.map((v: { id: string; vendor_name: string }) => ({ id: v.id, label: v.vendor_name }))
 
+  // Fuel stations tend to repeat per vehicle — default to whoever this
+  // vehicle last filled up from, still fully editable.
+  const { data: lastFuelVendor } = useQuery({
+    queryKey: ['vehicle-last-fuel-vendor', vehicleId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('vendor_id, vendors_name')
+        .eq('vehicle_id', vehicleId!)
+        .eq('expense_type', 'fuel')
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data as { vendor_id: string | null; vendors_name: string | null } | null
+    },
+    enabled: !!vehicleId,
+  })
+
   const [liters, setLiters] = useState(requestedLiters ?? '')
   const [amount, setAmount] = useState('')
   const [vendorId, setVendorId] = useState<string | null>(null)
   const [vendorName, setVendorName] = useState('')
+  const [vendorPrefilled, setVendorPrefilled] = useState(false)
+
+  useEffect(() => {
+    if (!lastFuelVendor || vendorPrefilled) return
+    setVendorId(lastFuelVendor.vendor_id)
+    setVendorName(lastFuelVendor.vendors_name ?? '')
+    setVendorPrefilled(true)
+  }, [lastFuelVendor, vendorPrefilled])
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
   const [receiptName, setReceiptName] = useState<string | null>(null)
@@ -138,6 +165,7 @@ export default function FuelRequestFormPage() {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Fuel Station / Vendor">
           <SearchableSelect value={vendorId} onChange={handleVendorChange} options={vendorOptions} placeholder="Select if known…" />
+          {vendorPrefilled && vendorId && <p className="mt-1 text-[11px] text-slate-400">Last used for this vehicle</p>}
         </Field>
         <Field label="Date">
           <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />

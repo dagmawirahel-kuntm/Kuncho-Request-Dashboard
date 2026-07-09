@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
-import { Lock, Package, Fuel, Truck, EyeOff, Eye } from 'lucide-react'
+import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
 function Field({ label, locked, children }: { label: string; locked?: boolean; children: React.ReactNode }) {
@@ -51,6 +51,7 @@ export default function ExpenseFormPage() {
   const prId   = searchParams.get('pr_id')
   const lineId = searchParams.get('line_id')
   const vrfId  = searchParams.get('vrf_id')
+  const bundleId = searchParams.get('bundle_id')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -96,6 +97,26 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!vrfId,
   })
 
+  const { data: linkedBundle } = useQuery({
+    queryKey: ['bundle-for-expense', bundleId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sourcing_bundles')
+        .select(`
+          id, bundle_code, vendor_id, vendor_name,
+          sourcing_bundle_items(
+            quantity_actual, unit_price_actual,
+            order_items(item_name, orders(project_id))
+          )
+        `)
+        .eq('id', bundleId!)
+        .single()
+      if (error) throw error
+      return data as unknown as LinkedBundle
+    },
+    enabled: !isEdit && !!bundleId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -108,14 +129,24 @@ export default function ExpenseFormPage() {
       linkedPr={linkedPr}
       linkedLineItem={linkedLineItem}
       linkedVrf={linkedVrf}
+      linkedBundle={linkedBundle}
     />
   )
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf }: {
+type LinkedBundle = {
+  id: string; bundle_code: string; vendor_id: string | null; vendor_name: string | null
+  sourcing_bundle_items: {
+    quantity_actual: number | null; unit_price_actual: number | null
+    order_items: { item_name: string; orders: { project_id: string | null } | null } | null
+  }[]
+}
+
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
+  linkedBundle?: LinkedBundle
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -253,7 +284,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     delivery_status: [],
     purchaser_user_id: user?.id,
     approval_status: 'pending',
-    // pre-fill from linked PR line item
+    date: new Date().toISOString().slice(0, 10),
+    // pre-fill from linked PR line item (estimate only — no sourcing yet)
     ...(linkedLineItem ? {
       item_service_description: linkedLineItem.item_name,
       quantity: linkedLineItem.quantity ?? undefined,
@@ -266,11 +298,34 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     } : {}),
     ...(linkedPr ? {
       project_id: linkedPr.project_id ?? undefined,
+      vendor_id: linkedPr.recommended_vendor_id ?? undefined,
     } : {}),
+    // pre-fill from a fulfilled Purchase Order (Sourcing Bundle) — the real
+    // negotiated vendor and price, not the PR's original estimate
+    ...(linkedBundle ? (() => {
+      const items = linkedBundle.sourcing_bundle_items ?? []
+      const total = items.reduce((sum, i) => sum + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0)
+      const projectIds = new Set(items.map(i => i.order_items?.orders?.project_id).filter(Boolean))
+      const itemNames = items.map(i => i.order_items?.item_name).filter(Boolean).join(', ')
+      return {
+        expense_type: 'purchase_order' as const,
+        item_service_description: `PO ${linkedBundle.bundle_code}${itemNames ? ` — ${itemNames}` : ''}`,
+        amount_etb: total || undefined,
+        vendor_id: linkedBundle.vendor_id ?? undefined,
+        vendors_name: linkedBundle.vendor_id ? undefined : (linkedBundle.vendor_name ?? undefined),
+        project_id: projectIds.size === 1 ? [...projectIds][0] as string : undefined,
+      }
+    })() : {}),
+    // pre-fill from a linked VRF record — the real amount/date/facilitator,
+    // not just the reference id
     ...(linkedVrf ? {
       vendor_receipt_facilitation_id: linkedVrf.id,
       account_id: linkedVrf.initial_account_id ?? undefined,
       expense_type: 'vrf' as const,
+      item_service_description: linkedVrf.record_name ?? undefined,
+      amount_etb: linkedVrf.amount_transferred ?? undefined,
+      vendors_name: linkedVrf.facilitator_name ?? undefined,
+      ...(linkedVrf.trxn_date ? { date: linkedVrf.trxn_date } : {}),
     } : {}),
   }
   )
@@ -292,6 +347,18 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     }
   }
 
+  // A vendor_id can arrive pre-filled from a gateway (PR recommendation,
+  // sourced Purchase Order) without going through handleVendorChange, so
+  // backfill the bank account once the vendor list is loaded — but only
+  // fill it in, never overwrite a value the user already has.
+  useEffect(() => {
+    if (form.vendor_id && !form.vendors_bank_account && vendors.length > 0) {
+      const v = vendors.find((x: any) => x.id === form.vendor_id) as any
+      if (v?.bank_account) set('vendors_bank_account', v.bank_account)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.vendor_id, vendors])
+
   async function handleSave() {
     setError(''); setSaving(true)
     let expenseId = id
@@ -312,6 +379,12 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           quantity_covered: linkedLineItem.quantity,
           notes: null,
         }])
+      }
+      // Link back to the Purchase Order this expense pays for, so its
+      // "Reconciled Expense" reflects this automatically
+      if (linkedBundle && expenseId) {
+        const { error: linkErr } = await supabase.from('sourcing_bundles').update({ expense_id: expenseId }).eq('id', linkedBundle.id)
+        if (linkErr) toast(`Expense saved but linking to the purchase order failed: ${linkErr.message}`, 'error')
       }
     }
     setSaving(false)
@@ -471,6 +544,25 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
               to={`/vendor-receipts/${linkedVrf.id}`}
               className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline mt-0.5 inline-block">
               View VRF record →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Linked Purchase Order (Sourcing Bundle) banner */}
+      {!isEdit && linkedBundle && (
+        <div className="flex items-start gap-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40 px-4 py-3">
+          <ShoppingCart className="h-4 w-4 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">Linked to Purchase Order</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              <span className="font-mono font-bold mr-2">{linkedBundle.bundle_code}</span>
+              {linkedBundle.vendor_name && <span>{linkedBundle.vendor_name}</span>}
+            </p>
+            <Link
+              to={`/sourcing/${linkedBundle.id}`}
+              className="text-[11px] text-purple-700 dark:text-purple-300 hover:underline mt-0.5 inline-block">
+              View purchase order →
             </Link>
           </div>
         </div>

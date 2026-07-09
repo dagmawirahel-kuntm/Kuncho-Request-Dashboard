@@ -9,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { SourcingBundleStatus } from '@/types/database'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus
 } from 'lucide-react'
 
 const VAT_RATE = 0.15
@@ -747,14 +747,29 @@ export default function PurchaseOrderPage() {
                 </button>
               </div>
             ) : (
-              <SearchableSelect
-                value={null}
-                onChange={linkExpense}
-                options={expenseOptions}
-                placeholder="Search expenses to link…"
-              />
+              <div className="space-y-2">
+                <Link
+                  to={`/expenses/new?bundle_id=${id}`}
+                  className="flex w-fit items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Create Expense for this PO
+                </Link>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400">or link an existing one:</span>
+                  <div className="max-w-xs flex-1">
+                    <SearchableSelect
+                      value={null}
+                      onChange={linkExpense}
+                      options={expenseOptions}
+                      placeholder="Search expenses…"
+                    />
+                  </div>
+                </div>
+              </div>
             )}
-            <p className="text-[11px] text-slate-400">Link the expense record where this vendor payment was recorded, for audit traceability.</p>
+            <p className="text-[11px] text-slate-400">
+              {bundle.expenses ? 'The expense record where this vendor payment was recorded, for audit traceability.' : 'Vendor, amount, and project carry over automatically — just review and save.'}
+            </p>
           </div>
         )}
 
