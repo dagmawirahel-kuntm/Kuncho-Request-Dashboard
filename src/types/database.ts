@@ -194,11 +194,14 @@ export type VendorAttachmentInsert = Omit<VendorAttachment, 'id' | 'created_at'>
 // ── Categories (General Ledgers) ──────────────────────────────────
 // `nature` classifies the ledger per the accounting equation
 // Assets = Liabilities + Owner's Equity: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense'
+export type AssetClass = 'Inventory' | 'Fixed Assets' | 'Current Assets' | 'Other'
+
 export interface Category {
   id: string
   category_name: string
   nature: string | null
   parent_type: string | null
+  asset_class: AssetClass | null
   created_at: string
   updated_at: string
 }
@@ -364,6 +367,7 @@ export interface TransportationRequest {
   requested_by_id: string | null
   project_id: string | null
   expense_id: string | null
+  sourcing_bundle_id: string | null
   pickup_location_id: string | null
   dropoff_location_id: string | null
   vendor_id: string | null
@@ -670,6 +674,32 @@ export interface SourcingBundleItem {
   created_at: string
 }
 export type SourcingBundleItemInsert = Omit<SourcingBundleItem, 'id' | 'created_at'>
+
+// ── Goods Received Notes (GRN) ──────────────────────────────────────
+export interface GoodsReceivedNote {
+  id: string
+  grn_code: string
+  sourcing_bundle_id: string
+  transportation_request_id: string | null
+  received_by: string | null
+  received_at: string
+  category_id: string | null
+  notes: string | null
+  photo_url: string | null
+  photo_name: string | null
+  created_at: string
+}
+export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
+
+export interface GoodsReceivedNoteItem {
+  id: string
+  grn_id: string
+  sourcing_bundle_item_id: string
+  quantity_received: number | null
+  condition_notes: string | null
+  created_at: string
+}
+export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at'>
 
 // ── Tax Summary ───────────────────────────────────────────────────
 export interface TaxSummary {

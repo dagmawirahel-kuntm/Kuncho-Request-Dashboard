@@ -44,6 +44,7 @@ import TransfersPage from '@/pages/transfers/TransfersPage'
 import TransferFormPage from '@/pages/transfers/TransferFormPage'
 import PLReportPage from '@/pages/reports/PLReportPage'
 import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
+import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
 import SaleDetailPage from '@/pages/sales/SaleDetailPage'
@@ -89,6 +90,7 @@ import LocationsMapPage from '@/pages/locations/LocationsMapPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
+import GoodsReceivedNoteFormPage from '@/pages/sourcing/GoodsReceivedNoteFormPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -165,7 +167,16 @@ export const router = createBrowserRouter([
               { path: 'sourcing', element: <SourcingBundlesPage /> },
               { path: 'sourcing/new', element: <SourcingBundleFormPage /> },
               { path: 'sourcing/:id/edit', element: <SourcingBundleFormPage /> },
+            ],
+          },
+          {
+            // Stock manager / logistics officer also need this view (and the
+            // GRN entry point on it) to receive goods against a PO — they
+            // don't get the rest of the procurement module.
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer']} />,
+            children: [
               { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
+              { path: 'sourcing/:id/grn/new', element: <GoodsReceivedNoteFormPage /> },
             ],
           },
           {
@@ -203,6 +214,7 @@ export const router = createBrowserRouter([
               { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
+              { path: 'reports/archive', element: <HistoricalArchivePage /> },
             ],
           },
           {

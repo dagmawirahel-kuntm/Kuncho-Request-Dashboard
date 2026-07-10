@@ -72,6 +72,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'P&L Report', to: '/reports/pl', icon: PieChart, roles: ['admin', 'manager', 'finance'] },
       { label: 'Balance Sheet', to: '/reports/balance-sheet', icon: Scale, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Historical Archive', to: '/reports/archive', icon: Archive, roles: ['admin', 'manager', 'finance'] },
     ],
   },
   {

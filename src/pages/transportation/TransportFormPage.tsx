@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, Link } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -74,6 +74,8 @@ export default function TransportFormPage() {
 function TransportFormPageBody({ id, record }: { id?: string; record?: TransportationRequest }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const bundleId = searchParams.get('bundle_id')
   const { toast } = useToast()
   const { role, profile } = useAuth()
   const qc = useQueryClient()
@@ -81,6 +83,22 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const { data: locations = [] } = useLocations()
   const { data: vendors = [] } = useVendors()
   const { data: staff = [] } = useStaff()
+
+  // Requesting transport straight off a Purchase Order — prefill the job
+  // from the bundle instead of starting from a blank form.
+  const { data: sourceBundle } = useQuery({
+    queryKey: ['sourcing-bundle-for-transport', bundleId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sourcing_bundles')
+        .select('id, bundle_code, vendor_id, vendor_name, vendors(vendor_name)')
+        .eq('id', bundleId!)
+        .single()
+      if (error) throw error
+      return data as unknown as { id: string; bundle_code: string; vendor_id: string | null; vendor_name: string | null; vendors: { vendor_name: string } | null }
+    },
+    enabled: !isEdit && !!bundleId,
+  })
 
   const canDispatch = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const rideHailingAllowed = canDispatch || !!profile?.is_ride_hailing_authorized
@@ -142,13 +160,26 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         }
       : {
           requested_date: new Date().toISOString().slice(0, 10),
-          job_type: 'material_move',
+          job_type: bundleId ? 'purchase_pickup' : 'material_move',
           transport_mode: 'own_fleet',
           priority: 'normal',
+          sourcing_bundle_id: bundleId,
         }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [bundlePrefilled, setBundlePrefilled] = useState(false)
+
+  useEffect(() => {
+    if (!sourceBundle || bundlePrefilled) return
+    setForm(f => ({
+      ...f,
+      request_name: f.request_name || `Pickup — ${sourceBundle.bundle_code}`,
+      vendor_id: sourceBundle.vendor_id,
+      vendor_name: sourceBundle.vendor_id ? null : (sourceBundle.vendors?.vendor_name ?? sourceBundle.vendor_name),
+    }))
+    setBundlePrefilled(true)
+  }, [sourceBundle, bundlePrefilled])
 
   function set(key: keyof TransportationRequestInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
@@ -209,12 +240,15 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     if (err) { setError(err.message); toast(err.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['fleet-active-jobs'] })
+    if (bundleId) qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundleId] })
     toast(isEdit ? 'Job updated' : 'Job created', 'success')
-    navigate('/transportation')
+    navigate(bundleId ? `/sourcing/${bundleId}` : '/transportation')
   }
 
+  const backTo = bundleId ? `/sourcing/${bundleId}` : '/transportation'
+
   return (
-    <FormPage title={isEdit ? 'Edit Transport Job' : 'New Transport Job'} backTo="/transportation" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Create Job'} onSave={handleSave}>
+    <FormPage title={isEdit ? 'Edit Transport Job' : 'New Transport Job'} backTo={backTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Create Job'} onSave={handleSave}>
 
       {/* ── Job lifecycle (edit mode, dispatchers only) ── */}
       {isEdit && (

@@ -49,7 +49,7 @@ function GeneralLedgerFormPageBody({ id, record }: { id?: string; record?: Categ
 
   const [form, setForm] = useState<Partial<CategoryInsert>>(
     record
-      ? { category_name: record.category_name, nature: record.nature, parent_type: record.parent_type }
+      ? { category_name: record.category_name, nature: record.nature, parent_type: record.parent_type, asset_class: record.asset_class }
       : {}
   )
   const [saving, setSaving] = useState(false)
@@ -79,7 +79,10 @@ function GeneralLedgerFormPageBody({ id, record }: { id?: string; record?: Categ
         <input type="text" className={inputCls} value={form.category_name ?? ''} onChange={e => set('category_name', e.target.value)} />
       </Field>
       <Field label="Nature *" hint="Where this ledger sits in Assets = Liabilities + Owner's Equity">
-        <select className={inputCls} value={form.nature ?? ''} onChange={e => set('nature', e.target.value)}>
+        <select className={inputCls} value={form.nature ?? ''} onChange={e => {
+          const nature = e.target.value
+          setForm(f => ({ ...f, nature: nature as CategoryInsert['nature'], asset_class: nature === 'Asset' ? f.asset_class : null }))
+        }}>
           <option value="">— Select —</option>
           <option value="Asset">Asset</option>
           <option value="Liability">Liability</option>
@@ -88,6 +91,17 @@ function GeneralLedgerFormPageBody({ id, record }: { id?: string; record?: Categ
           <option value="Expense">Expense</option>
         </select>
       </Field>
+      {form.nature === 'Asset' && (
+        <Field label="Asset Class" hint="How this ledger groups on the Balance Sheet's asset-class view">
+          <select className={inputCls} value={form.asset_class ?? ''} onChange={e => set('asset_class', e.target.value || null)}>
+            <option value="">— Unclassified —</option>
+            <option value="Inventory">Inventory</option>
+            <option value="Fixed Assets">Fixed Assets</option>
+            <option value="Current Assets">Current Assets</option>
+            <option value="Other">Other</option>
+          </select>
+        </Field>
+      )}
       <Field label="Functional Group" hint="Optional operational tag, separate from accounting nature">
         <select className={inputCls} value={form.parent_type ?? ''} onChange={e => set('parent_type', e.target.value)}>
           <option value="">— Select —</option>

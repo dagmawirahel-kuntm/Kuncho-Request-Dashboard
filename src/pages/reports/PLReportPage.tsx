@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { ETHIOPIAN_MONTHS, toEthiopian } from '@/lib/ethiopianCalendar'
+import { Archive } from 'lucide-react'
 
 const GC_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -67,6 +69,16 @@ export default function PLReportPage() {
       if (error) throw error
       return data as { category_name: string; total_etb: number }[]
     },
+  })
+
+  const { data: cutoverDate } = useQuery({
+    queryKey: ['financials-cutover-date'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('financials_cutover_date')
+      if (error) throw error
+      return data as string
+    },
+    staleTime: Infinity,
   })
 
   const isLoading = loadingMonthly || loadingCategories
@@ -134,6 +146,16 @@ export default function PLReportPage() {
           </select>
         </div>
       </div>
+
+      {cutoverDate && (
+        <div className="flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border dark:border-slate-700 px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+          <Archive className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            Figures below only reflect activity from {formatDate(cutoverDate)} forward (also excludes capitalized purchases, which show on the Balance Sheet instead). For everything recorded before that, see the{' '}
+            <Link to="/reports/archive" className="text-brand hover:underline font-medium">Historical Archive</Link>.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         <StatCard label="Total Revenue" value={totals.revenue} sub="Paid sales" />

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { formatEthiopian, toEthiopian, toGregorian, isEthiopianLeapYear } from '@/lib/ethiopianCalendar'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, LayoutGrid, Rows3 } from 'lucide-react'
 
 interface SectionProps {
   title: string
@@ -97,7 +97,27 @@ export default function BalanceSheetPage() {
     },
   })
 
-  const isLoading = loadingBalances || loadingRE
+  const [assetGrouping, setAssetGrouping] = useState<'category' | 'class'>('category')
+
+  const { data: assetsByCategory = [], isLoading: loadingAssetsByCategory } = useQuery({
+    queryKey: ['bs-assets-by-category-asof', asOfDate],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('assets_by_category_asof', { p_cutoff: asOfDate })
+      if (error) throw error
+      return data as { category_name: string; total_etb: number }[]
+    },
+  })
+
+  const { data: assetsByClass = [], isLoading: loadingAssetsByClass } = useQuery({
+    queryKey: ['bs-assets-by-class-asof', asOfDate],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('assets_by_class_asof', { p_cutoff: asOfDate })
+      if (error) throw error
+      return data as { asset_class: string; total_etb: number }[]
+    },
+  })
+
+  const isLoading = loadingBalances || loadingRE || loadingAssetsByCategory || loadingAssetsByClass
 
   const assetRows = useMemo(() => {
     const rows = balances.map(a => ({
@@ -108,7 +128,18 @@ export default function BalanceSheetPage() {
     return rows
   }, [balances, arTotal])
 
-  const assetTotal = assetRows.reduce((s, r) => s + r.value, 0)
+  const cashAssetTotal = assetRows.reduce((s, r) => s + r.value, 0)
+
+  const capitalizedRows = useMemo(() => {
+    const src = assetGrouping === 'category'
+      ? assetsByCategory.map(r => ({ label: r.category_name, value: Number(r.total_etb) }))
+      : assetsByClass.map(r => ({ label: r.asset_class, value: Number(r.total_etb) }))
+    return src.filter(r => r.value > 0).sort((a, b) => b.value - a.value)
+  }, [assetGrouping, assetsByCategory, assetsByClass])
+
+  const capitalizedTotal = capitalizedRows.reduce((s, r) => s + r.value, 0)
+
+  const assetTotal = cashAssetTotal + capitalizedTotal
 
   const liabRows = useMemo(() => {
     return apRows
@@ -200,7 +231,48 @@ export default function BalanceSheetPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Section title="Assets" rows={assetRows} total={assetTotal} positive />
+        <div className="space-y-4">
+          <Section title="Assets" rows={assetRows} total={cashAssetTotal} positive />
+
+          <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
+            <div className="px-4 py-3 border-b bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700 flex items-center justify-between gap-2 flex-wrap">
+              <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">Capitalized Purchases (Assets, from GRN)</h2>
+              <div className="flex items-center gap-1 rounded-md border dark:border-slate-700 p-0.5">
+                <button
+                  onClick={() => setAssetGrouping('category')}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${assetGrouping === 'category' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                >
+                  <Rows3 className="h-3 w-3" /> By Category
+                </button>
+                <button
+                  onClick={() => setAssetGrouping('class')}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${assetGrouping === 'class' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                >
+                  <LayoutGrid className="h-3 w-3" /> By Asset Class
+                </button>
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <tbody className="divide-y dark:divide-slate-700">
+                {capitalizedRows.length === 0
+                  ? <tr><td colSpan={2} className="px-4 py-4 text-center text-slate-400 dark:text-slate-500 text-xs">No capitalized purchases since the cutover</td></tr>
+                  : capitalizedRows.map(r => (
+                    <tr key={r.label} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{r.label}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-800 dark:text-slate-200">{formatCurrency(r.value)}</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+              <tfoot className="border-t bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
+                <tr>
+                  <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">Total Capitalized Purchases</td>
+                  <td className="px-4 py-3 text-right font-bold text-green-700 dark:text-green-400">{formatCurrency(capitalizedTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
         <div className="space-y-4">
           <Section title="Liabilities" rows={liabRows} total={liabTotal} positive={false} />
           <Section title="Equity" rows={equityRows} total={equityTotal} positive={equityTotal >= 0} />
