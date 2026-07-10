@@ -27,6 +27,14 @@
 -- first linked project is used as the primary one.
 --
 -- Safe to re-run: only touches rows where project_id IS NULL.
+--
+-- This file is ~120KB, which can get silently truncated when copy-pasted
+-- through a browser into the Supabase SQL Editor (this happened on this
+-- exact file — "relation _exp_project_import does not exist" means the
+-- paste was cut before the CREATE TABLE line ever ran). Use the
+-- pre-split files in ./066_parts/ instead: run 066_part00_create_table.sql,
+-- then 066_part01.sql through 066_part08.sql in order, then
+-- 066_part09_apply.sql last. Each part is small enough to paste reliably.
 -- ============================================================
 
 BEGIN;
