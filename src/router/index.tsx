@@ -37,6 +37,7 @@ import VendorDetailPage from '@/pages/vendors/VendorDetailPage'
 import VendorContractPage from '@/pages/vendors/VendorContractPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
+import ProjectWorkspacePage from '@/pages/projects/ProjectWorkspacePage'
 import AccountsPage from '@/pages/accounts/AccountsPage'
 import AccountFormPage from '@/pages/accounts/AccountFormPage'
 import AccountDetailPage from '@/pages/accounts/AccountDetailPage'
@@ -254,6 +255,19 @@ export const router = createBrowserRouter([
               { path: 'projects', element: <ProjectsPage /> },
               { path: 'projects/new', element: <ProjectFormPage /> },
               { path: 'projects/:id/edit', element: <ProjectFormPage /> },
+            ],
+          },
+          {
+            // Workspace is also read by procurement (point-of-spend checks
+            // reference it) — one step wider than the management CRUD above
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager', 'procurement_officer']} />,
+            children: [
+              { path: 'projects/:id', element: <ProjectWorkspacePage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            children: [
               { path: 'cpo-bonds', element: <CpoBondsPage /> },
               { path: 'cpo-bonds/new', element: <CpoBondFormPage /> },
               { path: 'cpo-bonds/:id/edit', element: <CpoBondFormPage /> },

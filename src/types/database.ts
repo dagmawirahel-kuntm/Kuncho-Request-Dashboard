@@ -130,6 +130,8 @@ export interface CompanyEvent {
 export type CompanyEventInsert = Omit<CompanyEvent, 'id' | 'created_at' | 'updated_at'>
 
 // ── Projects ────────────────────────────────────────────────────
+export type ProjectHealth = 'On Track' | 'At Risk' | 'Off Track'
+
 export interface Project {
   id: string
   project_name: string
@@ -138,10 +140,67 @@ export interface Project {
   active_for_year: boolean
   project_manager_id: string | null
   location_id: string | null
+  client_id: string | null
+  contract_value: number | null
+  physical_progress: number | null
+  health: ProjectHealth | null
+  target_handover_date: string | null
+  budget_baseline_locked_at: string | null
+  budget_version: number
   created_at: string
   updated_at: string
 }
 export type ProjectInsert = Omit<Project, 'id' | 'created_at' | 'updated_at'>
+
+// ── Cost groups & project budgeting ────────────────────────────────
+export interface CostGroup {
+  id: string
+  name: string
+  sort_order: number
+  created_at: string
+}
+
+export interface ProjectBudget {
+  id: string
+  project_id: string
+  cost_group_id: string
+  budgeted_amount: number
+  version: number
+  locked_at: string | null
+  locked_by: string | null
+  created_at: string
+  created_by: string | null
+}
+export type ProjectBudgetInsert = Omit<ProjectBudget, 'id' | 'created_at'>
+
+// Read-only rows from v_project_cost_group_budget / v_project_budget_summary
+export interface ProjectCostGroupBudget {
+  project_id: string
+  cost_group_id: string | null
+  cost_group_name: string
+  sort_order: number
+  budgeted_amount: number
+  actual_amount: number
+  committed_amount: number
+  remaining_amount: number
+  over_budget: boolean
+  is_provisional: boolean
+}
+
+export interface ProjectBudgetSummary {
+  project_id: string
+  contract_value: number | null
+  budget_version: number
+  budget_baseline_locked_at: string | null
+  total_budget: number
+  total_actual_core: number
+  total_committed_core: number
+  total_actual_with_labor: number
+  total_committed_with_labor: number
+  any_group_over_budget: boolean
+  bid_margin: number | null
+  projected_margin_core: number | null
+}
 
 // ── Vendors ─────────────────────────────────────────────────────
 export interface Vendor {
@@ -202,6 +261,7 @@ export interface Category {
   nature: string | null
   parent_type: string | null
   asset_class: AssetClass | null
+  cost_group_id: string | null
   created_at: string
   updated_at: string
 }

@@ -33,7 +33,9 @@ export default function ProjectsPage() {
   }
 
   const columns: ColumnDef<Project>[] = useMemo(() => [
-    { accessorKey: 'project_name', header: 'Project Name' },
+    { accessorKey: 'project_name', header: 'Project Name', cell: ({ row }) => (
+      <Link to={`/projects/${row.original.id}`} className="font-medium text-brand hover:underline">{row.original.project_name}</Link>
+    ) },
     { accessorKey: 'department', header: 'Department', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'start_date', header: 'Start Date', cell: ({ getValue }) => formatDate(getValue() as string) },
     {
