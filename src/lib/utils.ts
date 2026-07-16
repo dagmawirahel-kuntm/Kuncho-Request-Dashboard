@@ -15,6 +15,20 @@ export function formatCurrency(amount: number | null | undefined, currency = 'ET
   }).format(amount)
 }
 
+// Short form for space-constrained UI (KPI tiles on mobile) — e.g.
+// "ETB 2.8M" instead of "ETB 2,816,734.78". Pair with the full
+// formatCurrency() value as a title/tooltip so the exact figure is
+// still available.
+export function formatCurrencyCompact(amount: number | null | undefined, currency = 'ETB') {
+  if (amount == null) return '—'
+  return new Intl.NumberFormat('en-ET', {
+    style: 'currency',
+    currency,
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(amount)
+}
+
 // Every date in the app is shown in both calendars — Gregorian first,
 // Ethiopian alongside — company-wide (lists, detail pages, reports).
 export function formatDate(date: string | null | undefined) {

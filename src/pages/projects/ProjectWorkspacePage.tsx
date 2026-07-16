@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
@@ -273,15 +273,38 @@ export default function ProjectWorkspacePage() {
         </div>
       )}
 
-      {/* Summary band */}
+      {/* Summary band — compact currency notation (full value on hover/tap-hold) so tiles don't overflow on phone-width screens */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard label="Contract Value" value={project.contract_value != null ? formatCurrency(project.contract_value) : '—'} icon={Wallet} color="bg-blue-50 text-blue-600" />
-        <KpiCard label="Cost Budget" value={summary ? formatCurrency(summary.total_budget) : '—'} icon={Wallet} color="bg-slate-100 text-slate-600" />
-        <KpiCard label="Committed" value={summary ? formatCurrency(summary.total_committed_core) : '—'} sub={summary ? `${formatCurrency(summary.total_committed_with_labor)} incl. labor` : undefined} icon={Clock3} color="bg-amber-50 text-amber-600" />
-        <KpiCard label="Actual (Paid)" value={summary ? formatCurrency(summary.total_actual_core) : '—'} sub={summary ? `${formatCurrency(summary.total_actual_with_labor)} incl. labor` : undefined} icon={Receipt} color="bg-emerald-50 text-emerald-600" />
+        <KpiCard
+          label="Contract Value"
+          value={project.contract_value != null ? formatCurrencyCompact(project.contract_value) : '—'}
+          title={project.contract_value != null ? formatCurrency(project.contract_value) : undefined}
+          icon={Wallet} color="bg-blue-50 text-blue-600"
+        />
+        <KpiCard
+          label="Cost Budget"
+          value={summary ? formatCurrencyCompact(summary.total_budget) : '—'}
+          title={summary ? formatCurrency(summary.total_budget) : undefined}
+          icon={Wallet} color="bg-slate-100 text-slate-600"
+        />
+        <KpiCard
+          label="Committed"
+          value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'}
+          title={summary ? formatCurrency(summary.total_committed_core) : undefined}
+          sub={summary ? `${formatCurrencyCompact(summary.total_committed_with_labor)} incl. labor` : undefined}
+          icon={Clock3} color="bg-amber-50 text-amber-600"
+        />
+        <KpiCard
+          label="Actual (Paid)"
+          value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'}
+          title={summary ? formatCurrency(summary.total_actual_core) : undefined}
+          sub={summary ? `${formatCurrencyCompact(summary.total_actual_with_labor)} incl. labor` : undefined}
+          icon={Receipt} color="bg-emerald-50 text-emerald-600"
+        />
         <KpiCard
           label="Remaining"
-          value={summary ? formatCurrency(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : '—'}
+          value={summary ? formatCurrencyCompact(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : '—'}
+          title={summary ? formatCurrency(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : undefined}
           icon={summary?.any_group_over_budget ? AlertTriangle : Wallet}
           color={summary?.any_group_over_budget ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}
         />
