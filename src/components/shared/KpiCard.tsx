@@ -25,6 +25,12 @@ export function KpiCard({ label, value, title, sub, icon: Icon, color, to }: Kpi
       </span>
     </div>
   )
-  const cls = 'relative block rounded-xl border bg-white p-5 min-w-0 transition-all duration-200 ease-out hover:z-10 hover:-translate-y-0.5 hover:scale-[1.04] hover:shadow-xl hover:shadow-brand/20 hover:ring-1 hover:ring-brand/30 dark:hover:shadow-brand/30'
-  return to ? <Link to={to} className={cls}>{content}</Link> : <div className={cls}>{content}</div>
+  const cls = 'relative block rounded-xl border bg-white p-5 min-w-0 select-none transition-all duration-200 ease-out ' +
+    'hover:z-10 hover:-translate-y-0.5 hover:scale-[1.04] hover:shadow-xl hover:shadow-brand/20 hover:ring-1 hover:ring-brand/30 dark:hover:shadow-brand/30 ' +
+    'active:z-10 active:-translate-y-0.5 active:scale-[1.04] active:shadow-xl active:shadow-brand/20 active:ring-1 active:ring-brand/30 dark:active:shadow-brand/30'
+  // iOS Safari silently skips :active styling on tap unless something in
+  // the chain has a touch handler — an empty one is the standard fix.
+  return to
+    ? <Link to={to} className={cls} onTouchStart={() => {}}>{content}</Link>
+    : <div className={cls} onTouchStart={() => {}}>{content}</div>
 }
