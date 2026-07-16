@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Account } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard, ChevronRight } from 'lucide-react'
 
@@ -116,11 +117,13 @@ function AccountCard({
   balance,
   totalBalance,
   onDelete,
+  canWrite,
 }: {
   account: Account
   balance: number | undefined
   totalBalance: number
   onDelete: (id: string, name: string) => void
+  canWrite: boolean
 }) {
   const navigate = useNavigate()
   const entry = getBankEntry(account.account_name)
@@ -202,24 +205,26 @@ function AccountCard({
           </div>
 
           {/* Edit / Delete */}
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            <button
-              onClick={goEdit}
-              title="Edit"
-              className="rounded p-1.5 hover:bg-white/20 transition-colors"
-              style={{ color: entry.fg, opacity: 0.8 }}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={goDelete}
-              title="Delete"
-              className="rounded p-1.5 hover:bg-white/20 transition-colors"
-              style={{ color: entry.fg, opacity: 0.8 }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          {canWrite && (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button
+                onClick={goEdit}
+                title="Edit"
+                className="rounded p-1.5 hover:bg-white/20 transition-colors"
+                style={{ color: entry.fg, opacity: 0.8 }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={goDelete}
+                title="Delete"
+                className="rounded p-1.5 hover:bg-white/20 transition-colors"
+                style={{ color: entry.fg, opacity: 0.8 }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -280,6 +285,8 @@ function AccountCard({
 export default function AccountsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { role } = useAuth()
+  const canWrite = role === 'admin' || role === 'finance'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -329,12 +336,14 @@ export default function AccountsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Accounts</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Bank and cash accounts overview</p>
         </div>
-        <Link
-          to="/accounts/new"
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Add Account
-        </Link>
+        {canWrite && (
+          <Link
+            to="/accounts/new"
+            className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Add Account
+          </Link>
+        )}
       </div>
 
       {/* Summary stats */}
@@ -365,9 +374,11 @@ export default function AccountsPage() {
         <div className="rounded-xl border border-dashed bg-white dark:bg-slate-800 dark:border-slate-700 py-16 text-center">
           <Landmark className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
           <p className="text-sm text-slate-500 dark:text-slate-400">No accounts yet.</p>
-          <Link to="/accounts/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline">
-            <Plus className="h-3.5 w-3.5" /> Add your first account
-          </Link>
+          {canWrite && (
+            <Link to="/accounts/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline">
+              <Plus className="h-3.5 w-3.5" /> Add your first account
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -378,6 +389,7 @@ export default function AccountsPage() {
               balance={balanceMap[account.id] !== undefined ? Number(balanceMap[account.id]) : undefined}
               totalBalance={stats.positive}
               onDelete={handleDelete}
+              canWrite={canWrite}
             />
           ))}
         </div>

@@ -127,10 +127,12 @@ export default function VendorReceiptDetailPage() {
               <Plus className="h-4 w-4" /> Add Expense
             </Link>
           )}
-          <Link to={`/vendor-receipts/${id}/edit`}
-            className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Link>
+          {(role === 'admin' || role === 'finance') && (
+            <Link to={`/vendor-receipts/${id}/edit`}
+              className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Link>
+          )}
         </div>
       </div>
 

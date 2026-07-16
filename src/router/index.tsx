@@ -185,37 +185,51 @@ export const router = createBrowserRouter([
             children: [
               { path: 'finance', element: <FinanceDashboardPage /> },
               { path: 'accounts', element: <AccountsPage /> },
-              { path: 'accounts/new', element: <AccountFormPage /> },
               { path: 'accounts/:id', element: <AccountDetailPage /> },
-              { path: 'accounts/:id/edit', element: <AccountFormPage /> },
               { path: 'transfers', element: <TransfersPage /> },
-              { path: 'transfers/new', element: <TransferFormPage /> },
-              { path: 'transfers/:id/edit', element: <TransferFormPage /> },
               { path: 'sales', element: <SalesPage /> },
-              { path: 'sales/new', element: <SaleFormPage /> },
               { path: 'sales/:id', element: <SaleDetailPage /> },
+              // Manager holds a broad UPDATE grant on sales (manager_approve_sales,
+              // migration 007) that isn't limited to the approval columns at the
+              // RLS layer, so full-field edit is legitimately open to them here —
+              // unlike sales/new (INSERT) and the other tables below, where
+              // manager's RLS grant is read-only.
               { path: 'sales/:id/edit', element: <SaleFormPage /> },
               { path: 'proformas', element: <ProformasPage /> },
               { path: 'clients', element: <ClientsPage /> },
-              { path: 'clients/new', element: <ClientFormPage /> },
               { path: 'clients/:id', element: <ClientDetailPage /> },
-              { path: 'clients/:id/edit', element: <ClientFormPage /> },
               { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
               { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
               { path: 'tax-summary', element: <TaxSummaryPage /> },
-              { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
-              { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
-              { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
-              { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
               { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
-              { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
               { path: 'vendor-receipts/:id', element: <VendorReceiptDetailPage /> },
-              { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
               { path: 'reports/archive', element: <HistoricalArchivePage /> },
+            ],
+          },
+          {
+            // Money-book writes: RLS (001/047/049) grants manager SELECT only
+            // (+ the sales UPDATE above) on these tables — admin/finance own
+            // create/edit/delete. Kept as its own block so the read-only
+            // paths above stay reachable for manager.
+            element: <ProtectedRoute allowedRoles={['admin', 'finance']} />,
+            children: [
+              { path: 'accounts/new', element: <AccountFormPage /> },
+              { path: 'accounts/:id/edit', element: <AccountFormPage /> },
+              { path: 'transfers/new', element: <TransferFormPage /> },
+              { path: 'transfers/:id/edit', element: <TransferFormPage /> },
+              { path: 'sales/new', element: <SaleFormPage /> },
+              { path: 'clients/new', element: <ClientFormPage /> },
+              { path: 'clients/:id/edit', element: <ClientFormPage /> },
+              { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
+              { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
+              { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
+              { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
+              { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
+              { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
             ],
           },
           {

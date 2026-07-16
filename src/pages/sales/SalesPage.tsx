@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Sale } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
 
 const saleQuickFilters: QuickFilter[] = [
@@ -38,6 +39,10 @@ export default function SalesPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { role } = useAuth()
+  // Manager can read + edit/approve sales (existing RLS), but not create or
+  // delete — only admin/finance own that per the RLS policies since 001/047.
+  const canDelete = role === 'admin' || role === 'finance'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['sales'],
@@ -75,20 +80,21 @@ export default function SalesPage() {
         <div className="flex items-center gap-1">
           <Link to={`/sales/${row.original.id}`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="View"><Eye className="h-3.5 w-3.5" /></Link>
           <Link to={`/sales/${row.original.id}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></Link>
-          <button onClick={() => handleDelete(row.original.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+          {canDelete && <button onClick={() => handleDelete(row.original.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>}
         </div>
       ),
     },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [])
+  ], [canDelete])
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Sales</h1><p className="text-sm text-slate-500">Sales records and invoices</p></div>
-        <Link to="/sales/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New Sale
-        </Link>
+        {canDelete && (
+          <Link to="/sales/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New Sale
+          </Link>
+        )}
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search sales…" persistKey="sales" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="sales" queryKeys={['sales']} quickFilters={saleQuickFilters} />}
     </div>

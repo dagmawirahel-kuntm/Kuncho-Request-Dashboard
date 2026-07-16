@@ -4,6 +4,7 @@ import { useMemo, useCallback, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Client } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Pencil, Trash2, Users, TrendingUp, Building2, Search, ChevronRight, Mail, Phone, Trophy, Award, Medal, MoreHorizontal, ShoppingCart, FileText, FilePlus } from 'lucide-react'
@@ -172,9 +173,9 @@ function StatCard({ label, value, icon, sub }: { label: string; value: string; i
 
 // ── Client row (single-column nav-bar style) ───────────────────────────────────
 function ClientRow({
-  client, salesCount, totalRevenue, tier, onDelete, outstanding, outstandingAmount,
+  client, salesCount, totalRevenue, tier, onDelete, outstanding, outstandingAmount, canWrite,
 }: {
-  client: Client; salesCount: number; totalRevenue: number; tier: ClientTier; onDelete: (id: string, name: string) => void; outstanding: number; outstandingAmount: number
+  client: Client; salesCount: number; totalRevenue: number; tier: ClientTier; onDelete: (id: string, name: string) => void; outstanding: number; outstandingAmount: number; canWrite: boolean
 }) {
   const navigate = useNavigate()
   const { score, total } = profileScore(client)
@@ -247,14 +248,18 @@ function ClientRow({
 
       {/* Action buttons */}
       <div className="flex items-center gap-0.5 flex-shrink-0">
-        <button onClick={goEdit} title="Edit"
-          className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button onClick={goDelete} title="Delete"
-          className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        {canWrite && (
+          <>
+            <button onClick={goEdit} title="Edit"
+              className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={goDelete} title="Delete"
+              className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
 
         {/* More actions dropdown */}
         <div className="relative">
@@ -269,13 +274,15 @@ function ClientRow({
                 className="absolute right-0 top-8 z-50 w-56 rounded-lg border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl py-1"
                 onClick={e => e.stopPropagation()}
               >
-                <button
-                  onClick={() => { setActionsOpen(false); navigate(`/sales/new?client_id=${client.id}`) }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                >
-                  <ShoppingCart className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                  New Sale
-                </button>
+                {canWrite && (
+                  <button
+                    onClick={() => { setActionsOpen(false); navigate(`/sales/new?client_id=${client.id}`) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <ShoppingCart className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                    New Sale
+                  </button>
+                )}
                 <button
                   onClick={() => { setActionsOpen(false); navigate(`/clients/${client.id}/proforma`) }}
                   className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
@@ -313,6 +320,8 @@ function ClientRow({
 export default function ClientsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { role } = useAuth()
+  const canWrite = role === 'admin' || role === 'finance'
   const [search, setSearch] = useState('')
 
   const { data: clients = [], isLoading } = useQuery({
@@ -381,9 +390,11 @@ export default function ClientsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Clients</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Client profiles and revenue history</p>
         </div>
-        <Link to="/clients/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
-          <Plus className="h-4 w-4" /> Add Client
-        </Link>
+        {canWrite && (
+          <Link to="/clients/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+            <Plus className="h-4 w-4" /> Add Client
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -404,12 +415,12 @@ export default function ClientsPage() {
         <div className="rounded-xl border-2 border-dashed dark:border-slate-700 bg-white dark:bg-slate-800 py-16 text-center">
           <Users className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
           <p className="text-sm text-slate-500 dark:text-slate-400">{search ? 'No clients match your search.' : 'No clients yet.'}</p>
-          {!search && <Link to="/clients/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline"><Plus className="h-3.5 w-3.5" /> Add your first client</Link>}
+          {!search && canWrite && <Link to="/clients/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline"><Plus className="h-3.5 w-3.5" /> Add your first client</Link>}
         </div>
       ) : (
         <div className="rounded-xl border dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 shadow-sm">
           {filtered.map(client => (
-            <ClientRow key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} outstanding={statsMap[client.id]?.outstanding ?? 0} outstandingAmount={statsMap[client.id]?.outstandingAmount ?? 0} />
+            <ClientRow key={client.id} client={client} salesCount={statsMap[client.id]?.count ?? 0} totalRevenue={statsMap[client.id]?.revenue ?? 0} tier={tiersMap[client.id] ?? null} onDelete={handleDelete} outstanding={statsMap[client.id]?.outstanding ?? 0} outstandingAmount={statsMap[client.id]?.outstandingAmount ?? 0} canWrite={canWrite} />
           ))}
         </div>
       )}
