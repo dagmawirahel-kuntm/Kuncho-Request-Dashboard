@@ -34,16 +34,16 @@ export default function ProjectsPage() {
 
   const columns: ColumnDef<Project>[] = useMemo(() => [
     { accessorKey: 'project_name', header: 'Project Name', cell: ({ row }) => (
-      <Link to={`/projects/${row.original.id}`} className="font-medium text-brand hover:underline">{row.original.project_name}</Link>
+      <Link to={`/projects/${row.original.id}`} className="max-w-[10rem] sm:max-w-xs truncate block font-medium text-brand hover:underline">{row.original.project_name}</Link>
     ) },
-    { accessorKey: 'department', header: 'Department', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'department', header: 'Department', cell: ({ getValue }) => <span className="max-w-[7rem] truncate block">{(getValue() as string) ?? '—'}</span> },
     { accessorKey: 'start_date', header: 'Start Date', cell: ({ getValue }) => formatDate(getValue() as string) },
     {
       accessorKey: 'active_for_year',
       header: 'Active',
       cell: ({ getValue }) => getValue() ? <Check className="h-4 w-4 text-green-500" /> : <span className="text-slate-300">—</span>,
     },
-    { id: 'staff_name', header: 'Project Manager', cell: ({ row }) => (row.original as any).staff?.employee_name ?? '—' },
+    { id: 'staff_name', header: 'Project Manager', cell: ({ row }) => <span className="max-w-[8rem] truncate block">{(row.original as any).staff?.employee_name ?? '—'}</span> },
     { id: 'location_name', header: 'Location', cell: ({ row }) => (row.original as any).locations?.location_name ?? '—' },
     {
       id: 'actions',
@@ -71,7 +71,18 @@ export default function ProjectsPage() {
           Couldn't load projects: {(loadError as { message?: string }).message ?? String(loadError)}
         </div>
       )}
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search projects…" persistKey="projects" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="projects" queryKeys={['projects', 'projects-lookup']} />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : (
+        <DataTable
+          columns={columns}
+          data={data}
+          searchPlaceholder="Search projects…"
+          persistKey="projects"
+          initialGlobalFilter={searchParams.get('q') ?? undefined}
+          tableName="projects"
+          queryKeys={['projects', 'projects-lookup']}
+          expandable={{ summaryColumnIds: ['project_name', 'department', 'staff_name', 'active_for_year'] }}
+        />
+      )}
     </div>
   )
 }
