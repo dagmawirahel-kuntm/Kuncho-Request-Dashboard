@@ -9,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { SourcingBundleStatus, TransportJobStatus } from '@/types/database'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck, Undo2
 } from 'lucide-react'
 
 const VAT_RATE = 0.15
@@ -416,6 +416,17 @@ export default function PurchaseOrderPage() {
     toast('Bundle deleted', 'success')
   }
 
+  async function handleUndoFulfillment() {
+    if (!grn) return
+    if (!window.confirm(`Undo fulfillment for ${bundleCode}? This deletes GRN ${grn.grn_code} and reverts the PO to "Ordered". The PO itself, its items, and its history are not affected. This cannot be undone.`)) return
+    const { error } = await supabase.rpc('undo_grn_fulfillment', { p_grn_id: grn.id })
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
+    qc.invalidateQueries({ queryKey: ['grn-for-bundle', id] })
+    qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
+    toast('Fulfillment undone — PO reverted to Ordered', 'success')
+  }
+
   return (
     <div className="space-y-5">
       <iframe ref={printRef} srcDoc={poHtml} title="Purchase Order Print" style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }} />
@@ -797,6 +808,12 @@ export default function PurchaseOrderPage() {
                   </span>
                 )}
               </div>
+            )}
+            {grn && (isAdmin || isStockOrLogistics) && (
+              <button onClick={handleUndoFulfillment}
+                className="flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+                <Undo2 className="h-3.5 w-3.5" /> Undo Fulfillment
+              </button>
             )}
           </div>
         )}
