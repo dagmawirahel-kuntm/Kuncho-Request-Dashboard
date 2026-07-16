@@ -12,8 +12,15 @@ interface BudgetGroupBarProps {
 // cost group — the commitment-bar concept from the reference prototype,
 // rebuilt with the app's own card/color system instead of extending
 // BreakdownBarList's single-value bar API.
+//
+// Hovering a row previews its breakdown (glows + opens); moving away
+// closes it again unless it's pinned. Double-click pins a row open —
+// implemented as "always end up pinned" rather than a toggle, so the
+// two click events a double-click naturally fires along the way can't
+// cancel each other out and leave it closed.
 export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [pinned, setPinned] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
 
   return (
     <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
@@ -21,7 +28,7 @@ export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
       {groups.length === 0 ? (
         <p className="mt-6 text-center text-sm text-slate-400 dark:text-slate-500">No cost groups yet</p>
       ) : (
-        <div className="mt-4 space-y-4">
+        <div className="mt-4 space-y-1">
           {groups.map(g => {
             const spent = g.actual_amount + g.committed_amount
             const scale = Math.max(g.budgeted_amount, spent, 1)
@@ -29,14 +36,24 @@ export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
             const committedPct = Math.min((g.committed_amount / scale) * 100, 100 - paidPct)
             const budgetLinePct = g.budgeted_amount > 0 ? Math.min((g.budgeted_amount / scale) * 100, 100) : null
             const pctConsumed = g.budgeted_amount > 0 ? (spent / g.budgeted_amount) * 100 : null
-            const isOpen = expanded === g.cost_group_name
+            const isPinned = pinned === g.cost_group_name
+            const isHovered = hovered === g.cost_group_name
+            const isOpen = isPinned || isHovered
 
             return (
-              <div key={g.cost_group_name}>
+              <div
+                key={g.cost_group_name}
+                onMouseEnter={() => setHovered(g.cost_group_name)}
+                onMouseLeave={() => setHovered(h => h === g.cost_group_name ? null : h)}
+                className={`-mx-2 rounded-lg px-2 py-2.5 transition-all duration-200 ${
+                  isHovered ? 'bg-slate-50 dark:bg-slate-700/40 shadow-md shadow-brand/10 ring-1 ring-brand/20' : ''
+                }`}
+              >
                 <button
                   type="button"
-                  onClick={() => setExpanded(isOpen ? null : g.cost_group_name)}
-                  className="flex w-full items-center justify-between gap-2 text-left"
+                  onClick={() => setPinned(p => p === g.cost_group_name ? null : g.cost_group_name)}
+                  onDoubleClick={() => setPinned(g.cost_group_name)}
+                  className="flex w-full select-none items-center justify-between gap-2 text-left"
                 >
                   <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
                     {g.over_budget && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
@@ -44,6 +61,11 @@ export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
                     {g.is_provisional && (
                       <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 text-[10px] font-semibold">
                         provisional
+                      </span>
+                    )}
+                    {isPinned && (
+                      <span className="rounded-full bg-brand/10 text-brand px-1.5 py-0.5 text-[10px] font-semibold">
+                        pinned
                       </span>
                     )}
                   </span>
