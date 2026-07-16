@@ -4,7 +4,9 @@ import {
   Users, DollarSign, CreditCard, TrendingUp, FileText,
   Package, MapPin, Clock, Wallet, BarChart3, Building2,
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
-  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car
+  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
+  PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
+  HardHat, Network
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -31,6 +33,7 @@ const navGroups: NavGroup[] = [
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2 },
+      { label: 'Departments', to: '/departments', icon: Network },
     ],
   },
   {
@@ -43,6 +46,20 @@ const navGroups: NavGroup[] = [
       { label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
+    ],
+  },
+  {
+    title: 'Design',
+    to: '/design',
+    items: [
+      { label: 'Design Packages', to: '/design', icon: PenTool },
+    ],
+  },
+  {
+    title: 'Business Development',
+    items: [
+      { label: 'Opportunities', to: '/opportunities', icon: Target },
+      { label: 'Contracts', to: '/contracts', icon: FileSignature },
     ],
   },
   {
@@ -85,6 +102,17 @@ const navGroups: NavGroup[] = [
       { label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
       { label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
       { label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
+      { label: 'Onboarding', to: '/onboarding-tasks', icon: UserCheck },
+      { label: 'Leave Requests', to: '/leave-requests', icon: CalendarClock, roles: ['admin', 'hr_officer'] },
+      { label: 'Performance Reviews', to: '/performance-reviews', icon: ClipboardCheck, roles: ['admin', 'hr_officer'] },
+      { label: 'Disciplinary Records', to: '/disciplinary-records', icon: AlertTriangle, roles: ['admin', 'hr_officer'] },
+    ],
+  },
+  {
+    title: 'HSE',
+    items: [
+      { label: 'Incidents', to: '/hse-incidents', icon: AlertTriangle },
+      { label: 'Inductions', to: '/hse-inductions', icon: HardHat },
     ],
   },
   {

@@ -10,6 +10,7 @@ import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront
 const ROLES: UserRole[] = [
   'admin', 'manager', 'finance', 'staff',
   'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager', 'logistics_officer',
+  'design', 'sales', 'hse_officer', 'operations_manager',
 ]
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -22,6 +23,10 @@ const ROLE_LABELS: Record<UserRole, string> = {
   project_manager: 'Project Manager',
   stock_manager: 'Stock Manager',
   logistics_officer: 'Logistics Officer',
+  design: 'Design',
+  sales: 'Sales',
+  hse_officer: 'HSE Officer',
+  operations_manager: 'Operations Manager',
 }
 
 const ROLE_CLS: Record<UserRole, string> = {
@@ -34,6 +39,10 @@ const ROLE_CLS: Record<UserRole, string> = {
   project_manager:     'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
   stock_manager:       'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   logistics_officer:   'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  design:              'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300',
+  sales:               'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  hse_officer:         'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300',
+  operations_manager:  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
 }
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'

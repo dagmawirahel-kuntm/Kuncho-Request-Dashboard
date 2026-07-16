@@ -92,6 +92,26 @@ import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
 import GoodsReceivedNoteFormPage from '@/pages/sourcing/GoodsReceivedNoteFormPage'
+import DepartmentsPage from '@/pages/departments/DepartmentsPage'
+import DesignPackagesPage from '@/pages/design/DesignPackagesPage'
+import DesignPackageFormPage from '@/pages/design/DesignPackageFormPage'
+import DesignPackageDetailPage from '@/pages/design/DesignPackageDetailPage'
+import ContractsPage from '@/pages/bd/ContractsPage'
+import ContractFormPage from '@/pages/bd/ContractFormPage'
+import OpportunitiesPage from '@/pages/bd/OpportunitiesPage'
+import OpportunityFormPage from '@/pages/bd/OpportunityFormPage'
+import LeaveRequestsPage from '@/pages/leave-requests/LeaveRequestsPage'
+import LeaveRequestFormPage from '@/pages/leave-requests/LeaveRequestFormPage'
+import PerformanceReviewsPage from '@/pages/performance-reviews/PerformanceReviewsPage'
+import PerformanceReviewFormPage from '@/pages/performance-reviews/PerformanceReviewFormPage'
+import OnboardingTasksPage from '@/pages/onboarding-tasks/OnboardingTasksPage'
+import OnboardingTaskFormPage from '@/pages/onboarding-tasks/OnboardingTaskFormPage'
+import DisciplinaryRecordsPage from '@/pages/disciplinary-records/DisciplinaryRecordsPage'
+import DisciplinaryRecordFormPage from '@/pages/disciplinary-records/DisciplinaryRecordFormPage'
+import HseIncidentsPage from '@/pages/hse-incidents/HseIncidentsPage'
+import HseIncidentFormPage from '@/pages/hse-incidents/HseIncidentFormPage'
+import HseInductionsPage from '@/pages/hse-inductions/HseInductionsPage'
+import HseInductionFormPage from '@/pages/hse-inductions/HseInductionFormPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -291,6 +311,80 @@ export const router = createBrowserRouter([
               { path: 'locations', element: <LocationsPage /> },
               { path: 'locations/new', element: <LocationFormPage /> },
               { path: 'locations/:id/edit', element: <LocationFormPage /> },
+            ],
+          },
+          // ── Departments: read for everyone (matches RLS SELECT-open
+          // policy); write is an in-page modal gated to admin/manager
+          // inside DepartmentsPage itself, no separate route needed.
+          { path: 'departments', element: <DepartmentsPage /> },
+          // ── Design: read for everyone; write (new package / edit
+          // package / drawings / FF&E) gated inside the pages themselves
+          // AND at the route level for the dedicated new/edit routes,
+          // matching the design_packages/design_drawings/ffe_specifications
+          // RLS (SELECT open, write restricted to design/admin/manager).
+          { path: 'design', element: <DesignPackagesPage /> },
+          { path: 'design/:id', element: <DesignPackageDetailPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'design']} />,
+            children: [
+              { path: 'design/new', element: <DesignPackageFormPage /> },
+              { path: 'design/:id/edit', element: <DesignPackageFormPage /> },
+            ],
+          },
+          // ── Business Development / Sales: read for everyone; write
+          // gated to sales/admin/manager, matching contracts/opportunities RLS.
+          { path: 'contracts', element: <ContractsPage /> },
+          { path: 'opportunities', element: <OpportunitiesPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'sales']} />,
+            children: [
+              { path: 'contracts/new', element: <ContractFormPage /> },
+              { path: 'contracts/:id/edit', element: <ContractFormPage /> },
+              { path: 'opportunities/new', element: <OpportunityFormPage /> },
+              { path: 'opportunities/:id/edit', element: <OpportunityFormPage /> },
+            ],
+          },
+          // ── Onboarding tasks: read for everyone (unlike the other HR
+          // tables below); write gated to hr_officer/admin/manager,
+          // matching onboarding_tasks RLS.
+          { path: 'onboarding-tasks', element: <OnboardingTasksPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hr_officer']} />,
+            children: [
+              { path: 'onboarding-tasks/new', element: <OnboardingTaskFormPage /> },
+              { path: 'onboarding-tasks/:id/edit', element: <OnboardingTaskFormPage /> },
+            ],
+          },
+          // ── Sensitive HR data: leave_requests, performance_reviews, and
+          // disciplinary_records restrict BOTH read and write to
+          // hr_officer/admin at the RLS layer (no broader SELECT policy at
+          // all) — so unlike every other block here, even the list/detail
+          // routes are role-gated, not just new/edit.
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'hr_officer']} />,
+            children: [
+              { path: 'leave-requests', element: <LeaveRequestsPage /> },
+              { path: 'leave-requests/new', element: <LeaveRequestFormPage /> },
+              { path: 'leave-requests/:id/edit', element: <LeaveRequestFormPage /> },
+              { path: 'performance-reviews', element: <PerformanceReviewsPage /> },
+              { path: 'performance-reviews/new', element: <PerformanceReviewFormPage /> },
+              { path: 'performance-reviews/:id/edit', element: <PerformanceReviewFormPage /> },
+              { path: 'disciplinary-records', element: <DisciplinaryRecordsPage /> },
+              { path: 'disciplinary-records/new', element: <DisciplinaryRecordFormPage /> },
+              { path: 'disciplinary-records/:id/edit', element: <DisciplinaryRecordFormPage /> },
+            ],
+          },
+          // ── HSE: read for everyone; write gated to
+          // hse_officer/admin/manager, matching hse_incidents/hse_inductions RLS.
+          { path: 'hse-incidents', element: <HseIncidentsPage /> },
+          { path: 'hse-inductions', element: <HseInductionsPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hse_officer']} />,
+            children: [
+              { path: 'hse-incidents/new', element: <HseIncidentFormPage /> },
+              { path: 'hse-incidents/:id/edit', element: <HseIncidentFormPage /> },
+              { path: 'hse-inductions/new', element: <HseInductionFormPage /> },
+              { path: 'hse-inductions/:id/edit', element: <HseInductionFormPage /> },
             ],
           },
         ],
