@@ -215,6 +215,50 @@ export interface ProjectBudgetSummary {
   projected_margin_core: number | null
 }
 
+// ── Phase 2: budget lock, variations, warn-only checks ─────────────
+export interface BudgetCheckMode {
+  id: true
+  enforcing: boolean
+  updated_at: string | null
+  updated_by: string | null
+}
+
+export type BudgetVariationStatus = 'pending' | 'approved' | 'rejected'
+
+export interface BudgetVariation {
+  id: string
+  project_id: string
+  cost_group_id: string
+  requested_by: string | null
+  requested_amount_delta: number
+  reason: string
+  status: BudgetVariationStatus
+  approved_by: string | null
+  approved_at: string | null
+  resulting_version: number | null
+  created_at: string
+}
+export type BudgetVariationInsert = Omit<BudgetVariation, 'id' | 'created_at' | 'approved_by' | 'approved_at' | 'resulting_version' | 'status'>
+
+export type BudgetCheckSource = 'pr' | 'po'
+export type BudgetCheckOutcome = 'allow' | 'warn' | 'block' | 'unavailable'
+export type BudgetCheckLogMode = 'warn_only' | 'enforcing'
+
+export interface BudgetCheckLog {
+  id: string
+  created_at: string
+  source: BudgetCheckSource
+  source_ref: string | null
+  project_id: string | null
+  cost_group_id: string | null
+  requested_amount: number
+  remaining_before: number | null
+  outcome: BudgetCheckOutcome
+  mode: BudgetCheckLogMode
+  created_by: string | null
+}
+export type BudgetCheckLogInsert = Omit<BudgetCheckLog, 'id' | 'created_at'>
+
 // ── Vendors ─────────────────────────────────────────────────────
 export interface Vendor {
   id: string

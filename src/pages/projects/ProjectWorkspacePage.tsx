@@ -1,15 +1,21 @@
 import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
-import type { Project, ProjectStage, ProjectCostGroupBudget, ProjectBudgetSummary } from '@/types/database'
+import type {
+  Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
+  CostGroup, BudgetVariation, BudgetCheckMode,
+} from '@/types/database'
 import {
   ChevronLeft, Building2, User, CalendarClock, Wallet, Receipt,
   Clock3, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
-  Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2,
+  Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -35,6 +41,9 @@ const STAGE_STEPS: { stage: ProjectStage; label: string; icon: React.ReactNode }
   { stage: 'closeout_final_accounts',        label: 'Closeout',        icon: <FileCheck2 className="h-3.5 w-3.5" /> },
 ]
 const STAGE_ORDER: ProjectStage[] = STAGE_STEPS.map(s => s.stage)
+const HEALTH_OPTIONS: ProjectHealth[] = ['On Track', 'At Risk', 'Off Track']
+
+const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
 function daysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null
@@ -44,6 +53,10 @@ function daysUntil(dateStr: string | null): number | null {
 
 export default function ProjectWorkspacePage() {
   const { id } = useParams<{ id: string }>()
+  const { role, profile } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const canManageBudget = role === 'admin' || role === 'manager' || role === 'finance'
 
   const { data: project, isLoading: loadingProject, error: projectError } = useQuery({
     queryKey: ['project-workspace', id],
@@ -79,6 +92,38 @@ export default function ProjectWorkspacePage() {
         .order('sort_order')
       if (error) throw error
       return data as ProjectCostGroupBudget[]
+    },
+    enabled: !!id,
+  })
+
+  const { data: costGroups = [] } = useQuery({
+    queryKey: ['cost-groups'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cost_groups').select('*').order('sort_order')
+      if (error) throw error
+      return data as CostGroup[]
+    },
+  })
+
+  const { data: checkMode } = useQuery({
+    queryKey: ['budget-check-mode'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('budget_check_mode').select('*').maybeSingle()
+      if (error) throw error
+      return data as BudgetCheckMode | null
+    },
+  })
+
+  const { data: variations = [] } = useQuery({
+    queryKey: ['project-budget-variations', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('budget_variations')
+        .select('*, cost_groups(name), requester:user_profiles!budget_variations_requested_by_fkey(full_name), approver:user_profiles!budget_variations_approved_by_fkey(full_name)')
+        .eq('project_id', id!)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as unknown as (BudgetVariation & { cost_groups: { name: string } | null; requester: { full_name: string } | null; approver: { full_name: string } | null })[]
     },
     enabled: !!id,
   })
@@ -146,6 +191,137 @@ export default function ProjectWorkspacePage() {
     enabled: !!id && openBundles.length > 0,
   })
 
+  // ── Project details edit (contract value, handover date, progress, health) ──
+  const [editingDetails, setEditingDetails] = useState(false)
+  const [detailsForm, setDetailsForm] = useState<{ contract_value: string; target_handover_date: string; physical_progress: string; health: ProjectHealth | '' }>({
+    contract_value: '', target_handover_date: '', physical_progress: '', health: '',
+  })
+  const [savingDetails, setSavingDetails] = useState(false)
+
+  function openDetailsEditor() {
+    if (!project) return
+    setDetailsForm({
+      contract_value: project.contract_value != null ? String(project.contract_value) : '',
+      target_handover_date: project.target_handover_date ?? '',
+      physical_progress: project.physical_progress != null ? String(project.physical_progress) : '',
+      health: project.health ?? '',
+    })
+    setEditingDetails(true)
+  }
+
+  async function saveDetails() {
+    setSavingDetails(true)
+    const { error } = await supabase.from('projects').update({
+      contract_value: detailsForm.contract_value ? parseFloat(detailsForm.contract_value) : null,
+      target_handover_date: detailsForm.target_handover_date || null,
+      physical_progress: detailsForm.physical_progress ? parseFloat(detailsForm.physical_progress) : null,
+      health: detailsForm.health || null,
+    }).eq('id', id!)
+    setSavingDetails(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-workspace', id] })
+    toast('Project details updated', 'success')
+    setEditingDetails(false)
+  }
+
+  // ── Stage editor ──
+  const [pendingStage, setPendingStage] = useState<ProjectStage | ''>('')
+  const [confirmLockOpen, setConfirmLockOpen] = useState(false)
+  const [savingStage, setSavingStage] = useState(false)
+
+  async function applyStageChange(nextStage: ProjectStage) {
+    setSavingStage(true)
+    const { error } = await supabase.from('projects').update({ stage: nextStage }).eq('id', id!)
+    setSavingStage(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-workspace', id] })
+    qc.invalidateQueries({ queryKey: ['project-budget-summary', id] })
+    qc.invalidateQueries({ queryKey: ['project-budget-groups', id] })
+    toast('Project stage updated', 'success')
+    setPendingStage('')
+    setConfirmLockOpen(false)
+  }
+
+  function handleStageSelect(nextStage: ProjectStage) {
+    if (!project) return
+    const isLockGate = project.stage === 'pre_construction_mobilization' && nextStage === 'procurement_logistics'
+    if (isLockGate && !project.budget_baseline_locked_at) {
+      setPendingStage(nextStage)
+      setConfirmLockOpen(true)
+    } else {
+      applyStageChange(nextStage)
+    }
+  }
+
+  // ── Budget editor (per cost group, unlocked only) ──
+  const [editingBudget, setEditingBudget] = useState(false)
+  const [budgetForm, setBudgetForm] = useState<Record<string, string>>({})
+  const [savingBudget, setSavingBudget] = useState(false)
+
+  function openBudgetEditor() {
+    const next: Record<string, string> = {}
+    for (const g of costGroups) {
+      const row = groups.find(r => r.cost_group_id === g.id)
+      next[g.id] = row ? String(row.budgeted_amount) : '0'
+    }
+    setBudgetForm(next)
+    setEditingBudget(true)
+  }
+
+  async function saveBudget() {
+    if (!project) return
+    setSavingBudget(true)
+    const rows = costGroups.map(g => ({
+      project_id: id!,
+      cost_group_id: g.id,
+      budgeted_amount: parseFloat(budgetForm[g.id] || '0') || 0,
+      version: project.budget_version,
+      created_by: profile?.id ?? null,
+    }))
+    const { error } = await supabase.from('project_budgets').upsert(rows, { onConflict: 'project_id,cost_group_id,version' })
+    setSavingBudget(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-budget-groups', id] })
+    qc.invalidateQueries({ queryKey: ['project-budget-summary', id] })
+    toast('Budget saved', 'success')
+    setEditingBudget(false)
+  }
+
+  // ── Variation request ──
+  const [variationGroup, setVariationGroup] = useState<ProjectCostGroupBudget | null>(null)
+  const [variationDelta, setVariationDelta] = useState('')
+  const [variationReason, setVariationReason] = useState('')
+  const [savingVariation, setSavingVariation] = useState(false)
+
+  async function submitVariation() {
+    if (!variationGroup?.cost_group_id || !variationDelta || !variationReason.trim()) { toast('Enter an amount and a reason', 'error'); return }
+    setSavingVariation(true)
+    const { error } = await supabase.from('budget_variations').insert([{
+      project_id: id!,
+      cost_group_id: variationGroup.cost_group_id,
+      requested_amount_delta: parseFloat(variationDelta),
+      reason: variationReason.trim(),
+      requested_by: profile?.id ?? null,
+    }])
+    setSavingVariation(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-budget-variations', id] })
+    toast('Variation requested', 'success')
+    setVariationGroup(null)
+    setVariationDelta('')
+    setVariationReason('')
+  }
+
+  async function decideVariation(variationId: string, status: 'approved' | 'rejected') {
+    const { error } = await supabase.from('budget_variations').update({ status, approved_by: profile?.id ?? null }).eq('id', variationId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-budget-variations', id] })
+    qc.invalidateQueries({ queryKey: ['project-budget-groups', id] })
+    qc.invalidateQueries({ queryKey: ['project-budget-summary', id] })
+    qc.invalidateQueries({ queryKey: ['project-workspace', id] })
+    toast(`Variation ${status}`, status === 'approved' ? 'success' : 'error')
+  }
+
   if (loadingProject) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
   if (projectError) {
     return (
@@ -164,6 +340,7 @@ export default function ProjectWorkspacePage() {
   const progressSpendGap = budgetUsedPct != null && project.physical_progress != null
     ? budgetUsedPct - project.physical_progress
     : null
+  const isLocked = !!project.budget_baseline_locked_at
 
   const activityItems: ActivityItem[] = [
     ...recentExpenses.map(e => ({
@@ -221,6 +398,16 @@ export default function ProjectWorkspacePage() {
                   <ShieldCheck className="h-3 w-3" /> Baseline locked {formatDate(summary.budget_baseline_locked_at)}
                 </span>
               )}
+              {checkMode && (
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${checkMode.enforcing ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                  Budget checks: {checkMode.enforcing ? 'enforcing' : 'preview only'}
+                </span>
+              )}
+              {canManageBudget && (
+                <button onClick={openDetailsEditor} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600" title="Edit project details">
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-3 flex-wrap mt-0.5 text-sm text-slate-500 dark:text-slate-400">
               <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {project.clients?.client_name ?? '—'}</span>
@@ -240,9 +427,45 @@ export default function ProjectWorkspacePage() {
         </div>
       </div>
 
-      {/* Stage timeline */}
+      {/* Project details editor */}
+      {editingDetails && (
+        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Edit Project Details</h3>
+            <button onClick={() => setEditingDetails(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Contract Value (ETB)</label>
+              <input type="number" step="0.01" className={inputCls} value={detailsForm.contract_value} onChange={e => setDetailsForm(f => ({ ...f, contract_value: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Target Handover</label>
+              <input type="date" className={inputCls} value={detailsForm.target_handover_date} onChange={e => setDetailsForm(f => ({ ...f, target_handover_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Physical Progress (%)</label>
+              <input type="number" min={0} max={100} className={inputCls} value={detailsForm.physical_progress} onChange={e => setDetailsForm(f => ({ ...f, physical_progress: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Health</label>
+              <select className={inputCls} value={detailsForm.health} onChange={e => setDetailsForm(f => ({ ...f, health: e.target.value as ProjectHealth }))}>
+                <option value="">— Select —</option>
+                {HEALTH_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={saveDetails} disabled={savingDetails} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+              {savingDetails ? 'Saving…' : 'Save Details'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Stage timeline + editor */}
       {project.stage && (
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm">
+        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm space-y-3">
           <div className="flex items-center gap-0">
             {STAGE_STEPS.map((step, i) => {
               const stageIdx = STAGE_ORDER.indexOf(project.stage!)
@@ -269,6 +492,48 @@ export default function ProjectWorkspacePage() {
                 </div>
               )
             })}
+          </div>
+          {canManageBudget && (
+            <div className="flex items-center gap-2 pt-2 border-t dark:border-slate-700">
+              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Change stage:</label>
+              <select
+                className={`${inputCls} max-w-xs`}
+                value=""
+                disabled={savingStage}
+                onChange={e => { if (e.target.value) handleStageSelect(e.target.value as ProjectStage) }}
+              >
+                <option value="">— Select new stage —</option>
+                {STAGE_STEPS.filter(s => s.stage !== project.stage).map(s => (
+                  <option key={s.stage} value={s.stage}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stage 3->4 lock confirmation */}
+      {confirmLockOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-amber-500" /> Lock Budget?
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              This locks the approved budget for {project.project_name}. Budgets can only change afterward through a variation order. Continue?
+            </p>
+            <div className="flex items-center gap-2 justify-end pt-1">
+              <button onClick={() => { setConfirmLockOpen(false); setPendingStage('') }} className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                Cancel
+              </button>
+              <button
+                onClick={() => pendingStage && applyStageChange(pendingStage)}
+                disabled={savingStage}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+              >
+                {savingStage ? 'Locking…' : 'Lock Budget & Continue'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -319,8 +584,34 @@ export default function ProjectWorkspacePage() {
 
       {/* Budget vs actual by cost group + progress vs spend */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-3">
           <BudgetGroupBar title="Budget vs Actual by Cost Group" groups={groups} />
+          {canManageBudget && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {!isLocked && (
+                <button onClick={editingBudget ? saveBudget : openBudgetEditor} disabled={savingBudget}
+                  className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">
+                  <Pencil className="h-3.5 w-3.5" /> {savingBudget ? 'Saving…' : editingBudget ? 'Save Budget' : 'Set Budget'}
+                </button>
+              )}
+              {groups.filter(g => g.cost_group_id).map(g => (
+                <button key={g.cost_group_id} onClick={() => { setVariationGroup(g); setVariationDelta(''); setVariationReason('') }}
+                  className="flex items-center gap-1 rounded-full border dark:border-slate-600 px-2.5 py-1 text-[11px] text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700">
+                  <Plus className="h-3 w-3" /> Vary {g.cost_group_name}
+                </button>
+              ))}
+            </div>
+          )}
+          {editingBudget && !isLocked && (
+            <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm space-y-2">
+              {costGroups.map(g => (
+                <div key={g.id} className="flex items-center justify-between gap-3">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300 w-28 shrink-0">{g.name}</label>
+                  <input type="number" step="0.01" className={inputCls} value={budgetForm[g.id] ?? ''} onChange={e => setBudgetForm(f => ({ ...f, [g.id]: e.target.value }))} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Progress vs Spend</h3>
@@ -356,6 +647,79 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       </div>
+
+      {/* Variation request modal */}
+      {variationGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Request Variation — {variationGroup.cost_group_name}</h3>
+              <button onClick={() => setVariationGroup(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Current Remaining: <span className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(variationGroup.remaining_amount)}</span>
+              {variationDelta && !isNaN(parseFloat(variationDelta)) && (
+                <> → Proposed: <span className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(variationGroup.remaining_amount + parseFloat(variationDelta))}</span></>
+              )}
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Amount Change (ETB, negative to reduce)</label>
+              <input type="number" step="0.01" className={inputCls} value={variationDelta} onChange={e => setVariationDelta(e.target.value)} placeholder="e.g. 25000" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Reason *</label>
+              <textarea rows={2} className={inputCls} value={variationReason} onChange={e => setVariationReason(e.target.value)} placeholder="Why this change is needed…" />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setVariationGroup(null)} className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+              <button onClick={submitVariation} disabled={savingVariation} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+                {savingVariation ? 'Submitting…' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Variation history */}
+      {variations.length > 0 && (
+        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <History className="h-4 w-4" /> Variation History
+          </h3>
+          <div className="mt-3 divide-y dark:divide-slate-700">
+            {variations.map(v => (
+              <div key={v.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-700 dark:text-slate-200">
+                    <span className="font-medium">{v.cost_groups?.name ?? '—'}</span>
+                    {' '}{v.requested_amount_delta >= 0 ? '+' : ''}{formatCurrency(v.requested_amount_delta)}
+                    {v.resulting_version && <span className="text-slate-400 text-xs"> · v{v.resulting_version}</span>}
+                  </p>
+                  <p className="text-xs text-slate-400 truncate max-w-md">{v.reason} — {v.requester?.full_name ?? 'unknown'}, {formatDate(v.created_at)}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {v.status === 'pending' && canManageBudget ? (
+                    <>
+                      <button onClick={() => decideVariation(v.id, 'approved')} className="flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-green-700">
+                        <Check className="h-3 w-3" /> Approve
+                      </button>
+                      <button onClick={() => decideVariation(v.id, 'rejected')} className="flex items-center gap-1 rounded-md border border-red-200 dark:border-red-800/40 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                        <X className="h-3 w-3" /> Reject
+                      </button>
+                    </>
+                  ) : (
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                      v.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                      : v.status === 'rejected' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    }`}>{v.status}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Activity */}
       <RecentActivityFeed title="Recent Activity" items={activityItems} emptyText="No activity recorded for this project yet" />
