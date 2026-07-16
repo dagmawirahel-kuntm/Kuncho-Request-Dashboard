@@ -45,7 +45,7 @@ function daysUntil(dateStr: string | null): number | null {
 export default function ProjectWorkspacePage() {
   const { id } = useParams<{ id: string }>()
 
-  const { data: project, isLoading: loadingProject } = useQuery({
+  const { data: project, isLoading: loadingProject, error: projectError } = useQuery({
     queryKey: ['project-workspace', id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -147,6 +147,14 @@ export default function ProjectWorkspacePage() {
   })
 
   if (loadingProject) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
+  if (projectError) {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-sm font-medium text-red-500">Couldn't load this project</p>
+        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">{(projectError as { message?: string }).message ?? String(projectError)}</p>
+      </div>
+    )
+  }
   if (!project) return <div className="py-16 text-center text-sm text-slate-400">Project not found.</div>
 
   const daysLeft = daysUntil(project.target_handover_date)

@@ -14,7 +14,7 @@ export default function ProjectsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
 
-  const { data = [], isLoading } = useQuery({
+  const { data = [], isLoading, error: loadError } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
       const { data, error } = await supabase.from('projects').select('*, staff(employee_name), locations(location_name)').order('project_name')
@@ -66,6 +66,11 @@ export default function ProjectsPage() {
           <Plus className="h-4 w-4" /> Add Project
         </Link>
       </div>
+      {loadError && (
+        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/50 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          Couldn't load projects: {(loadError as { message?: string }).message ?? String(loadError)}
+        </div>
+      )}
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search projects…" persistKey="projects" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="projects" queryKeys={['projects', 'projects-lookup']} />}
     </div>
   )

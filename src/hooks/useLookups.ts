@@ -21,10 +21,11 @@ export function useProjects() {
     queryKey: ['projects-lookup'],
     staleTime: 300000,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('projects')
         .select('id,project_name,department')
         .order('project_name')
+      if (error) throw error
       return data ?? []
     },
   })
