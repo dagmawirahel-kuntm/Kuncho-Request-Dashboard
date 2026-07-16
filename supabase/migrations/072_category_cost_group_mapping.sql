@@ -30,6 +30,30 @@
 
 SET search_path TO public;
 
+-- ── Pre-existing data repair, discovered by this migration ─────────────
+-- categories.nature has had a CHECK constraint since migration 005
+-- (Asset/Liability/Equity/Revenue/Expense) added NOT VALID — which
+-- skips validating rows that already existed at the time, but still
+-- fully enforces on any future UPDATE to that row, regardless of which
+-- column changes. Some categories (e.g. "Cement" carrying nature =
+-- 'BLDMAT') already had invalid values sitting there undetected; the
+-- cost_group_id UPDATE below is the first UPDATE to touch some of
+-- these rows since the constraint was added, so it surfaces now.
+--
+-- Reset to NULL rather than guessing a replacement — every reporting
+-- view already built on top of `nature` (P&L, Balance Sheet, migration
+-- 064) treats NULL the same as 'Expense' via COALESCE(c.nature,
+-- 'Expense'), which is the correct behavior for an ordinary purchase
+-- category anyway. NULL is honest about "this was never validly set,"
+-- rather than fabricating a specific classification.
+SELECT category_name, nature AS invalid_nature_being_cleared
+FROM categories
+WHERE nature IS NOT NULL AND nature NOT IN ('Asset', 'Liability', 'Equity', 'Revenue', 'Expense');
+
+UPDATE categories
+SET nature = NULL
+WHERE nature IS NOT NULL AND nature NOT IN ('Asset', 'Liability', 'Equity', 'Revenue', 'Expense');
+
 WITH mapping(category_name, group_name) AS (
   VALUES
     -- Materials
