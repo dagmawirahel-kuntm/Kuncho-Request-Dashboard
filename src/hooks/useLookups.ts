@@ -272,7 +272,7 @@ export function useSubCategoriesAll() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sub_categories')
-        .select('id,item_name,description,parent_category_id,categories(category_name)')
+        .select('id,item_name,description,parent_category_id,categories(category_name,cost_group_id)')
         .eq('active', true)
         .order('item_name')
       if (error) throw error
@@ -281,7 +281,7 @@ export function useSubCategoriesAll() {
         item_name: string
         description: string | null
         parent_category_id: string | null
-        categories: { category_name: string } | null
+        categories: { category_name: string; cost_group_id: string | null } | null
       }[]
     },
   })

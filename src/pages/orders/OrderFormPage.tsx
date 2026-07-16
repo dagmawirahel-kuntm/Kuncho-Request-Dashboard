@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -12,8 +12,9 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
+import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import {
-  ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle,
+  ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
@@ -453,6 +454,39 @@ function PurchaseRequestFormBody({
 
   const addLine = useCallback(() => setLines(ls => [...ls, newLine()]), [])
 
+  // ── Phase 2 warn-only budget check — per cost group present across the
+  // line items, since one PR can span several. Never blocks; a request
+  // over budget just shows "would block once enforcing" and still saves. ──
+  // key: cost_group_id, or '' for unmapped/no sub-ledger link
+  const lineGroupTotals = useMemo(() => {
+    const totals = new Map<string, number>()
+    for (const l of lines) {
+      if (!l.item_name.trim()) continue
+      const qty = parseFloat(l.quantity) || 0
+      const price = parseFloat(l.unit_price_est) || 0
+      if (qty <= 0 || price <= 0) continue
+      const sub = subCategories.find((s: any) => s.id === l.sub_category_id)
+      const costGroupId = sub?.categories?.cost_group_id ?? ''
+      totals.set(costGroupId, (totals.get(costGroupId) ?? 0) + qty * price)
+    }
+    return totals
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, subCategories])
+
+  const [budgetChecks, setBudgetChecks] = useState<Record<string, BudgetCheckResult>>({})
+
+  useEffect(() => {
+    if (!header.project_id) { setBudgetChecks({}); return }
+    let cancelled = false
+    Promise.all([...lineGroupTotals.entries()].map(async ([key, total]) => {
+      const result = await checkProjectBudget(header.project_id!, key || null, total)
+      return [key, result] as const
+    })).then(results => { if (!cancelled) setBudgetChecks(Object.fromEntries(results)) })
+    return () => { cancelled = true }
+  }, [header.project_id, lineGroupTotals])
+
+  const flaggedChecks = Object.values(budgetChecks).filter(r => r.outcome === 'warn' || r.outcome === 'block')
+
   const approvalStatus = record?.approval_status ?? 'pending'
   const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
@@ -506,6 +540,21 @@ function PurchaseRequestFormBody({
 
     const { error: itemErr } = await supabase.from('order_items').upsert(toUpsert)
     if (itemErr) { setSaving(false); setError(itemErr.message); toast(itemErr.message, 'error'); return }
+
+    // Log the warn-only budget check outcome for every cost group present —
+    // best-effort, never blocks; see src/lib/budgetCheck.ts
+    const sourceRef = isEdit ? (record?.request_code ?? orderId) : ((saved as any)?.request_code ?? orderId)
+    for (const [key, result] of Object.entries(budgetChecks)) {
+      logBudgetCheck({
+        source: 'pr',
+        sourceRef,
+        projectId: header.project_id ?? null,
+        costGroupId: key || null,
+        requestedAmount: lineGroupTotals.get(key) ?? 0,
+        result,
+        userId: profile?.id ?? null,
+      })
+    }
 
     setSaving(false)
     qc.invalidateQueries({ queryKey: ['orders'] })
@@ -698,6 +747,25 @@ function PurchaseRequestFormBody({
             <p className="text-xs text-amber-700 dark:text-amber-300">
               Unfulfilled items will require a new purchase request. Mark them as cancelled if no longer needed.
             </p>
+          </div>
+        )}
+
+        {/* Phase 2 budget check — preview only, never blocks (see src/lib/budgetCheck.ts) */}
+        {flaggedChecks.length > 0 && (
+          <div className="space-y-1.5 mt-1">
+            {flaggedChecks.map((r, i) => (
+              <div key={i} className={`flex items-start gap-2 rounded-lg p-3 border ${
+                r.outcome === 'block'
+                  ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
+                  : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40'
+              }`}>
+                <ShieldAlert className={`h-4 w-4 flex-shrink-0 mt-0.5 ${r.outcome === 'block' ? 'text-red-600' : 'text-amber-600'}`} />
+                <p className={`text-xs ${r.outcome === 'block' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                  {r.message}
+                  {r.outcome === 'block' && <span className="font-medium"> — preview only, not blocked (budget checks: preview only)</span>}
+                </p>
+              </div>
+            ))}
           </div>
         )}
       </div>

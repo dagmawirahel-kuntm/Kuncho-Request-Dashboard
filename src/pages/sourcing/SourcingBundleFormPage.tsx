@@ -6,7 +6,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import type { SourcingBundleInsert } from '@/types/database'
-import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle } from 'lucide-react'
+import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
+import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert } from 'lucide-react'
 
 type OrderRow = {
   id: string
@@ -26,6 +27,7 @@ type OrderItemRow = {
   unit: string | null
   unit_price_est: number | null
   status: string
+  sub_categories: { parent_category_id: string | null; categories: { cost_group_id: string | null } | null } | null
 }
 
 const VAT_RATE = 0.15
@@ -120,11 +122,11 @@ export default function SourcingBundleFormPage() {
       if (!orderIds.length) return []
       const { data, error } = await supabase
         .from('order_items')
-        .select('*')
+        .select('*, sub_categories(parent_category_id, categories(cost_group_id))')
         .in('order_id', orderIds)
         .neq('status', 'cancelled')
       if (error) throw error
-      return (data ?? []) as OrderItemRow[]
+      return (data ?? []) as unknown as OrderItemRow[]
     },
     enabled: orderIds.length > 0,
   })
@@ -258,11 +260,46 @@ export default function SourcingBundleFormPage() {
   const whtAmount = whtEligible ? runningTotal * WHT_RATE : 0
   const netPayable = runningTotal + vatAmount - whtAmount
 
+  // ── Phase 2 warn-only budget check — grouped by (project, cost group),
+  // since one bundle can pull items from PRs on different projects and
+  // different cost groups. Never blocks; see src/lib/budgetCheck.ts ──
+  // key: `${project_id}|${cost_group_id}` (empty string for unmapped)
+  const bundleGroupTotals = useMemo(() => {
+    const totals = new Map<string, { projectId: string; costGroupId: string; amount: number }>()
+    for (const item of bundleItems) {
+      const qty = parseFloat(item.quantity_actual) || 0
+      const price = parseFloat(item.unit_price_actual) || 0
+      if (qty <= 0 || price <= 0) continue
+      const oi = orderItemMap[item.order_item_id]
+      const order = oi ? orderMap[oi.order_id] : null
+      if (!order?.project_id) continue
+      const costGroupId = oi?.sub_categories?.categories?.cost_group_id ?? ''
+      const key = `${order.project_id}|${costGroupId}`
+      const existing = totals.get(key)
+      totals.set(key, { projectId: order.project_id, costGroupId, amount: (existing?.amount ?? 0) + qty * price })
+    }
+    return totals
+  }, [bundleItems, orderItemMap, orderMap])
+
+  const [budgetChecks, setBudgetChecks] = useState<Record<string, BudgetCheckResult>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([...bundleGroupTotals.entries()].map(async ([key, g]) => {
+      const result = await checkProjectBudget(g.projectId, g.costGroupId || null, g.amount)
+      return [key, result] as const
+    })).then(results => { if (!cancelled) setBudgetChecks(Object.fromEntries(results)) })
+    return () => { cancelled = true }
+  }, [bundleGroupTotals])
+
+  const flaggedChecks = Object.values(budgetChecks).filter(r => r.outcome === 'warn' || r.outcome === 'block')
+
   async function handleSave() {
     if (bundleItems.length === 0) { toast('Add at least one item to the bundle', 'error'); return }
     setSaving(true)
     try {
       let bundleId = id
+      let bundleCode: string | null = existingBundle?.bundle_code ?? null
       const bundleData: Partial<SourcingBundleInsert> = {
         vendor_id: vendorId || null,
         vendor_name: vendorId ? null : (vendorName || null),
@@ -287,10 +324,11 @@ export default function SourcingBundleFormPage() {
         const { data, error } = await supabase
           .from('sourcing_bundles')
           .insert(bundleData as SourcingBundleInsert)
-          .select('id')
+          .select('id, bundle_code')
           .single()
         if (error) throw error
         bundleId = data.id
+        bundleCode = data.bundle_code
       }
 
       const { error: itemError } = await supabase.from('sourcing_bundle_items').insert(
@@ -324,6 +362,22 @@ export default function SourcingBundleFormPage() {
       const statusResults = await Promise.all([...sourcedUpdates, ...revertUpdates])
       const statusError = statusResults.find(r => r.error)?.error
       if (statusError) throw statusError
+
+      // Log the warn-only budget check outcome for every (project, cost
+      // group) present — best-effort, never blocks; see src/lib/budgetCheck.ts
+      for (const [key, g] of bundleGroupTotals.entries()) {
+        const result = budgetChecks[key]
+        if (!result) continue
+        logBudgetCheck({
+          source: 'po',
+          sourceRef: bundleCode,
+          projectId: g.projectId,
+          costGroupId: g.costGroupId || null,
+          requestedAmount: g.amount,
+          result,
+          userId: profile?.id ?? null,
+        })
+      }
 
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
       qc.invalidateQueries({ queryKey: ['bundled-order-item-ids'] })
@@ -433,6 +487,25 @@ export default function SourcingBundleFormPage() {
           </div>
         </div>
       </div>
+
+      {/* Phase 2 budget check — preview only, never blocks (see src/lib/budgetCheck.ts) */}
+      {flaggedChecks.length > 0 && (
+        <div className="space-y-1.5">
+          {flaggedChecks.map((r, i) => (
+            <div key={i} className={`flex items-start gap-2 rounded-lg p-3 border ${
+              r.outcome === 'block'
+                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
+                : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40'
+            }`}>
+              <ShieldAlert className={`h-4 w-4 flex-shrink-0 mt-0.5 ${r.outcome === 'block' ? 'text-red-600' : 'text-amber-600'}`} />
+              <p className={`text-xs ${r.outcome === 'block' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                {r.message}
+                {r.outcome === 'block' && <span className="font-medium"> — preview only, not blocked (budget checks: preview only)</span>}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Item picker + selected items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

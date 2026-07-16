@@ -26,19 +26,24 @@ export function NotificationsBell() {
   const { data } = useQuery({
     queryKey: ['notifications'],
     queryFn: async () => {
-      const [expenses, orders, transport, payroll, emergency] = await Promise.all([
+      const [expenses, orders, transport, payroll, emergency, overBudget] = await Promise.all([
         supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('transportation_requests').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('payroll').select('*', { count: 'exact', head: true }).neq('payment_status', 'paid'),
         supabase.from('emergency_payroll_summary').select('*', { count: 'exact', head: true }).neq('payment_status', 'paid'),
+        supabase.from('v_project_cost_group_budget').select('*', { count: 'exact', head: true }).eq('over_budget', true),
       ])
+      // "Flagged for review" — this is a passive, global badge anyone can
+      // see, not a targeted alert to finance. Never describe it as
+      // "finance was notified" in copy.
       const items: NotificationItem[] = [
         { label: 'Unpaid expenses', count: expenses.count ?? 0, to: '/expenses' },
         { label: 'Pending orders', count: orders.count ?? 0, to: '/orders' },
         { label: 'Pending transportation requests', count: transport.count ?? 0, to: '/transportation' },
         { label: 'Pending payroll', count: payroll.count ?? 0, to: '/payroll' },
         { label: 'Pending emergency payroll', count: emergency.count ?? 0, to: '/emergency-payroll' },
+        { label: 'Cost groups flagged for review (over budget)', count: overBudget.count ?? 0, to: '/projects' },
       ]
       return items.filter(i => i.count > 0)
     },
