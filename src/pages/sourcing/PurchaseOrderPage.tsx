@@ -427,6 +427,16 @@ export default function PurchaseOrderPage() {
     toast('Fulfillment undone — PO reverted to Ordered', 'success')
   }
 
+  async function handleRevertLegacyFulfillment() {
+    if (!window.confirm(`Revert ${bundleCode} to "Ordered"? This PO was fulfilled before GRN tracking existed, so there's no goods received record behind it — reverting it lets you record a real GRN. This cannot be undone.`)) return
+    const { error } = await supabase.rpc('revert_legacy_fulfillment', { p_bundle_id: id! })
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
+    qc.invalidateQueries({ queryKey: ['grn-for-bundle', id] })
+    qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
+    toast('Reverted to Ordered — you can now record a GRN', 'success')
+  }
+
   return (
     <div className="space-y-5">
       <iframe ref={printRef} srcDoc={poHtml} title="Purchase Order Print" style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }} />
@@ -814,6 +824,22 @@ export default function PurchaseOrderPage() {
                 className="flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
                 <Undo2 className="h-3.5 w-3.5" /> Undo Fulfillment
               </button>
+            )}
+            {!grn && (
+              <div className="flex items-start gap-2 rounded-md bg-slate-50 dark:bg-slate-700/30 border dark:border-slate-600 px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Fulfilled before GRN tracking existed — there's no goods received record behind this PO.
+                  </p>
+                  {(isAdmin || isStockOrLogistics) && (
+                    <button onClick={handleRevertLegacyFulfillment}
+                      className="mt-1.5 flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+                      <Undo2 className="h-3.5 w-3.5" /> Revert to Ordered
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}
