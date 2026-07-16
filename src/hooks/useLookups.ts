@@ -309,3 +309,34 @@ export function useRecentOrderItems() {
     },
   })
 }
+
+export function useDepartments() {
+  return useQuery({
+    queryKey: ['departments-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id,name,sort_order')
+        .eq('active', true)
+        .order('sort_order')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useDesignPackages() {
+  return useQuery({
+    queryKey: ['design-packages-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('design_packages')
+        .select('id,title,project_id,projects(project_name)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}

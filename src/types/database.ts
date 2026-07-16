@@ -1036,3 +1036,187 @@ export interface ToolCheckout {
   created_at: string
 }
 export type ToolCheckoutInsert = Omit<ToolCheckout, 'id' | 'created_at'>
+
+// ── Departments ───────────────────────────────────────────────────
+export interface Department {
+  id: string
+  name: string
+  mandate: string | null
+  head_staff_id: string | null
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+export type DepartmentInsert = Omit<Department, 'id' | 'created_at' | 'updated_at'>
+
+// ── Design ────────────────────────────────────────────────────────
+export type DesignPackageStatus = 'brief' | 'concept' | 'detailed' | 'client_review' | 'signed_off'
+export interface DesignPackage {
+  id: string
+  project_id: string
+  title: string
+  brief: string | null
+  status: DesignPackageStatus
+  signed_off_by: string | null
+  signed_off_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type DesignPackageInsert = Omit<DesignPackage, 'id' | 'signed_off_by' | 'signed_off_at' | 'created_at' | 'updated_at'>
+
+export type DesignDrawingStatus = 'draft' | 'issued' | 'approved' | 'superseded'
+export interface DesignDrawing {
+  id: string
+  design_package_id: string
+  drawing_no: string | null
+  title: string
+  discipline: string | null
+  revision: string | null
+  status: DesignDrawingStatus
+  file_url: string | null
+  file_name: string | null
+  issued_at: string | null
+  created_at: string
+}
+export type DesignDrawingInsert = Omit<DesignDrawing, 'id' | 'created_at'>
+
+export interface FfeSpecification {
+  id: string
+  design_package_id: string
+  area_room: string | null
+  item_name: string
+  specification: string | null
+  quantity: number | null
+  unit: string | null
+  notes: string | null
+  created_at: string
+}
+export type FfeSpecificationInsert = Omit<FfeSpecification, 'id' | 'created_at'>
+
+// ── Business Development / Sales ─────────────────────────────────
+export type ContractStatus = 'draft' | 'signed' | 'active' | 'completed' | 'terminated'
+export interface Contract {
+  id: string
+  contract_no: string | null
+  client_id: string
+  project_id: string | null
+  contract_value: number | null
+  signed_date: string | null
+  payment_terms: string | null
+  wht_rate: number | null
+  retention_percent: number | null
+  status: ContractStatus
+  document_url: string | null
+  document_name: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type ContractInsert = Omit<Contract, 'id' | 'created_at' | 'updated_at'>
+
+export type OpportunityStage = 'lead' | 'qualified' | 'quoted' | 'won' | 'lost'
+export interface Opportunity {
+  id: string
+  title: string
+  client_id: string | null
+  prospect_name: string | null
+  estimated_value: number | null
+  stage: OpportunityStage
+  owner_staff_id: string | null
+  expected_close_date: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type OpportunityInsert = Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>
+
+// ── HR & People ───────────────────────────────────────────────────
+export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'maternity' | 'compassionate' | 'other'
+export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
+export interface LeaveRequest {
+  id: string
+  staff_id: string
+  leave_type: LeaveType
+  start_date: string
+  end_date: string
+  days: number | null
+  reason: string | null
+  status: LeaveStatus
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
+}
+export type LeaveRequestInsert = Omit<LeaveRequest, 'id' | 'approved_by' | 'approved_at' | 'created_at'>
+
+export interface PerformanceReview {
+  id: string
+  staff_id: string
+  review_period: string | null
+  reviewer_staff_id: string | null
+  overall_rating: string | null
+  strengths: string | null
+  improvements: string | null
+  summary: string | null
+  review_date: string | null
+  created_at: string
+}
+export type PerformanceReviewInsert = Omit<PerformanceReview, 'id' | 'created_at'>
+
+export interface OnboardingTask {
+  id: string
+  staff_id: string
+  task: string
+  is_done: boolean
+  done_at: string | null
+  notes: string | null
+  created_at: string
+}
+export type OnboardingTaskInsert = Omit<OnboardingTask, 'id' | 'done_at' | 'created_at'>
+
+export type DisciplinaryCategory = 'verbal_warning' | 'written_warning' | 'suspension' | 'dismissal' | 'other'
+export interface DisciplinaryRecord {
+  id: string
+  staff_id: string
+  incident_date: string
+  category: DisciplinaryCategory
+  description: string | null
+  action_taken: string | null
+  recorded_by: string | null
+  created_at: string
+}
+export type DisciplinaryRecordInsert = Omit<DisciplinaryRecord, 'id' | 'recorded_by' | 'created_at'>
+
+// ── HSE ───────────────────────────────────────────────────────────
+export type HseIncidentType = 'near_miss' | 'first_aid' | 'injury' | 'property_damage' | 'environmental' | 'other'
+export type HseSeverity = 'low' | 'medium' | 'high' | 'critical'
+export type HseIncidentStatus = 'open' | 'investigating' | 'closed'
+export interface HseIncident {
+  id: string
+  project_id: string | null
+  location_id: string | null
+  incident_date: string
+  incident_type: HseIncidentType
+  severity: HseSeverity
+  description: string | null
+  immediate_action: string | null
+  reported_by: string | null
+  status: HseIncidentStatus
+  created_at: string
+  updated_at: string
+}
+export type HseIncidentInsert = Omit<HseIncident, 'id' | 'reported_by' | 'created_at' | 'updated_at'>
+
+export interface HseInduction {
+  id: string
+  staff_id: string | null
+  person_name: string | null
+  project_id: string | null
+  induction_date: string
+  inducted_by_staff_id: string | null
+  valid_until: string | null
+  notes: string | null
+  created_at: string
+}
+export type HseInductionInsert = Omit<HseInduction, 'id' | 'created_at'>
