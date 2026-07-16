@@ -17,7 +17,7 @@ export default function ProjectsPage() {
   const { data = [], isLoading, error: loadError } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('projects').select('*, staff(employee_name), locations(location_name)').order('project_name')
+      const { data, error } = await supabase.from('projects').select('*, staff(employee_name), locations!location_id(location_name)').order('project_name')
       if (error) throw error
       return data as Project[]
     },

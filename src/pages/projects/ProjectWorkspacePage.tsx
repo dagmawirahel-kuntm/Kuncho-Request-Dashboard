@@ -50,7 +50,7 @@ export default function ProjectWorkspacePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('*, staff(employee_name), clients(client_name), locations(location_name)')
+        .select('*, staff(employee_name), clients(client_name), locations!location_id(location_name)')
         .eq('id', id!)
         .single()
       if (error) throw error
