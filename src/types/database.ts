@@ -132,6 +132,18 @@ export type CompanyEventInsert = Omit<CompanyEvent, 'id' | 'created_at' | 'updat
 // ── Projects ────────────────────────────────────────────────────
 export type ProjectHealth = 'On Track' | 'At Risk' | 'Off Track'
 
+// Operations manual §6.1 — seven lifecycle gates, in order. Budget
+// baseline locks automatically on the pre_construction_mobilization ->
+// procurement_logistics transition (§7.1).
+export type ProjectStage =
+  | 'business_development'
+  | 'design_approvals'
+  | 'pre_construction_mobilization'
+  | 'procurement_logistics'
+  | 'site_execution'
+  | 'quality_snagging_handover'
+  | 'closeout_final_accounts'
+
 export interface Project {
   id: string
   project_name: string
@@ -144,6 +156,7 @@ export interface Project {
   contract_value: number | null
   physical_progress: number | null
   health: ProjectHealth | null
+  stage: ProjectStage | null
   target_handover_date: string | null
   budget_baseline_locked_at: string | null
   budget_version: number

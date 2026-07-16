@@ -5,10 +5,11 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
-import type { Project, ProjectCostGroupBudget, ProjectBudgetSummary } from '@/types/database'
+import type { Project, ProjectStage, ProjectCostGroupBudget, ProjectBudgetSummary } from '@/types/database'
 import {
   ChevronLeft, Building2, User, CalendarClock, Wallet, Receipt,
   Clock3, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
+  Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -22,6 +23,18 @@ const HEALTH_CLS: Record<string, string> = {
   'At Risk':   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   'Off Track': 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 }
+
+// Operations manual §6.1 — seven lifecycle gates, in order
+const STAGE_STEPS: { stage: ProjectStage; label: string; icon: React.ReactNode }[] = [
+  { stage: 'business_development',          label: 'Business Dev',    icon: <Handshake className="h-3.5 w-3.5" /> },
+  { stage: 'design_approvals',               label: 'Design',          icon: <PenTool className="h-3.5 w-3.5" /> },
+  { stage: 'pre_construction_mobilization',  label: 'Mobilization',    icon: <ClipboardList className="h-3.5 w-3.5" /> },
+  { stage: 'procurement_logistics',          label: 'Procurement',     icon: <Package className="h-3.5 w-3.5" /> },
+  { stage: 'site_execution',                 label: 'Site Execution',  icon: <HardHat className="h-3.5 w-3.5" /> },
+  { stage: 'quality_snagging_handover',      label: 'Snagging',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+  { stage: 'closeout_final_accounts',        label: 'Closeout',        icon: <FileCheck2 className="h-3.5 w-3.5" /> },
+]
+const STAGE_ORDER: ProjectStage[] = STAGE_STEPS.map(s => s.stage)
 
 function daysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null
@@ -218,6 +231,39 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       </div>
+
+      {/* Stage timeline */}
+      {project.stage && (
+        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm">
+          <div className="flex items-center gap-0">
+            {STAGE_STEPS.map((step, i) => {
+              const stageIdx = STAGE_ORDER.indexOf(project.stage!)
+              const stepIdx = STAGE_ORDER.indexOf(step.stage)
+              const isComplete = stageIdx > stepIdx
+              const isCurrent = stageIdx === stepIdx
+              return (
+                <div key={step.stage} className="flex items-center flex-1 min-w-0">
+                  <div className={`flex items-center gap-1.5 shrink-0 ${
+                    isComplete ? 'text-green-500' : isCurrent ? 'text-brand' : 'text-slate-300 dark:text-slate-600'
+                  }`}>
+                    <div className={`rounded-full p-1.5 ${
+                      isComplete ? 'bg-green-50 dark:bg-green-900/20' : isCurrent ? 'bg-brand/10' : 'bg-slate-100 dark:bg-slate-700'
+                    }`}>
+                      {step.icon}
+                    </div>
+                    <span className={`text-[10px] font-medium hidden sm:block whitespace-nowrap ${
+                      isCurrent ? 'text-brand' : isComplete ? 'text-green-600 dark:text-green-400' : ''
+                    }`}>{step.label}</span>
+                  </div>
+                  {i < STAGE_STEPS.length - 1 && (
+                    <div className={`h-px flex-1 mx-2 ${isComplete ? 'bg-green-300 dark:bg-green-700' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Summary band */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
