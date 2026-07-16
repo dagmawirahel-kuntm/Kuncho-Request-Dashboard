@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer'
+export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager'
 export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
@@ -106,6 +106,7 @@ export interface Staff {
   id_document_url: string | null
   id_document_name: string | null
   user_id: string | null
+  department_id: string | null
   created_at: string
   updated_at: string
 }
