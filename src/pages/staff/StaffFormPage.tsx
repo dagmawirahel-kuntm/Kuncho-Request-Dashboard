@@ -6,6 +6,8 @@ import { FormPage } from '@/components/shared/FormPage'
 import { FileUpload } from '@/components/shared/FileUpload'
 import type { Staff, StaffInsert, UserProfile } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useDepartments } from '@/hooks/useLookups'
+import { useAuth } from '@/contexts/AuthContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -48,6 +50,10 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const navigate = useNavigate()
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { role } = useAuth()
+  const canAssignDepartment = role === 'admin' || role === 'hr_officer'
+
+  const { data: departments = [] } = useDepartments()
 
   const { data: userProfiles = [] } = useQuery({
     queryKey: ['user-profiles-lookup'],
@@ -80,6 +86,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           id_document_url: record.id_document_url,
           id_document_name: record.id_document_name,
           user_id: record.user_id,
+          department_id: record.department_id,
         }
       : { status: 'active' }
   )
@@ -129,6 +136,23 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           </select>
         </Field>
       </div>
+
+      <Field label="Org. Department">
+        <select
+          className={inputCls}
+          value={form.department_id ?? ''}
+          disabled={!canAssignDepartment}
+          onChange={e => set('department_id', e.target.value || null)}
+        >
+          <option value="">Unassigned</option>
+          {departments.map((d: { id: string; name: string }) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+        {!canAssignDepartment && (
+          <p className="mt-1 text-xs text-slate-400">Only Admin or HR can set this — leave as Unassigned.</p>
+        )}
+      </Field>
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Workplace">

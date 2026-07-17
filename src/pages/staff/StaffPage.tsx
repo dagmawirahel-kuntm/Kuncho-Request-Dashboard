@@ -5,7 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import type { Staff } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { useDepartments } from '@/hooks/useLookups'
+import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye, UserX } from 'lucide-react'
 
 // ── Department colour palette (shared) ────────────────────────────────────────
 import { DEPT_COLORS, getDeptColor, getManagementLevelMeta, initials } from '@/lib/departments'
@@ -29,9 +31,19 @@ function StatCard({ label, value, icon, sub }: { label: string; value: string; i
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StaffPage() {
   const { toast } = useToast()
+  const { role } = useAuth()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [deptFilter, setDeptFilter] = useState('All')
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeptId, setBulkDeptId] = useState('')
+  const [bulkSaving, setBulkSaving] = useState(false)
+
+  // Assignment is restricted to admin/hr_officer — everyone else sees the
+  // org department as read-only, enforced again server-side by the
+  // staff.department_id write-lock trigger (migration 102), not just here.
+  const canAssign = role === 'admin' || role === 'hr_officer'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['staff'],
@@ -42,27 +54,41 @@ export default function StaffPage() {
     },
   })
 
+  const { data: orgDepartments = [] } = useDepartments()
+  const orgDeptMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const d of orgDepartments as { id: string; name: string }[]) map.set(d.id, d.name)
+    return map
+  }, [orgDepartments])
+
   // Department counts + stats
   const stats = useMemo(() => {
     const depts: Record<string, number> = {}
     let monthlyPayroll = 0
+    let unassigned = 0
     for (const s of data) {
       const d = s.staff_type ?? 'Unknown'
       depts[d] = (depts[d] ?? 0) + 1
       if (s.payment_frequency === 'Monthly' && s.monthly_salary) {
         monthlyPayroll += s.monthly_salary
       }
+      if (!s.department_id) unassigned++
     }
-    return { depts, monthlyPayroll, total: data.length }
+    return { depts, monthlyPayroll, total: data.length, unassigned }
   }, [data])
 
   const deptTabs = ['All', ...Object.keys(DEPT_COLORS), 'Unknown']
 
-  // Filtered + searched rows
+  // Filtered + searched rows — unassigned-first by default so the tool
+  // stays useful for clearing the backlog rather than letting it silently
+  // grow back.
   const rows = useMemo(() => {
     let list = data
     if (deptFilter !== 'All') {
       list = list.filter(s => (s.staff_type ?? 'Unknown') === deptFilter)
+    }
+    if (unassignedOnly) {
+      list = list.filter(s => !s.department_id)
     }
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -74,8 +100,13 @@ export default function StaffPage() {
         (s.bank_account ?? '').includes(q)
       )
     }
-    return list
-  }, [data, deptFilter, search])
+    return [...list].sort((a, b) => {
+      const aUnassigned = a.department_id ? 1 : 0
+      const bUnassigned = b.department_id ? 1 : 0
+      if (aUnassigned !== bUnassigned) return aUnassigned - bUnassigned
+      return a.employee_name.localeCompare(b.employee_name)
+    })
+  }, [data, deptFilter, unassignedOnly, search])
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
@@ -85,6 +116,44 @@ export default function StaffPage() {
     qc.invalidateQueries({ queryKey: ['staff-lookup'] })
     toast('Staff member deleted', 'success')
   }
+
+  async function handleAssignDepartment(staffId: string, departmentId: string | null) {
+    const { error } = await supabase.from('staff').update({ department_id: departmentId }).eq('id', staffId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['staff'] })
+    qc.invalidateQueries({ queryKey: ['staff-department-ids'] })
+    toast('Department updated', 'success')
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(prev => (prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id))))
+  }
+
+  async function handleBulkAssign() {
+    if (selectedIds.size === 0) return
+    setBulkSaving(true)
+    const { error } = await supabase
+      .from('staff')
+      .update({ department_id: bulkDeptId || null })
+      .in('id', Array.from(selectedIds))
+    setBulkSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['staff'] })
+    qc.invalidateQueries({ queryKey: ['staff-department-ids'] })
+    toast(`Department updated for ${selectedIds.size} staff`, 'success')
+    setSelectedIds(new Set())
+    setBulkDeptId('')
+  }
+
+  const colCount = canAssign ? 11 : 10
 
   return (
     <div className="space-y-5">
@@ -103,11 +172,21 @@ export default function StaffPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-4 ${canAssign ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
         <StatCard label="Total Staff" value={String(stats.total)} icon={<Users className="h-5 w-5" />} />
         <StatCard label="Monthly Payroll" value={formatCurrency(stats.monthlyPayroll)} icon={<Wallet className="h-5 w-5" />} sub="Monthly-paid only" />
         <StatCard label="Office" value={String(stats.depts['Office'] ?? 0)} icon={<Users className="h-4 w-4" />} sub="Management & admin" />
         <StatCard label="Work Shop" value={String(stats.depts['Work Shop'] ?? 0)} icon={<Users className="h-4 w-4" />} sub="Workshop staff" />
+        {canAssign && (
+          <button onClick={() => setUnassignedOnly(v => !v)} className="text-left">
+            <StatCard
+              label="Unassigned Dept."
+              value={String(stats.unassigned)}
+              icon={<UserX className="h-4 w-4" />}
+              sub={unassignedOnly ? 'Showing only these' : 'Click to filter'}
+            />
+          </button>
+        )}
       </div>
 
       {/* Dept filter tabs + search */}
@@ -133,6 +212,14 @@ export default function StaffPage() {
               </button>
             )
           })}
+          {unassignedOnly && (
+            <button
+              onClick={() => setUnassignedOnly(false)}
+              className="rounded-full px-3 py-1 text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300"
+            >
+              Unassigned dept. only ✕
+            </button>
+          )}
         </div>
 
         <div className="relative">
@@ -147,6 +234,38 @@ export default function StaffPage() {
         </div>
       </div>
 
+      {/* Bulk assignment bar */}
+      {canAssign && selectedIds.size > 0 && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 px-4 py-3">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            {selectedIds.size} selected
+          </span>
+          <select
+            className="rounded-md border px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            value={bulkDeptId}
+            onChange={e => setBulkDeptId(e.target.value)}
+          >
+            <option value="">Unassigned</option>
+            {(orgDepartments as { id: string; name: string }[]).map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleBulkAssign}
+            disabled={bulkSaving}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {bulkSaving ? 'Applying…' : `Set department for ${selectedIds.size}`}
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
@@ -156,9 +275,20 @@ export default function StaffPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 dark:bg-slate-900/60 border-b dark:border-slate-700">
                 <tr>
+                  {canAssign && (
+                    <th className="px-4 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={rows.length > 0 && selectedIds.size === rows.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-300 text-brand focus:ring-brand"
+                      />
+                    </th>
+                  )}
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300 w-8">#</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Employee</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Department</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Org Dept.</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Workplace</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Level</th>
                   <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Salary</th>
@@ -170,15 +300,26 @@ export default function StaffPage() {
               <tbody className="divide-y dark:divide-slate-700">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400 dark:text-slate-500">
+                    <td colSpan={colCount} className="px-4 py-12 text-center text-sm text-slate-400 dark:text-slate-500">
                       No staff match your filter.
                     </td>
                   </tr>
                 ) : rows.map((s, i) => {
                   const color = getDeptColor(s.staff_type)
                   const ini = initials(s.employee_name)
+                  const orgDeptName = s.department_id ? orgDeptMap.get(s.department_id) : null
                   return (
                     <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                      {canAssign && (
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(s.id)}
+                            onChange={() => toggleSelected(s.id)}
+                            className="rounded border-slate-300 text-brand focus:ring-brand"
+                          />
+                        </td>
+                      )}
                       {/* Row number */}
                       <td className="px-4 py-3 text-slate-400 dark:text-slate-500 text-xs tabular-nums">{i + 1}</td>
 
@@ -202,11 +343,33 @@ export default function StaffPage() {
                         </div>
                       </td>
 
-                      {/* Department badge */}
+                      {/* Department badge (staff_type) */}
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${color.pill}`}>
                           {s.staff_type ?? 'Unknown'}
                         </span>
+                      </td>
+
+                      {/* Org Department (departments table) — the assignment control */}
+                      <td className="px-4 py-3">
+                        {canAssign ? (
+                          <select
+                            className="rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                            value={s.department_id ?? ''}
+                            onChange={e => handleAssignDepartment(s.id, e.target.value || null)}
+                          >
+                            <option value="">Unassigned</option>
+                            {(orgDepartments as { id: string; name: string }[]).map(d => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        ) : orgDeptName ? (
+                          <span className="text-slate-600 dark:text-slate-300">{orgDeptName}</span>
+                        ) : (
+                          <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            Unassigned
+                          </span>
+                        )}
                       </td>
 
                       {/* Workplace */}
@@ -305,9 +468,10 @@ export default function StaffPage() {
               {rows.length > 0 && (
                 <tfoot className="bg-slate-50 dark:bg-slate-900/60 border-t dark:border-slate-700">
                   <tr>
-                    <td colSpan={5} className="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+                    <td colSpan={canAssign ? 7 : 6} className="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
                       {rows.length} {rows.length === 1 ? 'employee' : 'employees'}
                       {deptFilter !== 'All' && ` in ${deptFilter}`}
+                      {unassignedOnly && ` (unassigned dept. only)`}
                       {search && ` matching "${search}"`}
                     </td>
                     <td className="px-4 py-2.5 text-right text-xs font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
