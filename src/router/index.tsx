@@ -9,6 +9,7 @@ import MyRequestsDashboardPage from '@/pages/dashboard/MyRequestsDashboardPage'
 import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
 import ProcurementDashboardPage from '@/pages/dashboard/ProcurementDashboardPage'
 import FinanceDashboardPage from '@/pages/dashboard/FinanceDashboardPage'
+import PaymentsDashboardPage from '@/pages/dashboard/PaymentsDashboardPage'
 import HRDashboardPage from '@/pages/dashboard/HRDashboardPage'
 import ManagementDashboardPage from '@/pages/dashboard/ManagementDashboardPage'
 import ExpensesPage from '@/pages/expenses/ExpensesPage'
@@ -211,6 +212,7 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
             children: [
               { path: 'finance', element: <FinanceDashboardPage /> },
+              { path: 'finance/payments', element: <PaymentsDashboardPage /> },
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'accounts/:id', element: <AccountDetailPage /> },
               { path: 'transfers', element: <TransfersPage /> },

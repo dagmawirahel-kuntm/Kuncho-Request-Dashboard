@@ -10,6 +10,8 @@ export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
+export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
+export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'other'
 export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -402,10 +404,14 @@ export interface Expense {
   subcontractor_engagement_id: string | null
   subcontract_cert_override_by: string | null
   subcontract_cert_override_at: string | null
+  payment_state: ExpensePaymentState
+  disbursed_by: string | null
+  payment_method: ExpensePaymentMethod | null
+  payment_state_changed_at: string | null
   created_at: string
   updated_at: string
 }
-export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at'>
+export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at' | 'payment_state_changed_at'>
 
 // ── Orders ───────────────────────────────────────────────────────
 export type OrderPriority = 'normal' | 'urgent' | 'critical'
@@ -871,10 +877,69 @@ export interface BatchPayment {
   payment_code: string | null
   notes: string | null
   assignee_id: string | null
+  transfer_id: string | null
   created_at: string
   updated_at: string
 }
 export type BatchPaymentInsert = Omit<BatchPayment, 'id' | 'created_at' | 'updated_at'>
+
+// ── Finance dashboard views (migration 100) ────────────────────────
+export interface ToPayQueueRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  vendor_id: string | null
+  vendor_name: string | null
+  project_id: string | null
+  project_name: string | null
+  cost_group_id: string | null
+  cost_group_name: string | null
+  verify_wht: boolean
+  finance_approved_by: string | null
+  finance_approved_at: string | null
+  days_since_approval: number | null
+}
+
+export interface FinancePendingApprovalRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  vendor_id: string | null
+  vendor_name: string | null
+  project_id: string | null
+  project_name: string | null
+  approval_status: ExpenseApprovalStatus
+  manager_approved_by: string | null
+  manager_approved_at: string | null
+  created_at: string
+}
+
+export interface AccountCashPositionRow {
+  account_id: string
+  account_name: string
+  total_credits: number
+  total_debits: number
+  cash_position: number
+}
+
+export interface RecentPaymentRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  vendor_id: string | null
+  vendor_name: string | null
+  payment_state: ExpensePaymentState
+  payment_method: ExpensePaymentMethod | null
+  disbursed_by: string | null
+  payment_state_changed_at: string | null
+  transfer_id: string | null
+  transfer_id_code: string | null
+  transfer_notes: string | null
+  batch_payment_id: string | null
+}
 
 // ── Timesheet ─────────────────────────────────────────────────────
 export interface Timesheet {

@@ -710,10 +710,17 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </Field>
       </div>
       <div className="flex flex-wrap items-center gap-4 text-sm">
-        <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
-          <input disabled={financeLocked} type="checkbox" checked={!!form.payment_status} onChange={e => set('payment_status', e.target.checked)} />
-          Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
-        </label>
+        {isEdit ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Payment:</span>
+            <StatusBadge status={record?.payment_state ?? 'unpaid'} />
+            {canEditFinanceFields(role) && (
+              <Link to="/finance/payments" className="text-xs text-brand hover:underline">Manage in Payments →</Link>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400">New expenses start Unpaid — approve &amp; pay from the Payments dashboard.</span>
+        )}
         <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
           <input disabled={financeLocked} type="checkbox" checked={!!form.partially_paid} onChange={e => set('partially_paid', e.target.checked)} />
           Partially Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
