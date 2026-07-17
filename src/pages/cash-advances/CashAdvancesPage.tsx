@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { CashAdvance } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
+import { useFiscalYear } from '@/contexts/FiscalYearContext'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const cashAdvanceQuickFilters: QuickFilter[] = [
@@ -28,7 +28,7 @@ export default function CashAdvancesPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { periods, value: fyValue, setValue: setFyValue, fiscalPeriodId } = useFiscalYearFilter()
+  const { fiscalPeriodId } = useFiscalYear()
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['cash-advances', fiscalPeriodId],
@@ -75,12 +75,9 @@ export default function CashAdvancesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Cash Advances</h1><p className="text-sm text-slate-500">Staff cash advance records</p></div>
-        <div className="flex items-center gap-2">
-          <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
-          <Link to="/cash-advances/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            <Plus className="h-4 w-4" /> New Advance
-          </Link>
-        </div>
+        <Link to="/cash-advances/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+          <Plus className="h-4 w-4" /> New Advance
+        </Link>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search advances…" persistKey="cash-advances" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="cash_advances" queryKeys={['cash-advances']} quickFilters={cashAdvanceQuickFilters} />}
     </div>

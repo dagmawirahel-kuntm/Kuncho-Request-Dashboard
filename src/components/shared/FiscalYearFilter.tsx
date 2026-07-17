@@ -1,29 +1,4 @@
-import { useEffect, useState } from 'react'
-import { useFiscalPeriods } from '@/hooks/useLookups'
 import { CalendarRange } from 'lucide-react'
-
-/**
- * "Fresh platform" default: every list/dashboard using this defaults to
- * the current fiscal year (Hamle 1 -> Sene 30, see migration 087) the
- * moment fiscal_periods loads, with an "All time" escape hatch. This is
- * a display default only -- never wire it into the project workspace or
- * budget-vs-actual views, which must always aggregate a project's full
- * history regardless of fiscal period.
- */
-export function useFiscalYearFilter() {
-  const { data: periods = [] } = useFiscalPeriods()
-  const current = periods.find(p => p.is_current)
-  const [selected, setSelected] = useState<string | 'all' | null>(null)
-
-  // Initialize to the current FY the first time it loads; leave alone afterward.
-  useEffect(() => {
-    if (selected === null && current) setSelected(current.id)
-  }, [selected, current])
-
-  const fiscalPeriodId = selected === 'all' ? null : (selected ?? current?.id ?? null)
-
-  return { periods, current, value: selected ?? current?.id ?? 'all', setValue: setSelected, fiscalPeriodId }
-}
 
 interface FiscalYearFilterProps {
   periods: { id: string; label: string; is_current: boolean }[]
@@ -31,6 +6,8 @@ interface FiscalYearFilterProps {
   onChange: (value: string) => void
 }
 
+/** Presentational dropdown — state lives in FiscalYearContext (see the
+ * header toggle in AppShell), not owned by this component. */
 export function FiscalYearFilter({ periods, value, onChange }: FiscalYearFilterProps) {
   return (
     <div className="flex items-center gap-1.5">

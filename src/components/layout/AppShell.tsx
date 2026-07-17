@@ -4,8 +4,29 @@ import { Sidebar } from './Sidebar'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
+import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
-import { LogOut, ChevronRight, Menu, Sun, Moon } from 'lucide-react'
+import { useFiscalYear } from '@/contexts/FiscalYearContext'
+import { LogOut, ChevronRight, Menu, Sun, Moon, CalendarRange } from 'lucide-react'
+
+function FiscalYearControl() {
+  const { periods, current, value, setValue, canToggle } = useFiscalYear()
+  if (periods.length === 0) return null
+
+  if (!canToggle) {
+    return (
+      <span
+        title="Fiscal year (admin can change this for everyone)"
+        className="hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-slate-500 dark:border-slate-600 dark:text-slate-400 sm:flex"
+      >
+        <CalendarRange className="h-3.5 w-3.5" />
+        {current?.label ?? 'Current FY'}
+      </span>
+    )
+  }
+
+  return <FiscalYearFilter periods={periods} value={value} onChange={setValue} />
+}
 
 const breadcrumbLabels: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -120,6 +141,7 @@ export function AppShell() {
 
           {/* User info */}
           <div className="flex items-center gap-2 sm:gap-3">
+            <FiscalYearControl />
             <button
               onClick={toggleDark}
               title={dark ? 'Switch to light mode' : 'Switch to dark mode'}

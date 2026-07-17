@@ -7,7 +7,7 @@ import { DataTable } from '@/components/shared/DataTable'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
+import { useFiscalYear } from '@/contexts/FiscalYearContext'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 export default function TransfersPage() {
@@ -16,7 +16,7 @@ export default function TransfersPage() {
   const qc = useQueryClient()
   const { role } = useAuth()
   const canWrite = role === 'admin' || role === 'finance'
-  const { periods, value: fyValue, setValue: setFyValue, fiscalPeriodId } = useFiscalYearFilter()
+  const { fiscalPeriodId } = useFiscalYear()
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['transfers', fiscalPeriodId],
@@ -69,14 +69,11 @@ export default function TransfersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Transfers</h1><p className="text-sm text-slate-500">Inter-account fund transfers</p></div>
-        <div className="flex items-center gap-2">
-          <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
-          {canWrite && (
-            <Link to="/transfers/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-              <Plus className="h-4 w-4" /> New Transfer
-            </Link>
-          )}
-        </div>
+        {canWrite && (
+          <Link to="/transfers/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New Transfer
+          </Link>
+        )}
       </div>
       {isLoading
         ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>

@@ -9,7 +9,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Expense, ExpenseType, CpoBond } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
+import { useFiscalYear } from '@/contexts/FiscalYearContext'
 import {
   Plus, Pencil, Trash2, Receipt, Package, ArrowLeftRight, Shield,
   ChevronRight, Clock, CheckCircle2, TruckIcon, FileText, Banknote,
@@ -338,7 +338,7 @@ export default function ExpensesPage() {
   // one that gets the fresh-platform current-FY default. The pipeline/
   // dashboard `expenses` query above stays unfiltered — pending approvals
   // must always show regardless of when they're dated.
-  const { periods, value: fyValue, setValue: setFyValue, fiscalPeriodId } = useFiscalYearFilter()
+  const { fiscalPeriodId } = useFiscalYear()
   const { data: allExpenses = [], isLoading: allLoading } = useQuery({
     queryKey: ['expenses-all', fiscalPeriodId],
     queryFn: async () => {
@@ -461,11 +461,7 @@ export default function ExpensesPage() {
 
       {/* ── RECORDS TAB ──────────────────────────────────────────────────── */}
       {activeTab === 'records' && canSeeTable && (
-        <>
-          <div className="flex justify-end">
-            <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
-          </div>
-          {allLoading
+        allLoading
           ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
           : <DataTable
               columns={tableColumns}
@@ -478,8 +474,7 @@ export default function ExpensesPage() {
               quickFilters={tableQuickFilters}
               expandable={{ summaryColumnIds: ['expense_code', 'expense_type', 'amount_etb', 'date', 'approval_status', 'payment_status'] }}
               groupBy={{ columnId: 'date' }}
-            />}
-        </>
+            />
       )}
 
       {/* ── DASHBOARD TAB ────────────────────────────────────────────────── */}
