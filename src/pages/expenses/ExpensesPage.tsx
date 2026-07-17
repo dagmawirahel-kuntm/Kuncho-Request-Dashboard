@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Expense, ExpenseType, CpoBond } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import {
   Plus, Pencil, Trash2, Receipt, Package, ArrowLeftRight, Shield,
   ChevronRight, Clock, CheckCircle2, TruckIcon, FileText, Banknote,
@@ -332,14 +333,21 @@ export default function ExpensesPage() {
     enabled: showVRF,
   })
 
-  // Full expense list for Records tab
+  // Full expense list for Records tab — the one query on this page that's a
+  // "browse history" list rather than active approval work, so it's the only
+  // one that gets the fresh-platform current-FY default. The pipeline/
+  // dashboard `expenses` query above stays unfiltered — pending approvals
+  // must always show regardless of when they're dated.
+  const { periods, value: fyValue, setValue: setFyValue, fiscalPeriodId } = useFiscalYearFilter()
   const { data: allExpenses = [], isLoading: allLoading } = useQuery({
-    queryKey: ['expenses-all'],
+    queryKey: ['expenses-all', fiscalPeriodId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('expenses')
         .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation(record_name), transfers(transfer_id_code), tax_summary(month), locations(location_name)')
         .order('created_at', { ascending: false })
+      if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
+      const { data, error } = await q
       if (error) throw error
       return data as Expense[]
     },
@@ -453,7 +461,11 @@ export default function ExpensesPage() {
 
       {/* ── RECORDS TAB ──────────────────────────────────────────────────── */}
       {activeTab === 'records' && canSeeTable && (
-        allLoading
+        <>
+          <div className="flex justify-end">
+            <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
+          </div>
+          {allLoading
           ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
           : <DataTable
               columns={tableColumns}
@@ -466,7 +478,8 @@ export default function ExpensesPage() {
               quickFilters={tableQuickFilters}
               expandable={{ summaryColumnIds: ['expense_code', 'expense_type', 'amount_etb', 'date', 'approval_status', 'payment_status'] }}
               groupBy={{ columnId: 'date' }}
-            />
+            />}
+        </>
       )}
 
       {/* ── DASHBOARD TAB ────────────────────────────────────────────────── */}

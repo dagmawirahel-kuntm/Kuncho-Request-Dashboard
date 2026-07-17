@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/utils'
 import type { TaxSummary } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 export default function TaxSummaryPage() {
@@ -16,8 +17,9 @@ export default function TaxSummaryPage() {
   const qc = useQueryClient()
   const { role } = useAuth()
   const canWrite = role === 'admin' || role === 'finance'
+  const { periods, current, value: fyValue, setValue: setFyValue } = useFiscalYearFilter()
 
-  const { data = [], isLoading } = useQuery({
+  const { data: allRows = [], isLoading } = useQuery({
     queryKey: ['tax-summary'],
     queryFn: async () => {
       const { data, error } = await supabase.from('tax_summary').select('*').order('month', { ascending: false })
@@ -25,6 +27,22 @@ export default function TaxSummaryPage() {
       return data as TaxSummary[]
     },
   })
+
+  // tax_summary.month is a "YYYY-MM" text period, not a real date column —
+  // it was deliberately excluded from the fiscal_period_id tagging in
+  // migration 088 (a TEXT period isn't a genuine transaction date). Filtered
+  // here client-side instead, by parsing "YYYY-MM" against the selected
+  // fiscal period's date range.
+  const data = useMemo(() => {
+    if (fyValue === 'all') return allRows
+    const period = periods.find(p => p.id === fyValue) ?? current
+    if (!period) return allRows
+    return allRows.filter(r => {
+      if (!r.month) return false
+      const monthStart = `${r.month}-01`
+      return monthStart >= period.start_date && monthStart <= period.end_date
+    })
+  }, [allRows, fyValue, periods, current])
 
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this tax summary? This cannot be undone.')) return
@@ -58,11 +76,14 @@ export default function TaxSummaryPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Tax Summary</h1><p className="text-sm text-slate-500">Monthly VAT and WHT summary</p></div>
-        {canWrite && (
-          <Link to="/tax-summary/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            <Plus className="h-4 w-4" /> Add Summary
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
+          {canWrite && (
+            <Link to="/tax-summary/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+              <Plus className="h-4 w-4" /> Add Summary
+            </Link>
+          )}
+        </div>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search tax summaries…" persistKey="tax-summary" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="tax_summary" queryKeys={['tax-summary']} />}
     </div>

@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { CashAdvance } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const cashAdvanceQuickFilters: QuickFilter[] = [
@@ -27,11 +28,14 @@ export default function CashAdvancesPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { periods, value: fyValue, setValue: setFyValue, fiscalPeriodId } = useFiscalYearFilter()
 
   const { data = [], isLoading } = useQuery({
-    queryKey: ['cash-advances'],
+    queryKey: ['cash-advances', fiscalPeriodId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('cash_advances').select('*, staff(employee_name), accounts(account_name), payroll(payroll_record)').order('created_at', { ascending: false })
+      let q = supabase.from('cash_advances').select('*, staff(employee_name), accounts(account_name), payroll(payroll_record)').order('created_at', { ascending: false })
+      if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
+      const { data, error } = await q
       if (error) throw error
       return data as CashAdvance[]
     },
@@ -71,9 +75,12 @@ export default function CashAdvancesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Cash Advances</h1><p className="text-sm text-slate-500">Staff cash advance records</p></div>
-        <Link to="/cash-advances/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New Advance
-        </Link>
+        <div className="flex items-center gap-2">
+          <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
+          <Link to="/cash-advances/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New Advance
+          </Link>
+        </div>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search advances…" persistKey="cash-advances" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="cash_advances" queryKeys={['cash-advances']} quickFilters={cashAdvanceQuickFilters} />}
     </div>

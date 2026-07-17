@@ -310,6 +310,21 @@ export function useRecentOrderItems() {
   })
 }
 
+export function useFiscalPeriods() {
+  return useQuery({
+    queryKey: ['fiscal-periods'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('fiscal_periods')
+        .select('id,label,start_date,end_date,is_current')
+        .order('start_date', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useDepartments() {
   return useQuery({
     queryKey: ['departments-lookup'],

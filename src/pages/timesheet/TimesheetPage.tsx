@@ -9,6 +9,7 @@ import type { Timesheet } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
+import { FiscalYearFilter, useFiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 export default function TimesheetPage() {
@@ -16,11 +17,14 @@ export default function TimesheetPage() {
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
+  const { periods, value: fyValue, setValue: setFyValue, fiscalPeriodId } = useFiscalYearFilter()
 
   const { data = [], isLoading } = useQuery({
-    queryKey: ['timesheet'],
+    queryKey: ['timesheet', fiscalPeriodId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('timesheet').select('*, staff(employee_name), projects(project_name), payroll(payroll_record)').order('created_at', { ascending: false })
+      let q = supabase.from('timesheet').select('*, staff(employee_name), projects(project_name), payroll(payroll_record)').order('created_at', { ascending: false })
+      if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
+      const { data, error } = await q
       if (error) throw error
       return data as Timesheet[]
     },
@@ -60,9 +64,12 @@ export default function TimesheetPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Timesheet</h1><p className="text-sm text-slate-500">Staff attendance and time tracking</p></div>
-        <Link to="/timesheet/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New Entry
-        </Link>
+        <div className="flex items-center gap-2">
+          <FiscalYearFilter periods={periods} value={fyValue} onChange={setFyValue} />
+          <Link to="/timesheet/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New Entry
+          </Link>
+        </div>
       </div>
       {role === 'staff' && <OwnRecordsBanner />}
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search timesheet…" persistKey="timesheet" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="timesheet" queryKeys={['timesheet']} />}
