@@ -1,5 +1,5 @@
 export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager'
-export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled'
+export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled' | 'stock_fulfilled'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
 export type WarehouseZone = 'Zone A' | 'Zone B' | 'Zone C'
@@ -399,10 +399,13 @@ export interface Expense {
   requires_finance_approval: boolean
   receipt_url: string | null
   receipt_name: string | null
+  subcontractor_engagement_id: string | null
+  subcontract_cert_override_by: string | null
+  subcontract_cert_override_at: string | null
   created_at: string
   updated_at: string
 }
-export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval'>
+export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at'>
 
 // ── Orders ───────────────────────────────────────────────────────
 export type OrderPriority = 'normal' | 'urgent' | 'critical'
@@ -925,6 +928,7 @@ export interface OrderItem {
   unit: string | null
   unit_price_est: number | null
   needs_market_check: boolean
+  propose_new_stock_item: boolean
   status: OrderItemStatus
   fulfillment_notes: string | null
   sort_order: number
@@ -943,6 +947,8 @@ export interface ExpenseOrderItem {
 // ── Stock Items ───────────────────────────────────────────────────
 export type BoothStructureType = 'fixed_part' | 'standalone'
 
+export type StockCatalogStatus = 'pending_setup' | 'active' | 'inactive'
+
 export interface StockItem {
   id: string
   item_code: string | null
@@ -957,11 +963,24 @@ export interface StockItem {
   reorder_level: number | null
   is_tool: boolean
   active: boolean
+  catalog_status: StockCatalogStatus
   notes: string | null
   structure_type: BoothStructureType | null
   source_project_id: string | null
   created_at: string
   updated_at: string
+}
+
+export interface StockOnHand {
+  stock_item_id: string
+  item_name: string
+  warehouse_zone: WarehouseZone | null
+  unit: string
+  reorder_level: number | null
+  active: boolean
+  catalog_status: StockCatalogStatus
+  qty_on_hand: number
+  avg_unit_cost: number | null
 }
 export type StockItemInsert = Omit<StockItem, 'id' | 'item_code' | 'created_at' | 'updated_at'>
 
@@ -1221,3 +1240,74 @@ export interface HseInduction {
   created_at: string
 }
 export type HseInductionInsert = Omit<HseInduction, 'id' | 'created_at'>
+
+// ── Labor: Tier 1 (routine allocation, no approval) ────────────────
+export type LaborAllocationStatus = 'planned' | 'active' | 'completed' | 'cancelled'
+export interface LaborAllocation {
+  id: string
+  staff_id: string
+  project_id: string
+  start_date: string
+  end_date: string | null
+  day_rate_snapshot: number | null
+  status: LaborAllocationStatus
+  assigned_by: string | null
+  notes: string | null
+  created_at: string
+}
+export type LaborAllocationInsert = Omit<LaborAllocation, 'id' | 'day_rate_snapshot' | 'created_at'>
+
+// ── Labor: Tier 2 (new/casual labor requisition, single approval) ──
+export type LaborRequisitionStatus = 'pending' | 'approved' | 'rejected'
+export interface LaborRequisition {
+  id: string
+  project_id: string
+  role_needed: string
+  headcount: number
+  is_casual_or_new: boolean
+  start_date: string
+  end_date: string | null
+  estimated_day_rate: number
+  estimated_days: number | null
+  estimated_total_cost: number
+  requested_by: string | null
+  status: LaborRequisitionStatus
+  approved_by: string | null
+  approved_at: string | null
+  notes: string | null
+  created_at: string
+}
+export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'created_at'>
+
+// ── Subcontract ──────────────────────────────────────────────────
+export type SubcontractorEngagementStatus = 'drafting' | 'agreed' | 'in_progress' | 'completed' | 'terminated'
+export interface SubcontractorEngagement {
+  id: string
+  vendor_id: string
+  project_id: string
+  cost_group_id: string | null
+  scope_of_work: string | null
+  agreed_amount: number
+  start_date: string | null
+  target_completion_date: string | null
+  percent_complete: number
+  status: SubcontractorEngagementStatus
+  approved_by: string | null
+  approved_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type SubcontractorEngagementInsert = Omit<SubcontractorEngagement, 'id' | 'approved_by' | 'approved_at' | 'created_at' | 'updated_at'>
+
+export interface SubcontractorCompletionCertificate {
+  id: string
+  engagement_id: string
+  certified_amount: number
+  percent_of_scope_at_cert: number | null
+  certified_by: string | null
+  certified_at: string
+  notes: string | null
+  created_at: string
+}
+export type SubcontractorCompletionCertificateInsert = Omit<SubcontractorCompletionCertificate, 'id' | 'certified_at' | 'created_at'>

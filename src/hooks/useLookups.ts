@@ -355,3 +355,56 @@ export function useDesignPackages() {
     },
   })
 }
+
+/** Active, fully-catalogued stock items only — matches what v_stock_on_hand
+ * actually offers for a PR's stock-check (pending_setup items are excluded). */
+export function useStockItems() {
+  return useQuery({
+    queryKey: ['stock-items-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('stock_items')
+        .select('id,item_code,item_name,unit,warehouse_zone')
+        .eq('catalog_status', 'active')
+        .order('item_name')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+/** Live on-hand qty + avg cost for one stock item, used inline on a PR line
+ * once it's linked — deliberately not cached long, since this is exactly
+ * the number a requester needs to be current. */
+export function useStockOnHand(stockItemId: string | null) {
+  return useQuery({
+    queryKey: ['stock-on-hand', stockItemId],
+    staleTime: 10_000,
+    enabled: !!stockItemId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_stock_on_hand')
+        .select('qty_on_hand,avg_unit_cost,unit')
+        .eq('stock_item_id', stockItemId)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+export function useSubcontractorEngagements() {
+  return useQuery({
+    queryKey: ['subcontractor-engagements-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('subcontractor_engagements')
+        .select('id,scope_of_work,agreed_amount,project_id,vendor_id,vendors(vendor_name),projects(project_name)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}

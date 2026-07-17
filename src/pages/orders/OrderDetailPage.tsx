@@ -21,11 +21,12 @@ const ITEM_S: Record<OrderItemStatus, { label: string; bg: string; border: strin
   pending:           { label: 'Pending',     bg: 'text-slate-500 bg-slate-100 dark:bg-slate-700',         border: 'border-l-slate-300 dark:border-l-slate-500' },
   sourced:           { label: 'Sourced',     bg: 'text-green-700 bg-green-50 dark:bg-green-900/30',       border: 'border-l-green-400' },
   partially_sourced: { label: 'Partial',     bg: 'text-amber-700 bg-amber-50 dark:bg-amber-900/30',       border: 'border-l-amber-400' },
+  stock_fulfilled:   { label: 'Stock',       bg: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30', border: 'border-l-emerald-400' },
   unfulfilled:       { label: 'Unfulfilled', bg: 'text-red-700 bg-red-50 dark:bg-red-900/30',             border: 'border-l-red-400' },
   cancelled:         { label: 'Cancelled',   bg: 'text-slate-400 bg-slate-50 dark:bg-slate-800',           border: 'border-l-slate-200 dark:border-l-slate-700' },
 }
 
-const ALL_STATUSES: OrderItemStatus[] = ['pending', 'sourced', 'partially_sourced', 'unfulfilled', 'cancelled']
+const ALL_STATUSES: OrderItemStatus[] = ['pending', 'sourced', 'partially_sourced', 'stock_fulfilled', 'unfulfilled', 'cancelled']
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:text-slate-100'
 

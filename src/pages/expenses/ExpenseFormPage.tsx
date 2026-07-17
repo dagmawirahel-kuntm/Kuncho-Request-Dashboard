@@ -6,7 +6,7 @@ import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation } from '@/types/database'
-import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles } from '@/hooks/useLookups'
+import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -163,6 +163,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const { data: taxSummaries = [] } = useTaxSummaries()
     const { data: locations = [] } = useLocations()
     const { data: userProfiles = [] } = useUserProfiles()
+    const { data: subcontractorEngagements = [] } = useSubcontractorEngagements()
 
     const financeLocked = !canEditFinanceFields(role)
 
@@ -221,6 +222,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
     const categoryOptions = useMemo(() => categories.map((c: any) => ({ id: c.id, label: c.category_name })), [categories])
+    const engagementOptions = useMemo(() => subcontractorEngagements.map((e: any) => ({
+      id: e.id,
+      label: `${e.vendors?.vendor_name ?? 'Vendor'} — ${e.projects?.project_name ?? 'Project'}`,
+      sub: e.scope_of_work ?? undefined,
+    })), [subcontractorEngagements])
     const subCategoryOptions = useMemo(() => subCategories.map((s: any) => ({ id: s.id, label: s.item_name })), [subCategories])
     const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
     const vendorReceiptFacilitationOptions = useMemo(() => vendorReceiptFacilitations.map((v: any) => ({ id: v.id, label: v.record_name })), [vendorReceiptFacilitations])
@@ -276,6 +282,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         location_id: record.location_id,
         vehicle_id: record.vehicle_id,
         fuel_liters: record.fuel_liters ?? undefined,
+        subcontractor_engagement_id: record.subcontractor_engagement_id,
       }
       : {
     payment_status: false,
@@ -676,6 +683,14 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
         </Field>
       </div>
+      <Field label="Subcontractor Engagement (optional)">
+        <SearchableSelect value={form.subcontractor_engagement_id ?? null} onChange={id => set('subcontractor_engagement_id', id)} options={engagementOptions} placeholder="Only if this is a subcontract payment…" />
+        {form.subcontractor_engagement_id && (
+          <p className="mt-1 text-[11px] text-slate-400">
+            Requires at least one completion certificate on the engagement — admin can override if needed, but the save will be blocked otherwise.
+          </p>
+        )}
+      </Field>
       {showFullFieldSet && (
         <Field label="Description of Item">
           <textarea rows={2} className={inputCls} value={form.description_of_item ?? ''} onChange={e => set('description_of_item', e.target.value)} />

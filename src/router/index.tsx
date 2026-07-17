@@ -112,6 +112,12 @@ import HseIncidentsPage from '@/pages/hse-incidents/HseIncidentsPage'
 import HseIncidentFormPage from '@/pages/hse-incidents/HseIncidentFormPage'
 import HseInductionsPage from '@/pages/hse-inductions/HseInductionsPage'
 import HseInductionFormPage from '@/pages/hse-inductions/HseInductionFormPage'
+import LaborRequisitionsPage from '@/pages/labor-requisitions/LaborRequisitionsPage'
+import LaborRequisitionFormPage from '@/pages/labor-requisitions/LaborRequisitionFormPage'
+import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
+import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
+import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
+import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -154,6 +160,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'stock', element: <StockItemsPage /> },
               { path: 'stock/new', element: <StockItemFormPage /> },
+              { path: 'stock/pending-setup', element: <StockPendingSetupPage /> },
               { path: 'stock/tools', element: <StockToolsPage /> },
               { path: 'stock/movement/new', element: <StockMovementPage /> },
               { path: 'stock/:id', element: <StockItemDetailPage /> },
@@ -385,6 +392,30 @@ export const router = createBrowserRouter([
               { path: 'hse-incidents/:id/edit', element: <HseIncidentFormPage /> },
               { path: 'hse-inductions/new', element: <HseInductionFormPage /> },
               { path: 'hse-inductions/:id/edit', element: <HseInductionFormPage /> },
+            ],
+          },
+          // ── Labor Tier 2 (requisitions): read for everyone; request gated
+          // to admin/manager/project_manager/operations_manager/hr_officer;
+          // approve/reject/delete happen from the list itself (RLS-gated
+          // separately to operations_manager/hr_officer/admin, see 094).
+          { path: 'labor-requisitions', element: <LaborRequisitionsPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'project_manager', 'operations_manager', 'hr_officer']} />,
+            children: [
+              { path: 'labor-requisitions/new', element: <LaborRequisitionFormPage /> },
+              { path: 'labor-requisitions/:id/edit', element: <LaborRequisitionFormPage /> },
+            ],
+          },
+          // ── Subcontract engagements: read for everyone; write gated to
+          // admin/manager/project_manager/procurement_officer, matching
+          // subcontractor_engagements/subcontractor_completion_certificates RLS.
+          { path: 'subcontracts', element: <SubcontractsPage /> },
+          { path: 'subcontracts/:id', element: <SubcontractDetailPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'project_manager', 'procurement_officer']} />,
+            children: [
+              { path: 'subcontracts/new', element: <SubcontractFormPage /> },
+              { path: 'subcontracts/:id/edit', element: <SubcontractFormPage /> },
             ],
           },
         ],

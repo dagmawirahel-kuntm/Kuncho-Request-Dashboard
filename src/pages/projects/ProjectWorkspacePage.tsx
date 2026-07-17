@@ -8,14 +8,17 @@ import { useToast } from '@/contexts/ToastContext'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { useStaff } from '@/hooks/useLookups'
 import type {
   Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
-  CostGroup, BudgetVariation, BudgetCheckMode,
+  CostGroup, BudgetVariation, BudgetCheckMode, LaborAllocation, LaborAllocationInsert, LaborAllocationStatus,
 } from '@/types/database'
 import {
   ChevronLeft, Building2, User, CalendarClock, Wallet, Receipt,
   Clock3, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
   Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
+  Trash2, UserPlus,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -51,12 +54,170 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.round(diff / 86400000)
 }
 
+// ── Labor Tier 1: routine staff assignment, no approval ─────────────────────
+// Deliberately as fast as logging a verbal assignment — a PM/site lead adds a
+// row directly, no gate to route around, per the two-tier labor design.
+const ALLOCATION_STATUSES: LaborAllocationStatus[] = ['planned', 'active', 'completed', 'cancelled']
+
+function LaborAllocationsSection({ projectId, canManage }: { projectId: string; canManage: boolean }) {
+  const { toast } = useToast()
+  const { profile } = useAuth()
+  const qc = useQueryClient()
+  const { data: staff = [] } = useStaff()
+  const [showAdd, setShowAdd] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<Partial<LaborAllocationInsert>>({ status: 'active' })
+
+  const staffOptions = staff.map((s: any) => ({ id: s.id, label: s.employee_name }))
+
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['project-labor-allocations', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_allocations')
+        .select('*, staff(employee_name)')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as (LaborAllocation & { staff: { employee_name: string } | null })[]
+    },
+  })
+
+  function set(key: keyof LaborAllocationInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+  function resetForm() { setForm({ status: 'active' }) }
+
+  async function handleAdd() {
+    if (!form.staff_id || !form.start_date) { toast('Staff member and start date are required', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('labor_allocations').insert([{
+      ...form, project_id: projectId, assigned_by: profile?.id ?? null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-labor-allocations', projectId] })
+    qc.invalidateQueries({ queryKey: ['project-budget-groups', projectId] })
+    toast('Staff assigned', 'success')
+    resetForm()
+    setShowAdd(false)
+  }
+
+  async function handleDelete(allocId: string) {
+    if (!window.confirm('Remove this labor allocation? This cannot be undone.')) return
+    const { error } = await supabase.from('labor_allocations').delete().eq('id', allocId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-labor-allocations', projectId] })
+    qc.invalidateQueries({ queryKey: ['project-budget-groups', projectId] })
+    toast('Allocation removed', 'success')
+  }
+
+  const STATUS_CLS: Record<LaborAllocationStatus, string> = {
+    planned:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+    active:    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    cancelled: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  }
+
+  return (
+    <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <HardHat className="h-4 w-4" /> Labor Assignments
+        </h3>
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <Link to="/labor-requisitions/new"
+              className="text-xs text-slate-400 hover:text-brand transition-colors">
+              Need new/casual labor? Request it →
+            </Link>
+          )}
+          {canManage && (
+            <button
+              onClick={() => setShowAdd(s => !s)}
+              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              {showAdd ? <X className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Assign Staff'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showAdd && (
+        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Staff Member *</label>
+              <SearchableSelect value={form.staff_id ?? null} onChange={v => set('staff_id', v)} options={staffOptions} placeholder="Select staff…" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Start Date *</label>
+              <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">End Date</label>
+              <input type="date" className={inputCls} value={form.end_date ?? ''} onChange={e => set('end_date', e.target.value || null)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Status</label>
+              <select className={inputCls} value={form.status ?? 'active'} onChange={e => set('status', e.target.value as LaborAllocationStatus)}>
+                {ALLOCATION_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2 sm:col-span-3">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes</label>
+              <input type="text" className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={() => { setShowAdd(false); resetForm() }} className="rounded-md px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+            <button onClick={handleAdd} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+              {saving ? 'Saving…' : 'Assign'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
+      ) : data.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No staff assigned to this project yet</p>
+      ) : (
+        <div className="divide-y dark:divide-slate-700">
+          {data.map(a => (
+            <div key={a.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-sm text-slate-700 dark:text-slate-200">
+                  <span className="font-medium">{a.staff?.employee_name ?? '—'}</span>
+                  {a.day_rate_snapshot != null && <span className="text-xs text-slate-400"> · {formatCurrency(a.day_rate_snapshot)}/day</span>}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {formatDate(a.start_date)} – {a.end_date ? formatDate(a.end_date) : 'ongoing'}
+                  {a.notes && <> · {a.notes}</>}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATUS_CLS[a.status]}`}>{a.status}</span>
+                {canManage && (
+                  <button onClick={() => handleDelete(a.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20" title="Remove">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProjectWorkspacePage() {
   const { id } = useParams<{ id: string }>()
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const canManageBudget = role === 'admin' || role === 'manager' || role === 'finance'
+  // Matches labor_allocations' RLS write policy (093)
+  const canManageLabor = role === 'admin' || role === 'manager' || role === 'project_manager' || role === 'operations_manager'
 
   const { data: project, isLoading: loadingProject, error: projectError } = useQuery({
     queryKey: ['project-workspace', id],
@@ -720,6 +881,9 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       )}
+
+      {/* Labor Tier 1: routine assignment, no approval */}
+      <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />
 
       {/* Activity */}
       <RecentActivityFeed title="Recent Activity" items={activityItems} emptyText="No activity recorded for this project yet" />

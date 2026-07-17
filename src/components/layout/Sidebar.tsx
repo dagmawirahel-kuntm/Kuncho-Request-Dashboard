@@ -103,6 +103,7 @@ const navGroups: NavGroup[] = [
       { label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
       { label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
       { label: 'Onboarding', to: '/onboarding-tasks', icon: UserCheck },
+      { label: 'Labor Requisitions', to: '/labor-requisitions', icon: HardHat },
       { label: 'Leave Requests', to: '/leave-requests', icon: CalendarClock, roles: ['admin', 'hr_officer'] },
       { label: 'Performance Reviews', to: '/performance-reviews', icon: ClipboardCheck, roles: ['admin', 'hr_officer'] },
       { label: 'Disciplinary Records', to: '/disciplinary-records', icon: AlertTriangle, roles: ['admin', 'hr_officer'] },
@@ -120,6 +121,7 @@ const navGroups: NavGroup[] = [
     to: '/management',
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+      { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance', 'project_manager'] },
@@ -130,6 +132,7 @@ const navGroups: NavGroup[] = [
     title: 'Stock',
     items: [
       { label: 'Stock Catalog', to: '/stock', icon: Warehouse, roles: ['admin', 'manager', 'stock_manager', 'procurement_officer'] },
+      { label: 'Pending Setup', to: '/stock/pending-setup', icon: ClipboardCheck, roles: ['admin', 'manager', 'stock_manager', 'procurement_officer'] },
       { label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'manager', 'stock_manager'] },
     ],
   },

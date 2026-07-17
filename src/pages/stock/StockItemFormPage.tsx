@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { StockItem, StockItemInsert, StockMainCategory, WarehouseZone, BoothStructureType } from '@/types/database'
+import type { StockItem, StockItemInsert, StockMainCategory, WarehouseZone, BoothStructureType, StockCatalogStatus } from '@/types/database'
 import { useSubCategories } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -57,6 +57,12 @@ const BOOTH_STRUCTURE_TYPES: { value: BoothStructureType; label: string; desc: s
 const COMMON_UNITS = ['pcs', 'kg', 'liters', 'meters', 'sheets', 'bags', 'boxes', 'sets', 'pairs', 'rolls', 'lengths']
 const ZONES: WarehouseZone[] = ['Zone A', 'Zone B', 'Zone C']
 
+const CATALOG_STATUSES: { value: StockCatalogStatus; label: string }[] = [
+  { value: 'pending_setup', label: 'Pending Setup' },
+  { value: 'active',        label: 'Active' },
+  { value: 'inactive',      label: 'Inactive' },
+]
+
 export default function StockItemFormPage() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
@@ -93,10 +99,11 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
       reorder_level:     record.reorder_level,
       is_tool:           record.is_tool,
       active:            record.active,
+      catalog_status:    record.catalog_status,
       notes:             record.notes,
       structure_type:    record.structure_type,
       source_project_id: record.source_project_id,
-    } : { item_type: 'raw_material', unit: 'pcs', is_tool: false, active: true }
+    } : { item_type: 'raw_material', unit: 'pcs', is_tool: false, active: true, catalog_status: 'active' }
   )
 
   const [saving, setSaving] = useState(false)
@@ -274,6 +281,17 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
                 value={form.reorder_level ?? ''} onChange={e => set('reorder_level', e.target.value ? parseFloat(e.target.value) : null)} />
             </Field>
           </div>
+          <Field label="Catalog Status">
+            <select className={inputCls} value={form.catalog_status ?? 'active'}
+              onChange={e => set('catalog_status', e.target.value as StockCatalogStatus)}>
+              {CATALOG_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            {form.catalog_status === 'pending_setup' && (
+              <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                Set warehouse zone, reorder level, and switch this to Active so it&apos;s included in future stock checks.
+              </p>
+            )}
+          </Field>
           <Field label="Notes">
             <textarea rows={2} className={inputCls} placeholder="Brand preferences, specs, storage instructions…"
               value={form.notes ?? ''} onChange={e => set('notes', e.target.value || null)} />

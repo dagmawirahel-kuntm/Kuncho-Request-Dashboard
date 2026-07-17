@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Order, OrderInsert, OrderPriority, OrderItem, OrderItemStatus } from '@/types/database'
 import {
   useProjects, useStaff, useVendors, useUserProfiles, useSubCategoriesAll, useRecentOrderItems,
+  useStockItems, useStockOnHand,
 } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -15,6 +16,7 @@ import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import {
   ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
+  Warehouse, Link2, Unlink, Sparkles,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
@@ -52,6 +54,7 @@ const ITEM_STATUSES: { value: OrderItemStatus; label: string }[] = [
   { value: 'pending',           label: 'Pending' },
   { value: 'sourced',           label: 'Sourced' },
   { value: 'partially_sourced', label: 'Partially Sourced' },
+  { value: 'stock_fulfilled',   label: 'Stock Fulfilled' },
   { value: 'unfulfilled',       label: 'Unfulfilled' },
   { value: 'cancelled',         label: 'Cancelled' },
 ]
@@ -61,6 +64,8 @@ type LineItem = {
   _id: string           // stable local key
   dbId?: string         // set once saved
   sub_category_id: string | null
+  stock_item_id: string | null
+  propose_new_stock_item: boolean
   item_name: string
   specifications: string
   quantity: string
@@ -76,6 +81,8 @@ function newLine(overrides: Partial<LineItem> = {}): LineItem {
   return {
     _id: crypto.randomUUID(),
     sub_category_id: null,
+    stock_item_id: null,
+    propose_new_stock_item: false,
     item_name: '',
     specifications: '',
     quantity: '',
@@ -189,14 +196,93 @@ function MiniCatalog({
   )
 }
 
+// ── Materials stock-first check (per line row) ─────────────────────────────────
+// A line linked to a catalogued stock_item shows its live on-hand qty inline —
+// the automatic, no-extra-click check the PR flow requires (091's
+// check_and_fulfill_from_stock RPC does the actual fulfillment on save; this
+// is just the "does stock cover this" preview so the requester isn't
+// surprised by what happens after they hit save).
+function StockLinkControl({
+  item, stockItems, onChange,
+}: {
+  item: LineItem
+  stockItems: ReturnType<typeof useStockItems>['data']
+  onChange: (patch: Partial<LineItem>) => void
+}) {
+  const [linking, setLinking] = useState(false)
+  const { data: onHand } = useStockOnHand(item.stock_item_id)
+  const stockOptions = useMemo(
+    () => (stockItems ?? []).map((s: any) => ({ id: s.id, label: s.item_name, sub: s.item_code ?? undefined })),
+    [stockItems]
+  )
+  const linkedItem = item.stock_item_id ? (stockItems ?? []).find((s: any) => s.id === item.stock_item_id) : null
+  const requestedQty = parseFloat(item.quantity) || 0
+
+  if (item.stock_item_id && linkedItem) {
+    const qty = onHand?.qty_on_hand ?? 0
+    const covers = requestedQty > 0 && qty >= requestedQty
+    const partial = qty > 0 && !covers
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+          covers ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+            : partial ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+        }`}>
+          <Warehouse className="h-3 w-3" />
+          {(linkedItem as any).item_name}: {qty} {(linkedItem as any).unit ?? ''} on hand
+          {covers ? ' — fully covers this line' : partial ? ' — partial coverage' : ' — none available'}
+        </span>
+        <button type="button" onClick={() => onChange({ stock_item_id: null })}
+          title="Unlink from stock catalog"
+          className="rounded p-0.5 text-slate-400 hover:text-red-500">
+          <Unlink className="h-3 w-3" />
+        </button>
+      </div>
+    )
+  }
+
+  if (linking) {
+    return (
+      <div className="flex items-center gap-1.5 max-w-xs">
+        <SearchableSelect
+          value={null}
+          onChange={v => { onChange({ stock_item_id: v, propose_new_stock_item: false }); setLinking(false) }}
+          options={stockOptions}
+          placeholder="Search stock catalog…"
+        />
+        <button type="button" onClick={() => setLinking(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Cancel</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <button type="button" onClick={() => setLinking(true)}
+        className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-brand transition-colors">
+        <Link2 className="h-3 w-3" /> Link to stock item
+      </button>
+      <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer select-none transition-colors ${
+        item.propose_new_stock_item ? 'text-brand' : 'text-slate-400 hover:text-brand'
+      }`}>
+        <input type="checkbox" className="accent-brand"
+          checked={item.propose_new_stock_item}
+          onChange={e => onChange({ propose_new_stock_item: e.target.checked })} />
+        <Sparkles className="h-3 w-3" /> Worth cataloging for reorder (not a one-off)
+      </label>
+    </div>
+  )
+}
+
 // ── Line item row ──────────────────────────────────────────────────────────────
 function LineItemRow({
-  item, index, isEdit, subCategories, recentItems,
+  item, index, isEdit, subCategories, recentItems, stockItems,
   onChange, onRemove,
 }: {
   item: LineItem; index: number; isEdit: boolean
   subCategories: ReturnType<typeof useSubCategoriesAll>['data']
   recentItems: ReturnType<typeof useRecentOrderItems>['data']
+  stockItems: ReturnType<typeof useStockItems>['data']
   onChange: (patch: Partial<LineItem>) => void
   onRemove: () => void
 }) {
@@ -217,6 +303,7 @@ function LineItemRow({
     pending:           'border-l-slate-300',
     sourced:           'border-l-green-400',
     partially_sourced: 'border-l-amber-400',
+    stock_fulfilled:   'border-l-emerald-400',
     unfulfilled:       'border-l-red-400',
     cancelled:         'border-l-slate-200',
   }
@@ -310,7 +397,7 @@ function LineItemRow({
       {/* ── Full-width footer: specs / market check / fulfillment notes ── */}
       {(hasFooter || true) && (
         <div className="px-3 pb-3 space-y-2">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button type="button" onClick={() => onChange({ showSpecs: !item.showSpecs })}
               className="text-[10px] text-slate-400 hover:text-brand transition-colors">
               {item.showSpecs ? '− Hide specs' : '+ Add specs / description'}
@@ -324,6 +411,8 @@ function LineItemRow({
               Ask procurement: check market price
             </label>
           </div>
+          {/* Materials stock-first check — see check_and_fulfill_from_stock (091) */}
+          <StockLinkControl item={item} stockItems={stockItems} onChange={onChange} />
           {item.showSpecs && (
             <textarea rows={2} className={`${inputCls} text-xs w-full`}
               placeholder="Specifications, grade, dimensions, brand, quality grade…"
@@ -388,6 +477,7 @@ function PurchaseRequestFormBody({
   const { data: userProfiles = [] } = useUserProfiles()
   const { data: subCategories = [] } = useSubCategoriesAll()
   const { data: recentItems = [] }  = useRecentOrderItems()
+  const { data: stockItems = [] }   = useStockItems()
 
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
   const staffOptions   = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
@@ -423,6 +513,8 @@ function PurchaseRequestFormBody({
         _id: item.id,
         dbId: item.id,
         sub_category_id: item.sub_category_id,
+        stock_item_id: item.stock_item_id,
+        propose_new_stock_item: item.propose_new_stock_item ?? false,
         item_name: item.item_name,
         specifications: item.specifications ?? '',
         quantity: item.quantity?.toString() ?? '',
@@ -527,6 +619,8 @@ function PurchaseRequestFormBody({
       ...(l.dbId ? { id: l.dbId } : {}),
       order_id: orderId,
       sub_category_id: l.sub_category_id,
+      stock_item_id: l.stock_item_id,
+      propose_new_stock_item: l.propose_new_stock_item,
       item_name: l.item_name.trim(),
       specifications: l.specifications || null,
       quantity: l.quantity ? parseFloat(l.quantity) : null,
@@ -538,8 +632,23 @@ function PurchaseRequestFormBody({
       sort_order: i,
     }))
 
-    const { error: itemErr } = await supabase.from('order_items').upsert(toUpsert)
+    const { data: savedItems, error: itemErr } = await supabase.from('order_items').upsert(toUpsert).select('id, stock_item_id, status')
     if (itemErr) { setSaving(false); setError(itemErr.message); toast(itemErr.message, 'error'); return }
+
+    // Materials stock-first check — automatic, no extra click. Only lines
+    // linked to a stock item and still 'pending' (i.e. not already sourced/
+    // cancelled/etc) get checked; a line with nothing to draw on is a no-op
+    // and proceeds to external procurement exactly as before this existed.
+    const toCheck = (savedItems ?? []).filter(i => i.stock_item_id && i.status === 'pending')
+    if (toCheck.length > 0) {
+      const results = await Promise.all(
+        toCheck.map(i => supabase.rpc('check_and_fulfill_from_stock', { p_order_item_id: i.id }))
+      )
+      const fulfilledCount = results.filter(r => !r.error && (r.data?.[0]?.issued_qty ?? 0) > 0).length
+      if (fulfilledCount > 0) {
+        toast(`${fulfilledCount} line item${fulfilledCount !== 1 ? 's' : ''} auto-fulfilled from stock`, 'success')
+      }
+    }
 
     // Log the warn-only budget check outcome for every cost group present —
     // best-effort, never blocks; see src/lib/budgetCheck.ts
@@ -730,6 +839,7 @@ function PurchaseRequestFormBody({
               isEdit={isEdit}
               subCategories={subCategories}
               recentItems={recentItems}
+              stockItems={stockItems}
               onChange={patch => updateLine(idx, patch)}
               onRemove={() => removeLine(idx)}
             />
