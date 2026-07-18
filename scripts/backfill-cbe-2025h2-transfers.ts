@@ -54,6 +54,22 @@ const CBE_ACCOUNT_ID = '890c3473-dc57-4c01-9f39-17518047c463' // CBE, 1000504664
 const CUTOFF_DATE = '2025-12-01' // rows on/after this are the live import's territory — skip
 const SENTINEL_CODE = 'CBE-IMPORT-SENTINEL-2025H2'
 
+// Reconciliation anchor — the bank-reported running Balance (source column
+// fld17VTG6VEWoKG56, not migrated into transfers.amount since it's a
+// balance, not a movement) immediately after the earliest transaction in
+// this batch. The Balance column's own arithmetic (each row's balance
+// minus/plus its amount lands exactly on the prior row's balance) confirms
+// this is the true first transaction, not just the first by date — same-day
+// rows aren't otherwise orderable from the export. This is a real,
+// bank-verified figure, not derived or assumed; migration 106 (opening
+// balances) turns it into a proper bank_balance_anchors row referencing
+// the transfer this produces.
+const ANCHOR = {
+  date: '2025-07-07',
+  balance: 66717.56,
+  reference: 'FT25188XDGM2\\MEX',
+}
+
 const FIELD = {
   postDate: 'fldZUMipU6YqFuL2y',   // "Post Date", text "DD MON YY" — authoritative
   reference: 'fld5ZzZL75ZKGmAhI',  // "Reference"
@@ -261,11 +277,12 @@ async function main() {
     from_account_id: null,
     to_account_id: null,
     amount: 0,
-    notes: `Import sentinel — CBE account 1000504664272, backfill batch covering ${earliestDate} to ${latestDate} (precedes the existing 01 Dec 2025-24 Jun 2026 import, see CBE-IMPORT-SENTINEL)`,
+    notes: `Import sentinel — CBE account 1000504664272, backfill batch covering ${earliestDate} to ${latestDate} (precedes the existing 01 Dec 2025-24 Jun 2026 import, see CBE-IMPORT-SENTINEL). Reconciliation anchor: bank-reported balance ${ANCHOR.balance.toFixed(2)} as of ${ANCHOR.date}, immediately after ref ${ANCHOR.reference} (see bank_balance_anchors once migration 106 lands).`,
   })
   if (sentinelError) throw new Error(`Sentinel insert failed: ${sentinelError.message}`)
 
   console.log(`\nDone. Inserted ${rowsToInsert.length} transfer rows + sentinel ${SENTINEL_CODE}.`)
+  console.log(`Reconciliation anchor: CBE balance ${ANCHOR.balance.toFixed(2)} as of ${ANCHOR.date} (ref ${ANCHOR.reference}) — recorded in the sentinel's notes; migration 106 will add a proper bank_balance_anchors row.`)
 }
 
 main().catch(err => { console.error(err); process.exit(1) })
