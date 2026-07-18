@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "migrate": "tsx scripts/migrate-from-airtable.ts"
+    "migrate": "tsx scripts/migrate-from-airtable.ts",
+    "backfill:cbe-2025h2": "tsx scripts/backfill-cbe-2025h2-transfers.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
