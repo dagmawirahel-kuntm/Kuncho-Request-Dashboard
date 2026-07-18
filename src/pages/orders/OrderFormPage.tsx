@@ -51,12 +51,13 @@ const PRIORITY_OPTS: { value: OrderPriority; label: string; cls: string }[] = [
 const COMMON_UNITS = ['pcs', 'kg', 'liters', 'meters', 'sheets', 'bags', 'boxes', 'sets', 'pairs', 'rolls']
 
 const ITEM_STATUSES: { value: OrderItemStatus; label: string }[] = [
-  { value: 'pending',           label: 'Pending' },
-  { value: 'sourced',           label: 'Sourced' },
-  { value: 'partially_sourced', label: 'Partially Sourced' },
-  { value: 'stock_fulfilled',   label: 'Stock Fulfilled' },
-  { value: 'unfulfilled',       label: 'Unfulfilled' },
-  { value: 'cancelled',         label: 'Cancelled' },
+  { value: 'pending',                label: 'Pending' },
+  { value: 'sourced',                label: 'Sourced' },
+  { value: 'partially_sourced',      label: 'Partially Sourced' },
+  { value: 'stock_pending_dispatch', label: 'Stock — Awaiting Dispatch' },
+  { value: 'stock_fulfilled',        label: 'Stock Fulfilled' },
+  { value: 'unfulfilled',            label: 'Unfulfilled' },
+  { value: 'cancelled',              label: 'Cancelled' },
 ]
 
 // ── Line item state ────────────────────────────────────────────────────────────
@@ -300,12 +301,13 @@ function LineItemRow({
   }
 
   const statusBorderCls: Record<OrderItemStatus, string> = {
-    pending:           'border-l-slate-300',
-    sourced:           'border-l-green-400',
-    partially_sourced: 'border-l-amber-400',
-    stock_fulfilled:   'border-l-emerald-400',
-    unfulfilled:       'border-l-red-400',
-    cancelled:         'border-l-slate-200',
+    pending:                'border-l-slate-300',
+    sourced:                'border-l-green-400',
+    partially_sourced:      'border-l-amber-400',
+    stock_fulfilled:        'border-l-emerald-400',
+    stock_pending_dispatch: 'border-l-sky-400',
+    unfulfilled:            'border-l-red-400',
+    cancelled:              'border-l-slate-200',
   }
 
   // Show the linked GL account name when a catalog item is selected
@@ -649,18 +651,22 @@ function PurchaseRequestFormBody({
     const { data: savedItems, error: itemErr } = await supabase.from('order_items').upsert(toUpsert).select('id, stock_item_id, status')
     if (itemErr) { setSaving(false); setError(itemErr.message); toast(itemErr.message, 'error'); return }
 
-    // Materials stock-first check — automatic, no extra click. Only lines
-    // linked to a stock item and still 'pending' (i.e. not already sourced/
-    // cancelled/etc) get checked; a line with nothing to draw on is a no-op
-    // and proceeds to external procurement exactly as before this existed.
+    // Materials stock-first check — automatic, no extra click, but no
+    // longer draws stock down on its own. It only FLAGS a line as
+    // stock_pending_dispatch when on-hand covers some or all of it;
+    // the actual stock-out happens later, when a stock officer signs
+    // off and assigns a transport job (see sign_off_stock_dispatch,
+    // migration 115). Only lines linked to a stock item and still
+    // 'pending' get checked; a line with nothing to draw on is a
+    // no-op and proceeds to external procurement exactly as before.
     const toCheck = (savedItems ?? []).filter(i => i.stock_item_id && i.status === 'pending')
     if (toCheck.length > 0) {
       const results = await Promise.all(
         toCheck.map(i => supabase.rpc('check_and_fulfill_from_stock', { p_order_item_id: i.id }))
       )
-      const fulfilledCount = results.filter(r => !r.error && (r.data?.[0]?.issued_qty ?? 0) > 0).length
+      const fulfilledCount = results.filter(r => !r.error && (r.data?.[0]?.proposed_qty ?? 0) > 0).length
       if (fulfilledCount > 0) {
-        toast(`${fulfilledCount} line item${fulfilledCount !== 1 ? 's' : ''} auto-fulfilled from stock`, 'success')
+        toast(`${fulfilledCount} line item${fulfilledCount !== 1 ? 's' : ''} covered by stock — awaiting stock officer sign-off`, 'success')
       }
     }
 
@@ -774,7 +780,7 @@ function PurchaseRequestFormBody({
       {/* Section 1: Header */}
       <div className={sectionCls}>
         <SectionHeader title="Request Details" sub="Project context and urgency" />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Project">
             <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Select project…" />
           </Field>
@@ -899,7 +905,7 @@ function PurchaseRequestFormBody({
       {/* Section 3: Vendor context */}
       <div className={sectionCls}>
         <SectionHeader title="Vendor Context" sub="Optional — leave blank for procurement to decide" />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Recommended Vendor">
             <SearchableSelect value={header.recommended_vendor_id ?? null} onChange={v => setHdr('recommended_vendor_id', v)} options={vendorOptions} placeholder="Select vendor…" />
           </Field>

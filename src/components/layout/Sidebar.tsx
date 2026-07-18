@@ -135,6 +135,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Stock Catalog', to: '/stock', icon: Warehouse, roles: ['admin', 'manager', 'stock_manager', 'procurement_officer'] },
       { label: 'Pending Setup', to: '/stock/pending-setup', icon: ClipboardCheck, roles: ['admin', 'manager', 'stock_manager', 'procurement_officer'] },
+      { label: 'Dispatch Queue', to: '/stock/dispatch-queue', icon: Truck, roles: ['admin', 'manager', 'stock_manager', 'procurement_officer'] },
       { label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'manager', 'stock_manager'] },
     ],
   },

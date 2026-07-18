@@ -120,6 +120,7 @@ import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
 import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
 import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
+import StockDispatchQueuePage from '@/pages/stock/StockDispatchQueuePage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -163,6 +164,7 @@ export const router = createBrowserRouter([
               { path: 'stock', element: <StockItemsPage /> },
               { path: 'stock/new', element: <StockItemFormPage /> },
               { path: 'stock/pending-setup', element: <StockPendingSetupPage /> },
+              { path: 'stock/dispatch-queue', element: <StockDispatchQueuePage /> },
               { path: 'stock/tools', element: <StockToolsPage /> },
               { path: 'stock/movement/new', element: <StockMovementPage /> },
               { path: 'stock/:id', element: <StockItemDetailPage /> },

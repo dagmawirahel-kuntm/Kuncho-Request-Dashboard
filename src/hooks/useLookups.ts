@@ -358,6 +358,22 @@ export function useChartOfAccounts() {
   })
 }
 
+export function useOpenMaterialMoveJobs() {
+  return useQuery({
+    queryKey: ['open-material-move-jobs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transportation_requests')
+        .select('id,request_name,job_status,pickup_location_text,dropoff_location_text')
+        .eq('job_type', 'material_move')
+        .in('job_status', ['requested', 'assigned', 'in_progress'])
+        .order('requested_date', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useDesignPackages() {
   return useQuery({
     queryKey: ['design-packages-lookup'],

@@ -1,5 +1,5 @@
 export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager'
-export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled' | 'stock_fulfilled'
+export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled' | 'stock_fulfilled' | 'stock_pending_dispatch'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
 export type WarehouseZone = 'Zone A' | 'Zone B' | 'Zone C'
@@ -1048,6 +1048,24 @@ export interface StockOnHand {
   avg_unit_cost: number | null
 }
 export type StockItemInsert = Omit<StockItem, 'id' | 'item_code' | 'created_at' | 'updated_at'>
+
+// ── Stock dispatch queue (migration 115) ────────────────────────────
+export interface StockPendingDispatchRow {
+  order_item_id: string
+  item_name: string
+  requested_qty: number | null
+  proposed_qty: number | null
+  unit: string | null
+  stock_item_id: string
+  stock_item_name: string
+  warehouse_zone: WarehouseZone | null
+  current_on_hand: number
+  order_id: string
+  order_name: string | null
+  project_id: string | null
+  project_name: string | null
+  requested_by_user_id: string | null
+}
 
 // ── Stock Receipts ────────────────────────────────────────────────
 export interface StockReceipt {
