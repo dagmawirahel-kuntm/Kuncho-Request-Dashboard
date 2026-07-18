@@ -76,6 +76,7 @@ const navGroups: NavGroup[] = [
     to: '/finance',
     items: [
       { label: 'Payments', to: '/finance/payments', icon: Send, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Ledger & Journal', to: '/finance/ledger', icon: Scale, roles: ['admin', 'manager', 'finance'] },
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'manager', 'finance'] },
       { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },

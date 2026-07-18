@@ -341,6 +341,23 @@ export function useDepartments() {
   })
 }
 
+export function useChartOfAccounts() {
+  return useQuery({
+    queryKey: ['chart-of-accounts-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('chart_of_accounts')
+        .select('id,account_code,account_name,nature,is_postable,active')
+        .eq('is_postable', true)
+        .eq('active', true)
+        .order('account_code')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useDesignPackages() {
   return useQuery({
     queryKey: ['design-packages-lookup'],

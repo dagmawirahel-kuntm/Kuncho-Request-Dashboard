@@ -1376,3 +1376,114 @@ export interface SubcontractorCompletionCertificate {
   created_at: string
 }
 export type SubcontractorCompletionCertificateInsert = Omit<SubcontractorCompletionCertificate, 'id' | 'certified_at' | 'created_at'>
+
+// ── General Ledger (migrations 103-108) ────────────────────────────
+export type ChartOfAccountsNature = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense'
+
+export interface ChartOfAccounts {
+  id: string
+  account_code: string
+  account_name: string
+  nature: ChartOfAccountsNature
+  category_id: string | null
+  linked_account_id: string | null
+  parent_account_id: string | null
+  is_postable: boolean
+  active: boolean
+  created_at: string
+}
+
+export type JournalEntryType = 'operational' | 'opening_balance' | 'closing' | 'adjusting'
+
+export interface JournalEntry {
+  id: string
+  entry_date: string
+  fiscal_period_id: string | null
+  entry_type: JournalEntryType
+  source_table: string | null
+  source_id: string | null
+  description: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface JournalLine {
+  id: string
+  journal_entry_id: string
+  account_id: string
+  debit: number
+  credit: number
+  notes: string | null
+}
+
+export interface OpeningBalance {
+  id: string
+  chart_of_accounts_id: string
+  amount: number
+  side: 'debit' | 'credit'
+  source: string
+  entered_by: string | null
+  entered_at: string
+  notes: string | null
+}
+export type OpeningBalanceInsert = Omit<OpeningBalance, 'id' | 'entered_by' | 'entered_at'>
+
+export interface BankBalanceAnchor {
+  id: string
+  account_id: string
+  as_of_date: string
+  balance: number
+  source: string
+  transfer_id: string | null
+  created_at: string
+}
+
+export interface LedgerPostingFailure {
+  id: string
+  source_table: string
+  source_id: string
+  error_message: string
+  attempted_at: string
+  resolved: boolean
+  resolved_at: string | null
+  resolved_by: string | null
+}
+
+// ── General Ledger reporting views/functions (migration 107) ──────
+export interface TrialBalanceRow {
+  chart_of_accounts_id: string
+  account_code: string
+  account_name: string
+  nature: ChartOfAccountsNature
+  fiscal_period_id: string | null
+  fiscal_period_label: string | null
+  total_debit: number
+  total_credit: number
+  balance: number
+}
+
+export interface PlLedgerPreviewRow {
+  account_code: string
+  account_name: string
+  nature: ChartOfAccountsNature
+  amount: number
+}
+
+export interface BalanceSheetLedgerPreviewRow {
+  account_code: string
+  account_name: string
+  nature: ChartOfAccountsNature
+  balance: number
+}
+
+export interface CashReconciliationCheckRow {
+  account_id: string
+  account_name: string
+  anchor_date: string
+  anchor_balance: number
+  movement_since_anchor: number
+  implied_balance_today: number
+  erca_opening_amount: number | null
+  erca_opening_side: 'debit' | 'credit' | null
+  gap_vs_erca_figure: string
+}
