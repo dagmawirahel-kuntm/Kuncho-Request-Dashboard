@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { AccountStatusPage } from '@/pages/auth/AccountStatusPage'
+import { LoadingScreen } from '@/components/shared/LoadingScreen'
 import type { UserRole } from '@/types/database'
 
 interface ProtectedRouteProps {
@@ -12,11 +13,7 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   const location = useLocation()
 
   if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground text-sm">Loading…</div>
-      </div>
-    )
+    return <LoadingScreen />
   }
 
   if (!user) {
