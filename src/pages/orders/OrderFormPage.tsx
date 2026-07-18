@@ -318,78 +318,92 @@ function LineItemRow({
   return (
     <div className={`rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 border-l-4 ${statusBorderCls[item.status]} overflow-visible`}>
 
-      {/* ── Grid row: [#] [item] [qty] [unit] [price] [status?] [×] ── */}
-      <div className={`grid items-start gap-x-2 gap-y-0 p-3 ${
+      {/* Mobile (below sm): a stacked card — index+name+remove on one
+      line, then Qty/Unit paired, then Price/Status paired. sm and up:
+      each wrapper below collapses via `sm:contents` (display:contents
+      removes the wrapper from layout entirely) so its children become
+      direct items of THIS grid, landing in the exact same fixed-width
+      column template as before — desktop layout is unchanged. */}
+      <div className={`space-y-2 p-3 sm:space-y-0 sm:grid sm:items-start sm:gap-x-2 sm:gap-y-0 ${
         isEdit
-          ? 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
-          : 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
+          ? 'sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
+          : 'sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
       }`}>
 
-        {/* Row index */}
-        <span className="pt-2.5 text-xs text-slate-400 font-mono text-center">{index + 1}</span>
+        {/* Row index + item name + catalog picker (+ mobile-only remove) */}
+        <div className="flex items-start gap-2 sm:contents">
+          <span className="flex-shrink-0 pt-2.5 text-xs text-slate-400 font-mono sm:text-center">{index + 1}</span>
 
-        {/* Item name + catalog picker */}
-        <div className="relative min-w-0">
-          <div className="flex items-center gap-1.5">
-            <button type="button" onClick={() => setShowCatalog(s => !s)}
-              title="Pick from sub-ledger catalog"
-              className={`flex-shrink-0 rounded-md p-1.5 border transition-colors ${
-                item.sub_category_id
-                  ? 'bg-brand/10 border-brand/40 text-brand'
-                  : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-400 hover:text-brand hover:border-brand'
-              }`}>
-              <Package className="h-3.5 w-3.5" />
-            </button>
-            <input
-              className={`${inputCls} font-medium flex-1 min-w-0`}
-              placeholder={`Item ${index + 1} name…`}
-              value={item.item_name}
-              onChange={e => onChange({ item_name: e.target.value })}
-            />
+          <div className="relative min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => setShowCatalog(s => !s)}
+                title="Pick from sub-ledger catalog"
+                className={`flex-shrink-0 rounded-md p-1.5 border transition-colors ${
+                  item.sub_category_id
+                    ? 'bg-brand/10 border-brand/40 text-brand'
+                    : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-400 hover:text-brand hover:border-brand'
+                }`}>
+                <Package className="h-3.5 w-3.5" />
+              </button>
+              <input
+                className={`${inputCls} font-medium flex-1 min-w-0`}
+                placeholder={`Item ${index + 1} name…`}
+                value={item.item_name}
+                onChange={e => onChange({ item_name: e.target.value })}
+              />
+            </div>
+            {/* Linked GL account badge */}
+            {linkedAccount && (
+              <p className="mt-0.5 pl-8 text-[10px] text-brand truncate" title={linkedAccount}>
+                GL: {linkedAccount}
+              </p>
+            )}
+            {/* Catalog dropdown */}
+            {showCatalog && (
+              <MiniCatalog
+                subCategories={subCategories}
+                recentItems={recentItems}
+                onPick={pickCatalogEntry}
+                onClose={() => setShowCatalog(false)}
+              />
+            )}
           </div>
-          {/* Linked GL account badge */}
-          {linkedAccount && (
-            <p className="mt-0.5 pl-8 text-[10px] text-brand truncate" title={linkedAccount}>
-              GL: {linkedAccount}
-            </p>
-          )}
-          {/* Catalog dropdown */}
-          {showCatalog && (
-            <MiniCatalog
-              subCategories={subCategories}
-              recentItems={recentItems}
-              onPick={pickCatalogEntry}
-              onClose={() => setShowCatalog(false)}
-            />
+
+          {/* Remove — mobile only, inline and reachable without scrolling right */}
+          <button type="button" onClick={onRemove} title="Remove item"
+            className="sm:hidden flex-shrink-0 mt-1.5 rounded p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Qty + Unit — paired on mobile, independent grid columns at sm+ */}
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          <input type="number" min="0" step="any" className={inputCls} placeholder="Qty"
+            value={item.quantity} onChange={e => onChange({ quantity: e.target.value })} />
+
+          <div className="min-w-0">
+            <input type="text" className={inputCls} placeholder="unit" list={`units-${item._id}`}
+              value={item.unit} onChange={e => onChange({ unit: e.target.value })} />
+            <datalist id={`units-${item._id}`}>{COMMON_UNITS.map(u => <option key={u} value={u} />)}</datalist>
+          </div>
+        </div>
+
+        {/* Est. price + Status — paired on mobile, independent grid columns at sm+ */}
+        <div className={`grid gap-2 sm:contents ${isEdit ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <input type="number" min="0" step="0.01" className={inputCls} placeholder="Est. price"
+            value={item.unit_price_est} onChange={e => onChange({ unit_price_est: e.target.value })} />
+
+          {isEdit && (
+            <select className={`${inputCls} text-xs`} value={item.status}
+              onChange={e => onChange({ status: e.target.value as OrderItemStatus })}>
+              {ITEM_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
           )}
         </div>
 
-        {/* Qty */}
-        <input type="number" min="0" step="any" className={inputCls} placeholder="Qty"
-          value={item.quantity} onChange={e => onChange({ quantity: e.target.value })} />
-
-        {/* Unit */}
-        <div className="min-w-0">
-          <input type="text" className={inputCls} placeholder="unit" list={`units-${item._id}`}
-            value={item.unit} onChange={e => onChange({ unit: e.target.value })} />
-          <datalist id={`units-${item._id}`}>{COMMON_UNITS.map(u => <option key={u} value={u} />)}</datalist>
-        </div>
-
-        {/* Est. price */}
-        <input type="number" min="0" step="0.01" className={inputCls} placeholder="Est. price"
-          value={item.unit_price_est} onChange={e => onChange({ unit_price_est: e.target.value })} />
-
-        {/* Status (edit mode only) */}
-        {isEdit && (
-          <select className={`${inputCls} text-xs`} value={item.status}
-            onChange={e => onChange({ status: e.target.value as OrderItemStatus })}>
-            {ITEM_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-        )}
-
-        {/* Remove */}
+        {/* Remove — sm+ only, its own grid column matching the original layout */}
         <button type="button" onClick={onRemove} title="Remove item"
-          className="mt-1.5 rounded p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+          className="hidden sm:block mt-1.5 rounded p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -815,8 +829,10 @@ function PurchaseRequestFormBody({
           <span className="text-xs text-slate-400">{filledCount} item{filledCount !== 1 ? 's' : ''}</span>
         </div>
 
-        {/* Column headers — match LineItemRow grid */}
-        <div className={`grid gap-x-2 px-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider ${
+        {/* Column headers — match LineItemRow grid. Hidden below sm: a
+        stacked mobile card doesn't need column labels, and showing this
+        fixed-width grid on a phone is exactly what used to overflow. */}
+        <div className={`hidden sm:grid gap-x-2 px-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider ${
           isEdit
             ? 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
             : 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
