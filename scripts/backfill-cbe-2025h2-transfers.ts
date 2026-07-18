@@ -70,7 +70,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: {
 // ─── Airtable fetch ─────────────────────────────────────────────────────
 interface AirtableRecord {
   id: string
-  cellValuesByFieldId: Record<string, unknown>
+  fields?: Record<string, unknown>
+  cellValuesByFieldId?: Record<string, unknown>
+}
+
+function cellValues(r: AirtableRecord): Record<string, unknown> {
+  return r.fields ?? r.cellValuesByFieldId ?? {}
 }
 
 async function fetchAllRecords(): Promise<AirtableRecord[]> {
@@ -133,7 +138,7 @@ function transform(records: AirtableRecord[]) {
   let onOrAfterCutoff = 0
 
   for (const r of records) {
-    const v = r.cellValuesByFieldId
+    const v = cellValues(r)
     const date = parsePostDate(v[FIELD.postDate])
     if (!date) {
       skipped.push({ recordId: r.id, reason: `unparseable Post Date: "${v[FIELD.postDate]}"`, raw: v })
