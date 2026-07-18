@@ -27,6 +27,7 @@ type OrderItemRow = {
   unit: string | null
   unit_price_est: number | null
   status: string
+  stock_dispatch_qty: number | null
   sub_categories: { parent_category_id: string | null; categories: { cost_group_id: string | null } | null } | null
 }
 
@@ -146,6 +147,54 @@ export default function SourcingBundleFormPage() {
       return excludeSet
     },
   })
+
+  const orderItemIds = useMemo(() => allOrderItems.map(i => i.id), [allOrderItems])
+
+  // How much of each line has actually left the warehouse already
+  // (stock_issues is the source of truth for that — order_items.
+  // stock_dispatch_qty only holds the *proposed* amount and gets
+  // cleared once signed off). Advisory only: informs the quantity a
+  // procurement officer types in below, never auto-fills it.
+  const { data: stockIssuedByItem = {} } = useQuery({
+    queryKey: ['stock-issued-by-order-item', orderItemIds],
+    queryFn: async () => {
+      if (!orderItemIds.length) return {} as Record<string, number>
+      const { data, error } = await supabase
+        .from('stock_issues')
+        .select('order_item_id, quantity')
+        .in('order_item_id', orderItemIds)
+      if (error) throw error
+      const map: Record<string, number> = {}
+      for (const row of data ?? []) {
+        if (!row.order_item_id) continue
+        map[row.order_item_id] = (map[row.order_item_id] ?? 0) + Number(row.quantity)
+      }
+      return map
+    },
+    enabled: orderItemIds.length > 0,
+  })
+
+  function stockBadge(item: OrderItemRow | undefined) {
+    if (!item) return null
+    if (item.status === 'stock_pending_dispatch' && (item.stock_dispatch_qty ?? 0) > 0) {
+      return (
+        <span className="text-[10px] font-medium text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/20 rounded px-1.5 py-0.5 whitespace-nowrap"
+          title="Proposed from stock, awaiting stock officer sign-off — not yet actually dispatched">
+          {item.stock_dispatch_qty} {item.unit ?? ''} from stock (pending)
+        </span>
+      )
+    }
+    const issued = stockIssuedByItem[item.id]
+    if (issued && issued > 0) {
+      return (
+        <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 rounded px-1.5 py-0.5 whitespace-nowrap"
+          title="Already dispatched from stock — reduce the vendor quantity accordingly">
+          {issued} {item.unit ?? ''} already from stock
+        </span>
+      )
+    }
+    return null
+  }
 
   const orderMap = useMemo(() => {
     const m: Record<string, OrderRow> = {}
@@ -558,6 +607,7 @@ export default function SourcingBundleFormPage() {
                         Qty {item.quantity} {item.unit ?? ''}
                         {item.unit_price_est != null && ` · Est. ${formatCurrency(item.unit_price_est)}`}
                       </p>
+                      {stockBadge(item) && <div className="mt-1">{stockBadge(item)}</div>}
                     </div>
                     <button onClick={() => addItem(item)}
                       className="shrink-0 rounded p-1 text-brand hover:bg-brand/10 transition-colors" title="Add to bundle">
@@ -602,6 +652,9 @@ export default function SourcingBundleFormPage() {
                             {item.project_name && ` · ${item.project_name}`}
                             {' · Req: '}{item.quantity_requested} {item.unit ?? ''}
                           </p>
+                          {stockBadge(orderItemMap[item.order_item_id]) && (
+                            <div className="mt-1">{stockBadge(orderItemMap[item.order_item_id])}</div>
+                          )}
                         </div>
                         <button onClick={() => removeItem(item.order_item_id)}
                           className="shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition-colors">
