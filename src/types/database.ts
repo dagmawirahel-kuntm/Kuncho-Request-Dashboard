@@ -1511,3 +1511,40 @@ export interface CashReconciliationCheckRow {
   erca_opening_side: 'debit' | 'credit' | null
   gap_vs_erca_figure: string
 }
+
+// ── Petty Cash ───────────────────────────────────────────────────
+export interface PettyCashFloat {
+  id: string
+  custodian_staff_id: string
+  project_id: string | null
+  float_amount: number
+  current_balance: number
+  active: boolean
+  created_at: string
+}
+export type PettyCashFloatInsert = Omit<PettyCashFloat, 'id' | 'created_at'>
+
+export interface PettyCashTransaction {
+  id: string
+  float_id: string
+  amount: number
+  purpose: string
+  receipt_attached: boolean
+  recorded_by: string | null
+  created_at: string
+}
+export type PettyCashTransactionInsert = Omit<PettyCashTransaction, 'id' | 'created_at'>
+
+export type PettyCashReplenishmentStatus = 'pending' | 'approved' | 'rejected'
+export interface PettyCashReplenishment {
+  id: string
+  float_id: string
+  amount_requested: number
+  requires_pm_approval: boolean
+  requested_by: string | null
+  status: PettyCashReplenishmentStatus
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
+}
+export type PettyCashReplenishmentInsert = Omit<PettyCashReplenishment, 'id' | 'requires_pm_approval' | 'approved_by' | 'approved_at' | 'created_at'>

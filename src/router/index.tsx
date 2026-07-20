@@ -116,6 +116,9 @@ import HseIncidentFormPage from '@/pages/hse-incidents/HseIncidentFormPage'
 import HseInductionsPage from '@/pages/hse-inductions/HseInductionsPage'
 import HseInductionFormPage from '@/pages/hse-inductions/HseInductionFormPage'
 import LaborRequisitionsPage from '@/pages/labor-requisitions/LaborRequisitionsPage'
+import PettyCashPage from '@/pages/petty-cash/PettyCashPage'
+import PettyCashFloatFormPage from '@/pages/petty-cash/PettyCashFloatFormPage'
+import PettyCashDetailPage from '@/pages/petty-cash/PettyCashDetailPage'
 import LaborRequisitionFormPage from '@/pages/labor-requisitions/LaborRequisitionFormPage'
 import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
@@ -420,6 +423,19 @@ export const router = createBrowserRouter([
             children: [
               { path: 'labor-requisitions/new', element: <LaborRequisitionFormPage /> },
               { path: 'labor-requisitions/:id/edit', element: <LaborRequisitionFormPage /> },
+            ],
+          },
+          {
+            // Petty cash: floats/spend/replenishment management, matching
+            // petty_cash_* RLS (admin/manager/finance/project_manager) —
+            // see 121. A custodian's own float is separately reachable via
+            // RLS row-scoping if a self-service view is added later.
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            children: [
+              { path: 'petty-cash', element: <PettyCashPage /> },
+              { path: 'petty-cash/new', element: <PettyCashFloatFormPage /> },
+              { path: 'petty-cash/:id', element: <PettyCashDetailPage /> },
+              { path: 'petty-cash/:id/edit', element: <PettyCashFloatFormPage /> },
             ],
           },
           // ── Subcontract engagements: read for everyone; write gated to

@@ -389,6 +389,22 @@ export function useOpportunities() {
   })
 }
 
+export function usePettyCashFloats() {
+  return useQuery({
+    queryKey: ['petty-cash-floats-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('petty_cash_floats')
+        .select('id,custodian_staff_id,project_id,float_amount,current_balance,active')
+        .eq('active', true)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useDesignPackages() {
   return useQuery({
     queryKey: ['design-packages-lookup'],

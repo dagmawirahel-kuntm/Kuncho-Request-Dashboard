@@ -85,6 +85,7 @@ const navGroups: NavGroup[] = [
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'manager', 'finance'] },
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'manager', 'finance', 'project_manager'] },
     ],
   },
   {
