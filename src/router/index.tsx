@@ -315,11 +315,19 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            // CPO bonds: Finance/manager/PM/admin keep full ownership as
+            // before; sales is added so BD can raise a bond request tied
+            // to a bid — RLS scopes what a sales user can actually see/do.
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager', 'sales']} />,
             children: [
               { path: 'cpo-bonds', element: <CpoBondsPage /> },
               { path: 'cpo-bonds/new', element: <CpoBondFormPage /> },
               { path: 'cpo-bonds/:id/edit', element: <CpoBondFormPage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            children: [
               { path: 'products', element: <ProductsPage /> },
               { path: 'products/new', element: <ProductFormPage /> },
               { path: 'products/:id/edit', element: <ProductFormPage /> },

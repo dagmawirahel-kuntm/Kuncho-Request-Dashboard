@@ -78,6 +78,7 @@ export interface UserProfile {
   is_vrf_manager: boolean
   is_logistics_officer: boolean
   is_ride_hailing_authorized: boolean
+  email: string | null
   created_at: string
 }
 export type UserProfileInsert = Omit<UserProfile, 'created_at'>
@@ -853,6 +854,8 @@ export interface CpoBond {
   vendor_id: string | null
   paid_from_id: string | null
   related_expense_id: string | null
+  opportunity_id: string | null
+  requested_by: string | null
   created_at: string
   updated_at: string
 }

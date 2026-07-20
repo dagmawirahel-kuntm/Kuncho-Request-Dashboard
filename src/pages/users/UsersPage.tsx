@@ -1,11 +1,28 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase, signupClient } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { useDepartments } from '@/hooks/useLookups'
 import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
 import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront } from 'lucide-react'
+
+// Department -> valid roles, per the map documented in migration
+// 081_department_roles_enum.sql. admin/manager are always included
+// alongside the department-specific set below — those are
+// cross-departmental leadership roles a department match shouldn't
+// lock the approver out of. Departments not in this map (or no staff
+// match at all) fall back to the full role list.
+const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
+  'Design': ['design'],
+  'Operations/Construction': ['operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'],
+  'Procurement & Logistics': ['procurement_officer', 'logistics_officer'],
+  'Finance & Admin': ['finance'],
+  'Business Development/Sales': ['sales'],
+  'HR & People': ['hr_officer'],
+  'HSE': ['hse_officer'],
+}
 
 const ROLES: UserRole[] = [
   'admin', 'manager', 'finance', 'staff',
@@ -71,6 +88,38 @@ export default function UsersPage() {
       return data as UserProfile[]
     },
   })
+
+  // Match a pending signup to a staff record by email (same precedent
+  // as the staff_view_own RLS pattern) so we know which department's
+  // role set to narrow the approval dropdown to.
+  const { data: staffByEmail = {} } = useQuery({
+    queryKey: ['staff-email-department'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('email, department_id').not('email', 'is', null)
+      if (error) throw error
+      const map: Record<string, string | null> = {}
+      for (const row of data ?? []) {
+        if (row.email) map[row.email.toLowerCase()] = row.department_id
+      }
+      return map
+    },
+  })
+  const { data: departments = [] } = useDepartments()
+  const departmentNameById = useMemo(() => new Map(departments.map((d: any) => [d.id, d.name])), [departments])
+
+  function departmentForPending(p: UserProfile): string | null {
+    const deptId = staffByEmail[p.email?.toLowerCase?.() ?? ''] ?? null
+    if (!deptId) return null
+    return departmentNameById.get(deptId) ?? null
+  }
+
+  function rolesForPending(p: UserProfile): UserRole[] {
+    const deptName = departmentForPending(p)
+    const deptRoles = deptName ? DEPARTMENT_ROLES[deptName] : undefined
+    if (!deptRoles) return ROLES
+    const withLeadership = new Set<UserRole>([...deptRoles, 'admin', 'manager'])
+    return ROLES.filter(r => withLeadership.has(r))
+  }
 
   async function handleCreate() {
     if (!email.trim() || !password.trim()) { toast('Email and password are required', 'error'); return }
@@ -230,11 +279,16 @@ export default function UsersPage() {
               Waiting for your approval
             </h2>
           </div>
-          {profiles.filter(p => p.account_status === 'pending').map(p => (
+          {profiles.filter(p => p.account_status === 'pending').map(p => {
+            const matchedDept = departmentForPending(p)
+            return (
             <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 border-b last:border-0 border-amber-100 dark:border-amber-900/30">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{p.full_name}</p>
-                <p className="text-xs text-slate-400">Signed up {formatDate(p.created_at)}</p>
+                <p className="text-xs text-slate-400">
+                  Signed up {formatDate(p.created_at)}
+                  {matchedDept && <span> · Matched to <span className="font-medium text-slate-500 dark:text-slate-400">{matchedDept}</span></span>}
+                </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
                 <select
@@ -243,7 +297,7 @@ export default function UsersPage() {
                   disabled={updatingId === p.id}
                   onChange={e => handleRoleChange(p.id, e.target.value as UserRole)}
                 >
-                  {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                  {rolesForPending(p).map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
                 <button
                   onClick={() => handleStatusChange(p.id, 'active')}
@@ -261,7 +315,7 @@ export default function UsersPage() {
                 </button>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       )}
 
