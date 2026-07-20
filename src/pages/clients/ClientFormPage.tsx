@@ -108,7 +108,7 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
         </select>
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Email">
           <input type="email" className={inputCls} value={form.email ?? ''} onChange={e => set('email', e.target.value || null)} />
         </Field>

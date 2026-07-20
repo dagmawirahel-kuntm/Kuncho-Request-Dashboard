@@ -102,7 +102,7 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
       saveLabel={isEdit ? 'Save Changes' : 'Create Engagement'}
       onSave={handleSave}
     >
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Vendor (Subcontractor) *">
           <SearchableSelect value={form.vendor_id ?? null} onChange={id => set('vendor_id', id)} options={vendorOptions} placeholder="Select vendor…" />
         </Field>
@@ -113,7 +113,7 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
       <Field label="Scope of Work">
         <textarea rows={3} className={inputCls} value={form.scope_of_work ?? ''} onChange={e => set('scope_of_work', e.target.value)} placeholder="Describe the work being subcontracted…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Agreed Amount (ETB) *">
           <input type="number" step="0.01" className={inputCls} value={form.agreed_amount ?? ''} onChange={e => set('agreed_amount', e.target.value ? parseFloat(e.target.value) : undefined)} />
         </Field>
@@ -123,7 +123,7 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
           </select>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Start Date">
           <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value || null)} />
         </Field>

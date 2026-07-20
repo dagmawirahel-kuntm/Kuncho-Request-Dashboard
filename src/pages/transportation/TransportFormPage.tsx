@@ -277,7 +277,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           placeholder="e.g. Move booth panels workshop → Skylight site" />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Job Type">
           <select className={inputCls} value={form.job_type ?? 'material_move'} onChange={e => set('job_type', e.target.value)}>
             {JOB_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -317,7 +317,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       )}
 
       {form.transport_mode === 'hired' && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Hired Vehicle Class">
             <select className={inputCls} value={form.hired_vehicle_class ?? ''} onChange={e => set('hired_vehicle_class', e.target.value || null)}>
               <option value="">— Select —</option>
@@ -330,7 +330,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Assigned Staff (logistics)">
           <SearchableSelect value={form.assigned_staff_id ?? null} onChange={sid => set('assigned_staff_id', sid)} options={staffOptions} placeholder="Who runs this job…" />
         </Field>
@@ -340,7 +340,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       </div>
 
       {/* ── Route ── */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="From (pinned location)">
           <SearchableSelect value={form.pickup_location_id ?? null} onChange={lid => pickLocation('pickup_location_id', lid)} options={locationOptions} placeholder="Pickup…" />
         </Field>
@@ -348,7 +348,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           <SearchableSelect value={form.dropoff_location_id ?? null} onChange={lid => pickLocation('dropoff_location_id', lid)} options={locationOptions} placeholder="Dropoff…" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="From (free text, if unpinned)">
           <input type="text" className={inputCls} value={form.pickup_location_text ?? ''} onChange={e => set('pickup_location_text', e.target.value)} />
         </Field>
@@ -357,7 +357,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </Field>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Requested Date">
           <input type="date" className={inputCls} value={form.requested_date ?? ''} onChange={e => set('requested_date', e.target.value)} />
         </Field>
@@ -369,7 +369,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={pid => set('project_id', pid)} options={projectOptions} placeholder="Select project…" />
         </Field>

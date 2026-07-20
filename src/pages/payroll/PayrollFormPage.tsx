@@ -241,7 +241,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Pay Period">
           <select className={inputCls} value={form.pay_period ?? ''} onChange={e => set('pay_period', e.target.value)}>
             <option value="">— Select —</option>
@@ -255,7 +255,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
           </select>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Start Date">
           <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
         </Field>
@@ -263,7 +263,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
           <input type="date" className={inputCls} value={form.end_date ?? ''} onChange={e => set('end_date', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Payment Status">
           <select className={inputCls} value={form.payment_status ?? 'pending'} onChange={e => set('payment_status', e.target.value)}>
             <option value="pending">Pending</option>

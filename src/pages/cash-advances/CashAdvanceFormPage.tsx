@@ -203,7 +203,7 @@ function CashAdvanceFormPageBody({ id, record, linkedExpenseIds }: { id?: string
       <Field label="Payroll">
         <SearchableSelect value={form.payroll_id ?? null} onChange={id => set('payroll_id', id)} options={payrollOptions} placeholder="Select payroll…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Amount Advanced (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.amount_advanced ?? ''} onChange={e => set('amount_advanced', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>

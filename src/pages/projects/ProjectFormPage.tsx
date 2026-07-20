@@ -90,7 +90,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
       <Field label="Project Name *">
         <input type="text" className={inputCls} value={form.project_name ?? ''} onChange={e => set('project_name', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Department">
           <input type="text" className={inputCls} value={form.department ?? ''} onChange={e => set('department', e.target.value)} />
         </Field>
@@ -98,7 +98,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
           <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Project Manager">
           <SearchableSelect value={form.project_manager_id ?? null} onChange={id => set('project_manager_id', id)} options={staffOptions} placeholder="Select staff…" />
         </Field>

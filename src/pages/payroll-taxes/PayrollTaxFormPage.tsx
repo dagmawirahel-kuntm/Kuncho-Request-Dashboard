@@ -96,7 +96,7 @@ function PayrollTaxFormPageBody({ id, record }: { id?: string; record?: PayrollT
       <Field label="Payroll Month">
         <input type="month" className={inputCls} value={form.payroll_month ?? ''} onChange={e => set('payroll_month', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Gross Salary (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.gross_salary ?? ''} onChange={e => set('gross_salary', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>

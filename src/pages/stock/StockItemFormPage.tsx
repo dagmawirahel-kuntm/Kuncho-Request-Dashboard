@@ -153,7 +153,7 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
         {/* Identity */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-3">
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 border-b dark:border-slate-700 pb-2">Item Identity</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Item Name (English)" required>
               <input type="text" className={inputCls} placeholder="e.g. Wanza Wood"
                 value={form.item_name ?? ''} onChange={e => set('item_name', e.target.value)} />
@@ -168,7 +168,7 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
         {/* Classification */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-3">
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 border-b dark:border-slate-700 pb-2">Classification</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Main Category" required>
               <select className={inputCls} value={form.main_category ?? ''}
                 onChange={e => {
@@ -262,7 +262,7 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
         {/* Storage */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-3">
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 border-b dark:border-slate-700 pb-2">Storage</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Unit" required>
               <input type="text" className={inputCls} list="unit-list" value={form.unit ?? 'pcs'}
                 onChange={e => set('unit', e.target.value)}>

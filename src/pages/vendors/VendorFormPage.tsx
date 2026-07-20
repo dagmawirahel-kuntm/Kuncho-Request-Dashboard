@@ -85,7 +85,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
       <Field label="Vendor Name *">
         <input type="text" className={inputCls} value={form.vendor_name ?? ''} onChange={e => set('vendor_name', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Vendor Type">
           <select className={inputCls} value={form.vendor_type ?? ''} onChange={e => set('vendor_type', e.target.value)}>
             <option value="">— Select —</option>
@@ -96,7 +96,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
           <input type="text" className={inputCls} value={form.category ?? ''} onChange={e => set('category', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="TIN Number">
           <input type="text" className={inputCls} value={form.tin ?? ''} onChange={e => set('tin', e.target.value)} />
         </Field>
@@ -113,7 +113,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
       <Field label="Address">
         <input type="text" className={inputCls} value={form.address ?? ''} onChange={e => set('address', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Contact Person">
           <input type="text" className={inputCls} value={form.contact_person ?? ''} onChange={e => set('contact_person', e.target.value)} />
         </Field>
@@ -121,7 +121,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
           <input type="email" className={inputCls} value={form.email ?? ''} onChange={e => set('email', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Website">
           <input type="url" className={inputCls} value={form.website ?? ''} onChange={e => set('website', e.target.value)} placeholder="https://" />
         </Field>

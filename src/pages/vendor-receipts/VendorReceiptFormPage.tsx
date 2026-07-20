@@ -99,7 +99,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       {/* Section: Transfer Details */}
       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-1">Transfer Details</p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Transaction Date">
           <input type="date" className={inputCls} value={form.trxn_date ?? ''}
             onChange={e => set('trxn_date', e.target.value || null)} />
@@ -118,7 +118,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
           value={form.facilitator_name ?? ''} onChange={e => set('facilitator_name', e.target.value || null)} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Initial Account (funds sent from)">
           <SearchableSelect value={form.initial_account_id ?? null}
             onChange={v => set('initial_account_id', v)} options={accountOptions}
@@ -134,7 +134,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       {/* Section: Amounts */}
       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-2">Amounts</p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Amount Transferred (ETB)">
           <input type="number" step="0.01" min="0" className={inputCls} placeholder="Total sent to facilitator…"
             value={form.amount_transferred ?? ''} onChange={e => set('amount_transferred', e.target.value ? parseFloat(e.target.value) : null)} />
@@ -145,7 +145,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
         </Field>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Commission Rate (%)">
           <input type="number" step="0.01" min="0" max="100" className={inputCls} placeholder="e.g. 2.5"
             value={form.commission_rate ?? ''} onChange={e => set('commission_rate', e.target.value ? parseFloat(e.target.value) : null)} />

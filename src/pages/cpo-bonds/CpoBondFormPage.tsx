@@ -91,7 +91,7 @@ function CpoBondFormPageBody({ id, record }: { id?: string; record?: CpoBond }) 
 
   return (
     <FormPage title={isEdit ? 'Edit CPO Bond' : 'New CPO Bond'} backTo="/cpo-bonds" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Bond'} onSave={handleSave}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Bond ID / Ref">
           <input type="text" className={inputCls} value={form.bond_id_ref ?? ''} onChange={e => set('bond_id_ref', e.target.value)} />
         </Field>

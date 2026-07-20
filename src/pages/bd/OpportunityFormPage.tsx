@@ -90,7 +90,7 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
       <Field label="Title *">
         <input type="text" className={inputCls} value={form.title ?? ''} onChange={e => set('title', e.target.value)} placeholder="e.g. XYZ Office Fit-Out" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Client">
           <SearchableSelect value={form.client_id ?? null} onChange={id => set('client_id', id)} options={clientOptions} placeholder="Select client…" />
         </Field>
@@ -98,7 +98,7 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
           <input type="text" className={inputCls} value={form.prospect_name ?? ''} onChange={e => set('prospect_name', e.target.value)} placeholder="For leads without a client record yet" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Estimated Value (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.estimated_value ?? ''} onChange={e => set('estimated_value', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -112,7 +112,7 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
           </select>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Owner">
           <SearchableSelect value={form.owner_staff_id ?? null} onChange={id => set('owner_staff_id', id)} options={staffOptions} placeholder="Select owner…" />
         </Field>

@@ -127,7 +127,7 @@ function LocationFormPageBody({ id, record }: { id?: string; record?: Location }
       <Field label="Location Name *">
         <input type="text" className={inputCls} value={form.location_name ?? ''} onChange={e => set('location_name', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Kind">
           <select className={inputCls} value={form.kind ?? 'other'} onChange={e => set('kind', e.target.value)}>
             {KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
@@ -141,7 +141,7 @@ function LocationFormPageBody({ id, record }: { id?: string; record?: Location }
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Linked Project (if this is a site)">
           <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
         </Field>

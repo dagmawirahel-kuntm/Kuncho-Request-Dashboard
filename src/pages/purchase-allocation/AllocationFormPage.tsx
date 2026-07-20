@@ -109,7 +109,7 @@ function AllocationFormPageBody({ id, record }: { id?: string; record?: Purchase
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Quantity">
           <input type="number" step="0.01" className={inputCls} value={form.quantity ?? ''} onChange={e => set('quantity', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -120,7 +120,7 @@ function AllocationFormPageBody({ id, record }: { id?: string; record?: Purchase
           </select>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Unit Price">
           <input type="number" step="0.01" className={inputCls} value={form.unit_price ?? ''} onChange={e => set('unit_price', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>

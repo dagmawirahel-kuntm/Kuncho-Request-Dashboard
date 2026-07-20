@@ -153,7 +153,7 @@ export default function FuelRequestFormPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Liters Filled *">
           <input type="number" min={0} step="any" className={inputCls} value={liters} onChange={e => setLiters(e.target.value)} placeholder="e.g. 80" />
         </Field>
@@ -162,7 +162,7 @@ export default function FuelRequestFormPage() {
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Fuel Station / Vendor">
           <SearchableSelect value={vendorId} onChange={handleVendorChange} options={vendorOptions} placeholder="Select if known…" />
           {vendorPrefilled && vendorId && <p className="mt-1 text-[11px] text-slate-400">Last used for this vehicle</p>}

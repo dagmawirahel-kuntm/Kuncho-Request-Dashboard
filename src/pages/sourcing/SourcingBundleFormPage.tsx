@@ -661,7 +661,7 @@ export default function SourcingBundleFormPage() {
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div className="space-y-0.5">
                           <label className="text-[10px] text-slate-400">Qty Actual</label>
                           <input

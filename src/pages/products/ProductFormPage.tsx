@@ -84,7 +84,7 @@ function ProductFormPageBody({ id, record }: { id?: string; record?: Product }) 
       <Field label="Product Name *">
         <input type="text" className={inputCls} value={form.product_name ?? ''} onChange={e => set('product_name', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Category">
           <input type="text" className={inputCls} value={form.category ?? ''} onChange={e => set('category', e.target.value)} />
         </Field>

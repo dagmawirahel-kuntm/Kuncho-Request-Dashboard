@@ -793,7 +793,7 @@ function PurchaseRequestFormBody({
             <SearchableSelect value={header.staff_id ?? null} onChange={v => setHdr('staff_id', v)} options={staffOptions} placeholder="Select officer…" />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Required By">
             <input type="date" className={inputCls} value={header.required_by_date ?? ''}
               onChange={e => setHdr('required_by_date', e.target.value || null)} />

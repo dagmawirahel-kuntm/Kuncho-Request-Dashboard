@@ -142,7 +142,7 @@ export default function TransportPaymentFormPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Amount Paid (ETB) *">
           <input type="number" min={0} step="any" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g. 1200" />
         </Field>

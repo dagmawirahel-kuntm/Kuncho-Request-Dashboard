@@ -86,7 +86,7 @@ function PerformanceReviewFormPageBody({ id, record }: { id?: string; record?: P
       <Field label="Staff *">
         <SearchableSelect value={form.staff_id ?? null} onChange={id => set('staff_id', id)} options={staffOptions} placeholder="Select staff…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Review Period">
           <input type="text" className={inputCls} value={form.review_period ?? ''} onChange={e => set('review_period', e.target.value)} placeholder="e.g. Q1 2026" />
         </Field>

@@ -79,7 +79,7 @@ function AccountFormPageBody({ id, record }: { id?: string; record?: Account }) 
       <Field label="Account Name *">
         <input type="text" className={inputCls} value={form.account_name ?? ''} onChange={e => set('account_name', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Type">
           <select className={inputCls} value={form.type ?? ''} onChange={e => set('type', e.target.value)}>
             <option value="">— Select —</option>

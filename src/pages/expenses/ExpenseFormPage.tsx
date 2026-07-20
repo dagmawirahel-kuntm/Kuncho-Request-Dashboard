@@ -599,7 +599,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       <Field label="Description">
         <textarea rows={2} className={inputCls} value={form.item_service_description ?? ''} onChange={e => set('item_service_description', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Amount (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.amount_etb ?? ''} onChange={e => set('amount_etb', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -607,7 +607,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Expense Type">
           <select className={inputCls} value={form.expense_type ?? 'general'} onChange={e => set('expense_type', e.target.value)}>
             <option value="general">General</option>
@@ -626,7 +626,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           </Field>
         )}
       </div>
-      <div className={showFullFieldSet ? 'grid grid-cols-3 gap-3' : ''}>
+      <div className={showFullFieldSet ? 'grid grid-cols-1 sm:grid-cols-3 gap-3' : ''}>
         {showFullFieldSet && (
           <>
             <Field label="Quantity">
@@ -660,7 +660,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <Field label="Vendor">
             <SearchableSelect value={form.vendor_id ?? null} onChange={handleVendorChange} options={vendorOptions} placeholder="Select vendor…" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Vendor Name (override)">
               <input type="text" className={inputCls} value={form.vendors_name ?? ''} onChange={e => set('vendors_name', e.target.value)} />
             </Field>
@@ -675,7 +675,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       )}
 
       <SectionHeader title="Classification" />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="General Ledger">
           <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
         </Field>
@@ -701,7 +701,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       <Field label="Bank Reference" locked={financeLocked}>
         <input disabled={financeLocked} type="text" className={inputCls} value={form.bank_ref ?? ''} onChange={e => set('bank_ref', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Paid Date" locked={financeLocked}>
           <input disabled={financeLocked} type="date" className={inputCls} value={form.paid_date ?? ''} onChange={e => set('paid_date', e.target.value)} />
         </Field>
@@ -728,7 +728,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       </div>
       {!!form.partially_paid && (
         <>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Partial Paid Amount" locked={financeLocked}>
               <input disabled={financeLocked} type="number" step="0.01" className={inputCls} value={form.partial_paid_amount ?? ''} onChange={e => set('partial_paid_amount', e.target.value ? parseFloat(e.target.value) : null)} />
             </Field>
@@ -796,7 +796,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       </Field>
 
       <SectionHeader title="Linked Records" />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Sub Ledger">
           <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub ledger…" />
         </Field>
@@ -804,7 +804,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <SearchableSelect disabled={financeLocked} value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {showFullFieldSet && (
           <Field label="Vendor Receipt Facilitation">
             <SearchableSelect value={form.vendor_receipt_facilitation_id ?? null} onChange={id => set('vendor_receipt_facilitation_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Select record…" />
@@ -814,7 +814,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <SearchableSelect disabled={financeLocked} value={form.transfer_id ?? null} onChange={id => set('transfer_id', id)} options={transferOptions} placeholder="Select transfer…" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Tax Month" locked={financeLocked}>
           <SearchableSelect disabled={financeLocked} value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
         </Field>

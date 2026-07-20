@@ -96,7 +96,7 @@ function DisciplinaryRecordFormPageBody({ id, record }: { id?: string; record?: 
       <Field label="Staff *">
         <SearchableSelect value={form.staff_id ?? null} onChange={id => set('staff_id', id)} options={staffOptions} placeholder="Select staff…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Incident Date *">
           <input type="date" className={inputCls} value={form.incident_date ?? ''} onChange={e => set('incident_date', e.target.value)} />
         </Field>

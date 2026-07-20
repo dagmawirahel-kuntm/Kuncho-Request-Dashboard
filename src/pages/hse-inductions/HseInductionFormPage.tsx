@@ -88,7 +88,7 @@ function HseInductionFormPageBody({ id, record }: { id?: string; record?: HseInd
 
   return (
     <FormPage title={isEdit ? 'Edit Induction' : 'New Induction'} backTo="/hse-inductions" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Induction'} onSave={handleSave}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Staff Member" hint="Use this for employees on staff.">
           <SearchableSelect value={form.staff_id ?? null} onChange={v => set('staff_id', v)} options={staffOptions} placeholder="Select staff member…" />
         </Field>
@@ -96,7 +96,7 @@ function HseInductionFormPageBody({ id, record }: { id?: string; record?: HseInd
           <input type="text" className={inputCls} value={form.person_name ?? ''} onChange={e => set('person_name', e.target.value)} placeholder="Full name" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={v => set('project_id', v)} options={projectOptions} placeholder="Select project…" />
         </Field>
@@ -104,7 +104,7 @@ function HseInductionFormPageBody({ id, record }: { id?: string; record?: HseInd
           <SearchableSelect value={form.inducted_by_staff_id ?? null} onChange={v => set('inducted_by_staff_id', v)} options={staffOptions} placeholder="Select staff member…" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Induction Date *">
           <input type="date" className={inputCls} value={form.induction_date ?? ''} onChange={e => set('induction_date', e.target.value)} />
         </Field>

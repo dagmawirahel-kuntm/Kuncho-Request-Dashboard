@@ -84,7 +84,7 @@ function TaxSummaryFormPageBody({ id, record }: { id?: string; record?: TaxSumma
       <Field label="Month *">
         <input type="month" className={inputCls} value={form.month ?? ''} onChange={e => set('month', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="VAT from Expenses (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.vat_from_expenses ?? ''} onChange={e => set('vat_from_expenses', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -92,7 +92,7 @@ function TaxSummaryFormPageBody({ id, record }: { id?: string; record?: TaxSumma
           <input type="number" step="0.01" className={inputCls} value={form.vat_from_sales ?? ''} onChange={e => set('vat_from_sales', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="WHT from Expenses (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.wht_from_expenses ?? ''} onChange={e => set('wht_from_expenses', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>

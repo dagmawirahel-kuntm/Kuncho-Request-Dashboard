@@ -96,7 +96,7 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
       <Field label="Date">
         <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Check In Time">
           <input type="time" className={inputCls} value={form.check_in_time ?? ''} onChange={e => set('check_in_time', e.target.value)} />
         </Field>

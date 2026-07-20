@@ -98,7 +98,7 @@ function HseIncidentFormPageBody({ id, record }: { id?: string; record?: HseInci
 
   return (
     <FormPage title={isEdit ? 'Edit Incident' : 'New Incident'} backTo="/hse-incidents" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Report Incident'} onSave={handleSave}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Incident Date *">
           <input type="date" className={inputCls} value={form.incident_date ?? ''} onChange={e => set('incident_date', e.target.value)} />
         </Field>
@@ -113,7 +113,7 @@ function HseIncidentFormPageBody({ id, record }: { id?: string; record?: HseInci
           </select>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Severity *">
           <select className={inputCls} value={form.severity ?? ''} onChange={e => set('severity', e.target.value)}>
             <option value="low">Low</option>
@@ -132,7 +132,7 @@ function HseIncidentFormPageBody({ id, record }: { id?: string; record?: HseInci
           </Field>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={v => set('project_id', v)} options={projectOptions} placeholder="Select project…" />
         </Field>

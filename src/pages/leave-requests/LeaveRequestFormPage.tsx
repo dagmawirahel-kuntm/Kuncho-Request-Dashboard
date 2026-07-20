@@ -94,7 +94,7 @@ function LeaveRequestFormPageBody({ id, record }: { id?: string; record?: LeaveR
       <Field label="Staff *">
         <SearchableSelect value={form.staff_id ?? null} onChange={id => set('staff_id', id)} options={staffOptions} placeholder="Select staff…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Leave Type *">
           <select className={inputCls} value={form.leave_type ?? ''} onChange={e => set('leave_type', e.target.value as LeaveType)}>
             {LEAVE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -104,7 +104,7 @@ function LeaveRequestFormPageBody({ id, record }: { id?: string; record?: LeaveR
           <input type="number" step="0.5" className={inputCls} value={form.days ?? ''} onChange={e => set('days', e.target.value ? parseFloat(e.target.value) : null)} placeholder="Optional" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Start Date *">
           <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
         </Field>

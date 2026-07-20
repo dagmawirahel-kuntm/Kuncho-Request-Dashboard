@@ -115,7 +115,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         <input type="text" className={inputCls} value={form.employee_name ?? ''} onChange={e => set('employee_name', e.target.value)} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Department">
           <select className={inputCls} value={form.staff_type ?? ''} onChange={e => set('staff_type', e.target.value || null)}>
             <option value="">— Select —</option>
@@ -154,7 +154,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         )}
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Workplace">
           <input type="text" className={inputCls} value={form.role ?? ''} onChange={e => set('role', e.target.value)} placeholder="e.g. Front Desk, Site A, Carpentry Bench 3" />
         </Field>
@@ -176,7 +176,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         </select>
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Monthly Salary (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.monthly_salary ?? ''} onChange={e => set('monthly_salary', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -189,7 +189,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         <input type="text" className={inputCls} value={form.payment_frequency ?? ''} onChange={e => set('payment_frequency', e.target.value)} placeholder="e.g. Monthly, Bi-weekly" />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Phone Number">
           <input type="tel" className={inputCls} value={form.phone_number ?? ''} onChange={e => set('phone_number', e.target.value)} />
         </Field>
@@ -198,7 +198,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="National ID">
           <input type="text" className={inputCls} value={form.national_id ?? ''} onChange={e => set('national_id', e.target.value)} />
         </Field>
@@ -207,7 +207,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Starting Date">
           <input type="date" className={inputCls} value={form.starting_date ?? ''} onChange={e => set('starting_date', e.target.value)} />
         </Field>

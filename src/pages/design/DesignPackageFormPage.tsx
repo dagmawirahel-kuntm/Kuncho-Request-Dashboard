@@ -88,7 +88,7 @@ function DesignPackageFormPageBody({ id, record }: { id?: string; record?: Desig
       <Field label="Project *">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Title *">
           <input type="text" className={inputCls} value={form.title ?? ''} onChange={e => set('title', e.target.value)} />
         </Field>

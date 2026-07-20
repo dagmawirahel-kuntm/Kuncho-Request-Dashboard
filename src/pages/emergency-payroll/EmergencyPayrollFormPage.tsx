@@ -100,7 +100,7 @@ function EmergencyPayrollFormPageBody({ id, record }: { id?: string; record?: Em
       <Field label="Payroll Month">
         <input type="month" className={inputCls} value={form.payroll_month ?? ''} onChange={e => set('payroll_month', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Days Worked">
           <input type="number" step="0.5" className={inputCls} value={form.days_worked ?? ''} onChange={e => set('days_worked', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -108,7 +108,7 @@ function EmergencyPayrollFormPageBody({ id, record }: { id?: string; record?: Em
           <input type="number" step="0.5" className={inputCls} value={form.total_ot_days ?? ''} onChange={e => set('total_ot_days', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Total Bonus (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.total_bonus ?? ''} onChange={e => set('total_bonus', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
@@ -116,7 +116,7 @@ function EmergencyPayrollFormPageBody({ id, record }: { id?: string; record?: Em
           <input type="number" step="0.01" className={inputCls} value={form.advance_taken ?? ''} onChange={e => set('advance_taken', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Payment Status">
           <select className={inputCls} value={form.payment_status ?? ''} onChange={e => set('payment_status', e.target.value)}>
             <option value="">— Select —</option>

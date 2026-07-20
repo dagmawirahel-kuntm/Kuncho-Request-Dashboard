@@ -91,7 +91,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       <Field label="Project *">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Role Needed *">
           <input type="text" className={inputCls} value={form.role_needed ?? ''} onChange={e => set('role_needed', e.target.value)} placeholder="e.g. Site Electrician" />
         </Field>
@@ -105,7 +105,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           Casual / new hire (not on the existing roster)
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Start Date *">
           <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
         </Field>
@@ -113,7 +113,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           <input type="date" className={inputCls} value={form.end_date ?? ''} onChange={e => set('end_date', e.target.value || null)} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Estimated Day Rate (ETB) *">
           <input type="number" step="0.01" min={0} className={inputCls} value={form.estimated_day_rate ?? ''} onChange={e => set('estimated_day_rate', e.target.value ? parseFloat(e.target.value) : undefined)} />
         </Field>
