@@ -175,7 +175,7 @@ function EntityCard({
             <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
               {cornerBadge}
               {rowActions && (
-                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
+                <div className="flex items-center gap-1.5 transition-opacity duration-150 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
                   {rowActions}
                 </div>
               )}
@@ -194,8 +194,10 @@ function EntityCard({
         </div>
       )}
 
-      {/* Hover CTA bar */}
-      <div className="max-h-0 group-hover:max-h-14 overflow-hidden transition-all duration-300 ease-out">
+      {/* CTA bar — hidden until hover on devices that actually support it (mouse/trackpad);
+          touch devices (iPad, phones) have no hover state at all, so it stays permanently
+          expanded there rather than becoming unreachable. */}
+      <div className="max-h-14 overflow-hidden transition-all duration-300 ease-out [@media(hover:hover)]:max-h-0 [@media(hover:hover)]:group-hover:max-h-14">
         <div
           className="flex items-center justify-between px-4 py-2.5 text-sm font-medium"
           style={{ backgroundColor: brand.bg, color: fg }}
