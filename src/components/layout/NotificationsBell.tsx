@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface NotificationItem {
   label: string
@@ -14,6 +15,7 @@ export function NotificationsBell() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -23,21 +25,44 @@ export function NotificationsBell() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const { data } = useQuery({
-    queryKey: ['notifications'],
+  // Resolve "my staff record" (same user_id-or-email pattern used
+  // throughout this app) so a personal calendar message addressed to
+  // me specifically can surface here — every other item in this bell
+  // is a passive, global count, not targeted to one person.
+  const { data: myStaffId } = useQuery({
+    queryKey: ['my-staff-id-for-notifications', user?.id],
     queryFn: async () => {
-      const [expenses, orders, transport, payroll, emergency, overBudget] = await Promise.all([
+      const email = user!.email?.toLowerCase() ?? ''
+      const orFilter = email ? `user_id.eq.${user!.id},email.ilike.${email}` : `user_id.eq.${user!.id}`
+      const { data } = await supabase.from('staff').select('id, user_id, email').or(orFilter).limit(5)
+      if (!data || data.length === 0) return null
+      const linked = data.find(r => r.user_id === user!.id)
+      const byEmail = data.find(r => (r.email ?? '').toLowerCase() === email)
+      return (linked ?? byEmail ?? data[0])?.id ?? null
+    },
+    enabled: !!user,
+  })
+
+  const { data } = useQuery({
+    queryKey: ['notifications', myStaffId],
+    queryFn: async () => {
+      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents] = await Promise.all([
         supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('transportation_requests').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('payroll').select('*', { count: 'exact', head: true }).neq('payment_status', 'paid'),
         supabase.from('emergency_payroll_summary').select('*', { count: 'exact', head: true }).neq('payment_status', 'paid'),
         supabase.from('v_project_cost_group_budget').select('*', { count: 'exact', head: true }).eq('over_budget', true),
+        myStaffId
+          ? supabase.from('company_events').select('*', { count: 'exact', head: true }).eq('recipient_staff_id', myStaffId).gte('event_date', new Date().toISOString().slice(0, 10))
+          : Promise.resolve({ count: 0 }),
       ])
       // "Flagged for review" — this is a passive, global badge anyone can
       // see, not a targeted alert to finance. Never describe it as
-      // "finance was notified" in copy.
+      // "finance was notified" in copy. The personal-messages item below
+      // is the one genuine exception — it IS addressed to this viewer.
       const items: NotificationItem[] = [
+        { label: 'Messages for you', count: personalEvents.count ?? 0, to: '/calendar' },
         { label: 'Unpaid expenses', count: expenses.count ?? 0, to: '/expenses' },
         { label: 'Pending orders', count: orders.count ?? 0, to: '/orders' },
         { label: 'Pending transportation requests', count: transport.count ?? 0, to: '/transportation' },

@@ -3,10 +3,12 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { useStaff } from '@/hooks/useLookups'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { getDeptColor, DEPARTMENTS } from '@/lib/departments'
 import { formatEthiopian } from '@/lib/ethiopianCalendar'
 import type { CompanyEvent, CompanyEventType } from '@/types/database'
-import { Megaphone, CalendarDays, CheckSquare, Sun, Plus, Trash2, Clock } from 'lucide-react'
+import { Megaphone, CalendarDays, CheckSquare, Sun, Plus, Trash2, Clock, User } from 'lucide-react'
 
 const TYPE_META: Record<CompanyEventType, { icon: React.ReactNode; cls: string; label: string }> = {
   announcement: { icon: <Megaphone className="h-3.5 w-3.5" />, cls: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20', label: 'Announcement' },
@@ -36,9 +38,32 @@ export default function CalendarPage() {
   const [form, setForm] = useState({
     title: '', description: '', event_date: todayStr,
     start_time: '', end_time: '', event_type: 'announcement' as CompanyEventType,
-    department: '',
+    department: '', recipientStaffId: null as string | null,
   })
+  const [audienceMode, setAudienceMode] = useState<'company' | 'department' | 'person'>('company')
   const [saving, setSaving] = useState(false)
+
+  const { data: staff = [] } = useStaff()
+  const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
+
+  // Match the logged-in user to their own staff record — same
+  // user_id-or-email pattern as MyRequestsDashboardPage — so a
+  // targeted event addressed to "me" can be told apart from everyone
+  // else's, purely for display (RLS already restricts which rows are
+  // even fetched).
+  const { data: myStaffId } = useQuery({
+    queryKey: ['my-staff-id', user?.id],
+    queryFn: async () => {
+      const email = user!.email?.toLowerCase() ?? ''
+      const orFilter = email ? `user_id.eq.${user!.id},email.ilike.${email}` : `user_id.eq.${user!.id}`
+      const { data } = await supabase.from('staff').select('id, user_id, email').or(orFilter).limit(5)
+      if (!data || data.length === 0) return null
+      const linked = data.find(r => r.user_id === user!.id)
+      const byEmail = data.find(r => (r.email ?? '').toLowerCase() === email)
+      return (linked ?? byEmail ?? data[0])?.id ?? null
+    },
+    enabled: !!user,
+  })
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['company-events', todayStr],
@@ -72,6 +97,7 @@ export default function CalendarPage() {
 
   async function handlePost() {
     if (!form.title.trim()) { toast('Title is required', 'error'); return }
+    if (audienceMode === 'person' && !form.recipientStaffId) { toast('Select who this is for', 'error'); return }
     setSaving(true)
     const { error } = await supabase.from('company_events').insert([{
       title: form.title.trim(),
@@ -80,7 +106,8 @@ export default function CalendarPage() {
       start_time: form.start_time || null,
       end_time: form.end_time || null,
       event_type: form.event_type,
-      department: form.department || null,
+      department: form.recipientStaffId ? null : (form.department || null),
+      recipient_staff_id: form.recipientStaffId,
       created_by: user?.id ?? null,
     }])
     setSaving(false)
@@ -95,7 +122,8 @@ export default function CalendarPage() {
       }
       return
     }
-    setForm({ title: '', description: '', event_date: todayStr, start_time: '', end_time: '', event_type: 'announcement', department: '' })
+    setForm({ title: '', description: '', event_date: todayStr, start_time: '', end_time: '', event_type: 'announcement', department: '', recipientStaffId: null })
+    setAudienceMode('company')
     setShowForm(false)
     qc.invalidateQueries({ queryKey: ['company-events'] })
     qc.invalidateQueries({ queryKey: ['dept-board-events'] })
@@ -166,11 +194,37 @@ export default function CalendarPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Audience</label>
-              <select className={inputCls} value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))}>
-                <option value="">Company-wide (everyone)</option>
+              <select
+                className={inputCls}
+                value={audienceMode === 'department' ? form.department : audienceMode}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === 'company' || v === 'person') {
+                    setAudienceMode(v)
+                    setForm(f => ({ ...f, department: '', recipientStaffId: null }))
+                  } else {
+                    setAudienceMode('department')
+                    setForm(f => ({ ...f, department: v, recipientStaffId: null }))
+                  }
+                }}
+              >
+                <option value="company">Company-wide (everyone)</option>
                 {DEPARTMENTS.map(d => <option key={d} value={d}>{d} department</option>)}
+                <option value="person">One person…</option>
               </select>
             </div>
+            {audienceMode === 'person' && (
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Recipient</label>
+                <SearchableSelect
+                  value={form.recipientStaffId}
+                  onChange={id => setForm(f => ({ ...f, recipientStaffId: id }))}
+                  options={staffOptions}
+                  placeholder="Select who this is for…"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">Only this person (and admin/manager/HR) will see it — everyone else's calendar is unaffected.</p>
+              </div>
+            )}
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Date</label>
               <input type="date" className={inputCls} value={form.event_date} onChange={e => setForm(f => ({ ...f, event_date: e.target.value }))} />
@@ -254,9 +308,15 @@ export default function CalendarPage() {
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-[10px] text-slate-400">{meta.label}</span>
                           {time && <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{time}{ev.end_time ? `–${fmtTime(ev.end_time)}` : ''}</span>}
-                          {ev.department
-                            ? <span className={`rounded-full px-1.5 py-0 text-[9px] font-semibold ${getDeptColor(ev.department).pill}`}>{ev.department}</span>
-                            : <span className="rounded-full px-1.5 py-0 text-[9px] font-semibold bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">Company-wide</span>}
+                          {ev.recipient_staff_id
+                            ? (
+                              <span className="rounded-full px-1.5 py-0 text-[9px] font-semibold bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300 flex items-center gap-0.5">
+                                <User className="h-2.5 w-2.5" /> {ev.recipient_staff_id === myStaffId ? 'For you' : 'Personal'}
+                              </span>
+                            )
+                            : ev.department
+                              ? <span className={`rounded-full px-1.5 py-0 text-[9px] font-semibold ${getDeptColor(ev.department).pill}`}>{ev.department}</span>
+                              : <span className="rounded-full px-1.5 py-0 text-[9px] font-semibold bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">Company-wide</span>}
                         </div>
                         {ev.description && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{ev.description}</p>}
                       </div>

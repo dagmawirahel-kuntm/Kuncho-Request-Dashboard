@@ -127,7 +127,8 @@ export interface CompanyEvent {
   start_time: string | null
   end_time: string | null
   event_type: CompanyEventType
-  department: string | null   // null = company-wide
+  department: string | null          // null = company-wide
+  recipient_staff_id: string | null  // set = targeted to one person, overrides department
   created_by: string | null
   created_at: string
   updated_at: string
