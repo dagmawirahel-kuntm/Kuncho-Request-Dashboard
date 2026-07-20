@@ -110,6 +110,7 @@ export interface Staff {
   id_document_name: string | null
   user_id: string | null
   department_id: string | null
+  sub_team: string | null          // Operations/Construction only: e.g. "Workshop — Carpentry", "Site"
   created_at: string
   updated_at: string
 }

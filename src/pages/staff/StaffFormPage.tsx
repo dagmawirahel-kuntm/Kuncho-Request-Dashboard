@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { FileUpload } from '@/components/shared/FileUpload'
@@ -54,6 +54,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const canAssignDepartment = role === 'admin' || role === 'hr_officer'
 
   const { data: departments = [] } = useDepartments()
+  const departmentNameById = useMemo(() => new Map(departments.map((d: any) => [d.id, d.name])), [departments])
 
   const { data: userProfiles = [] } = useQuery({
     queryKey: ['user-profiles-lookup'],
@@ -87,6 +88,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           id_document_name: record.id_document_name,
           user_id: record.user_id,
           department_id: record.department_id,
+          sub_team: record.sub_team,
         }
       : { status: 'active' }
   )
@@ -153,6 +155,23 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           <p className="mt-1 text-xs text-slate-400">Only Admin or HR can set this — leave as Unassigned.</p>
         )}
       </Field>
+
+      {form.department_id && departmentNameById.get(form.department_id) === 'Operations/Construction' && (
+        <Field label="Sub-Team">
+          <input
+            type="text" list="sub-team-list" className={inputCls}
+            value={form.sub_team ?? ''} onChange={e => set('sub_team', e.target.value || null)}
+            placeholder="e.g. Workshop — Carpentry"
+          />
+          <datalist id="sub-team-list">
+            <option value="Workshop — Carpentry" />
+            <option value="Workshop — CNC" />
+            <option value="Workshop — Leather" />
+            <option value="Site" />
+          </datalist>
+          <p className="mt-1 text-xs text-slate-400">Groups fabrication/site staff within Operations/Construction — not a separate department.</p>
+        </Field>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Workplace">
