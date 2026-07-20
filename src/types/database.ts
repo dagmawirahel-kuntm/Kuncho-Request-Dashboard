@@ -1548,3 +1548,34 @@ export interface PettyCashReplenishment {
   created_at: string
 }
 export type PettyCashReplenishmentInsert = Omit<PettyCashReplenishment, 'id' | 'requires_pm_approval' | 'approved_by' | 'approved_at' | 'created_at'>
+
+// ── Fleet: Maintenance & Penalties ───────────────────────────────
+export type VehicleMaintenanceStatus = 'pending' | 'approved' | 'rejected' | 'completed'
+export interface VehicleMaintenanceRequest {
+  id: string
+  vehicle_id: string
+  requested_by: string | null
+  issue_description: string
+  estimated_cost: number | null
+  status: VehicleMaintenanceStatus
+  approved_by: string | null
+  approved_at: string | null
+  actual_cost: number | null
+  completed_at: string | null
+  expense_id: string | null
+  created_at: string
+}
+export type VehicleMaintenanceRequestInsert = Omit<VehicleMaintenanceRequest, 'id' | 'approved_by' | 'approved_at' | 'expense_id' | 'created_at'>
+
+export interface VehiclePenalty {
+  id: string
+  vehicle_id: string
+  driver_staff_id: string | null
+  penalty_date: string
+  amount: number
+  reason: string | null
+  paid: boolean
+  notes: string | null
+  created_at: string
+}
+export type VehiclePenaltyInsert = Omit<VehiclePenalty, 'id' | 'created_at'>

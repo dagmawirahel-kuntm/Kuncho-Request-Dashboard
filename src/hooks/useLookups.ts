@@ -389,6 +389,22 @@ export function useOpportunities() {
   })
 }
 
+export function useVehicles() {
+  return useQuery({
+    queryKey: ['vehicles-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('id,name,vehicle_type,plate_number,status')
+        .eq('active', true)
+        .order('name')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function usePettyCashFloats() {
   return useQuery({
     queryKey: ['petty-cash-floats-lookup'],

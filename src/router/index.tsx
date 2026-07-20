@@ -119,6 +119,10 @@ import LaborRequisitionsPage from '@/pages/labor-requisitions/LaborRequisitionsP
 import PettyCashPage from '@/pages/petty-cash/PettyCashPage'
 import PettyCashFloatFormPage from '@/pages/petty-cash/PettyCashFloatFormPage'
 import PettyCashDetailPage from '@/pages/petty-cash/PettyCashDetailPage'
+import VehicleMaintenancePage from '@/pages/fleet/VehicleMaintenancePage'
+import VehicleMaintenanceFormPage from '@/pages/fleet/VehicleMaintenanceFormPage'
+import VehiclePenaltiesPage from '@/pages/fleet/VehiclePenaltiesPage'
+import VehiclePenaltyFormPage from '@/pages/fleet/VehiclePenaltyFormPage'
 import LaborRequisitionFormPage from '@/pages/labor-requisitions/LaborRequisitionFormPage'
 import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
@@ -182,6 +186,12 @@ export const router = createBrowserRouter([
           { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },
           { path: 'logistics', element: <FleetPage /> },
           { path: 'logistics/vehicles/:id', element: <VehicleDetailPage /> },
+          { path: 'fleet/maintenance', element: <VehicleMaintenancePage /> },
+          { path: 'fleet/maintenance/new', element: <VehicleMaintenanceFormPage /> },
+          { path: 'fleet/maintenance/:id/edit', element: <VehicleMaintenanceFormPage /> },
+          { path: 'fleet/penalties', element: <VehiclePenaltiesPage /> },
+          { path: 'fleet/penalties/new', element: <VehiclePenaltyFormPage /> },
+          { path: 'fleet/penalties/:id/edit', element: <VehiclePenaltyFormPage /> },
           { path: 'locations/map', element: <LocationsMapPage /> },
           { path: 'purchase-allocation', element: <PurchaseAllocationPage /> },
           { path: 'purchase-allocation/new', element: <AllocationFormPage /> },

@@ -44,6 +44,8 @@ const navGroups: NavGroup[] = [
       { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
       { label: 'Transport Jobs', to: '/transportation', icon: Truck },
       { label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
+      { label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
+      { label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'manager', 'finance'] },
       { label: 'My Leave', to: '/my-leave', icon: CalendarClock },
