@@ -116,6 +116,12 @@ export function profileScore(client: Client): { score: number; total: number; ch
   return { score: checks.filter(c => c.done).length, total: checks.length, checks }
 }
 
+function scoreColor(pct: number) {
+  if (pct >= 0.8) return '#10B981'  // green
+  if (pct >= 0.5) return '#F59E0B'  // amber
+  return '#EF4444'                   // red
+}
+
 // ── Logo avatar (still used on the detail page) ─────────────────────────────────
 export function ClientAvatar({ client, size = 'md', tier }: { client: Client; size?: 'sm' | 'md' | 'lg'; tier?: ClientTier }) {
   const color = clientColor(client.client_name)
@@ -350,6 +356,8 @@ export default function ClientsPage() {
         const revenue = s?.revenue ?? 0
         const outstandingAmount = s?.outstandingAmount ?? 0
         const share = revenue > 0 ? Math.min(1, outstandingAmount / revenue) : 0
+        const { score, total } = profileScore(c)
+        const profilePct = score / total
         return (
           <>
             <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Lifetime Sales</p>
@@ -366,6 +374,12 @@ export default function ClientsPage() {
                 <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{formatCurrency(outstandingAmount)} outstanding</p>
               </div>
             )}
+            <div className="mt-3 flex items-center gap-2">
+              <div className="h-1 flex-1 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(profilePct * 100).toFixed(0)}%`, backgroundColor: scoreColor(profilePct) }} />
+              </div>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 flex-shrink-0">{score}/{total} profile</span>
+            </div>
           </>
         )
       }}

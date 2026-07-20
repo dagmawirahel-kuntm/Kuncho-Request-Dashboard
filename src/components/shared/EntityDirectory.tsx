@@ -174,7 +174,11 @@ function EntityCard({
           {(cornerBadge || rowActions) && (
             <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
               {cornerBadge}
-              {rowActions}
+              {rowActions && (
+                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
+                  {rowActions}
+                </div>
+              )}
             </div>
           )}
         </div>
