@@ -104,6 +104,7 @@ import OpportunitiesPage from '@/pages/bd/OpportunitiesPage'
 import OpportunityFormPage from '@/pages/bd/OpportunityFormPage'
 import LeaveRequestsPage from '@/pages/leave-requests/LeaveRequestsPage'
 import LeaveRequestFormPage from '@/pages/leave-requests/LeaveRequestFormPage'
+import MyLeavePage from '@/pages/leave-requests/MyLeavePage'
 import PerformanceReviewsPage from '@/pages/performance-reviews/PerformanceReviewsPage'
 import PerformanceReviewFormPage from '@/pages/performance-reviews/PerformanceReviewFormPage'
 import OnboardingTasksPage from '@/pages/onboarding-tasks/OnboardingTasksPage'
@@ -135,6 +136,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'my-home', element: <MyRequestsDashboardPage /> },
+          { path: 'my-leave', element: <MyLeavePage /> },
           { path: 'calendar', element: <CalendarPage /> },
           { path: 'overview', element: <OverviewDashboardPage /> },
           { path: 'requests', element: <RequestsDashboardPage /> },

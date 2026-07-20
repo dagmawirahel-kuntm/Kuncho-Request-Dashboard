@@ -256,6 +256,9 @@ export default function MyRequestsDashboardPage() {
           <Link to="/timesheet/new" className="flex items-center gap-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Plus className="h-4 w-4" /> Timesheet Entry
           </Link>
+          <Link to="/my-leave" className="flex items-center gap-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Plus className="h-4 w-4" /> Request Leave
+          </Link>
         </div>
       </div>
 
