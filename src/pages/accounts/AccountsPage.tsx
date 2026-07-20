@@ -1,13 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { EntityDirectory, type EntityColumn } from '@/components/shared/EntityDirectory'
 import type { Account } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard } from 'lucide-react'
 
 // ── Bank theme map ────────────────────────────────────────────────────────────
 // Keys are lowercase substrings matched against account_name (longest/most
@@ -86,198 +87,25 @@ function getBankEntry(name: string): BankEntry {
   return { key: '', logo: '', bg: '#64748B', fg: '#fff', initials }
 }
 
-// ── Summary stat card ─────────────────────────────────────────────────────────
-function SummaryCard({
-  label,
-  value,
-  icon,
-  valueClass = 'text-slate-800 dark:text-slate-100',
-}: {
-  label: string
-  value: string
-  icon: React.ReactNode
-  valueClass?: string
-}) {
+// ── Card body: balance + % of total ─────────────────────────────────────────
+function AccountBody({ balance, totalBalance, bg }: { balance: number; totalBalance: number; bg: string }) {
+  const isNegative = balance < 0
+  const share = totalBalance > 0 ? Math.max(0, balance / totalBalance) : 0
   return (
-    <div className="rounded-xl border bg-white p-4 dark:bg-slate-800 dark:border-slate-700 flex items-center gap-4">
-      <div className="flex-shrink-0 rounded-lg bg-slate-100 dark:bg-slate-700 p-2.5 text-slate-500 dark:text-slate-400">
-        {icon}
-      </div>
-      <div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</p>
-        <p className={`text-xl font-bold mt-0.5 ${valueClass}`}>{value}</p>
-      </div>
-    </div>
-  )
-}
-
-// ── Account card ──────────────────────────────────────────────────────────────
-function AccountCard({
-  account,
-  balance,
-  totalBalance,
-  onDelete,
-  canWrite,
-}: {
-  account: Account
-  balance: number | undefined
-  totalBalance: number
-  onDelete: (id: string, name: string) => void
-  canWrite: boolean
-}) {
-  const navigate = useNavigate()
-  const entry = getBankEntry(account.account_name)
-  const bal = balance ?? 0
-  const share = totalBalance > 0 ? Math.max(0, bal / totalBalance) : 0
-  const isNegative = bal < 0
-
-  const goEdit = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    navigate(`/accounts/${account.id}/edit`)
-  }, [account.id, navigate])
-
-  const goDelete = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    onDelete(account.id, account.account_name)
-  }, [account.id, account.account_name, onDelete])
-
-  return (
-    <div
-      className="group rounded-xl overflow-hidden border dark:border-slate-700 shadow-sm hover:shadow-lg active:scale-[0.98] transition-all duration-150 flex flex-col cursor-pointer"
-      onClick={() => navigate(`/accounts/${account.id}`)}
-    >
-
-      {/* ── Branded header ─────────────────────────────────────────────────── */}
-      <div
-        className="relative overflow-hidden px-4 pt-4 pb-5"
-        style={{ backgroundColor: entry.bg }}
-      >
-        {entry.logo && (
-          <img
-            src={entry.logo}
-            alt=""
-            aria-hidden
-            className="pointer-events-none absolute -right-4 -bottom-3 h-24 w-24 object-contain select-none"
-            style={{ opacity: 0.18, filter: 'brightness(10)' }}
-          />
-        )}
-        {!entry.logo && (
-          <span
-            className="pointer-events-none absolute -right-2 -bottom-4 select-none font-black leading-none"
-            style={{ fontSize: '5rem', color: entry.fg, opacity: 0.12 }}
-            aria-hidden
-          >
-            {entry.initials}
-          </span>
-        )}
-
-        <div className="relative flex items-start justify-between gap-2">
-          <div className="flex items-center gap-3">
-            {entry.logo ? (
-              <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center p-1.5 shadow flex-shrink-0 transition-all duration-300 group-hover:shadow-[0_0_16px_4px_rgba(255,255,255,0.55)] group-hover:scale-110">
-                <img
-                  src={entry.logo}
-                  alt={account.account_name}
-                  className="h-full w-full object-contain pointer-events-none transition-[filter] duration-300 group-hover:brightness-110"
-                  onError={e => { (e.target as HTMLImageElement).parentElement!.style.backgroundColor = entry.bg }}
-                />
-              </div>
-            ) : (
-              <div
-                className="h-11 w-11 rounded-xl flex items-center justify-center text-xs font-bold shadow flex-shrink-0 border border-white/20 transition-all duration-300 group-hover:shadow-[0_0_16px_4px_rgba(255,255,255,0.45)] group-hover:scale-110 group-hover:border-white/60"
-                style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: entry.fg }}
-              >
-                {entry.initials}
-              </div>
-            )}
-            <div>
-              <h3 className="font-bold text-sm leading-tight" style={{ color: entry.fg }}>
-                {account.account_name}
-              </h3>
-              {account.account_number && (
-                <p className="text-xs mt-0.5 font-mono" style={{ color: entry.fg, opacity: 0.7 }}>
-                  •••• {account.account_number.slice(-4)}
-                </p>
-              )}
-            </div>
+    <>
+      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Balance</p>
+      <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
+        {isNegative ? '−' : ''}{formatCurrency(Math.abs(balance))}
+      </p>
+      {totalBalance > 0 && !isNegative && (
+        <div className="mt-3">
+          <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${(share * 100).toFixed(1)}%`, backgroundColor: bg }} />
           </div>
-
-          {/* Edit / Delete */}
-          {canWrite && (
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              <button
-                onClick={goEdit}
-                title="Edit"
-                className="rounded p-1.5 hover:bg-white/20 transition-colors"
-                style={{ color: entry.fg, opacity: 0.8 }}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={goDelete}
-                title="Delete"
-                className="rounded p-1.5 hover:bg-white/20 transition-colors"
-                style={{ color: entry.fg, opacity: 0.8 }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{(share * 100).toFixed(1)}% of total</p>
         </div>
-      </div>
-
-      {/* ── Balance body ───────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 px-4 pt-4 pb-2 flex-1">
-        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Balance</p>
-        <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
-          {isNegative ? '−' : ''}{formatCurrency(Math.abs(bal))}
-        </p>
-        {totalBalance > 0 && !isNegative && (
-          <div className="mt-3">
-            <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${(share * 100).toFixed(1)}%`, backgroundColor: entry.bg }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              {(share * 100).toFixed(1)}% of total
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 px-4 pb-3 flex items-center gap-2 flex-wrap border-t dark:border-slate-700 pt-3">
-        {account.type && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
-            {account.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}
-            {account.type}
-          </span>
-        )}
-        {account.status && <StatusBadge status={account.status} />}
-        {account.notes && (
-          <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]" title={account.notes}>
-            {account.notes}
-          </span>
-        )}
-      </div>
-
-      {/* ── View transactions CTA — hidden until hover ─────────────────────── */}
-      <div className="max-h-0 group-hover:max-h-14 overflow-hidden transition-all duration-300 ease-out">
-        <Link
-          to={`/accounts/${account.id}`}
-          onClick={e => e.stopPropagation()}
-          className="flex items-center justify-between px-4 py-2.5 text-sm font-medium"
-          style={{ backgroundColor: entry.bg, color: entry.fg }}
-        >
-          <span>View transactions</span>
-          <ChevronRight className="h-4 w-4 opacity-80 transition-transform duration-200 group-hover:translate-x-0.5" />
-        </Link>
-      </div>
-    </div>
+      )}
+    </>
   )
 }
 
@@ -285,6 +113,7 @@ function AccountCard({
 export default function AccountsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { role } = useAuth()
   const canWrite = role === 'admin' || role === 'finance'
 
@@ -319,81 +148,117 @@ export default function AccountsPage() {
     return { total, positive, activeCount, count: data.length }
   }, [data, balanceMap])
 
-  async function handleDelete(id: string, name: string) {
+  const handleDelete = useCallback(async (id: string, name: string) => {
     if (!window.confirm(`Delete account "${name}"? This cannot be undone.`)) return
     const { error } = await supabase.from('accounts').delete().eq('id', id)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['accounts'] })
     qc.invalidateQueries({ queryKey: ['accounts-lookup'] })
     toast('Account deleted', 'success')
-  }
+  }, [qc, toast])
+
+  const columns: EntityColumn<Account>[] = [
+    {
+      key: 'type',
+      label: 'Type',
+      render: a => a.type
+        ? <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+            {a.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{a.type}
+          </span>
+        : null,
+    },
+    { key: 'status', label: 'Status', render: a => a.status ? <StatusBadge status={a.status} /> : null },
+    {
+      key: 'balance',
+      label: 'Balance',
+      align: 'right',
+      render: a => {
+        const bal = Number(balanceMap[a.id] ?? 0)
+        return (
+          <span className={`font-bold ${bal < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
+            {bal < 0 ? '−' : ''}{formatCurrency(Math.abs(bal))}
+          </span>
+        )
+      },
+    },
+  ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Accounts</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Bank and cash accounts overview</p>
-        </div>
-        {canWrite && (
-          <Link
-            to="/accounts/new"
-            className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
-            <Plus className="h-4 w-4" /> Add Account
-          </Link>
-        )}
-      </div>
-
-      {/* Summary stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <SummaryCard
-          label="Total Balance"
-          value={formatCurrency(stats.total)}
-          icon={<TrendingUp className="h-5 w-5" />}
-          valueClass={stats.total >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}
-        />
-        <SummaryCard
-          label="Funds Available"
-          value={formatCurrency(stats.positive)}
-          icon={<Landmark className="h-5 w-5" />}
-          valueClass="text-green-700 dark:text-green-400"
-        />
-        <SummaryCard
-          label="Active Accounts"
-          value={`${stats.activeCount} of ${stats.count}`}
-          icon={<CreditCard className="h-5 w-5" />}
-        />
-      </div>
-
-      {/* Account cards */}
-      {isLoading ? (
-        <div className="py-16 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
-      ) : data.length === 0 ? (
-        <div className="rounded-xl border border-dashed bg-white dark:bg-slate-800 dark:border-slate-700 py-16 text-center">
-          <Landmark className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">No accounts yet.</p>
-          {canWrite && (
-            <Link to="/accounts/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline">
-              <Plus className="h-3.5 w-3.5" /> Add your first account
-            </Link>
+    <EntityDirectory
+      storageKey="accounts"
+      title="Accounts"
+      subtitle="Bank and cash accounts overview"
+      records={data}
+      isLoading={isLoading}
+      getId={a => a.id}
+      getName={a => a.account_name}
+      getSubline={a => a.account_number ? `•••• ${a.account_number.slice(-4)}` : null}
+      getBrand={a => {
+        const entry = getBankEntry(a.account_name)
+        return { bg: entry.bg, fg: entry.fg, logo: entry.logo || null, initials: entry.initials }
+      }}
+      columns={columns}
+      summaryStats={[
+        {
+          label: 'Total Balance',
+          value: formatCurrency(stats.total),
+          icon: <TrendingUp className="h-5 w-5" />,
+          valueClassName: stats.total >= 0 ? undefined : 'text-red-600 dark:text-red-400',
+        },
+        {
+          label: 'Funds Available',
+          value: formatCurrency(stats.positive),
+          icon: <Landmark className="h-5 w-5" />,
+          valueClassName: 'text-green-700 dark:text-green-400',
+        },
+        { label: 'Active Accounts', value: `${stats.activeCount} of ${stats.count}`, icon: <CreditCard className="h-5 w-5" /> },
+      ]}
+      onAdd={canWrite ? () => navigate('/accounts/new') : undefined}
+      addLabel="Add Account"
+      renderCardBody={a => {
+        const entry = getBankEntry(a.account_name)
+        return <AccountBody balance={Number(balanceMap[a.id] ?? 0)} totalBalance={stats.positive} bg={entry.bg} />
+      }}
+      renderFooterChips={a => (
+        <>
+          {a.type && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+              {a.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{a.type}
+            </span>
           )}
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map(account => (
-            <AccountCard
-              key={account.id}
-              account={account}
-              balance={balanceMap[account.id] !== undefined ? Number(balanceMap[account.id]) : undefined}
-              totalBalance={stats.positive}
-              onDelete={handleDelete}
-              canWrite={canWrite}
-            />
-          ))}
-        </div>
+          {a.status && <StatusBadge status={a.status} />}
+          {a.notes && (
+            <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]" title={a.notes}>{a.notes}</span>
+          )}
+        </>
       )}
-    </div>
+      renderRowActions={canWrite ? a => (
+        <>
+          <button
+            onClick={e => { e.preventDefault(); e.stopPropagation(); navigate(`/accounts/${a.id}/edit`) }}
+            title="Edit"
+            className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={e => { e.preventDefault(); e.stopPropagation(); handleDelete(a.id, a.account_name) }}
+            title="Delete"
+            className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </>
+      ) : undefined}
+      getHref={a => `/accounts/${a.id}`}
+      ctaLabel="View transactions"
+      emptyIcon={<Landmark className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />}
+      emptyMessage="No accounts yet."
+      emptyCta={canWrite ? (
+        <button onClick={() => navigate('/accounts/new')} className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline">
+          <Plus className="h-3.5 w-3.5" /> Add your first account
+        </button>
+      ) : undefined}
+    />
   )
 }
