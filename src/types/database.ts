@@ -1580,3 +1580,17 @@ export interface VehiclePenalty {
   created_at: string
 }
 export type VehiclePenaltyInsert = Omit<VehiclePenalty, 'id' | 'created_at'>
+
+// ── Org chart: safe-columns-only staff directory (v_staff_directory) ──
+export interface StaffDirectoryRow {
+  id: string
+  employee_name: string
+  role: string | null
+  staff_type: string | null
+  department_id: string | null
+  sub_team: string | null
+  phone_number: string | null
+  photo_url: string | null
+  reports_to_id: string | null
+  status: StaffStatus
+}

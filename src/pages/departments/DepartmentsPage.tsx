@@ -1,18 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useStaff } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { Department } from '@/types/database'
+import type { Department, StaffDirectoryRow } from '@/types/database'
 import { Pencil, X, Users, UserRound } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
-interface DepartmentRow extends Department {
-  staff?: { employee_name: string } | null
-}
+type DepartmentRow = Department
 
 export default function DepartmentsPage() {
   const { role } = useAuth()
@@ -25,12 +24,26 @@ export default function DepartmentsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('departments')
-        .select('*, staff:head_staff_id(employee_name)')
+        .select('*')
         .order('sort_order')
       if (error) throw error
       return data as DepartmentRow[]
     },
   })
+
+  // Head names via the safe, broadly-readable staff directory view —
+  // not a `staff:head_staff_id(...)` embed, which silently comes back
+  // null for any viewer whose role can't read the `staff` table
+  // itself, making "No head assigned" a false negative for most roles.
+  const { data: directory = [] } = useQuery({
+    queryKey: ['staff-directory-all'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_staff_directory').select('id, employee_name')
+      if (error) throw error
+      return data as Pick<StaffDirectoryRow, 'id' | 'employee_name'>[]
+    },
+  })
+  const nameByStaffId = useMemo(() => new Map(directory.map(d => [d.id, d.employee_name])), [directory])
 
   // Live staff count per department — fetched raw and reduced client-side
   // rather than relying on a PostgREST count embed, to keep this simple
@@ -82,6 +95,7 @@ export default function DepartmentsPage() {
             <DepartmentCard
               key={dept.id}
               dept={dept}
+              headName={dept.head_staff_id ? nameByStaffId.get(dept.head_staff_id) : undefined}
               staffCount={countsByDept.get(dept.id) ?? 0}
               canEdit={canEdit}
               onEdit={() => setEditingDept(dept)}
@@ -104,17 +118,19 @@ export default function DepartmentsPage() {
 
 function DepartmentCard({
   dept,
+  headName,
   staffCount,
   canEdit,
   onEdit,
 }: {
   dept: DepartmentRow
+  headName?: string
   staffCount: number
   canEdit: boolean
   onEdit: () => void
 }) {
   return (
-    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-4 flex flex-col gap-3">
+    <Link to={`/departments/${dept.id}`} className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{dept.name}</h2>
@@ -130,7 +146,7 @@ function DepartmentCard({
         </div>
         {canEdit && (
           <button
-            onClick={onEdit}
+            onClick={e => { e.preventDefault(); e.stopPropagation(); onEdit() }}
             className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand dark:hover:bg-slate-700 flex-shrink-0"
             title="Edit department"
           >
@@ -146,8 +162,8 @@ function DepartmentCard({
       <div className="flex items-center justify-between pt-2 border-t dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
         <div className="flex items-center gap-1.5 min-w-0">
           <UserRound className="h-3.5 w-3.5 flex-shrink-0" />
-          {dept.staff?.employee_name ? (
-            <span className="truncate">{dept.staff.employee_name}</span>
+          {headName ? (
+            <span className="truncate">{headName}</span>
           ) : (
             <span className="italic text-slate-400 dark:text-slate-500">No head assigned</span>
           )}
@@ -157,7 +173,7 @@ function DepartmentCard({
           <span>{staffCount} staff</span>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 

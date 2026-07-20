@@ -95,6 +95,7 @@ import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
 import GoodsReceivedNoteFormPage from '@/pages/sourcing/GoodsReceivedNoteFormPage'
 import DepartmentsPage from '@/pages/departments/DepartmentsPage'
+import DepartmentOrgChartPage from '@/pages/departments/DepartmentOrgChartPage'
 import DesignPackagesPage from '@/pages/design/DesignPackagesPage'
 import DesignPackageFormPage from '@/pages/design/DesignPackageFormPage'
 import DesignPackageDetailPage from '@/pages/design/DesignPackageDetailPage'
@@ -353,6 +354,7 @@ export const router = createBrowserRouter([
           // policy); write is an in-page modal gated to admin/manager
           // inside DepartmentsPage itself, no separate route needed.
           { path: 'departments', element: <DepartmentsPage /> },
+          { path: 'departments/:id', element: <DepartmentOrgChartPage /> },
           // ── Design: read for everyone; write (new package / edit
           // package / drawings / FF&E) gated inside the pages themselves
           // AND at the route level for the dedicated new/edit routes,
