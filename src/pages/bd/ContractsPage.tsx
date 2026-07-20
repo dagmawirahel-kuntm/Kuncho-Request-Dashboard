@@ -9,7 +9,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Contract } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileText } from 'lucide-react'
 
 const contractQuickFilters: QuickFilter[] = [
   {
@@ -59,6 +59,18 @@ export default function ContractsPage() {
       { accessorKey: 'contract_value', header: 'Value (ETB)', cell: ({ getValue }) => formatCurrency(getValue() as number) },
       { accessorKey: 'signed_date', header: 'Signed Date', cell: ({ getValue }) => formatDate(getValue() as string) },
       { accessorKey: 'status', header: 'Status', filterFn: 'equals', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
+      {
+        id: 'document', header: 'Document',
+        cell: ({ row }) => row.original.document_url ? (
+          <a
+            href={row.original.document_url} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-brand hover:underline"
+            title={row.original.document_name ?? 'View document'}
+          >
+            <FileText className="h-3.5 w-3.5" /> View
+          </a>
+        ) : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>,
+      },
     ]
     if (canWrite) {
       cols.push({
