@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './ProtectedRoute'
+import { LandingRedirect } from './LandingRedirect'
 import { AppShell } from '@/components/layout/AppShell'
 import LoginPage from '@/pages/auth/LoginPage'
 import SignupPage from '@/pages/auth/SignupPage'
@@ -141,7 +142,7 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <Navigate to="/dashboard" replace /> },
+          { index: true, element: <LandingRedirect /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'my-home', element: <MyRequestsDashboardPage /> },
           { path: 'my-leave', element: <MyLeavePage /> },
