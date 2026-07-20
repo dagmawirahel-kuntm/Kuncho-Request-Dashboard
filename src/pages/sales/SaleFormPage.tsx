@@ -79,12 +79,13 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         notes: record.notes,
         client_id: record.client_id,
         project_id: record.project_id,
+        is_project_funded: record.is_project_funded,
         account_id: record.account_id,
         tax_summary_id: record.tax_summary_id,
         due_date: record.due_date,
         payment_date: record.payment_date,
       }
-      : { sales_status: 'Draft' }
+      : { sales_status: 'Draft', is_project_funded: true }
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -224,6 +225,15 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
       </Field>
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
+        <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+            checked={form.is_project_funded === false}
+            onChange={e => set('is_project_funded', !e.target.checked)}
+          />
+          This is an ad-hoc/retail sale — not expected to fund a specific project
+        </label>
       </Field>
       <Field label="Received Through (Account)">
         <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />

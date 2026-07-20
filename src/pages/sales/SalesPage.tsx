@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
@@ -10,7 +10,7 @@ import type { Sale } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
+import { Plus, Pencil, Trash2, Eye, Unlink } from 'lucide-react'
 
 const saleQuickFilters: QuickFilter[] = [
   {
@@ -44,7 +44,8 @@ export default function SalesPage() {
   // Manager can read + edit/approve sales (existing RLS), but not create or
   // delete — only admin/finance own that per the RLS policies since 001/047.
   const canDelete = role === 'admin' || role === 'finance'
-  const { fiscalPeriodId } = useFiscalYear()
+  const { fiscalPeriodId, current } = useFiscalYear()
+  const [missingProjectOnly, setMissingProjectOnly] = useState(false)
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['sales', fiscalPeriodId],
@@ -56,6 +57,16 @@ export default function SalesPage() {
       return data as Sale[]
     },
   })
+
+  // Passive visibility, same pattern as the unassigned-staff indicator:
+  // always scoped to the CURRENT fiscal year regardless of whatever FY the
+  // admin toggle has the table itself showing, since pre-FY2026/27 sales
+  // are meant to keep their nulls permanently and should never surface here.
+  const missingProjectLinks = useMemo(
+    () => current ? data.filter(s => s.is_project_funded && !s.project_id && s.fiscal_period_id === current.id) : [],
+    [data, current]
+  )
+  const rows = missingProjectOnly ? missingProjectLinks : data
 
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this sale record? This cannot be undone.')) return
@@ -100,7 +111,19 @@ export default function SalesPage() {
           </Link>
         )}
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search sales…" persistKey="sales" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="sales" queryKeys={['sales']} quickFilters={saleQuickFilters} />}
+      {missingProjectLinks.length > 0 && (
+        <button
+          onClick={() => setMissingProjectOnly(m => !m)}
+          className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${missingProjectOnly ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+        >
+          <span className="flex-shrink-0 rounded-lg bg-amber-100 p-2 text-amber-600"><Unlink className="h-4 w-4" /></span>
+          <span>
+            <span className="block text-sm font-semibold text-slate-800">{missingProjectLinks.length} sale{missingProjectLinks.length !== 1 ? 's' : ''} missing a project link</span>
+            <span className="block text-xs text-slate-400">{missingProjectOnly ? 'Showing only these' : 'This fiscal year · Click to filter'}</span>
+          </span>
+        </button>
+      )}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={rows} searchPlaceholder="Search sales…" persistKey="sales" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="sales" queryKeys={['sales']} quickFilters={saleQuickFilters} />}
     </div>
   )
 }

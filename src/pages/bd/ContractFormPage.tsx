@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Contract, ContractInsert } from '@/types/database'
-import { useClients, useProjects } from '@/hooks/useLookups'
+import { useClients, useProjects, useOpportunities } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-900 dark:border-slate-600 dark:text-slate-100'
@@ -49,8 +49,10 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
   const qc = useQueryClient()
   const { data: clients = [] } = useClients()
   const { data: projects = [] } = useProjects()
+  const { data: opportunities = [] } = useOpportunities()
   const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name })), [clients])
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+  const opportunityOptions = useMemo(() => opportunities.map((o: any) => ({ id: o.id, label: o.title, sub: o.stage })), [opportunities])
 
   const [form, setForm] = useState<Partial<ContractInsert>>(
     record
@@ -58,6 +60,7 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
         contract_no: record.contract_no,
         client_id: record.client_id,
         project_id: record.project_id,
+        opportunity_id: record.opportunity_id,
         contract_value: record.contract_value ?? undefined,
         signed_date: record.signed_date,
         payment_terms: record.payment_terms,
@@ -113,6 +116,9 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
           <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
         </Field>
       </div>
+      <Field label="Originating Opportunity">
+        <SearchableSelect value={form.opportunity_id ?? null} onChange={id => set('opportunity_id', id)} options={opportunityOptions} placeholder="Only if this deal came from a logged opportunity…" />
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Contract Value (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.contract_value ?? ''} onChange={e => set('contract_value', e.target.value ? parseFloat(e.target.value) : null)} />

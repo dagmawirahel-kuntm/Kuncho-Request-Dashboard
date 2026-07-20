@@ -584,6 +584,8 @@ export interface Sale {
   notes: string | null
   client_id: string | null
   project_id: string | null
+  is_project_funded: boolean
+  fiscal_period_id: string | null
   account_id: string | null
   tax_summary_id: string | null
   invoice_number: string | null
@@ -1205,6 +1207,7 @@ export interface Contract {
   contract_no: string | null
   client_id: string
   project_id: string | null
+  opportunity_id: string | null
   contract_value: number | null
   signed_date: string | null
   payment_terms: string | null

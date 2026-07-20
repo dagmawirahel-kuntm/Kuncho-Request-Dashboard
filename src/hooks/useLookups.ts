@@ -374,6 +374,21 @@ export function useOpenMaterialMoveJobs() {
   })
 }
 
+export function useOpportunities() {
+  return useQuery({
+    queryKey: ['opportunities-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('opportunities')
+        .select('id,title,stage')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useDesignPackages() {
   return useQuery({
     queryKey: ['design-packages-lookup'],
