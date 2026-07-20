@@ -271,7 +271,7 @@ export default function StaffPage() {
         <div className="py-16 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
       ) : (
         <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 dark:bg-slate-900/60 border-b dark:border-slate-700">
                 <tr>
@@ -484,6 +484,92 @@ export default function StaffPage() {
                 </tfoot>
               )}
             </table>
+          </div>
+
+          {/* Mobile: two-line card — name+department badge on line one,
+              org-dept assignment select + actions on line two, matching the
+              rest of the row's detail (workplace, level, salary, contact,
+              employee ID) available one tap further on the staff profile
+              rather than crammed into the list row. */}
+          <div className="sm:hidden divide-y dark:divide-slate-700">
+            {rows.length === 0 ? (
+              <div className="px-4 py-12 text-center text-sm text-slate-400 dark:text-slate-500">No staff match your filter.</div>
+            ) : rows.map(s => {
+              const color = getDeptColor(s.staff_type)
+              const ini = initials(s.employee_name)
+              const orgDeptName = s.department_id ? orgDeptMap.get(s.department_id) : null
+              return (
+                <div key={s.id} className="px-2 py-2.5">
+                  <div className="flex items-start gap-1">
+                    {canAssign && (
+                      <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(s.id)}
+                          onChange={() => toggleSelected(s.id)}
+                          className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand"
+                        />
+                      </span>
+                    )}
+                    <div
+                      className="h-8 w-8 mt-1.5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 select-none"
+                      style={{ backgroundColor: color.bg, color: color.text }}
+                    >
+                      {ini}
+                    </div>
+                    <div className="min-w-0 flex-1 py-1.5 px-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link to={`/staff/${s.id}`} className="font-medium text-slate-800 dark:text-slate-100 truncate hover:text-brand hover:underline">
+                          {s.employee_name}
+                        </Link>
+                        <span className={`inline-flex flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${color.pill}`}>
+                          {s.staff_type ?? 'Unknown'}
+                        </span>
+                      </div>
+                      {s.monthly_salary != null && (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 tabular-nums">{formatCurrency(s.monthly_salary)}/mo</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 pl-1">
+                    {canAssign ? (
+                      <select
+                        className="min-w-0 flex-1 rounded-md border px-2 py-2.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        value={s.department_id ?? ''}
+                        onChange={e => handleAssignDepartment(s.id, e.target.value || null)}
+                      >
+                        <option value="">Unassigned</option>
+                        {(orgDepartments as { id: string; name: string }[]).map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    ) : orgDeptName ? (
+                      <span className="flex-1 min-w-0 truncate text-xs text-slate-600 dark:text-slate-300">{orgDeptName}</span>
+                    ) : (
+                      <span className="inline-flex flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                        Unassigned
+                      </span>
+                    )}
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <Link to={`/staff/${s.id}`} className="flex h-11 w-11 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200" title="View Profile">
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                      <Link to={`/staff/${s.id}/edit`} className="flex h-11 w-11 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200" title="Edit">
+                        <Pencil className="h-4 w-4" />
+                      </Link>
+                      <button onClick={() => handleDelete(s.id, s.employee_name)} className="flex h-11 w-11 items-center justify-center rounded text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400" title="Delete">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {rows.length > 0 && (
+              <div className="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60">
+                {rows.length} {rows.length === 1 ? 'employee' : 'employees'} · {formatCurrency(rows.filter(s => s.payment_frequency === 'Monthly').reduce((s, r) => s + (r.monthly_salary ?? 0), 0))} monthly total
+              </div>
+            )}
           </div>
         </div>
       )}

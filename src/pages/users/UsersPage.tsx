@@ -236,9 +236,9 @@ export default function UsersPage() {
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{p.full_name}</p>
                 <p className="text-xs text-slate-400">Signed up {formatDate(p.created_at)}</p>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
                 <select
-                  className="rounded-md border px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                  className="rounded-md border px-2 py-2.5 sm:py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
                   value={p.role}
                   disabled={updatingId === p.id}
                   onChange={e => handleRoleChange(p.id, e.target.value as UserRole)}
@@ -248,14 +248,14 @@ export default function UsersPage() {
                 <button
                   onClick={() => handleStatusChange(p.id, 'active')}
                   disabled={updatingId === p.id}
-                  className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-2.5 sm:py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
                   <UserCheck className="h-3.5 w-3.5" /> Approve
                 </button>
                 <button
                   onClick={() => handleStatusChange(p.id, 'disabled')}
                   disabled={updatingId === p.id}
-                  className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900/40 px-3 py-2.5 sm:py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 disabled:opacity-50"
                 >
                   <UserX className="h-3.5 w-3.5" /> Reject
                 </button>
@@ -298,7 +298,7 @@ export default function UsersPage() {
                     </span>
                   ) : (
                     <select
-                      className={`rounded-md border px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 ${updatingId === p.id ? 'opacity-50' : ''}`}
+                      className={`rounded-md border px-2 py-2.5 sm:py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 ${updatingId === p.id ? 'opacity-50' : ''}`}
                       value={p.role}
                       disabled={updatingId === p.id}
                       onChange={e => handleRoleChange(p.id, e.target.value as UserRole)}

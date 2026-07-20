@@ -53,9 +53,9 @@ export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
                   type="button"
                   onClick={() => setPinned(p => p === g.cost_group_name ? null : g.cost_group_name)}
                   onDoubleClick={() => setPinned(g.cost_group_name)}
-                  className="flex w-full select-none items-center justify-between gap-2 text-left"
+                  className="flex w-full select-none flex-wrap items-center justify-between gap-x-2 gap-y-1 text-left"
                 >
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  <span className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
                     {g.over_budget && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
                     {g.cost_group_name}
                     {g.is_provisional && (
@@ -94,7 +94,7 @@ export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
                 </div>
 
                 {isOpen && (
-                  <div className="mt-2 grid grid-cols-4 gap-2 rounded-lg bg-slate-50 dark:bg-slate-700/30 px-3 py-2 text-[11px]">
+                  <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg bg-slate-50 dark:bg-slate-700/30 px-3 py-2 text-[11px]">
                     <div><p className="text-slate-400">Budget</p><p className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(g.budgeted_amount)}</p></div>
                     <div><p className="text-slate-400">Paid</p><p className="font-medium text-emerald-600 dark:text-emerald-400">{formatCurrency(g.actual_amount)}</p></div>
                     <div><p className="text-slate-400">Committed</p><p className="font-medium text-amber-600 dark:text-amber-400">{formatCurrency(g.committed_amount)}</p></div>

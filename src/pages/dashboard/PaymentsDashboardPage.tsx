@@ -218,50 +218,87 @@ export default function PaymentsDashboardPage() {
         ) : toPayQueue.length === 0 ? (
           <Empty>Nothing waiting to be paid.</Empty>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
-                <tr>
-                  {canAct && (
-                    <th className="px-4 py-2 w-8">
-                      <input type="checkbox" checked={toPayQueue.length > 0 && selectedQueue.size === toPayQueue.length} onChange={toggleQueueAll} className="rounded border-slate-300 text-brand focus:ring-brand" />
-                    </th>
-                  )}
-                  <th className="px-4 py-2">Vendor</th>
-                  <th className="px-4 py-2">Project / Cost Group</th>
-                  <th className="px-4 py-2 text-right">Amount</th>
-                  <th className="px-4 py-2 text-center">WHT</th>
-                  <th className="px-4 py-2 text-right">Age</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y dark:divide-slate-700">
-                {toPayQueue.map(r => (
-                  <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+          <>
+            {/* Desktop/tablet: real table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
+                  <tr>
                     {canAct && (
-                      <td className="px-4 py-2.5">
-                        <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="rounded border-slate-300 text-brand focus:ring-brand" />
-                      </td>
+                      <th className="px-4 py-2 w-8">
+                        <input type="checkbox" checked={toPayQueue.length > 0 && selectedQueue.size === toPayQueue.length} onChange={toggleQueueAll} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                      </th>
                     )}
-                    <td className="px-4 py-2.5">
-                      <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
-                        {r.vendor_name ?? r.item_service_description ?? r.expense_code}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
-                      {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</td>
-                    <td className="px-4 py-2.5 text-center">
-                      {r.verify_wht && <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                      {r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}
-                    </td>
+                    <th className="px-4 py-2">Vendor</th>
+                    <th className="px-4 py-2">Project / Cost Group</th>
+                    <th className="px-4 py-2 text-right">Amount</th>
+                    <th className="px-4 py-2 text-center">WHT</th>
+                    <th className="px-4 py-2 text-right">Age</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y dark:divide-slate-700">
+                  {toPayQueue.map(r => (
+                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                      {canAct && (
+                        <td className="px-4 py-2.5">
+                          <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                        </td>
+                      )}
+                      <td className="px-4 py-2.5">
+                        <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                          {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                        {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        {r.verify_wht && <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                        {r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: stacked cards — vendor + amount as the header, everything
+                else as a compact secondary line. The checkbox is its own
+                44px tappable area, never a hover-revealed affordance. */}
+            <div className="sm:hidden divide-y dark:divide-slate-700">
+              {canAct && (
+                <label className="flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60">
+                  <span className="flex h-11 w-11 -my-3 flex-shrink-0 items-center justify-center">
+                    <input type="checkbox" checked={toPayQueue.length > 0 && selectedQueue.size === toPayQueue.length} onChange={toggleQueueAll} className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand" />
+                  </span>
+                  Select all
+                </label>
+              )}
+              {toPayQueue.map(r => (
+                <div key={r.id} className="flex items-start gap-1 px-2 py-2">
+                  {canAct && (
+                    <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
+                      <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand" />
+                    </span>
+                  )}
+                  <Link to={`/expenses/${r.id}`} className="min-w-0 flex-1 py-2 pr-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-slate-800 dark:text-slate-100 truncate">{r.vendor_name ?? r.item_service_description ?? r.expense_code}</span>
+                      <span className="flex-shrink-0 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="truncate">{r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}</span>
+                      {r.verify_wht && <span className="flex-shrink-0 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
+                      <span className="ml-auto flex-shrink-0 tabular-nums">{r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}</span>
+                    </div>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </Section>
 
@@ -272,45 +309,76 @@ export default function PaymentsDashboardPage() {
         ) : pendingApproval.length === 0 ? (
           <Empty>Nothing waiting on finance.</Empty>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-2">Vendor</th>
-                  <th className="px-4 py-2">Project</th>
-                  <th className="px-4 py-2 text-right">Amount</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2 w-32"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y dark:divide-slate-700">
-                {pendingApproval.map(r => (
-                  <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                    <td className="px-4 py-2.5">
-                      <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
-                        {r.vendor_name ?? r.item_service_description ?? r.expense_code}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{r.project_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</td>
-                    <td className="px-4 py-2.5"><StatusBadge status={r.approval_status} /></td>
-                    <td className="px-4 py-2.5 text-right">
-                      {r.approval_status === 'manager_approved' && canAct ? (
-                        <button
-                          onClick={() => handleApprove(r.id)}
-                          className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 ml-auto"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                        </button>
-                      ) : r.approval_status === 'pending' ? (
-                        <span className="text-xs text-slate-400 dark:text-slate-500">Awaiting manager</span>
-                      ) : null}
-                    </td>
+          <>
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
+                  <tr>
+                    <th className="px-4 py-2">Vendor</th>
+                    <th className="px-4 py-2">Project</th>
+                    <th className="px-4 py-2 text-right">Amount</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2 w-32"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y dark:divide-slate-700">
+                  {pendingApproval.map(r => (
+                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                      <td className="px-4 py-2.5">
+                        <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                          {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{r.project_name ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</td>
+                      <td className="px-4 py-2.5"><StatusBadge status={r.approval_status} /></td>
+                      <td className="px-4 py-2.5 text-right">
+                        {r.approval_status === 'manager_approved' && canAct ? (
+                          <button
+                            onClick={() => handleApprove(r.id)}
+                            className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 ml-auto"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                          </button>
+                        ) : r.approval_status === 'pending' ? (
+                          <span className="text-xs text-slate-400 dark:text-slate-500">Awaiting manager</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="sm:hidden divide-y dark:divide-slate-700">
+              {pendingApproval.map(r => (
+                <div key={r.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <Link to={`/expenses/${r.id}`} className="min-w-0 font-medium text-slate-800 dark:text-slate-100 truncate">
+                      {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                    </Link>
+                    <span className="flex-shrink-0 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
+                      <span className="truncate">{r.project_name ?? '—'}</span>
+                      <StatusBadge status={r.approval_status} />
+                    </div>
+                    {r.approval_status === 'manager_approved' && canAct ? (
+                      <button
+                        onClick={() => handleApprove(r.id)}
+                        className="flex-shrink-0 flex items-center gap-1.5 rounded-md bg-brand px-3 py-2 text-xs font-medium text-white hover:opacity-90"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                      </button>
+                    ) : r.approval_status === 'pending' ? (
+                      <span className="flex-shrink-0 text-xs text-slate-400 dark:text-slate-500">Awaiting manager</span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </Section>
 

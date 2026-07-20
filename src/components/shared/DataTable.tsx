@@ -148,7 +148,7 @@ function ViewsMenu({
           {views.map(v => (
             <div key={v.name} className="group flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 dark:text-slate-300">
               <button className="flex-1 truncate text-left" onClick={() => { onApply(v); setOpen(false) }}>{v.name}</button>
-              <button onClick={() => onDelete(v.name)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500">
+              <button onClick={() => onDelete(v.name)} className="text-slate-400 hover:text-red-500 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>

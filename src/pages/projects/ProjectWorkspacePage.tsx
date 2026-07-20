@@ -699,19 +699,16 @@ export default function ProjectWorkspacePage() {
         </div>
       )}
 
-      {/* Summary band — compact currency notation (full value on hover/tap-hold) so tiles don't overflow on phone-width screens */}
+      {/* Summary band — compact currency notation (full value on hover/tap-hold) so tiles don't overflow on phone-width screens.
+          Order: Remaining and Committed lead (top row on the grid-cols-2 mobile reflow) since those are what a PM checking
+          their phone mid-day needs first; Contract Value and Projected Margin trail, reachable one scroll further down. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard
-          label="Contract Value"
-          value={project.contract_value != null ? formatCurrencyCompact(project.contract_value) : '—'}
-          title={project.contract_value != null ? formatCurrency(project.contract_value) : undefined}
-          icon={Wallet} color="bg-blue-50 text-blue-600"
-        />
-        <KpiCard
-          label="Cost Budget"
-          value={summary ? formatCurrencyCompact(summary.total_budget) : '—'}
-          title={summary ? formatCurrency(summary.total_budget) : undefined}
-          icon={Wallet} color="bg-slate-100 text-slate-600"
+          label="Remaining"
+          value={summary ? formatCurrencyCompact(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : '—'}
+          title={summary ? formatCurrency(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : undefined}
+          icon={summary?.any_group_over_budget ? AlertTriangle : Wallet}
+          color={summary?.any_group_over_budget ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}
         />
         <KpiCard
           label="Committed"
@@ -721,6 +718,12 @@ export default function ProjectWorkspacePage() {
           icon={Clock3} color="bg-amber-50 text-amber-600"
         />
         <KpiCard
+          label="Cost Budget"
+          value={summary ? formatCurrencyCompact(summary.total_budget) : '—'}
+          title={summary ? formatCurrency(summary.total_budget) : undefined}
+          icon={Wallet} color="bg-slate-100 text-slate-600"
+        />
+        <KpiCard
           label="Actual (Paid)"
           value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'}
           title={summary ? formatCurrency(summary.total_actual_core) : undefined}
@@ -728,11 +731,10 @@ export default function ProjectWorkspacePage() {
           icon={Receipt} color="bg-emerald-50 text-emerald-600"
         />
         <KpiCard
-          label="Remaining"
-          value={summary ? formatCurrencyCompact(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : '—'}
-          title={summary ? formatCurrency(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : undefined}
-          icon={summary?.any_group_over_budget ? AlertTriangle : Wallet}
-          color={summary?.any_group_over_budget ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}
+          label="Contract Value"
+          value={project.contract_value != null ? formatCurrencyCompact(project.contract_value) : '—'}
+          title={project.contract_value != null ? formatCurrency(project.contract_value) : undefined}
+          icon={Wallet} color="bg-blue-50 text-blue-600"
         />
         <KpiCard
           label="Projected Margin"
