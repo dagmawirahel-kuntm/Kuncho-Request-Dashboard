@@ -2,6 +2,14 @@
 /**
  * CBE Statement Backfill — pre-01 Dec 2025
  *
+ * SUPERSEDED: this batch was applied for real via
+ * supabase/migrations/129_cbe_2025h2_backfill.sql (fetched through the
+ * Airtable MCP connector instead of this script, so no service-role key
+ * was ever needed). That migration writes the same CBE-IMPORT-SENTINEL-2025H2
+ * sentinel this script checks for, so running this script now is a safe,
+ * immediate no-op — kept only for its documentation of the source
+ * mapping and the reconciliation anchor.
+ *
  * The live `transfers` table only covers the CBE statement from
  * 01 Dec 2025 onward (see supabase/migrations/013_cbe_statement_import.sql
  * and its CBE-IMPORT-SENTINEL row). This script backfills everything
