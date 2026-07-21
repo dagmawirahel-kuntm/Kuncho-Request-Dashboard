@@ -58,7 +58,7 @@ export default function PaymentsDashboardPage() {
   const { data: pendingApproval = [], isLoading: loadingPending } = useQuery({
     queryKey: ['v-finance-pending-approval'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_finance_pending_approval').select('*').order('created_at')
+      const { data, error } = await supabase.from('v_finance_pending_approval').select('*').order('created_at', { ascending: false })
       if (error) throw error
       return data as FinancePendingApprovalRow[]
     },
