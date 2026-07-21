@@ -131,6 +131,11 @@ import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
 import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
 import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
 import StockDispatchQueuePage from '@/pages/stock/StockDispatchQueuePage'
+import WorkOrdersPage from '@/pages/work-orders/WorkOrdersPage'
+import WorkOrderFormPage from '@/pages/work-orders/WorkOrderFormPage'
+import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
+import FfeJobDescriptionsPage from '@/pages/work-orders/FfeJobDescriptionsPage'
+import StaffFfeSkillsPage from '@/pages/work-orders/StaffFfeSkillsPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -463,6 +468,24 @@ export const router = createBrowserRouter([
               { path: 'subcontracts/:id/edit', element: <SubcontractFormPage /> },
             ],
           },
+          // ── Work orders: read for everyone; write gated to
+          // admin/manager/operations_manager/project_manager, matching
+          // work_orders/work_order_labor/work_order_materials RLS (128).
+          { path: 'work-orders', element: <WorkOrdersPage /> },
+          { path: 'work-orders/:id', element: <WorkOrderDetailPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager', 'project_manager']} />,
+            children: [
+              { path: 'work-orders/new', element: <WorkOrderFormPage /> },
+              { path: 'work-orders/:id/edit', element: <WorkOrderFormPage /> },
+            ],
+          },
+          // ── FF&E job descriptions & staff skill checklists: read for
+          // everyone; write (roles/responsibilities and checklist toggles)
+          // gated in-page to admin/operations_manager, matching
+          // ffe_job_descriptions/ffe_key_responsibilities/staff_ffe_checklist RLS (128).
+          { path: 'ffe-job-descriptions', element: <FfeJobDescriptionsPage /> },
+          { path: 'staff/:id/ffe-skills', element: <StaffFfeSkillsPage /> },
         ],
       },
     ],

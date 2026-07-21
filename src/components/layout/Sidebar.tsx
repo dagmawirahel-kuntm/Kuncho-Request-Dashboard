@@ -6,7 +6,7 @@ import {
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send
+  HardHat, Network, Send, Hammer, Award
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -128,6 +128,8 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'manager', 'finance', 'project_manager'] },
+      { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'manager', 'finance', 'project_manager', 'operations_manager'] },
+      { label: 'FF&E Job Descriptions', to: '/ffe-job-descriptions', icon: Award, roles: ['admin', 'manager', 'operations_manager', 'project_manager'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'manager', 'finance', 'project_manager', 'sales'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'manager', 'finance', 'project_manager'] },
       { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'manager', 'finance', 'project_manager'] },

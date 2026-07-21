@@ -1595,3 +1595,88 @@ export interface StaffDirectoryRow {
   reports_to_id: string | null
   status: StaffStatus
 }
+
+// ── Work orders ───────────────────────────────────────────────────
+export type WorkOrderType = 'workshop' | 'site'
+export type WorkOrderStatus = 'requested' | 'in_progress' | 'completed' | 'cancelled'
+export interface WorkOrder {
+  id: string
+  project_id: string
+  work_type: WorkOrderType
+  scope_of_work: string
+  requested_by: string | null
+  assigned_lead_staff_id: string | null
+  status: WorkOrderStatus
+  target_completion_date: string | null
+  created_at: string
+  updated_at: string
+}
+export type WorkOrderInsert = Omit<WorkOrder, 'id' | 'created_at' | 'updated_at'>
+
+export interface WorkOrderLabor {
+  id: string
+  work_order_id: string
+  labor_allocation_id: string
+  created_at: string
+}
+
+export interface WorkOrderMaterial {
+  id: string
+  work_order_id: string
+  stock_issue_id: string
+  created_at: string
+}
+
+export interface WorkOrderCostRow {
+  work_order_id: string
+  labor_cost: number
+  materials_cost: number
+  total_cost: number
+}
+
+// ── FF&E job descriptions & computed skill levels ──────────────────
+export interface FfeJobDescription {
+  id: string
+  role_name: string
+  role_overview: string | null
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+export type FfeJobDescriptionInsert = Omit<FfeJobDescription, 'id' | 'created_at' | 'updated_at'>
+
+export type FfeResponsibilityTier = 'foundational' | 'differentiator'
+export interface FfeKeyResponsibility {
+  id: string
+  job_description_id: string
+  responsibility_title: string
+  responsibility_detail: string | null
+  tier: FfeResponsibilityTier
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+export type FfeKeyResponsibilityInsert = Omit<FfeKeyResponsibility, 'id' | 'created_at' | 'updated_at'>
+
+export interface StaffFfeChecklistRow {
+  id: string
+  staff_id: string
+  responsibility_id: string
+  is_checked: boolean
+  checked_by: string | null
+  checked_at: string | null
+}
+
+export type FfeSkillLevel = 'Beginner' | 'Intermediate' | 'Advanced'
+export interface StaffFfeSkillLevelRow {
+  staff_id: string
+  job_description_id: string
+  role_name: string
+  foundational_checked: number
+  foundational_total: number
+  differentiator_checked: number
+  differentiator_total: number
+  skill_level: FfeSkillLevel
+}

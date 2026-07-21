@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -169,7 +169,22 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
             <option value="Workshop — Leather" />
             <option value="Site" />
           </datalist>
-          <p className="mt-1 text-xs text-slate-400">Groups fabrication/site staff within Operations/Construction — not a separate department.</p>
+          <p className="mt-1 text-xs text-slate-400">
+            For non-FF&E Operations/Construction staff (drivers, security, general labor, site supervisors).
+            {id && <> FF&E fabrication staff use the <Link to={`/staff/${id}/ffe-skills`} className="text-brand hover:underline">FF&E Skills profile</Link> below instead.</>}
+          </p>
+        </Field>
+      )}
+
+      {id && form.department_id && departmentNameById.get(form.department_id) === 'Operations/Construction' && (
+        <Field label="FF&E Skills">
+          <Link
+            to={`/staff/${id}/ffe-skills`}
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+          >
+            Open FF&E competency profile →
+          </Link>
+          <p className="mt-1 text-xs text-slate-400">For the five FF&E fabrication roles only — check off responsibilities there, not here; the level is computed automatically.</p>
         </Field>
       )}
 

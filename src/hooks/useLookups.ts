@@ -389,6 +389,43 @@ export function useOpportunities() {
   })
 }
 
+// Safe, broadly-readable staff names — NOT the raw `staff` table, which
+// is locked down (salary, national_id, etc.) to a handful of roles.
+// operations_manager/project_manager (core Work Orders roles) have no
+// RLS read access to `staff` at all, so anywhere a work order needs a
+// staff name — assigned lead, linked labor allocation staff, FF&E
+// skill-matched candidates — must go through this instead.
+export function useStaffDirectory() {
+  return useQuery({
+    queryKey: ['staff-directory-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_staff_directory')
+        .select('id,employee_name,role')
+        .order('employee_name')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useFfeJobDescriptions() {
+  return useQuery({
+    queryKey: ['ffe-job-descriptions-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ffe_job_descriptions')
+        .select('id,role_name,role_overview,sort_order')
+        .eq('active', true)
+        .order('sort_order')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useVehicles() {
   return useQuery({
     queryKey: ['vehicles-lookup'],
