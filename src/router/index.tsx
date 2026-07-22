@@ -131,6 +131,11 @@ import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
 import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
 import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
 import StockDispatchQueuePage from '@/pages/stock/StockDispatchQueuePage'
+import ProjectManagerViewPage from '@/pages/views/ProjectManagerViewPage'
+import OperationsManagerViewPage from '@/pages/views/OperationsManagerViewPage'
+import StockManagerViewPage from '@/pages/views/StockManagerViewPage'
+import LogisticsOfficerViewPage from '@/pages/views/LogisticsOfficerViewPage'
+import WorkshopViewPage from '@/pages/views/WorkshopViewPage'
 import WorkOrdersPage from '@/pages/work-orders/WorkOrdersPage'
 import WorkOrderFormPage from '@/pages/work-orders/WorkOrderFormPage'
 import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
@@ -226,8 +231,10 @@ export const router = createBrowserRouter([
           {
             // Stock manager / logistics officer also need this view (and the
             // GRN entry point on it) to receive goods against a PO — they
-            // don't get the rest of the procurement module.
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer']} />,
+            // don't get the rest of the procurement module. operations_manager
+            // added for the capped (<=500k) approval queue (133) — RLS is
+            // what actually enforces the cap, this is just route-level reach.
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer', 'operations_manager']} />,
             children: [
               { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
               { path: 'sourcing/:id/grn/new', element: <GoodsReceivedNoteFormPage /> },
@@ -486,6 +493,35 @@ export const router = createBrowserRouter([
           // ffe_job_descriptions/ffe_key_responsibilities/staff_ffe_checklist RLS (128).
           { path: 'ffe-job-descriptions', element: <FfeJobDescriptionsPage /> },
           { path: 'staff/:id/ffe-skills', element: <StaffFfeSkillsPage /> },
+          // ── Role-based Operations & Construction views: each role lands
+          // on its own composed view (default landing set in
+          // LandingRedirect.tsx) instead of a generic department page.
+          // admin/manager included for cross-departmental oversight,
+          // matching the pattern used everywhere else in this router.
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'project_manager']} />,
+            children: [{ path: 'pm-view', element: <ProjectManagerViewPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager']} />,
+            children: [{ path: 'ops-manager-view', element: <OperationsManagerViewPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'stock_manager']} />,
+            children: [{ path: 'stock-manager-view', element: <StockManagerViewPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'logistics_officer']} />,
+            children: [{ path: 'logistics-view', element: <LogisticsOfficerViewPage /> }],
+          },
+          // Workshop view: dynamic-access rule (§0.2) only governs the
+          // default LANDING page; per confirmed decision, read access
+          // here is broader — any Operations & Construction role can
+          // open it for oversight, not just a live assigned lead.
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer']} />,
+            children: [{ path: 'workshop-view', element: <WorkshopViewPage /> }],
+          },
         ],
       },
     ],

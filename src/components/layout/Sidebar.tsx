@@ -6,7 +6,7 @@ import {
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award
+  HardHat, Network, Send, Hammer, Award, Briefcase
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -31,6 +31,11 @@ const navGroups: NavGroup[] = [
     title: 'Overview',
     items: [
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
+      { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'] },
+      { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
+      { label: 'Stock', to: '/stock-manager-view', icon: Warehouse, roles: ['stock_manager'] },
+      { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'] },
+      { label: 'Workshop', to: '/workshop-view', icon: Hammer, roles: ['admin', 'manager', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'] },
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2 },
       { label: 'Departments', to: '/departments', icon: Network },

@@ -31,6 +31,7 @@ type BundleDetail = {
   notes: string | null
   finance_notes: string | null
   expense_id: string | null
+  total_value: number
   created_at: string
   vendors: { vendor_name: string; wth_eligible: boolean | null } | null
   procurement_officer: { full_name: string } | null
@@ -310,11 +311,18 @@ export default function PurchaseOrderPage() {
   const isFinance = role === 'finance'
   const isProcurement = role === 'procurement_officer'
   const isStockOrLogistics = role === 'stock_manager' || role === 'logistics_officer'
+  const isOperationsManager = role === 'operations_manager'
+
+  // Operations Manager can sign off POs up to this cap (133) — RLS
+  // enforces the same limit server-side off the same total_value
+  // column, this just matches the button to what the database allows.
+  const OPS_MANAGER_APPROVAL_CAP = 500000
+  const isOpsManagerWithinCap = isOperationsManager && (bundle.total_value ?? 0) <= OPS_MANAGER_APPROVAL_CAP
 
   const canEdit = (isProcurement || isAdmin || isManager) && status === 'drafting'
   const canSubmit = (isProcurement || isAdmin || isManager) && status === 'drafting'
-  const canApprove = (isFinance || isAdmin) && status === 'submitted'
-  const canReject = (isFinance || isAdmin || isManager) && (status === 'submitted')
+  const canApprove = ((isFinance || isAdmin) || isOpsManagerWithinCap) && status === 'submitted'
+  const canReject = ((isFinance || isAdmin || isManager) || isOpsManagerWithinCap) && (status === 'submitted')
   const canMarkOrdered = (isProcurement || isAdmin || isManager) && status === 'approved'
   const canCancel = (isAdmin || isManager) && !['fulfilled', 'cancelled'].includes(status)
 

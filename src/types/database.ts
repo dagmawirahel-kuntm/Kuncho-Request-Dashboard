@@ -790,10 +790,11 @@ export interface SourcingBundle {
   notes: string | null
   finance_notes: string | null
   expense_id: string | null
+  total_value: number
   created_at: string
   updated_at: string
 }
-export type SourcingBundleInsert = Omit<SourcingBundle, 'id' | 'bundle_code' | 'created_at' | 'updated_at'>
+export type SourcingBundleInsert = Omit<SourcingBundle, 'id' | 'bundle_code' | 'created_at' | 'updated_at' | 'total_value'>
 
 export interface SourcingBundleItem {
   id: string
