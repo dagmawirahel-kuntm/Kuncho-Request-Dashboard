@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation } from '@/types/database'
-import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements } from '@/hooks/useLookups'
+import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property } from '@/types/database'
+import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -52,6 +52,7 @@ export default function ExpenseFormPage() {
   const lineId = searchParams.get('line_id')
   const vrfId  = searchParams.get('vrf_id')
   const bundleId = searchParams.get('bundle_id')
+  const propertyId = searchParams.get('property_id')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -117,6 +118,16 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!bundleId,
   })
 
+  const { data: linkedProperty } = useQuery({
+    queryKey: ['property-for-expense', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('properties').select('*').eq('id', propertyId!).single()
+      if (error) throw error
+      return data as Property
+    },
+    enabled: !isEdit && !!propertyId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -130,6 +141,7 @@ export default function ExpenseFormPage() {
       linkedLineItem={linkedLineItem}
       linkedVrf={linkedVrf}
       linkedBundle={linkedBundle}
+      linkedProperty={linkedProperty}
     />
   )
 }
@@ -142,11 +154,12 @@ type LinkedBundle = {
   }[]
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
   linkedBundle?: LinkedBundle
+  linkedProperty?: Property
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -164,6 +177,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const { data: locations = [] } = useLocations()
     const { data: userProfiles = [] } = useUserProfiles()
     const { data: subcontractorEngagements = [] } = useSubcontractorEngagements()
+    const { data: properties = [] } = useProperties()
 
     const financeLocked = !canEditFinanceFields(role)
 
@@ -203,6 +217,50 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       },
       enabled: isEdit && record?.expense_type === 'fuel' && !!record?.vehicle_id,
     })
+    // One combined lookup covering every other auto-created expense_type's
+    // reference record — same "curated gateway" banner idea as fuel/transport
+    // above, generalized instead of one query+banner pair per type.
+    const { data: linkedSource } = useQuery({
+      queryKey: ['expense-linked-source', record?.id, record?.expense_type],
+      queryFn: async () => {
+        if (!record) return null
+        switch (record.expense_type) {
+          case 'maintenance': {
+            if (!record.vehicle_id) return null
+            const { data } = await supabase.from('vehicles').select('id, name, plate_number').eq('id', record.vehicle_id).single()
+            return data ? { label: 'Vehicle', name: data.name, sub: data.plate_number ?? undefined, to: `/logistics/vehicles/${data.id}` } : null
+          }
+          case 'subcontract': {
+            if (!record.subcontractor_engagement_id) return null
+            const { data } = await supabase.from('subcontractor_engagements').select('id, scope_of_work, vendors(vendor_name)').eq('id', record.subcontractor_engagement_id).single()
+            return data ? { label: 'Subcontract Engagement', name: data.scope_of_work ?? 'Engagement', sub: (data as any).vendors?.vendor_name, to: `/subcontracts/${data.id}` } : null
+          }
+          case 'cpo_bond': {
+            if (!record.cpo_bond_id) return null
+            const { data } = await supabase.from('cpo_bonds').select('id, bond_id_ref, project').eq('id', record.cpo_bond_id).single()
+            return data ? { label: 'CPO Bond', name: data.bond_id_ref ?? 'Bond', sub: data.project ?? undefined, to: `/cpo-bonds/${data.id}/edit` } : null
+          }
+          case 'vrf': {
+            if (!record.vendor_receipt_facilitation_id) return null
+            const { data } = await supabase.from('vendor_receipt_facilitation').select('id, record_name').eq('id', record.vendor_receipt_facilitation_id).single()
+            return data ? { label: 'Vendor Receipt Facilitation', name: data.record_name ?? 'VRF record', to: `/vendor-receipts/${data.id}` } : null
+          }
+          case 'property_rent': {
+            if (!record.property_id) return null
+            const { data } = await supabase.from('properties').select('id, property_name, lease_end_date').eq('id', record.property_id).single()
+            return data ? { label: 'Property', name: data.property_name, sub: data.lease_end_date ? `Lease ends ${formatDate(data.lease_end_date)}` : undefined, to: '/rent' } : null
+          }
+          case 'purchase_order': {
+            if (!record.sourcing_bundle_id) return null
+            const { data } = await supabase.from('sourcing_bundles').select('id, bundle_code').eq('id', record.sourcing_bundle_id).single()
+            return data ? { label: 'Purchase Order', name: data.bundle_code ?? 'PO', to: `/sourcing/${data.id}` } : null
+          }
+          default:
+            return null
+        }
+      },
+      enabled: isEdit && !!record && record.expense_type !== 'general',
+    })
     // Transport payments have no forward column on expenses — the link runs
     // the other way (transportation_requests.expense_id), same as orders/
     // batch payments/cash advances below, so this is a reverse lookup too.
@@ -215,7 +273,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       },
       enabled: isEdit,
     })
-    const isCuratedGateway = isEdit && (record?.expense_type === 'fuel' || !!linkedTransportJob)
+    const isCuratedGateway = isEdit && ((!!record && record.expense_type !== 'general') || !!linkedTransportJob)
     const [showAllFields, setShowAllFields] = useState(false)
     const showFullFieldSet = !isCuratedGateway || showAllFields
 
@@ -233,6 +291,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const transferOptions = useMemo(() => transfers.map((t: any) => ({ id: t.id, label: t.transfer_id_code })), [transfers])
     const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
     const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+    const propertyOptions = useMemo(() => properties.filter((p: any) => p.status === 'active').map((p: any) => ({ id: p.id, label: p.property_name })), [properties])
 
     function profileName(userId: string | null) {
       if (!userId) return null
@@ -283,6 +342,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         vehicle_id: record.vehicle_id,
         fuel_liters: record.fuel_liters ?? undefined,
         subcontractor_engagement_id: record.subcontractor_engagement_id,
+        property_id: record.property_id,
       }
       : {
     payment_status: false,
@@ -321,6 +381,12 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         vendor_id: linkedBundle.vendor_id ?? undefined,
         vendors_name: linkedBundle.vendor_id ? undefined : (linkedBundle.vendor_name ?? undefined),
         project_id: projectIds.size === 1 ? [...projectIds][0] as string : undefined,
+        // Migration 136 auto-creates this from the GRN trigger going
+        // forward and sets this correctly there; this manual path only
+        // still runs for pre-existing GRN'd-but-unbilled bundles, and
+        // used to never set this at all — a real gap since 110's GRN-
+        // gating/advance logic keys off it.
+        sourcing_bundle_id: linkedBundle.id,
       }
     })() : {}),
     // pre-fill from a linked VRF record — the real amount/date/facilitator,
@@ -333,6 +399,15 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       amount_etb: linkedVrf.amount_transferred ?? undefined,
       vendors_name: linkedVrf.facilitator_name ?? undefined,
       ...(linkedVrf.trxn_date ? { date: linkedVrf.trxn_date } : {}),
+    } : {}),
+    // pre-fill from a linked property — used by the Rent page's "Record
+    // Rent Payment" link, same ?xxx_id= gateway pattern as PO/VRF above
+    ...(linkedProperty ? {
+      property_id: linkedProperty.id,
+      expense_type: 'property_rent' as const,
+      item_service_description: `Rent — ${linkedProperty.property_name}`,
+      amount_etb: linkedProperty.monthly_rent_amount ?? undefined,
+      vendor_id: linkedProperty.landlord_vendor_id ?? undefined,
     } : {}),
   }
   )
@@ -521,8 +596,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </div>
       )}
 
-      {/* Curated gateways (Fuel/Transport) hide the fields that never apply to
-          them; finance can still reach everything if a genuine edge case needs it */}
+      {/* Linked source banner — one per remaining auto-created expense_type
+          (purchase_order/subcontract/cpo_bond/maintenance/vrf/property_rent),
+          same idea as the Fuel/Transport banners above, generalized */}
+      {isEdit && linkedSource && (
+        <div className="flex items-start gap-3 rounded-lg bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 px-4 py-3">
+          <ShoppingCart className="h-4 w-4 text-slate-500 dark:text-slate-400 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{linkedSource.label}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              {linkedSource.name}{linkedSource.sub ? ` · ${linkedSource.sub}` : ''}
+            </p>
+            <Link to={linkedSource.to} className="text-[11px] text-slate-500 dark:text-slate-400 hover:underline mt-0.5 inline-block">
+              View →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Curated gateways (Fuel/Transport/every typed auto-created expense)
+          hide the fields that never apply to them; finance can still reach
+          everything if a genuine edge case needs it */}
       {isCuratedGateway && (
         <button
           type="button"
@@ -615,6 +709,9 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <option value="vrf">VRF (Vendor Receipt Facilitation)</option>
             <option value="cpo_bond">CPO Bond</option>
             <option value="fuel">Fuel</option>
+            <option value="subcontract">Subcontract</option>
+            <option value="maintenance">Vehicle Maintenance / Penalty</option>
+            <option value="property_rent">Property Rent</option>
           </select>
         </Field>
         {showFullFieldSet && (
@@ -822,6 +919,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
         </Field>
       </div>
+      {form.expense_type === 'property_rent' && (
+        <Field label="Property">
+          <SearchableSelect value={form.property_id ?? null} onChange={id => set('property_id', id)} options={propertyOptions} placeholder="Select property…" />
+        </Field>
+      )}
 
       {isEdit && (linkedOrders.length > 0 || linkedBatchPayments.length > 0 || linkedCashAdvances.length > 0) && (
         <>

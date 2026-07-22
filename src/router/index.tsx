@@ -136,6 +136,8 @@ import OperationsManagerViewPage from '@/pages/views/OperationsManagerViewPage'
 import StockManagerViewPage from '@/pages/views/StockManagerViewPage'
 import LogisticsOfficerViewPage from '@/pages/views/LogisticsOfficerViewPage'
 import WorkshopViewPage from '@/pages/views/WorkshopViewPage'
+import RentPage from '@/pages/properties/RentPage'
+import PropertyFormPage from '@/pages/properties/PropertyFormPage'
 import WorkOrdersPage from '@/pages/work-orders/WorkOrdersPage'
 import WorkOrderFormPage from '@/pages/work-orders/WorkOrderFormPage'
 import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
@@ -521,6 +523,20 @@ export const router = createBrowserRouter([
           {
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer']} />,
             children: [{ path: 'workshop-view', element: <WorkshopViewPage /> }],
+          },
+          // ── Properties & Rent: read matches properties RLS
+          // (admin/manager/finance/operations_manager); write (new/edit)
+          // further restricted to admin/operations_manager per 135.
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'operations_manager']} />,
+            children: [{ path: 'rent', element: <RentPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'operations_manager']} />,
+            children: [
+              { path: 'rent/new', element: <PropertyFormPage /> },
+              { path: 'rent/:id/edit', element: <PropertyFormPage /> },
+            ],
           },
         ],
       },

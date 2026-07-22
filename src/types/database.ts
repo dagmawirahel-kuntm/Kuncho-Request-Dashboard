@@ -12,7 +12,7 @@ export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
 export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'other'
-export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel'
+export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type PayrollApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -411,10 +411,31 @@ export interface Expense {
   disbursed_by: string | null
   payment_method: ExpensePaymentMethod | null
   payment_state_changed_at: string | null
+  property_id: string | null
   created_at: string
   updated_at: string
 }
 export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at' | 'payment_state_changed_at'>
+
+// ── Properties & Rent ────────────────────────────────────────────
+export interface Property {
+  id: string
+  property_name: string
+  property_type: string | null
+  purpose: string | null
+  address: string | null
+  landlord_vendor_id: string | null
+  monthly_rent_amount: number | null
+  lease_start_date: string | null
+  lease_end_date: string | null
+  deposit_amount: number | null
+  renewal_notice_days: number | null
+  status: 'active' | 'vacated'
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type PropertyInsert = Omit<Property, 'id' | 'created_at' | 'updated_at'>
 
 // ── Orders ───────────────────────────────────────────────────────
 export type OrderPriority = 'normal' | 'urgent' | 'critical'
@@ -1609,6 +1630,7 @@ export interface WorkOrder {
   assigned_lead_staff_id: string | null
   status: WorkOrderStatus
   target_completion_date: string | null
+  property_id: string | null
   created_at: string
   updated_at: string
 }

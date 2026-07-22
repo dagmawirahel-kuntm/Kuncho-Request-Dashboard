@@ -525,3 +525,18 @@ export function useSubcontractorEngagements() {
     },
   })
 }
+
+export function useProperties() {
+  return useQuery({
+    queryKey: ['properties-lookup'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .order('property_name')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}

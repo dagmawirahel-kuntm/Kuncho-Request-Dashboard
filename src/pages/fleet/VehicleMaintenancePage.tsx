@@ -48,6 +48,12 @@ export default function VehicleMaintenancePage() {
     toast(status === 'approved' ? 'Maintenance request approved' : 'Maintenance request rejected', 'success')
   }
 
+  // Fallback only — since migration 136, completing a request with an
+  // actual_cost auto-creates this expense via trg_auto_create_maintenance_
+  // expense, correctly typed and vehicle-tagged. This manual path only
+  // still matters for requests that were already 'completed' with a cost
+  // set before that trigger existed (no status/actual_cost transition
+  // happens on them again to fire it).
   async function handleCreateExpense(row: MaintenanceRow) {
     if (!row.actual_cost) { toast('Set the actual cost before creating an expense', 'error'); return }
     const { data: category } = await supabase.from('categories').select('id').eq('category_name', 'Transportation').maybeSingle()
@@ -55,7 +61,9 @@ export default function VehicleMaintenancePage() {
       item_service_description: `Vehicle maintenance — ${row.vehicles?.name ?? 'Vehicle'}: ${row.issue_description}`,
       amount_etb: row.actual_cost,
       date: (row.completed_at ?? new Date().toISOString()).slice(0, 10),
+      expense_type: 'maintenance',
       category_id: category?.id ?? null,
+      vehicle_id: row.vehicle_id,
       purchaser_user_id: user?.id ?? null,
       approval_status: 'pending',
       requested: true,
@@ -94,8 +102,10 @@ export default function VehicleMaintenancePage() {
               <button onClick={() => handleDecision(row.original.id, 'rejected')} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Reject"><X className="h-3.5 w-3.5" /></button>
             </>
           )}
-          {canManage && row.original.status === 'completed' && row.original.actual_cost != null && !row.original.expense_id && (
-            <button onClick={() => handleCreateExpense(row.original)} className="rounded p-1 text-slate-400 hover:bg-brand/10 hover:text-brand" title="Create Expense"><Receipt className="h-3.5 w-3.5" /></button>
+          {row.original.expense_id ? (
+            <Link to={`/expenses/${row.original.expense_id}`} className="rounded p-1 text-slate-400 hover:bg-brand/10 hover:text-brand" title="View expense"><Receipt className="h-3.5 w-3.5" /></Link>
+          ) : canManage && row.original.status === 'completed' && row.original.actual_cost != null && (
+            <button onClick={() => handleCreateExpense(row.original)} className="rounded p-1 text-slate-400 hover:bg-brand/10 hover:text-brand" title="Create Expense (legacy fallback — new completions auto-create this)"><Receipt className="h-3.5 w-3.5" /></button>
           )}
           {canManage && (
             <>

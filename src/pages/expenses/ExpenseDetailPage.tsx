@@ -21,6 +21,9 @@ const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string 
   vrf:            { bg: '#312E81', label: 'Vendor Receipt',    abbr: 'VRF' },
   cpo_bond:       { bg: '#4C1D95', label: 'CPO Bond',          abbr: 'CPO' },
   fuel:           { bg: '#92400E', label: 'Fuel',               abbr: 'FUEL' },
+  subcontract:    { bg: '#164E63', label: 'Subcontract',        abbr: 'SUB' },
+  maintenance:    { bg: '#78350F', label: 'Vehicle Maintenance', abbr: 'MNT' },
+  property_rent:  { bg: '#365314', label: 'Property Rent',       abbr: 'RENT' },
 }
 
 type ExpenseWithJoins = Expense & {
