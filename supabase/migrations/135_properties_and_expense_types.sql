@@ -92,7 +92,7 @@ SELECT 'Painting & Finishing Workshop', 'workshop', 'Painting and finishing'
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE property_name = 'Painting & Finishing Workshop');
 
 INSERT INTO properties (property_name, property_type, purpose)
-SELECT 'Leather Workshop', 'workshop', 'Leather — expected to branch into a separate sister company'
+SELECT 'Leather Workshop', 'workshop', 'Leather - expected to branch into a separate sister company'
 WHERE NOT EXISTS (SELECT 1 FROM properties WHERE property_name = 'Leather Workshop');
 
 -- ── 3. New linkage: expenses.property_id, work_orders.property_id ──
