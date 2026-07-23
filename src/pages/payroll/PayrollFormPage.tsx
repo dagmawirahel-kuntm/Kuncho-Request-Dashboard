@@ -8,10 +8,12 @@ import { MultiSelect } from '@/components/shared/MultiSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency } from '@/lib/utils'
 import type { Payroll, PayrollInsert, PayrollStaff } from '@/types/database'
-import { useStaff, useAccounts } from '@/hooks/useLookups'
+import { useStaff, useAccounts, useVendorReceiptFacilitations } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
+import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
+import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -74,10 +76,16 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
   const qc = useQueryClient()
   const { data: staff = [] } = useStaff()
   const { data: accounts = [] } = useAccounts()
+  const { data: vrfs = [] } = useVendorReceiptFacilitations()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
+  const vrfOptions = useMemo(
+    () => (vrfs as { id: string; record_name: string | null; amount_transferred: number | null; status: string }[])
+      .map(v => ({ id: v.id, label: `${v.record_name ?? v.id.slice(0, 8)} — ${formatCurrency(v.amount_transferred ?? 0)} (${v.status})` })),
+    [vrfs]
+  )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const staffById = useMemo(() => new Map(staff.map((s: any) => [s.id, s])), [staff])
 
@@ -92,6 +100,8 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
           payment_method: record.payment_method,
           notes: record.notes,
           account_id: record.account_id,
+          transfer_id: record.transfer_id,
+          vrf_id: record.vrf_id,
         }
       : { payment_status: 'pending', pay_period: 'Monthly', payroll_type: 'Regular' }
   )
@@ -276,13 +286,29 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
         <Field label="Payment Method">
           <select className={inputCls} value={form.payment_method ?? ''} onChange={e => set('payment_method', e.target.value)}>
             <option value="">— Select —</option>
-            <option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option>
+            <option>Bank Transfer</option><option>Cash</option><option>VRF</option><option>Mobile Money</option>
           </select>
         </Field>
       </div>
       <Field label="Account (debited when paid)">
         <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
       </Field>
+
+      {form.payment_method === 'Bank Transfer' && (
+        <Field label="Bank Reference">
+          <BankReferenceInput value={form.transfer_id ?? null} onChange={transferId => set('transfer_id', transferId)} />
+        </Field>
+      )}
+      {form.payment_method === 'VRF' && (
+        <Field label="VRF Settlement">
+          <SearchableSelect value={form.vrf_id ?? null} onChange={vrfId => set('vrf_id', vrfId)} options={vrfOptions} placeholder="Select a VRF record…" />
+        </Field>
+      )}
+      {isEdit && (form.payment_method === 'Cash' || form.payment_method === 'VRF') && (role === 'admin' || role === 'finance') && (
+        <Field label="Receipt Evidence">
+          <CashReceiptUploader payrollId={id} />
+        </Field>
+      )}
 
       <Field label="Employees *">
         <MultiSelect value={lines.map(l => l.staff_id)} onChange={handleStaffSelection} options={staffOptions} placeholder="Select employees…" />

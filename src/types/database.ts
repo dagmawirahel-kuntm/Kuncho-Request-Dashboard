@@ -11,7 +11,7 @@ export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
-export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'other'
+export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'other'
 export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -391,6 +391,7 @@ export interface Expense {
   cpo_bond_id: string | null
   sourcing_bundle_id: string | null
   transfer_id: string | null
+  vrf_id: string | null
   tax_summary_id: string | null
   location_id: string | null
   vehicle_id: string | null
@@ -720,6 +721,8 @@ export interface Payroll {
   payment_method: string | null
   notes: string | null
   account_id: string | null
+  transfer_id: string | null
+  vrf_id: string | null
   approval_status: PayrollApprovalStatus
   rejection_reason: string | null
   manager_approved_by: string | null
@@ -791,6 +794,18 @@ export interface VendorReceiptFacilitation {
   updated_at: string
 }
 export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at'>
+
+// ── Cash / VRF Payment Receipts ────────────────────────────────────
+export interface CashPaymentReceipt {
+  id: string
+  expense_id: string | null
+  payroll_id: string | null
+  photo_url: string
+  uploaded_by: string | null
+  uploaded_at: string
+  notes: string | null
+}
+export type CashPaymentReceiptInsert = Omit<CashPaymentReceipt, 'id' | 'uploaded_at'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
@@ -967,6 +982,8 @@ export interface RecentPaymentRow {
   transfer_id: string | null
   transfer_id_code: string | null
   transfer_notes: string | null
+  vrf_id: string | null
+  vrf_record_name: string | null
   batch_payment_id: string | null
 }
 

@@ -4,25 +4,31 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useUserProfiles, useTransfers } from '@/hooks/useLookups'
+import { useUserProfiles, useVendorReceiptFacilitations } from '@/hooks/useLookups'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import type {
   ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow,
   ExpensePaymentMethod,
 } from '@/types/database'
 import {
-  Wallet, Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle,
+  Wallet, Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt,
 } from 'lucide-react'
 
 const PAYMENT_METHODS: { value: ExpensePaymentMethod; label: string }[] = [
   { value: 'transfer', label: 'Bank Transfer' },
   { value: 'cpo', label: 'CPO / Cheque Deposit' },
   { value: 'cheque', label: 'Cheque' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'vrf', label: 'VRF (Vendor Receipt Facilitation)' },
   { value: 'other', label: 'Other' },
 ]
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = Object.fromEntries(PAYMENT_METHODS.map(m => [m.value, m.label]))
+PAYMENT_METHOD_LABEL['batch_wire'] = 'Batch Wire'
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
@@ -148,8 +154,25 @@ export default function PaymentsDashboardPage() {
     invalidateAll()
   }
 
-  // ── Recent Payments: match to bank line ────────────────────────────
+  // ── Recent Payments: match to bank line / VRF / confirm cash ────────
   const [matching, setMatching] = useState<RecentPaymentRow | null>(null)
+  const [linkingVrf, setLinkingVrf] = useState<RecentPaymentRow | null>(null)
+  const [confirmingCash, setConfirmingCash] = useState<string | null>(null)
+  const [methodFilter, setMethodFilter] = useState<string>('all')
+
+  const filteredRecentPayments = useMemo(
+    () => methodFilter === 'all' ? recentPayments : recentPayments.filter(r => (r.payment_method ?? 'unset') === methodFilter),
+    [recentPayments, methodFilter]
+  )
+
+  async function handleConfirmCash(id: string) {
+    setConfirmingCash(id)
+    const { error } = await supabase.rpc('confirm_expense_cash_payment', { p_expense_id: id })
+    setConfirmingCash(null)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Cash payment confirmed', 'success')
+    invalidateAll()
+  }
 
   const kpis = {
     toPayTotal: toPayQueue.reduce((s, r) => s + (r.amount_etb ?? 0), 0),
@@ -418,34 +441,68 @@ export default function PaymentsDashboardPage() {
           ) : recentPayments.length === 0 ? (
             <Empty>Nothing sent or paid this week yet.</Empty>
           ) : (
-            <div className="divide-y dark:divide-slate-700">
-              {recentPayments.map(r => (
-                <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-3">
-                  <div className="min-w-0">
-                    <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline block truncate">
-                      {r.vendor_name ?? r.item_service_description ?? r.expense_code}
-                    </Link>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      {formatDate(r.payment_state_changed_at)} · {r.payment_method ?? '—'}
-                      {r.transfer_id_code && ` · ${r.transfer_id_code}`}
-                      {r.batch_payment_id && !r.transfer_id_code && ' · in a batch'}
-                    </p>
+            <>
+              <div className="flex items-center gap-2 border-b dark:border-slate-700 px-4 py-2">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Payment method</span>
+                <select
+                  className="rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  value={methodFilter}
+                  onChange={e => setMethodFilter(e.target.value)}
+                >
+                  <option value="all">All methods</option>
+                  {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                  <option value="unset">Not set yet</option>
+                </select>
+              </div>
+              <div className="divide-y dark:divide-slate-700">
+                {filteredRecentPayments.map(r => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-3">
+                    <div className="min-w-0">
+                      <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline block truncate">
+                        {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                      </Link>
+                      <p className="text-xs text-slate-400 dark:text-slate-500">
+                        {formatDate(r.payment_state_changed_at)} · {r.payment_method ? (PAYMENT_METHOD_LABEL[r.payment_method] ?? r.payment_method) : '—'}
+                        {r.transfer_id_code && ` · ${r.transfer_id_code}`}
+                        {r.vrf_record_name && ` · ${r.vrf_record_name}`}
+                        {r.batch_payment_id && !r.transfer_id_code && ' · in a batch'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
+                      <StatusBadge status={r.payment_state} />
+                      {canAct && r.payment_state === 'sent' && r.payment_method === 'transfer' && !r.transfer_id && (
+                        <button
+                          onClick={() => setMatching(r)}
+                          className="rounded-md border px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                        >
+                          Match to Bank Line
+                        </button>
+                      )}
+                      {canAct && r.payment_state === 'sent' && r.payment_method === 'vrf' && !r.vrf_id && (
+                        <button
+                          onClick={() => setLinkingVrf(r)}
+                          className="rounded-md border px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                        >
+                          Link to VRF
+                        </button>
+                      )}
+                      {canAct && r.payment_state === 'sent' && r.payment_method === 'cash' && (
+                        <button
+                          onClick={() => handleConfirmCash(r.id)}
+                          disabled={confirmingCash === r.id}
+                          className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                        >
+                          <Receipt className="h-3 w-3" /> {confirmingCash === r.id ? 'Confirming…' : 'Confirm Cash Payment'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
-                    <StatusBadge status={r.payment_state} />
-                    {canAct && r.payment_state === 'sent' && !r.transfer_id && (
-                      <button
-                        onClick={() => setMatching(r)}
-                        className="rounded-md border px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
-                      >
-                        Match to Bank Line
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </Section>
       </div>
@@ -472,6 +529,19 @@ export default function PaymentsDashboardPage() {
           onMatched={() => {
             setMatching(null)
             toast('Matched to bank line', 'success')
+            invalidateAll()
+          }}
+          onError={msg => toast(msg, 'error')}
+        />
+      )}
+
+      {linkingVrf && (
+        <VrfLinkModal
+          row={linkingVrf}
+          onClose={() => setLinkingVrf(null)}
+          onLinked={() => {
+            setLinkingVrf(null)
+            toast('Linked to VRF settlement', 'success')
             invalidateAll()
           }}
           onError={msg => toast(msg, 'error')}
@@ -544,17 +614,11 @@ function MatchTransferModal({
   onMatched: () => void
   onError: (msg: string) => void
 }) {
-  const { data: transfers = [] } = useTransfers()
   const [transferId, setTransferId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const transferOptions = (transfers as { id: string; transfer_id_code: string | null; amount: number | null }[]).map(t => ({
-    id: t.id,
-    label: `${t.transfer_id_code ?? t.id.slice(0, 8)} — ${formatCurrency(t.amount ?? 0)}`,
-  }))
-
   async function handleMatch() {
-    if (!transferId) { onError('Select a bank line'); return }
+    if (!transferId) { onError('Enter a bank reference or pick a bank line'); return }
     setSaving(true)
     const { error } = row.batch_payment_id
       ? await supabase.rpc('match_batch_to_transfer', { p_batch_payment_id: row.batch_payment_id, p_transfer_id: transferId })
@@ -578,14 +642,65 @@ function MatchTransferModal({
               : `Matching ${formatCurrency(row.amount_etb ?? 0)} to a CBE statement line.`}
           </p>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Bank Line</label>
-            <SearchableSelect value={transferId} onChange={setTransferId} options={transferOptions} placeholder="Select a statement line…" />
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Bank Reference</label>
+            <BankReferenceInput value={transferId} onChange={setTransferId} />
           </div>
         </div>
         <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
-          <button onClick={handleMatch} disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+          <button onClick={handleMatch} disabled={saving || !transferId} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
             {saving ? 'Matching…' : 'Match'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VrfLinkModal({
+  row, onClose, onLinked, onError,
+}: {
+  row: RecentPaymentRow
+  onClose: () => void
+  onLinked: () => void
+  onError: (msg: string) => void
+}) {
+  const { data: vrfs = [] } = useVendorReceiptFacilitations()
+  const [vrfId, setVrfId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const vrfOptions = (vrfs as { id: string; record_name: string | null; amount_transferred: number | null; status: string }[]).map(v => ({
+    id: v.id,
+    label: `${v.record_name ?? v.id.slice(0, 8)} — ${formatCurrency(v.amount_transferred ?? 0)} (${v.status})`,
+  }))
+
+  async function handleLink() {
+    if (!vrfId) { onError('Select a VRF settlement'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('link_expense_vrf', { p_expense_id: row.id, p_vrf_id: vrfId })
+    setSaving(false)
+    if (error) { onError(error.message); return }
+    onLinked()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between">
+          <h2 className="font-bold text-slate-800 dark:text-slate-100">Link to VRF Settlement</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-sm text-slate-500 dark:text-slate-400">Linking {formatCurrency(row.amount_etb ?? 0)} to the vendor receipt facilitation that funded it.</p>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">VRF Settlement</label>
+            <SearchableSelect value={vrfId} onChange={setVrfId} options={vrfOptions} placeholder="Select a VRF record…" />
+          </div>
+        </div>
+        <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
+          <button onClick={handleLink} disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+            {saving ? 'Linking…' : 'Link'}
           </button>
         </div>
       </div>

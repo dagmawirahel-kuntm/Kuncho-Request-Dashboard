@@ -185,7 +185,7 @@ export function useVendorReceiptFacilitations() {
     queryFn: async () => {
       const { data } = await supabase
         .from('vendor_receipt_facilitation')
-        .select('id,record_name,money_returned')
+        .select('id,record_name,money_returned,amount_transferred,facilitator_name,status,trxn_date')
         .order('trxn_date', { ascending: false })
         .limit(200)
       return data ?? []

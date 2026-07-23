@@ -11,6 +11,7 @@ import {
   DollarSign, FileText, Building2, FolderKanban, Tag,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import type { Expense, ExpenseType } from '@/types/database'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
@@ -34,6 +35,8 @@ type ExpenseWithJoins = Expense & {
   sub_categories: { item_name: string } | null
   manager_profile: { full_name: string } | null
   finance_profile: { full_name: string } | null
+  transfers: { transfer_id_code: string | null } | null
+  vendor_receipt_facilitation: { record_name: string | null } | null
 }
 
 // ── Print invoice component ───────────────────────────────────────────────────
@@ -215,7 +218,9 @@ export default function ExpenseDetailPage() {
           categories:category_id ( category_name ),
           sub_categories:sub_category_id ( item_name ),
           manager_profile:user_profiles!manager_approved_by ( full_name ),
-          finance_profile:user_profiles!finance_approved_by ( full_name )
+          finance_profile:user_profiles!finance_approved_by ( full_name ),
+          transfers:transfer_id ( transfer_id_code ),
+          vendor_receipt_facilitation:vrf_id ( record_name )
         `)
         .eq('id', id!)
         .single()
@@ -510,6 +515,9 @@ export default function ExpenseDetailPage() {
               { label: 'Notes',              value: expense.notes,                                                            icon: null },
               { label: 'Bank Reference',     value: expense.bank_ref,                                                         icon: null },
               { label: 'WHT',                value: expense.verify_wht ? `Required${expense.wht_handling_method ? ' — ' + expense.wht_handling_method : ''}` : null, icon: null },
+              { label: 'Payment Method',     value: expense.payment_method,                                                   icon: null },
+              { label: 'Matched Bank Line',  value: expense.transfers?.transfer_id_code ?? null,                              icon: null },
+              { label: 'Matched VRF',        value: expense.vendor_receipt_facilitation?.record_name ?? null,                icon: null },
             ] as { label: string; value: string | null | undefined; icon: React.ReactNode }[])
               .filter(r => r.value)
               .map(row => (
@@ -524,6 +532,21 @@ export default function ExpenseDetailPage() {
             }
           </div>
         </div>
+
+        {/* Cash / VRF receipt evidence — no bank reference to collect for
+            these payment methods, a physical receipt photo instead.
+            Upload/delete matches cash_payment_receipts RLS: admin/finance
+            only (not manager, unlike the general canEdit gate above). */}
+        {(expense.payment_method === 'cash' || expense.payment_method === 'vrf') && (role === 'admin' || role === 'finance') && (
+          <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b dark:border-slate-700">
+              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Receipt Evidence</h2>
+            </div>
+            <div className="p-5">
+              <CashReceiptUploader expenseId={expense.id} />
+            </div>
+          </div>
+        )}
 
       </div>
     </>
