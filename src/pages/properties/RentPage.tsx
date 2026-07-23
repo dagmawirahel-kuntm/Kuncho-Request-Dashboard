@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Property, Expense } from '@/types/database'
-import { Building2, Pencil, Plus, AlertTriangle, ChevronDown, ChevronRight, Receipt } from 'lucide-react'
+import { Building2, Pencil, Plus, AlertTriangle, ChevronDown, ChevronRight, Receipt, Trash2 } from 'lucide-react'
 
 type PropertyWithLandlord = Property & { vendors: { vendor_name: string } | null }
 
@@ -19,7 +19,16 @@ function daysUntil(dateStr: string | null): number | null {
 export default function RentPage() {
   const { role } = useAuth()
   const canManage = role === 'admin' || role === 'operations_manager'
+  const canDelete = role === 'admin'
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const qc = useQueryClient()
+
+  async function handleDelete(p: Property) {
+    if (!window.confirm(`Delete "${p.property_name}"? This cannot be undone. Any linked rent expenses will keep their history but lose the property link.`)) return
+    const { error } = await supabase.from('properties').delete().eq('id', p.id)
+    if (error) { alert(error.message); return }
+    qc.invalidateQueries({ queryKey: ['properties'] })
+  }
 
   const { data: properties = [], isLoading } = useQuery({
     queryKey: ['properties'],
@@ -98,6 +107,11 @@ export default function RentPage() {
                         <Link to={`/rent/${p.id}/edit`} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit">
                           <Pencil className="h-3.5 w-3.5" />
                         </Link>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => handleDelete(p)} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20" title="Delete">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       )}
                     </div>
                   </div>
