@@ -807,6 +807,45 @@ export interface CashPaymentReceipt {
 }
 export type CashPaymentReceiptInsert = Omit<CashPaymentReceipt, 'id' | 'uploaded_at'>
 
+// ── Bank Statement Import ──────────────────────────────────────────
+export type BankStatementImportStatus = 'draft' | 'committed'
+export interface BankStatementImport {
+  id: string
+  account_id: string
+  file_name: string | null
+  period_start: string | null
+  period_end: string | null
+  starting_balance: number | null
+  ending_balance: number | null
+  status: BankStatementImportStatus
+  uploaded_by: string | null
+  uploaded_at: string
+  committed_at: string | null
+  notes: string | null
+}
+export type BankStatementImportInsert = Omit<BankStatementImport, 'id' | 'uploaded_at' | 'committed_at' | 'status'>
+
+export type BankStatementLineMatchStatus = 'unmatched' | 'matched_expense' | 'duplicate' | 'manual'
+export interface BankStatementLine {
+  id: string
+  import_id: string
+  line_no: number
+  value_date: string | null
+  post_date: string | null
+  transaction_type: string | null
+  narration: string | null
+  debit_amount: number | null
+  credit_amount: number | null
+  running_balance: number | null
+  reference: string | null
+  reference_code: string | null
+  matched_expense_id: string | null
+  transfer_id: string | null
+  match_status: BankStatementLineMatchStatus
+  created_at: string
+}
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status'>
+
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
 

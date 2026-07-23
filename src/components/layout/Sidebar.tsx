@@ -6,7 +6,7 @@ import {
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award, Briefcase
+  HardHat, Network, Send, Hammer, Award, Briefcase, Upload
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -87,6 +87,7 @@ const navGroups: NavGroup[] = [
       { label: 'Ledger & Journal', to: '/finance/ledger', icon: Scale, roles: ['admin', 'manager', 'finance'] },
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'manager', 'finance'] },
       { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Bank Statement Import', to: '/bank-statement-import', icon: Upload, roles: ['admin', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'manager', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'manager', 'finance'] },
