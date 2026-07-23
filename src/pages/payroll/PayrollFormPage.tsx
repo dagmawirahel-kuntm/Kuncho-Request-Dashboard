@@ -14,6 +14,7 @@ import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
+import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -329,17 +330,15 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
             return (
               <div key={l.staff_id} className="grid grid-cols-[1fr_7rem_7rem_7rem] gap-2 px-3 py-2 border-b last:border-0 items-center">
                 <span className="text-sm text-slate-700 truncate">{s?.employee_name ?? '—'}</span>
-                <input
-                  type="number" step="0.01" min="0"
+                <FormattedNumberInput
                   className="rounded border px-2 py-1 text-sm text-right tabular-nums outline-none focus:ring-1 focus:ring-brand"
-                  value={l.gross || ''}
-                  onChange={e => setLine(l.staff_id, 'gross', parseFloat(e.target.value) || 0)}
+                  value={l.gross || null}
+                  onChange={n => setLine(l.staff_id, 'gross', n ?? 0)}
                 />
-                <input
-                  type="number" step="0.01" min="0"
+                <FormattedNumberInput
                   className="rounded border px-2 py-1 text-sm text-right tabular-nums outline-none focus:ring-1 focus:ring-brand"
-                  value={l.deductions || ''}
-                  onChange={e => setLine(l.staff_id, 'deductions', parseFloat(e.target.value) || 0)}
+                  value={l.deductions || null}
+                  onChange={n => setLine(l.staff_id, 'deductions', n ?? 0)}
                 />
                 <span className="text-sm font-semibold text-slate-800 text-right tabular-nums">
                   {formatCurrency(l.gross - l.deductions)}

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property } from '@/types/database'
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -695,7 +696,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Amount (ETB)">
-          <input type="number" step="0.01" className={inputCls} value={form.amount_etb ?? ''} onChange={e => set('amount_etb', e.target.value ? parseFloat(e.target.value) : null)} />
+          <FormattedNumberInput className={inputCls} value={form.amount_etb ?? null} onChange={n => set('amount_etb', n ?? null)} />
         </Field>
         <Field label="Date">
           <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
@@ -827,7 +828,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Partial Paid Amount" locked={financeLocked}>
-              <input disabled={financeLocked} type="number" step="0.01" className={inputCls} value={form.partial_paid_amount ?? ''} onChange={e => set('partial_paid_amount', e.target.value ? parseFloat(e.target.value) : null)} />
+              <FormattedNumberInput disabled={financeLocked} className={inputCls} value={form.partial_paid_amount ?? null} onChange={n => set('partial_paid_amount', n ?? null)} />
             </Field>
             <Field label="Partial Payment Date" locked={financeLocked}>
               <input disabled={financeLocked} type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />

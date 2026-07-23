@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Sale, SaleInsert } from '@/types/database'
 import { useClients, useProjects, useAccounts, useTaxSummaries, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -192,7 +193,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
           <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
         </Field>
         <Field label="Amount (ETB)">
-          <input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
+          <FormattedNumberInput className={inputCls} value={form.amount ?? null} onChange={n => set('amount', n ?? null)} />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">

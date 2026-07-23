@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import { useVendors } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import type { Property, PropertyInsert } from '@/types/database'
@@ -106,10 +107,10 @@ function PropertyFormPageBody({ id, record }: { id?: string; record?: Property }
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Monthly Rent (ETB)">
-          <input type="number" step="0.01" className={inputCls} value={form.monthly_rent_amount ?? ''} onChange={e => set('monthly_rent_amount', e.target.value ? parseFloat(e.target.value) : null)} />
+          <FormattedNumberInput className={inputCls} value={form.monthly_rent_amount ?? null} onChange={n => set('monthly_rent_amount', n ?? null)} />
         </Field>
         <Field label="Deposit (ETB)">
-          <input type="number" step="0.01" className={inputCls} value={form.deposit_amount ?? ''} onChange={e => set('deposit_amount', e.target.value ? parseFloat(e.target.value) : null)} />
+          <FormattedNumberInput className={inputCls} value={form.deposit_amount ?? null} onChange={n => set('deposit_amount', n ?? null)} />
         </Field>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

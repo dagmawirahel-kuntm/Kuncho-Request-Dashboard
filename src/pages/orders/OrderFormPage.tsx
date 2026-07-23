@@ -4,6 +4,7 @@ import { useMemo, useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Order, OrderInsert, OrderPriority, OrderItem, OrderItemStatus } from '@/types/database'
 import {
   useProjects, useStaff, useVendors, useUserProfiles, useSubCategoriesAll, useRecentOrderItems,
@@ -392,8 +393,9 @@ function LineItemRow({
 
         {/* Est. price + Status — paired on mobile, independent grid columns at sm+ */}
         <div className={`grid gap-2 sm:contents ${isEdit ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          <input type="number" min="0" step="0.01" className={inputCls} placeholder="Est. price"
-            value={item.unit_price_est} onChange={e => onChange({ unit_price_est: e.target.value })} />
+          <FormattedNumberInput className={inputCls} placeholder="Est. price"
+            value={item.unit_price_est ? Number(item.unit_price_est) : null}
+            onChange={n => onChange({ unit_price_est: n != null ? String(n) : '' })} />
 
           {isEdit && (
             <select className={`${inputCls} text-xs`} value={item.status}

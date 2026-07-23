@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Transfer, TransferInsert } from '@/types/database'
 import { useAccounts } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -97,7 +98,7 @@ function TransferFormBody({ id, record }: { id?: string; record?: Transfer }) {
         <SearchableSelect value={form.to_account_id ?? null} onChange={id => set('to_account_id', id)} options={accountOptions} placeholder="Select account…" />
       </Field>
       <Field label="Amount (ETB) *">
-        <input type="number" step="0.01" min="0" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
+        <FormattedNumberInput className={inputCls} value={form.amount ?? null} onChange={n => set('amount', n ?? null)} />
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
