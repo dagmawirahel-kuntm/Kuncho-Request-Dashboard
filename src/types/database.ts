@@ -1219,6 +1219,54 @@ export interface StockIssue {
 }
 export type StockIssueInsert = Omit<StockIssue, 'id' | 'created_at'>
 
+// ── Site delivery confirmation + return to stock (148) ──────────────
+export interface StockDeliveryConfirmation {
+  id: string
+  stock_issue_id: string
+  quantity_confirmed: number
+  condition_notes: string | null
+  confirmed_by: string | null
+  confirmed_at: string
+  created_at: string
+}
+export type StockDeliveryConfirmationInsert = Pick<StockDeliveryConfirmation, 'stock_issue_id' | 'quantity_confirmed' | 'condition_notes'>
+
+export interface StockDeliveryConfirmationRow {
+  stock_issue_id: string
+  stock_item_id: string
+  stock_item_name: string
+  project_id: string | null
+  project_name: string | null
+  quantity_dispatched: number
+  issued_date: string
+  transport_request_id: string | null
+  confirmation_id: string | null
+  quantity_confirmed: number | null
+  condition_notes: string | null
+  confirmed_by: string | null
+  confirmed_at: string | null
+  is_confirmed: boolean
+  has_discrepancy: boolean
+}
+
+export type StockReturnRequestStatus = 'pending' | 'received' | 'rejected'
+export interface StockReturnRequest {
+  id: string
+  stock_item_id: string
+  project_id: string | null
+  quantity_requested: number
+  quantity_received: number | null
+  status: StockReturnRequestStatus
+  notes: string | null
+  requested_by: string | null
+  requested_at: string
+  confirmed_by: string | null
+  confirmed_at: string | null
+  stock_receipt_id: string | null
+  created_at: string
+}
+export type StockReturnRequestInsert = Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+
 // ── Tool Units ────────────────────────────────────────────────────
 export interface ToolUnit {
   id: string

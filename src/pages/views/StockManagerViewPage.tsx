@@ -1,11 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
 import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { formatDate } from '@/lib/utils'
-import type { StockPendingDispatchRow, StockOnHand, SourcingBundle } from '@/types/database'
-import { PackageSearch, Truck, ClipboardCheck, Warehouse, ArrowRight } from 'lucide-react'
+import type { StockPendingDispatchRow, StockOnHand, SourcingBundle, StockReturnRequest, StockDeliveryConfirmationRow } from '@/types/database'
+import { PackageSearch, Truck, ClipboardCheck, Warehouse, ArrowRight, PackageOpen, AlertTriangle, Check, X } from 'lucide-react'
 
 interface PendingSetupRow {
   id: string
@@ -36,8 +37,12 @@ function SectionCard({ title, icon: Icon, to, count, children }: { title: string
   )
 }
 
+type ReturnRow = StockReturnRequest & { stock_items: { item_name: string; unit: string } | null; projects: { project_name: string } | null }
+
 export default function StockManagerViewPage() {
   const { role } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
 
   const { data: pendingDispatch = [], isLoading: loadingDispatch } = useQuery({
     queryKey: ['stock-view-pending-dispatch'],
@@ -89,6 +94,47 @@ export default function StockManagerViewPage() {
   })
 
   const lowStock = onHand.filter(s => s.reorder_level != null && s.qty_on_hand <= s.reorder_level)
+
+  // Return to stock (148) — the warehouse-side half of the two-sided
+  // flow: a project reports a return, but nothing hits stock_receipts
+  // until confirmed/rejected here.
+  const { data: pendingReturns = [], isLoading: loadingReturns } = useQuery({
+    queryKey: ['stock-view-pending-returns'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('stock_return_requests')
+        .select('*, stock_items(item_name, unit), projects(project_name)')
+        .eq('status', 'pending')
+        .order('requested_at', { ascending: true })
+        .limit(8)
+      if (error) throw error
+      return data as unknown as ReturnRow[]
+    },
+  })
+
+  // Site delivery discrepancies (148) — flagged, not auto-corrected;
+  // this is purely visibility so it doesn't get lost.
+  const { data: discrepancies = [], isLoading: loadingDiscrepancies } = useQuery({
+    queryKey: ['stock-view-delivery-discrepancies'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_stock_delivery_confirmations')
+        .select('*')
+        .eq('has_discrepancy', true)
+        .order('confirmed_at', { ascending: false })
+        .limit(8)
+      if (error) throw error
+      return data as StockDeliveryConfirmationRow[]
+    },
+  })
+
+  async function handleReturnDecision(id: string, status: 'received' | 'rejected') {
+    const { error } = await supabase.from('stock_return_requests').update({ status }).eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['stock-view-pending-returns'] })
+    qc.invalidateQueries({ queryKey: ['stock-view-on-hand'] })
+    toast(status === 'received' ? 'Return confirmed — stock updated' : 'Return rejected', 'success')
+  }
 
   return (
     <div className="space-y-4">
@@ -171,6 +217,59 @@ export default function StockManagerViewPage() {
                     {s.qty_on_hand} {s.unit}
                   </span>
                 </Link>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Pending Returns to Confirm" icon={PackageOpen} to="/stock" count={pendingReturns.length}>
+          {loadingReturns ? (
+            <p className="py-6 text-center text-xs text-slate-400">Loading…</p>
+          ) : pendingReturns.length === 0 ? (
+            <p className="py-6 text-center text-xs text-slate-400">No returns awaiting confirmation</p>
+          ) : (
+            <div className="divide-y dark:divide-slate-700">
+              {pendingReturns.map(r => (
+                <div key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-700 dark:text-slate-200">{r.stock_items?.item_name ?? '—'}</p>
+                    <p className="text-xs text-slate-400 truncate">{r.projects?.project_name ?? '—'} · {r.quantity_requested} {r.stock_items?.unit ?? ''}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleReturnDecision(r.id, 'received')}
+                      title="Confirm received"
+                      className="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleReturnDecision(r.id, 'rejected')}
+                      title="Reject"
+                      className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Delivery Discrepancies" icon={AlertTriangle} to="/stock" count={discrepancies.length}>
+          {loadingDiscrepancies ? (
+            <p className="py-6 text-center text-xs text-slate-400">Loading…</p>
+          ) : discrepancies.length === 0 ? (
+            <p className="py-6 text-center text-xs text-slate-400">No confirmed deliveries with a mismatch</p>
+          ) : (
+            <div className="divide-y dark:divide-slate-700">
+              {discrepancies.map(d => (
+                <div key={d.stock_issue_id} className="py-2 text-sm">
+                  <p className="truncate font-medium text-slate-700 dark:text-slate-200">{d.stock_item_name}</p>
+                  <p className="text-xs text-slate-400 truncate">
+                    {d.project_name ?? '—'} · dispatched {d.quantity_dispatched} → confirmed {d.quantity_confirmed}
+                    {d.condition_notes ? ` · ${d.condition_notes}` : ''}
+                  </p>
+                </div>
               ))}
             </div>
           )}

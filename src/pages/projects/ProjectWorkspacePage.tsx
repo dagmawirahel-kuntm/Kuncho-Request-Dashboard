@@ -10,16 +10,18 @@ import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { useStaff } from '@/hooks/useLookups'
+import { useStaff, useStockItems } from '@/hooks/useLookups'
+import { useMyStaffId } from '@/hooks/useMyStaff'
 import type {
   Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
   CostGroup, BudgetVariation, BudgetCheckMode, LaborAllocation, LaborAllocationInsert, LaborAllocationStatus,
+  StockReturnRequest, StockReturnRequestStatus,
 } from '@/types/database'
 import {
   ChevronLeft, Building2, User, CalendarClock, Wallet, Receipt,
   Clock3, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
   Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
-  Trash2, UserPlus,
+  Trash2, UserPlus, PackageOpen,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -203,6 +205,135 @@ function LaborAllocationsSection({ projectId, canManage }: { projectId: string; 
                   </button>
                 )}
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Return to stock (148) ────────────────────────────────────────────
+// Two-sided by design, mirroring GRN's own segregation of duties: this
+// side only ever creates a 'pending' request — the actual stock effect
+// (a real stock_receipts row) happens when stock_manager confirms
+// receipt back, from their own queue on StockManagerViewPage.
+const RETURN_STATUS_CLS: Record<StockReturnRequestStatus, string> = {
+  pending:  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  received: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+  rejected: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+}
+
+function ReturnToStockSection({ projectId, projectManagerId }: { projectId: string; projectManagerId: string | null }) {
+  const { toast } = useToast()
+  const { role } = useAuth()
+  const { data: myStaff } = useMyStaffId()
+  const qc = useQueryClient()
+  const { data: stockItems = [] } = useStockItems()
+  const [showAdd, setShowAdd] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [stockItemId, setStockItemId] = useState<string | null>(null)
+  const [quantity, setQuantity] = useState('')
+  const [notes, setNotes] = useState('')
+
+  const canRequest = role === 'admin' || role === 'manager' || role === 'operations_manager'
+    || (role === 'project_manager' && !!myStaff?.id && myStaff.id === projectManagerId)
+
+  const stockItemOptions = stockItems.map((s: any) => ({ id: s.id, label: s.item_name }))
+
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['project-stock-returns', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('stock_return_requests')
+        .select('*, stock_items(item_name, unit)')
+        .eq('project_id', projectId)
+        .order('requested_at', { ascending: false })
+      if (error) throw error
+      return data as (StockReturnRequest & { stock_items: { item_name: string; unit: string } | null })[]
+    },
+  })
+
+  function resetForm() { setStockItemId(null); setQuantity(''); setNotes('') }
+
+  async function handleAdd() {
+    const qty = parseFloat(quantity)
+    if (!stockItemId || isNaN(qty) || qty <= 0) { toast('Select an item and a valid quantity', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('stock_return_requests').insert([{
+      stock_item_id: stockItemId, project_id: projectId, quantity_requested: qty, notes: notes || null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['project-stock-returns', projectId] })
+    toast('Return request recorded — awaiting stock manager confirmation', 'success')
+    resetForm()
+    setShowAdd(false)
+  }
+
+  return (
+    <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <PackageOpen className="h-4 w-4" /> Return to Stock
+        </h3>
+        {canRequest && (
+          <button
+            onClick={() => setShowAdd(s => !s)}
+            className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+          >
+            {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Request Return'}
+          </button>
+        )}
+      </div>
+
+      {showAdd && (
+        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Item *</label>
+              <SearchableSelect value={stockItemId} onChange={setStockItemId} options={stockItemOptions} placeholder="Select stock item…" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Quantity *</label>
+              <input type="number" min={0} step="any" className={inputCls} value={quantity} onChange={e => setQuantity(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes</label>
+              <input type="text" className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            This records what's coming back — stock only updates once a stock manager confirms it actually arrived at the warehouse.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={() => { setShowAdd(false); resetForm() }} className="rounded-md px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+            <button onClick={handleAdd} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+              {saving ? 'Saving…' : 'Submit Return'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
+      ) : data.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No returns recorded for this project yet</p>
+      ) : (
+        <div className="divide-y dark:divide-slate-700">
+          {data.map(r => (
+            <div key={r.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-sm text-slate-700 dark:text-slate-200">
+                  <span className="font-medium">{r.stock_items?.item_name ?? '—'}</span>
+                  <span className="text-xs text-slate-400"> · requested {r.quantity_requested} {r.stock_items?.unit ?? ''}{r.quantity_received != null ? ` · confirmed ${r.quantity_received}` : ''}</span>
+                </p>
+                <p className="text-xs text-slate-400">
+                  {formatDate(r.requested_at)}
+                  {r.notes && <> · {r.notes}</>}
+                </p>
+              </div>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize shrink-0 ${RETURN_STATUS_CLS[r.status]}`}>{r.status}</span>
             </div>
           ))}
         </div>
@@ -852,6 +983,11 @@ export default function ProjectWorkspacePage() {
 
       {/* Labor Tier 1: routine assignment, no approval */}
       <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />
+
+      {/* Return to stock (148): project reports what's coming back;
+          stock_manager confirming receipt is what actually restores it
+          to stock — see StockManagerViewPage's own queue for that half. */}
+      <ReturnToStockSection projectId={id!} projectManagerId={project?.project_manager_id ?? null} />
 
       {/* Activity */}
       <RecentActivityFeed title="Recent Activity" items={activityItems} emptyText="No activity recorded for this project yet" />
