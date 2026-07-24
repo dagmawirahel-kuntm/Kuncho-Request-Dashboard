@@ -15,7 +15,7 @@ type SubcontractDetail = SubcontractorEngagement & {
 }
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
-const WRITE_ROLES = ['admin', 'manager', 'project_manager', 'procurement_officer']
+const WRITE_ROLES = ['admin', 'executive', 'project_manager', 'procurement_officer']
 
 export default function SubcontractDetailPage() {
   const { id } = useParams<{ id: string }>()

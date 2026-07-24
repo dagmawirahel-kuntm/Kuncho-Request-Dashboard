@@ -30,7 +30,7 @@ export function useMyStaffId() {
 // Resolves the logged-in user's department NAME via their staff row's
 // department_id — used for department-primary landing-page routing
 // (LandingRedirect) since role alone doesn't identify a department for
-// roles like 'manager' that aren't tied to one specific department.
+// roles like 'executive' that aren't tied to one specific department.
 // `department` is null once resolved for a user with no linked staff
 // row, or a staff row with no department_id set (the "unassigned"
 // case) — `isLoading` distinguishes that genuine null from "still

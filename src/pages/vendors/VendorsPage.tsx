@@ -51,7 +51,7 @@ export default function VendorsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { role } = useAuth()
-  const canWrite = role === 'admin' || role === 'manager' || role === 'finance' || role === 'procurement_officer'
+  const canWrite = role === 'admin' || role === 'executive' || role === 'finance' || role === 'procurement_officer'
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
 

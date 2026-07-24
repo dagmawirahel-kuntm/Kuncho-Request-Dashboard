@@ -20,7 +20,7 @@ export default function PettyCashPage() {
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'manager' || role === 'finance' || role === 'project_manager'
+  const canManage = role === 'admin' || role === 'executive' || role === 'finance' || role === 'project_manager'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['petty-cash-floats'],

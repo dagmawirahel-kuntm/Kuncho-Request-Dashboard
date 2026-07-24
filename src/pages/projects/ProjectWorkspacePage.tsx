@@ -236,7 +236,7 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
   const [quantity, setQuantity] = useState('')
   const [notes, setNotes] = useState('')
 
-  const canRequest = role === 'admin' || role === 'manager' || role === 'operations_manager'
+  const canRequest = role === 'admin' || role === 'executive' || role === 'operations_manager'
     || (role === 'project_manager' && !!myStaff?.id && myStaff.id === projectManagerId)
 
   const stockItemOptions = stockItems.map((s: any) => ({ id: s.id, label: s.item_name }))
@@ -347,9 +347,9 @@ export default function ProjectWorkspacePage() {
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canManageBudget = role === 'admin' || role === 'manager' || role === 'finance'
+  const canManageBudget = role === 'admin' || role === 'executive' || role === 'finance'
   // Matches labor_allocations' RLS write policy (093)
-  const canManageLabor = role === 'admin' || role === 'manager' || role === 'project_manager' || role === 'operations_manager'
+  const canManageLabor = role === 'admin' || role === 'executive' || role === 'project_manager' || role === 'operations_manager'
 
   const { data: project, isLoading: loadingProject, error: projectError } = useQuery({
     queryKey: ['project-workspace', id],

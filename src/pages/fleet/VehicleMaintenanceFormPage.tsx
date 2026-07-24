@@ -51,7 +51,7 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
   const qc = useQueryClient()
   const { data: vehicles = [] } = useVehicles()
   const vehicleOptions = useMemo(() => vehicles.map((v: any) => ({ id: v.id, label: `${v.name}${v.plate_number ? ` (${v.plate_number})` : ''}` })), [vehicles])
-  const canManage = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const canManage = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
 
   const [form, setForm] = useState<Partial<VehicleMaintenanceRequestInsert> & { actual_cost?: number | null; completed_at?: string | null }>(
     record

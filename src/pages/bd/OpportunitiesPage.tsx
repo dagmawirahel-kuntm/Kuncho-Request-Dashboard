@@ -32,7 +32,7 @@ export default function OpportunitiesPage() {
   const { role } = useAuth()
   // Write access (create/edit/delete) is restricted by RLS to sales, admin,
   // and manager roles — mirror that here so the UI matches what the DB allows.
-  const canWrite = role === 'admin' || role === 'manager' || (role as string) === 'sales'
+  const canWrite = role === 'admin' || role === 'executive' || (role as string) === 'sales'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['opportunities'],

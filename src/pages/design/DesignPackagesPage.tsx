@@ -14,7 +14,7 @@ type DesignPackageRow = DesignPackage & { projects: { project_name: string } | n
 export default function DesignPackagesPage() {
   const [searchParams] = useSearchParams()
   const { role } = useAuth()
-  const canWrite = role === 'design' || role === 'admin' || role === 'manager'
+  const canWrite = role === 'design' || role === 'admin' || role === 'executive'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['design-packages'],

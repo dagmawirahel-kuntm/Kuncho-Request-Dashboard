@@ -10,7 +10,7 @@ import type { Sale, SaleInsert } from '@/types/database'
 import { useClients, useProjects, useAccounts, useTaxSummaries, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -96,9 +96,9 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     function set(key: keyof SaleInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'finance')
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || role === 'finance')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
     if (!id) return

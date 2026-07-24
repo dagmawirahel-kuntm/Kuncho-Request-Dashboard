@@ -34,7 +34,7 @@ export default function VehicleDetailPage() {
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const canManage = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const [editingPhoto, setEditingPhoto] = useState(false)
   const [editingTank, setEditingTank] = useState(false)
   const [tankInput, setTankInput] = useState('')

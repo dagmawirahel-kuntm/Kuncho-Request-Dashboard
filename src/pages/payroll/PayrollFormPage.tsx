@@ -10,7 +10,7 @@ import { formatCurrency } from '@/lib/utils'
 import type { Payroll, PayrollInsert, PayrollStaff } from '@/types/database'
 import { useStaff, useAccounts, useVendorReceiptFacilitations } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
@@ -148,9 +148,9 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
 
   const approvalStatus = record?.approval_status ?? 'pending'
   const isFinanceApproved = approvalStatus === 'finance_approved'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'hr_officer')
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || role === 'hr_officer')
 
   async function handleApprovalTransition(next: string, extra?: Record<string, unknown>) {
     const { error: err } = await supabase

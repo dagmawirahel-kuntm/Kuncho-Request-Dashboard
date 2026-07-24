@@ -51,7 +51,7 @@ export default function VendorReceiptDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
   const [tab, setTab] = useState<Tab>('expenses')
-  const canAddExpense = role === 'admin' || role === 'manager' || role === 'finance'
+  const canAddExpense = role === 'admin' || role === 'executive' || role === 'finance'
 
   const { data: vrf, isLoading } = useQuery({
     queryKey: ['vrf', id],

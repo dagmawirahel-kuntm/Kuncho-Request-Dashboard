@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
@@ -248,12 +248,12 @@ export default function ExpenseDetailPage() {
   }
 
   const theme = TYPE_THEME[expense.expense_type ?? 'general'] ?? TYPE_THEME.general
-  const canEdit = role === 'admin' || role === 'manager' || role === 'finance'
+  const canEdit = role === 'admin' || role === 'executive' || role === 'finance'
 
   const approvalStatus = expense.approval_status ?? 'pending'
-  const showManagerActions = approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = approvalStatus === 'manager_approved' && expense.requires_finance_approval && canApproveAsFinance(role)
-  const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'manager')
+  const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'executive')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
     if (!id) return

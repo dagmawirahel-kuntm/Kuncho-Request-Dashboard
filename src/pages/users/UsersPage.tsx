@@ -25,14 +25,14 @@ const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
 }
 
 const ROLES: UserRole[] = [
-  'admin', 'manager', 'finance', 'staff',
+  'admin', 'executive', 'finance', 'staff',
   'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager', 'logistics_officer',
   'design', 'sales', 'hse_officer', 'operations_manager',
 ]
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Admin',
-  manager: 'Manager',
+  executive: 'Executive',
   finance: 'Finance',
   staff: 'Staff',
   procurement_officer: 'Procurement Officer',
@@ -48,7 +48,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 const ROLE_CLS: Record<UserRole, string> = {
   admin:               'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  manager:             'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  executive:           'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
   finance:             'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
   staff:               'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
   procurement_officer: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
@@ -117,7 +117,7 @@ export default function UsersPage() {
     const deptName = departmentForPending(p)
     const deptRoles = deptName ? DEPARTMENT_ROLES[deptName] : undefined
     if (!deptRoles) return ROLES
-    const withLeadership = new Set<UserRole>([...deptRoles, 'admin', 'manager'])
+    const withLeadership = new Set<UserRole>([...deptRoles, 'admin', 'executive'])
     return ROLES.filter(r => withLeadership.has(r))
   }
 
@@ -361,7 +361,7 @@ export default function UsersPage() {
                     </select>
                   )}
                   <div className="flex flex-wrap gap-1">
-                    {p.role === 'manager' && (
+                    {p.role === 'executive' && (
                       <button
                         onClick={() => handleBadgeToggle(p.id, 'is_vrf_manager', !p.is_vrf_manager, 'VRF Manager')}
                         disabled={updatingId === p.id}

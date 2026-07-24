@@ -100,7 +100,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     enabled: !isEdit && !!bundleId,
   })
 
-  const canDispatch = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const canDispatch = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const rideHailingAllowed = canDispatch || !!profile?.is_ride_hailing_authorized
 
   /* eslint-disable @typescript-eslint/no-explicit-any */

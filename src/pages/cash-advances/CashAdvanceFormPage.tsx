@@ -10,7 +10,7 @@ import type { CashAdvance, CashAdvanceInsert } from '@/types/database'
 import { useStaff, useAccounts, usePayrollList, useExpensesList, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -100,9 +100,9 @@ function CashAdvanceFormPageBody({ id, record, linkedExpenseIds }: { id?: string
     function set(key: keyof CashAdvanceInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'hr_officer')
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || role === 'hr_officer')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
     if (!id) return

@@ -15,7 +15,7 @@ type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
 }
 
-const WRITE_ROLES = ['admin', 'manager', 'operations_manager', 'project_manager']
+const WRITE_ROLES = ['admin', 'executive', 'operations_manager', 'project_manager']
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()

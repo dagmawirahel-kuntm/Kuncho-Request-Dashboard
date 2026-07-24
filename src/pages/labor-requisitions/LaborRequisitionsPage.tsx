@@ -20,7 +20,7 @@ export default function LaborRequisitionsPage() {
   const qc = useQueryClient()
 
   // Can create/edit requisitions — matches the INSERT policy on labor_requisitions.
-  const canRequest = role === 'admin' || role === 'manager' || role === 'project_manager' || role === 'operations_manager' || role === 'hr_officer'
+  const canRequest = role === 'admin' || role === 'executive' || role === 'project_manager' || role === 'operations_manager' || role === 'hr_officer'
   // Can approve/reject and delete — matches the UPDATE/DELETE policies, notably excludes manager/project_manager.
   const canManage = role === 'admin' || role === 'operations_manager' || role === 'hr_officer'
 

@@ -7,7 +7,7 @@ import type { Order, OrderItem, OrderItemStatus, FinanceSourcingReview } from '@
 import { useProjects, useStaff, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
@@ -171,16 +171,21 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
   }
 
   const approvalStatus   = order.approval_status ?? 'pending'
-  const showManagerAct   = approvalStatus === 'pending' && canApproveAsManager(role)
-  const showFinanceAct   = approvalStatus === 'manager_approved' && canApproveAsFinance(role)
+  // The PR approval ladder was retired in migration 149 (Operations
+  // Manual v0.1 §4.1 has no PR approval step). What remains is a
+  // simple "don't source this" switch: rejected requests are excluded
+  // from the sourcing bundle builder, and can be reopened.
+  const canCancelRequest = canApproveAsExecutive(role) || canApproveAsFinance(role)
   const canCreate        = role !== 'procurement_officer'
-  const canResubmit      = approvalStatus === 'rejected' && (role === 'admin' || role === 'manager')
-  const canUpdateItems   = role === 'admin' || role === 'manager' || role === 'procurement_officer'
+  const canUpdateItems   = role === 'admin' || role === 'executive' || role === 'procurement_officer'
 
   const rejectedAtMgr    = approvalStatus === 'rejected' && !order.manager_approved_by
   const rejectedAtFin    = approvalStatus === 'rejected' && !!order.manager_approved_by
-  const step2: StepStatus = rejectedAtMgr ? 'rejected' : approvalStatus === 'pending' ? 'active' : 'done'
-  const step3: StepStatus = rejectedAtFin  ? 'rejected' : approvalStatus === 'finance_approved' ? 'done' : approvalStatus === 'manager_approved' ? 'active' : 'waiting'
+  // Purely historical now — never 'active', because nothing is waiting
+  // on these steps any more. Orders approved under the old ladder keep
+  // showing who approved them and when.
+  const step2: StepStatus = rejectedAtMgr ? 'rejected' : order.manager_approved_by ? 'done' : 'waiting'
+  const step3: StepStatus = rejectedAtFin ? 'rejected' : order.finance_approved_by ? 'done' : 'waiting'
 
   const line1Cls = step2 === 'rejected' ? 'bg-red-300 dark:bg-red-700'  : step2 === 'done' ? 'bg-green-400' : 'bg-slate-200 dark:bg-slate-600'
   const line2Cls = step3 === 'rejected' ? 'bg-red-300 dark:bg-red-700'  : step3 === 'done' ? 'bg-green-400' : 'bg-slate-200 dark:bg-slate-600'
@@ -344,12 +349,11 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
               <p className={`text-[11px] ${
                 step2 === 'done'     ? 'text-green-600 dark:text-green-400'  :
                 step2 === 'rejected' ? 'text-red-500 dark:text-red-400'      :
-                step2 === 'active'   ? 'text-amber-600 dark:text-amber-400'  :
                                        'text-slate-400'
               }`}>
                 {step2 === 'done'     ? (profileName(order.manager_approved_by) ?? 'Approved') :
                  step2 === 'rejected' ? 'Rejected'       :
-                 step2 === 'active'   ? 'Awaiting review' : '—'}
+                 '—'}
               </p>
               {order.manager_approved_at && step2 === 'done' && (
                 <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(order.manager_approved_at)}</p>
@@ -362,12 +366,11 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
               <p className={`text-[11px] ${
                 step3 === 'done'     ? 'text-green-600 dark:text-green-400'  :
                 step3 === 'rejected' ? 'text-red-500 dark:text-red-400'      :
-                step3 === 'active'   ? 'text-amber-600 dark:text-amber-400'  :
                                        'text-slate-400'
               }`}>
                 {step3 === 'done'     ? (profileName(order.finance_approved_by) ?? 'Approved') :
                  step3 === 'rejected' ? 'Rejected'        :
-                 step3 === 'active'   ? 'Awaiting review' : '—'}
+                 '—'}
               </p>
               {order.finance_approved_at && step3 === 'done' && (
                 <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(order.finance_approved_at)}</p>
@@ -387,24 +390,31 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
           </div>
         )}
 
-        {/* Approval action buttons */}
-        {(showManagerAct || showFinanceAct) && !rejecting && (
+        {/* The PR approval ladder is retired — a request is sourceable
+            on creation. All that remains is a "don't source this"
+            switch; the real gates are the per-line finance sourcing
+            review and the PO approval by amount. */}
+        <div className="flex items-start gap-2.5 rounded-lg bg-slate-50 dark:bg-slate-700/40 border dark:border-slate-700 p-3">
+          <AlertCircle className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Purchase requests no longer need a separate approval to be sourced. Spending is controlled downstream — by the
+            finance review on each line below, and by the purchase-order approval limits. Any approvals shown above are
+            historical.
+          </p>
+        </div>
+
+        {approvalStatus !== 'rejected' && canCancelRequest && !rejecting && (
           <div className="flex gap-2 pt-1 border-t dark:border-slate-700">
-            <button
-              onClick={() => handleApproval(showFinanceAct ? 'finance_approved' : 'manager_approved')}
-              className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors shadow-sm">
-              {showFinanceAct ? 'Final Approval' : 'Approve'}
-            </button>
             <button
               onClick={() => setRejecting(true)}
               className="rounded-md bg-white dark:bg-slate-700 border dark:border-slate-600 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-              Reject
+              Reject — don't source this
             </button>
           </div>
         )}
 
         {/* Rejection form */}
-        {(showManagerAct || showFinanceAct) && rejecting && (
+        {canCancelRequest && rejecting && (
           <div className="space-y-2.5 pt-1 border-t dark:border-slate-700">
             <p className="text-xs text-slate-500 dark:text-slate-400">Enter a reason so the requester knows what to fix:</p>
             <textarea rows={2} className={inputCls} placeholder="Rejection reason (required)…"
@@ -425,13 +435,13 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
           </div>
         )}
 
-        {/* Resubmit */}
-        {canResubmit && (
+        {/* Reopen a rejected request so it can be sourced again */}
+        {approvalStatus === 'rejected' && canCancelRequest && (
           <div className="pt-1 border-t dark:border-slate-700">
             <button
               onClick={() => handleApproval('pending', { rejection_reason: null })}
               className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 transition-colors shadow-sm">
-              Resubmit for Approval
+              Reopen Request
             </button>
           </div>
         )}

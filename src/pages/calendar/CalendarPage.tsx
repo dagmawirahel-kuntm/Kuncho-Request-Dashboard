@@ -29,7 +29,7 @@ export default function CalendarPage() {
   const { role, user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canPost = ['admin', 'manager', 'hr_officer'].includes(role ?? '')
+  const canPost = ['admin', 'executive', 'hr_officer'].includes(role ?? '')
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const [showForm, setShowForm] = useState(false)

@@ -15,8 +15,17 @@ export function canEditFinanceFields(role: UserRole | null) {
   return role === 'admin' || role === 'finance'
 }
 
-export function canApproveAsManager(role: UserRole | null) {
-  return role === 'admin' || role === 'manager'
+// The first-tier ("manager-level") approval on payroll, cash advances
+// and sales. The role behind it was renamed manager -> executive in
+// migration 149: Operations Manual v0.1 §12 lists no `manager` role at
+// all, while §1/§6 require an Executive / CEO-MD tier that the schema
+// previously lacked. Purely a rename — same holders (none yet), same
+// scope — so nothing about who can approve what changed here.
+//
+// NOTE: purchase requests no longer call this. Manual §4.1's Materials
+// chain has no PR approval step; that gate was retired in 149.
+export function canApproveAsExecutive(role: UserRole | null) {
+  return role === 'admin' || role === 'executive'
 }
 
 export function canApproveAsFinance(role: UserRole | null) {

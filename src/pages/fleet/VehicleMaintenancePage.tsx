@@ -18,7 +18,7 @@ export default function VehicleMaintenancePage() {
   const { toast } = useToast()
   const { role, user, profile } = useAuth()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'manager' || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const canManage = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['vehicle-maintenance-requests'],

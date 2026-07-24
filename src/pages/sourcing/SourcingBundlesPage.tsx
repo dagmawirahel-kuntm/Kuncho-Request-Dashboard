@@ -52,7 +52,7 @@ export default function SourcingBundlesPage() {
   // Matches the drafting-only, admin/manager-only delete rule on the
   // bundle detail page (PurchaseOrderPage) — this list view previously
   // allowed finance/procurement to delete a bundle of any status.
-  const canDelete = (b: BundleRow) => (role === 'admin' || role === 'manager') && b.status === 'drafting'
+  const canDelete = (b: BundleRow) => (role === 'admin' || role === 'executive') && b.status === 'drafting'
 
   const { data: bundles = [], isLoading } = useQuery({
     queryKey: ['sourcing-bundles'],

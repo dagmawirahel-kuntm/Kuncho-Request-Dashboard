@@ -179,7 +179,7 @@ export const router = createBrowserRouter([
           { path: 'purchase-requests/:id', element: <OrderDetailPage /> },
           {
             // Procurement officers may view requests but cannot create or edit them
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'staff', 'project_manager', 'hr_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'staff', 'project_manager', 'hr_officer']} />,
             children: [
               { path: 'purchase-requests/new', element: <OrderFormPage /> },
               { path: 'purchase-requests/:id/edit', element: <OrderFormPage /> },
@@ -188,7 +188,7 @@ export const router = createBrowserRouter([
           { path: 'staff/:id', element: <StaffDetailPage /> },
           {
             // Match RLS: only these roles can write stock tables
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'stock_manager', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'stock_manager', 'procurement_officer']} />,
             children: [
               { path: 'stock', element: <StockItemsPage /> },
               { path: 'stock/new', element: <StockItemFormPage /> },
@@ -217,7 +217,7 @@ export const router = createBrowserRouter([
           { path: 'purchase-allocation/new', element: <AllocationFormPage /> },
           { path: 'purchase-allocation/:id/edit', element: <AllocationFormPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer']} />,
             children: [
               { path: 'procurement', element: <ProcurementDashboardPage /> },
               { path: 'vendors', element: <VendorsPage /> },
@@ -242,14 +242,14 @@ export const router = createBrowserRouter([
             // don't get the rest of the procurement module. operations_manager
             // added for the capped (<=500k) approval queue (133) — RLS is
             // what actually enforces the cap, this is just route-level reach.
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer', 'operations_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer', 'operations_manager']} />,
             children: [
               { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
               { path: 'sourcing/:id/grn/new', element: <GoodsReceivedNoteFormPage /> },
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
             children: [
               { path: 'finance', element: <FinanceDashboardPage /> },
               { path: 'finance/payments', element: <PaymentsDashboardPage /> },
@@ -283,7 +283,7 @@ export const router = createBrowserRouter([
             // sales_role_read_sales RLS grant (145). Edit/create stay
             // admin/finance(/manager for the approval-adjacent edit
             // above), unchanged.
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'sales']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'sales']} />,
             children: [
               { path: 'sales', element: <SalesPage /> },
               { path: 'sales/:id', element: <SaleDetailPage /> },
@@ -319,7 +319,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'hr_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'hr_officer']} />,
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'staff', element: <StaffPage /> },
@@ -343,7 +343,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager']} />,
             children: [
               { path: 'management', element: <ManagementDashboardPage /> },
               { path: 'projects', element: <ProjectsPage /> },
@@ -354,7 +354,7 @@ export const router = createBrowserRouter([
           {
             // Workspace is also read by procurement (point-of-spend checks
             // reference it) — one step wider than the management CRUD above
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer']} />,
             children: [
               { path: 'projects/:id', element: <ProjectWorkspacePage /> },
             ],
@@ -363,7 +363,7 @@ export const router = createBrowserRouter([
             // CPO bonds: Finance/manager/PM/admin keep full ownership as
             // before; sales is added so BD can raise a bond request tied
             // to a bid — RLS scopes what a sales user can actually see/do.
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager', 'sales']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'sales']} />,
             children: [
               { path: 'cpo-bonds', element: <CpoBondsPage /> },
               { path: 'cpo-bonds/new', element: <CpoBondFormPage /> },
@@ -371,7 +371,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager']} />,
             children: [
               { path: 'products', element: <ProductsPage /> },
               { path: 'products/new', element: <ProductFormPage /> },
@@ -394,7 +394,7 @@ export const router = createBrowserRouter([
           { path: 'design', element: <DesignPackagesPage /> },
           { path: 'design/:id', element: <DesignPackageDetailPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'design']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'design']} />,
             children: [
               { path: 'design/new', element: <DesignPackageFormPage /> },
               { path: 'design/:id/edit', element: <DesignPackageFormPage /> },
@@ -405,7 +405,7 @@ export const router = createBrowserRouter([
           { path: 'contracts', element: <ContractsPage /> },
           { path: 'opportunities', element: <OpportunitiesPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'sales']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'sales']} />,
             children: [
               { path: 'contracts/new', element: <ContractFormPage /> },
               { path: 'contracts/:id/edit', element: <ContractFormPage /> },
@@ -418,7 +418,7 @@ export const router = createBrowserRouter([
           // matching onboarding_tasks RLS.
           { path: 'onboarding-tasks', element: <OnboardingTasksPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hr_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'hr_officer']} />,
             children: [
               { path: 'onboarding-tasks/new', element: <OnboardingTaskFormPage /> },
               { path: 'onboarding-tasks/:id/edit', element: <OnboardingTaskFormPage /> },
@@ -448,7 +448,7 @@ export const router = createBrowserRouter([
           { path: 'hse-incidents', element: <HseIncidentsPage /> },
           { path: 'hse-inductions', element: <HseInductionsPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hse_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'hse_officer']} />,
             children: [
               { path: 'hse-incidents/new', element: <HseIncidentFormPage /> },
               { path: 'hse-incidents/:id/edit', element: <HseIncidentFormPage /> },
@@ -462,7 +462,7 @@ export const router = createBrowserRouter([
           // separately to operations_manager/hr_officer/admin, see 094).
           { path: 'labor-requisitions', element: <LaborRequisitionsPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'project_manager', 'operations_manager', 'hr_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'operations_manager', 'hr_officer']} />,
             children: [
               { path: 'labor-requisitions/new', element: <LaborRequisitionFormPage /> },
               { path: 'labor-requisitions/:id/edit', element: <LaborRequisitionFormPage /> },
@@ -473,7 +473,7 @@ export const router = createBrowserRouter([
             // petty_cash_* RLS (admin/manager/finance/project_manager) —
             // see 121. A custodian's own float is separately reachable via
             // RLS row-scoping if a self-service view is added later.
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager']} />,
             children: [
               { path: 'petty-cash', element: <PettyCashPage /> },
               { path: 'petty-cash/new', element: <PettyCashFloatFormPage /> },
@@ -487,7 +487,7 @@ export const router = createBrowserRouter([
           { path: 'subcontracts', element: <SubcontractsPage /> },
           { path: 'subcontracts/:id', element: <SubcontractDetailPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'project_manager', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'procurement_officer']} />,
             children: [
               { path: 'subcontracts/new', element: <SubcontractFormPage /> },
               { path: 'subcontracts/:id/edit', element: <SubcontractFormPage /> },
@@ -499,7 +499,7 @@ export const router = createBrowserRouter([
           { path: 'work-orders', element: <WorkOrdersPage /> },
           { path: 'work-orders/:id', element: <WorkOrderDetailPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'operations_manager', 'project_manager']} />,
             children: [
               { path: 'work-orders/new', element: <WorkOrderFormPage /> },
               { path: 'work-orders/:id/edit', element: <WorkOrderFormPage /> },
@@ -517,19 +517,19 @@ export const router = createBrowserRouter([
           // admin/manager included for cross-departmental oversight,
           // matching the pattern used everywhere else in this router.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
             children: [{ path: 'pm-view', element: <ProjectManagerViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'operations_manager']} />,
             children: [{ path: 'ops-manager-view', element: <OperationsManagerViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'stock_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'stock_manager']} />,
             children: [{ path: 'stock-manager-view', element: <StockManagerViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'logistics_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'logistics_officer']} />,
             children: [{ path: 'logistics-view', element: <LogisticsOfficerViewPage /> }],
           },
           // ── Department landing pages: Design, Business Development/
@@ -538,19 +538,19 @@ export const router = createBrowserRouter([
           // Admin's landing is the existing Payment Hub (finance/payments);
           // no new page needed there.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'design']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'design']} />,
             children: [{ path: 'design-view', element: <DesignViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'sales']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'sales']} />,
             children: [{ path: 'sales-view', element: <BdSalesViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hr_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'hr_officer']} />,
             children: [{ path: 'hr-view', element: <HrPeopleViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hse_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'hse_officer']} />,
             children: [{ path: 'hse-view', element: <HseViewPage /> }],
           },
           // ── Company Overview: cross-departmental executive snapshot —
@@ -565,14 +565,14 @@ export const router = createBrowserRouter([
           // here is broader — any Operations & Construction role can
           // open it for oversight, not just a live assigned lead.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer']} />,
             children: [{ path: 'workshop-view', element: <WorkshopViewPage /> }],
           },
           // ── Properties & Rent: read matches properties RLS
           // (admin/manager/finance/operations_manager); write (new/edit)
           // further restricted to admin/operations_manager per 135.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'operations_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'operations_manager']} />,
             children: [{ path: 'rent', element: <RentPage /> }],
           },
           {

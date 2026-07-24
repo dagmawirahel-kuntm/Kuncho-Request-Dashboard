@@ -20,7 +20,7 @@ const DRAWING_STATUS_OPTIONS: DesignDrawingStatus[] = ['draft', 'issued', 'appro
 export default function DesignPackageDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
-  const canWrite = role === 'design' || role === 'admin' || role === 'manager'
+  const canWrite = role === 'design' || role === 'admin' || role === 'executive'
 
   const { data: pkg, isLoading, error } = useQuery({
     queryKey: ['design-package-detail', id],

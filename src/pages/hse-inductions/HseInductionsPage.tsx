@@ -26,7 +26,7 @@ export default function HseInductionsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { role } = useAuth()
-  const canWrite = role === 'admin' || role === 'manager' || (role as string) === 'hse_officer'
+  const canWrite = role === 'admin' || role === 'executive' || (role as string) === 'hse_officer'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['hse-inductions'],

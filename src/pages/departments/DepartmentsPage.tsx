@@ -17,7 +17,7 @@ export default function DepartmentsPage() {
   const { role } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canEdit = role === 'admin' || role === 'manager'
+  const canEdit = role === 'admin' || role === 'executive'
 
   const { data: departments = [], isLoading } = useQuery({
     queryKey: ['departments'],

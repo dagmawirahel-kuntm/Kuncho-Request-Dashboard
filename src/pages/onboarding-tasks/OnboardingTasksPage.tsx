@@ -16,7 +16,7 @@ export default function OnboardingTasksPage() {
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
-  const canManage = role === 'hr_officer' || role === 'admin' || role === 'manager'
+  const canManage = role === 'hr_officer' || role === 'admin' || role === 'executive'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['onboarding-tasks'],

@@ -12,7 +12,7 @@ import {
 } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import {
@@ -598,9 +598,9 @@ function PurchaseRequestFormBody({
   const flaggedChecks = Object.values(budgetChecks).filter(r => r.outcome === 'warn' || r.outcome === 'block')
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager')
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
     if (!id) return

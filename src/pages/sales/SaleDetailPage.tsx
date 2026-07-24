@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle,
@@ -85,10 +85,10 @@ export default function SaleDetailPage() {
   }
 
   const approvalStatus = sale.approval_status ?? 'pending'
-  const showManagerActions = approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = approvalStatus === 'manager_approved' && canApproveAsFinance(role)
-  const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || role === 'finance')
-  const canEdit = role === 'admin' || role === 'manager' || role === 'finance'
+  const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || role === 'finance')
+  const canEdit = role === 'admin' || role === 'executive' || role === 'finance'
 
   const clientName  = (sale as any).clients?.client_name ?? null
   const projectName = (sale as any).projects?.project_name ?? null

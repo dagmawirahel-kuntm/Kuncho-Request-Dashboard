@@ -12,10 +12,10 @@ import type { UserRole } from '@/types/database'
 
 const sections = [
   { label: 'Requests', to: '/requests', icon: Receipt, color: 'bg-blue-50 text-blue-500', desc: 'Expenses, orders, transportation' },
-  { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts', roles: ['admin', 'manager', 'finance', 'procurement_officer'] as UserRole[] },
-  { label: 'Finance', to: '/finance', icon: DollarSign, color: 'bg-emerald-50 text-emerald-500', desc: 'Accounts, sales, bonds', roles: ['admin', 'manager', 'finance'] as UserRole[] },
-  { label: 'HR', to: '/hr', icon: Wallet, color: 'bg-orange-50 text-orange-500', desc: 'Staff, payroll, advances', roles: ['admin', 'manager', 'finance', 'hr_officer'] as UserRole[] },
-  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations', roles: ['admin', 'manager', 'finance', 'project_manager'] as UserRole[] },
+  { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts', roles: ['admin', 'executive', 'finance', 'procurement_officer'] as UserRole[] },
+  { label: 'Finance', to: '/finance', icon: DollarSign, color: 'bg-emerald-50 text-emerald-500', desc: 'Accounts, sales, bonds', roles: ['admin', 'executive', 'finance'] as UserRole[] },
+  { label: 'HR', to: '/hr', icon: Wallet, color: 'bg-orange-50 text-orange-500', desc: 'Staff, payroll, advances', roles: ['admin', 'executive', 'finance', 'hr_officer'] as UserRole[] },
+  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations', roles: ['admin', 'executive', 'finance', 'project_manager'] as UserRole[] },
 ]
 
 export default function DashboardPage() {

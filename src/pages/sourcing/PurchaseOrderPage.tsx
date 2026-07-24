@@ -307,22 +307,29 @@ export default function PurchaseOrderPage() {
   const vendorDisplay = bundle.vendors?.vendor_name ?? bundle.vendor_name ?? '—'
 
   const isAdmin = role === 'admin'
-  const isManager = role === 'manager'
+  const isManager = role === 'executive'
   const isFinance = role === 'finance'
   const isProcurement = role === 'procurement_officer'
   const isStockOrLogistics = role === 'stock_manager' || role === 'logistics_officer'
   const isOperationsManager = role === 'operations_manager'
 
-  // Operations Manager can sign off POs up to this cap (133) — RLS
-  // enforces the same limit server-side off the same total_value
-  // column, this just matches the button to what the database allows.
+  // The PO approval ladder, per Operations Manual v0.1 §6:
+  //   Procurement Officer -> 50,000 -> Operations Manager -> 500,000 -> CEO/MD
+  // Both caps are enforced server-side in RLS off the same total_value
+  // column (ops_manager in 133, procurement_officer in 149); these
+  // constants only keep the buttons honest about what the database
+  // will actually allow. `executive` is the CEO/MD tier and admin
+  // remains uncapped.
+  const PROCUREMENT_APPROVAL_CAP = 50000
   const OPS_MANAGER_APPROVAL_CAP = 500000
-  const isOpsManagerWithinCap = isOperationsManager && (bundle.total_value ?? 0) <= OPS_MANAGER_APPROVAL_CAP
+  const bundleValue = bundle.total_value ?? 0
+  const isOpsManagerWithinCap = isOperationsManager && bundleValue <= OPS_MANAGER_APPROVAL_CAP
+  const isProcurementWithinCap = isProcurement && bundleValue <= PROCUREMENT_APPROVAL_CAP
 
   const canEdit = (isProcurement || isAdmin || isManager) && status === 'drafting'
   const canSubmit = (isProcurement || isAdmin || isManager) && status === 'drafting'
-  const canApprove = ((isFinance || isAdmin) || isOpsManagerWithinCap) && status === 'submitted'
-  const canReject = ((isFinance || isAdmin || isManager) || isOpsManagerWithinCap) && (status === 'submitted')
+  const canApprove = ((isFinance || isAdmin) || isOpsManagerWithinCap || isProcurementWithinCap) && status === 'submitted'
+  const canReject = ((isFinance || isAdmin || isManager) || isOpsManagerWithinCap || isProcurementWithinCap) && (status === 'submitted')
   const canMarkOrdered = (isProcurement || isAdmin || isManager) && status === 'approved'
   const canCancel = (isAdmin || isManager) && !['fulfilled', 'cancelled'].includes(status)
 

@@ -367,7 +367,7 @@ export default function StaffDetailPage() {
 
   const deptColor = getDeptColor(staff.staff_type)
   const ini = initials(staff.employee_name)
-  const canEdit = ['admin', 'manager', 'hr_officer'].includes(role ?? '')
+  const canEdit = ['admin', 'executive', 'hr_officer'].includes(role ?? '')
   const isOwnProfile = staff.user_id === user?.id
   const status = staff.status ?? 'active'
   const statusCls = STATUS_CHIP[status] ?? STATUS_CHIP.active

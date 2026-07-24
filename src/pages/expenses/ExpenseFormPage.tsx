@@ -10,7 +10,7 @@ import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitatio
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canEditFinanceFields, canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canEditFinanceFields, canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
@@ -491,9 +491,9 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const deliveryStatuses = (form.delivery_status as string[]) ?? []
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsManager(role)
+  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
   const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && record?.requires_finance_approval && canApproveAsFinance(role)
-  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'manager' || record?.purchaser_user_id === user?.id)
+  const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || record?.purchaser_user_id === user?.id)
 
   return (
     <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo={returnTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={handleSave}>

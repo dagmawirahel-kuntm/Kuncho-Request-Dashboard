@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager'
+export type UserRole = 'admin' | 'executive' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager'
 export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled' | 'stock_fulfilled' | 'stock_pending_dispatch'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'

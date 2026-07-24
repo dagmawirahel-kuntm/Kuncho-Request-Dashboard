@@ -20,12 +20,12 @@ import {
 
 function useRoleAccess() {
   const { role, profile } = useAuth()
-  const isSuperRole    = role === 'admin' || role === 'manager' || role === 'finance'
+  const isSuperRole    = role === 'admin' || role === 'executive' || role === 'finance'
   const isProcurement  = role === 'procurement_officer'
   const isPM           = role === 'project_manager'
   const showBundles    = isSuperRole || isProcurement
   const showCPO        = isSuperRole || isPM
-  const showVRF        = role === 'admin' || role === 'manager'
+  const showVRF        = role === 'admin' || role === 'executive'
   const filterOwn      = !isSuperRole
   const canCreate      = role !== 'procurement_officer'
   const canSeeTable    = isSuperRole

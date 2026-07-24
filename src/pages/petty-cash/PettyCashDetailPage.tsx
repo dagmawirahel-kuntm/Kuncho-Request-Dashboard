@@ -18,7 +18,7 @@ export default function PettyCashDetailPage() {
   const { user, role } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canApprove = role === 'admin' || role === 'manager' || role === 'finance' || role === 'project_manager'
+  const canApprove = role === 'admin' || role === 'executive' || role === 'finance' || role === 'project_manager'
 
   const { data: float, isLoading } = useQuery({
     queryKey: ['petty-cash-float', id],

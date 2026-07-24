@@ -96,19 +96,25 @@ export default function SourcingBundleFormPage() {
 
   const selectedVendor = useMemo(() => vendors.find(v => v.id === vendorId), [vendors, vendorId])
 
-  // Sourcing can start as soon as a manager has approved the request —
-  // it no longer waits for finance's PR-level sign-off too. Finance's
-  // real check happens once at the bundle stage, against the actual
-  // vendor price, instead of twice (once on the estimate, once on the
-  // real cost). Finance-approved requests are included too, since a
-  // request further along the chain is obviously still sourceable.
+  // A purchase request is sourceable as soon as it exists — the
+  // PR-level approval ladder was retired in migration 149. Operations
+  // Manual v0.1 §4.1's Materials chain is "Need -> stock check -> (if
+  // short) sourcing -> PO -> GRN -> expense": there is no PR approval
+  // step in it, and the one that existed resolved to admin-only (the
+  // `manager` role it checked had no holders), making every single
+  // request wait on one person.
+  //
+  // The real gates are unchanged and both still apply downstream:
+  // the finance sourcing review per line (147, enforced by trigger on
+  // sourcing_bundle_items), and the PO approval by amount threshold.
+  // Explicitly-rejected requests are still excluded.
   const { data: approvedOrders = [] } = useQuery({
     queryKey: ['sourceable-orders'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
         .select('id, request_code, order_name, project_id, approval_status, projects(project_name)')
-        .in('approval_status', ['manager_approved', 'finance_approved'])
+        .neq('approval_status', 'rejected')
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as unknown as OrderRow[]
@@ -619,7 +625,7 @@ export default function SourcingBundleFormPage() {
                 <Package className="mx-auto h-7 w-7 text-slate-300 dark:text-slate-600 mb-2" />
                 <p className="text-sm text-slate-400">
                   {availableItems.length === 0
-                    ? 'No finance-approved PR items available'
+                    ? 'No PR line items available to source'
                     : 'No items match your search'}
                 </p>
               </div>
@@ -628,11 +634,6 @@ export default function SourcingBundleFormPage() {
                 <div className="px-4 py-2 bg-slate-50 dark:bg-slate-700/30 flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs font-bold text-brand">{order.request_code}</span>
                   <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">{order.order_name}</span>
-                  {order.approval_status === 'manager_approved' && (
-                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded px-1.5 py-0.5 whitespace-nowrap" title="Manager-approved; finance hasn't signed off on this request yet — that review now happens on the bundle instead">
-                      Awaiting Finance (PR)
-                    </span>
-                  )}
                   {order.projects && (
                     <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 rounded px-1.5 py-0.5 whitespace-nowrap">
                       {order.projects.project_name}

@@ -26,7 +26,7 @@ const ROLE_LANDING: Partial<Record<UserRole, string>> = {
 }
 
 // Department name -> landing route, used as a fallback for any role
-// NOT in ROLE_LANDING (e.g. 'manager', or a future role not yet given
+// NOT in ROLE_LANDING (e.g. 'executive', or a future role not yet given
 // its own entry) — resolves via the department the person's staff
 // record is actually assigned to (spec §1: "resolve the user's
 // department, and role for Operations & Construction specifically").

@@ -16,7 +16,7 @@ type SubcontractRow = SubcontractorEngagement & {
   projects: { project_name: string } | null
 }
 
-const WRITE_ROLES = ['admin', 'manager', 'project_manager', 'procurement_officer']
+const WRITE_ROLES = ['admin', 'executive', 'project_manager', 'procurement_officer']
 
 export default function SubcontractsPage() {
   const [searchParams] = useSearchParams()

@@ -42,7 +42,7 @@ export default function WorkOrdersPage() {
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'manager' || role === 'operations_manager' || role === 'project_manager'
+  const canManage = role === 'admin' || role === 'executive' || role === 'operations_manager' || role === 'project_manager'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['work-orders'],
