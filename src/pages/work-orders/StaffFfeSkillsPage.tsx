@@ -1,27 +1,23 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import type { FfeJobDescription, FfeKeyResponsibility, StaffFfeChecklistRow, StaffFfeSkillLevelRow } from '@/types/database'
-import { ArrowLeft } from 'lucide-react'
+import { StarRating } from '@/components/shared/StarRating'
+import { RatingTrend } from '@/components/shared/RatingTrend'
+import type { FfeJobDescription, FfeKeyResponsibility, StaffFfeSkillRating, StaffFfeRoleSummaryRow } from '@/types/database'
+import { ArrowLeft, Star } from 'lucide-react'
 
 // Roles #1-3 are profiled together as one "Carpenter" competency
 // profile per the spec's UI note — each still has its own independent
-// checklist and computed level, just displayed grouped rather than as
-// three unrelated entries. Matched by exact seeded role_name.
+// rating history, just displayed grouped rather than as three
+// unrelated entries. Matched by exact seeded role_name.
 const CARPENTER_GROUP = [
   'FF&E Carpenter / Cabinet Maker (Woodwork)',
   'FF&E Site Installer / Assembly Technician',
   'Custom Upholsterer',
 ]
-
-const LEVEL_CLS: Record<string, string> = {
-  Advanced: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-  Intermediate: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  Beginner: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
-}
 
 export default function StaffFfeSkillsPage() {
   const { id } = useParams<{ id: string }>()
@@ -33,7 +29,7 @@ export default function StaffFfeSkillsPage() {
   // v_staff_directory, not the raw `staff` table — staff is deliberately
   // locked down (salary, national_id, etc.) to a handful of roles, but
   // anyone who can reach a work order's skill-matched staffing list
-  // should be able to see whose name a computed level belongs to.
+  // should be able to see whose name a score belongs to.
   const { data: staffMember } = useQuery({
     queryKey: ['staff-directory-one', id],
     queryFn: async () => {
@@ -62,22 +58,30 @@ export default function StaffFfeSkillsPage() {
     },
   })
 
-  const { data: checklist = [] } = useQuery({
-    queryKey: ['staff-ffe-checklist', id],
+  // Full history, not just the current score — the whole point is a
+  // visible progression, not a snapshot. "Current" is derived here as
+  // the most recent entry per responsibility, matching
+  // v_staff_ffe_current_scores' own logic exactly.
+  const { data: ratings = [] } = useQuery({
+    queryKey: ['staff-ffe-skill-ratings', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('staff_ffe_checklist').select('*').eq('staff_id', id!)
+      const { data, error } = await supabase
+        .from('staff_ffe_skill_ratings')
+        .select('*')
+        .eq('staff_id', id!)
+        .order('rated_at', { ascending: true })
       if (error) throw error
-      return data as StaffFfeChecklistRow[]
+      return data as StaffFfeSkillRating[]
     },
     enabled: !!id,
   })
 
-  const { data: levels = [] } = useQuery({
-    queryKey: ['staff-ffe-skill-level', id],
+  const { data: roleSummaries = [] } = useQuery({
+    queryKey: ['staff-ffe-role-summary', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_ffe_skill_level').select('*').eq('staff_id', id!)
+      const { data, error } = await supabase.from('v_staff_ffe_role_summary').select('*').eq('staff_id', id!)
       if (error) throw error
-      return data as StaffFfeSkillLevelRow[]
+      return data as StaffFfeRoleSummaryRow[]
     },
     enabled: !!id,
   })
@@ -92,18 +96,29 @@ export default function StaffFfeSkillsPage() {
     return map
   }, [responsibilities])
 
-  const checkedByResponsibility = useMemo(() => new Map(checklist.map(c => [c.responsibility_id, c.is_checked])), [checklist])
-  const levelByRole = useMemo(() => new Map(levels.map(l => [l.job_description_id, l.skill_level])), [levels])
+  const historyByResponsibility = useMemo(() => {
+    const map = new Map<string, StaffFfeSkillRating[]>()
+    for (const r of ratings) {
+      const list = map.get(r.responsibility_id) ?? []
+      list.push(r)
+      map.set(r.responsibility_id, list)
+    }
+    return map
+  }, [ratings])
 
-  async function toggle(responsibilityId: string, next: boolean) {
-    const { error } = await supabase.from('staff_ffe_checklist').upsert(
-      [{ staff_id: id!, responsibility_id: responsibilityId, is_checked: next }],
-      { onConflict: 'staff_id,responsibility_id' }
-    )
+  const summaryByRole = useMemo(() => new Map(roleSummaries.map(s => [s.job_description_id, s])), [roleSummaries])
+
+  async function submitRating(responsibilityId: string, score: number, notes: string) {
+    const { error } = await supabase.from('staff_ffe_skill_ratings').insert([{
+      staff_id: id!,
+      responsibility_id: responsibilityId,
+      score,
+      notes: notes.trim() || null,
+    }])
     if (error) { toast(error.message, 'error'); return }
-    qc.invalidateQueries({ queryKey: ['staff-ffe-checklist', id] })
-    qc.invalidateQueries({ queryKey: ['staff-ffe-skill-level', id] })
-    qc.invalidateQueries({ queryKey: ['staff-ffe-skill-levels-all'] })
+    toast('Rating recorded', 'success')
+    qc.invalidateQueries({ queryKey: ['staff-ffe-skill-ratings', id] })
+    qc.invalidateQueries({ queryKey: ['staff-ffe-role-summary', id] })
   }
 
   const carpenterRoles = roles.filter(r => CARPENTER_GROUP.includes(r.role_name)).sort((a, b) => CARPENTER_GROUP.indexOf(a.role_name) - CARPENTER_GROUP.indexOf(b.role_name))
@@ -117,7 +132,7 @@ export default function StaffFfeSkillsPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{staffMember?.employee_name ?? 'FF&E Skills'}</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          {canEdit ? 'Check off responsibilities as they\'re demonstrated — the level below is always computed, never set directly.' : 'Computed skill levels, read-only.'}
+          {canEdit ? 'Rate each responsibility 0-5 — every assessment is kept, so progression over time stays visible.' : 'Star ratings and progression history, read-only.'}
         </p>
       </div>
 
@@ -126,8 +141,9 @@ export default function StaffFfeSkillsPage() {
           <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Carpenter — Woodwork & Installation Profile</h2>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {carpenterRoles.map(r => (
-              <RoleChecklist key={r.id} role={r} responsibilities={responsibilitiesByRole.get(r.id) ?? []}
-                level={levelByRole.get(r.id) ?? null} checkedMap={checkedByResponsibility} canEdit={canEdit} onToggle={toggle} />
+              <RoleCard key={r.id} role={r} responsibilities={responsibilitiesByRole.get(r.id) ?? []}
+                summary={summaryByRole.get(r.id) ?? null} historyByResponsibility={historyByResponsibility}
+                canEdit={canEdit} onRate={submitRating} />
             ))}
           </div>
         </div>
@@ -138,8 +154,9 @@ export default function StaffFfeSkillsPage() {
           {carpenterRoles.length > 0 && <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Other FF&E Specialties</h2>}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {standaloneRoles.map(r => (
-              <RoleChecklist key={r.id} role={r} responsibilities={responsibilitiesByRole.get(r.id) ?? []}
-                level={levelByRole.get(r.id) ?? null} checkedMap={checkedByResponsibility} canEdit={canEdit} onToggle={toggle} />
+              <RoleCard key={r.id} role={r} responsibilities={responsibilitiesByRole.get(r.id) ?? []}
+                summary={summaryByRole.get(r.id) ?? null} historyByResponsibility={historyByResponsibility}
+                canEdit={canEdit} onRate={submitRating} />
             ))}
           </div>
         </div>
@@ -148,45 +165,125 @@ export default function StaffFfeSkillsPage() {
   )
 }
 
-function RoleChecklist({ role, responsibilities, level, checkedMap, canEdit, onToggle }: {
+function RoleCard({ role, responsibilities, summary, historyByResponsibility, canEdit, onRate }: {
   role: FfeJobDescription
   responsibilities: FfeKeyResponsibility[]
-  level: string | null
-  checkedMap: Map<string, boolean>
+  summary: StaffFfeRoleSummaryRow | null
+  historyByResponsibility: Map<string, StaffFfeSkillRating[]>
   canEdit: boolean
-  onToggle: (responsibilityId: string, next: boolean) => void
+  onRate: (responsibilityId: string, score: number, notes: string) => Promise<void>
 }) {
   return (
     <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{role.role_name}</p>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold flex-shrink-0 ${LEVEL_CLS[level ?? 'Beginner']}`}>
-          {level ?? 'Not started'}
-        </span>
+        {summary ? (
+          <span className="rounded-full bg-brand/10 text-brand px-2 py-0.5 text-[10px] font-semibold flex-shrink-0">
+            Avg {summary.avg_score} ({summary.rated_responsibility_count}/{summary.total_active_responsibilities} rated)
+          </span>
+        ) : (
+          <span className="rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 text-[10px] font-semibold flex-shrink-0">
+            Not yet rated
+          </span>
+        )}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {responsibilities.map(r => {
-          const checked = checkedMap.get(r.id) ?? false
+          const history = historyByResponsibility.get(r.id) ?? []
+          const current = history.length > 0 ? history[history.length - 1].score : null
           return (
-            <label key={r.id} className={`flex items-start gap-2 text-xs ${canEdit ? 'cursor-pointer' : ''}`}>
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={checked}
-                disabled={!canEdit}
-                onChange={e => onToggle(r.id, e.target.checked)}
-              />
-              <span className={checked ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'}>
-                <span className="font-medium">{r.responsibility_title}</span>
-                <span className={`ml-1.5 rounded-full px-1.5 py-0 text-[9px] font-semibold ${r.tier === 'foundational' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}`}>
-                  {r.tier === 'foundational' ? 'Foundational' : 'Differentiator'}
-                </span>
-              </span>
-            </label>
+            <ResponsibilityRow key={r.id} responsibility={r} history={history} current={current} canEdit={canEdit} onRate={onRate} />
           )
         })}
         {responsibilities.length === 0 && <p className="text-xs text-slate-400">No active responsibilities defined</p>}
       </div>
+    </div>
+  )
+}
+
+function ResponsibilityRow({ responsibility, history, current, canEdit, onRate }: {
+  responsibility: FfeKeyResponsibility
+  history: StaffFfeSkillRating[]
+  current: number | null
+  canEdit: boolean
+  onRate: (responsibilityId: string, score: number, notes: string) => Promise<void>
+}) {
+  const [rating, setRating] = useState(false)
+  const [pendingScore, setPendingScore] = useState<number | null>(null)
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (pendingScore == null) return
+    setSaving(true)
+    await onRate(responsibility.id, pendingScore, notes)
+    setSaving(false)
+    setRating(false)
+    setPendingScore(null)
+    setNotes('')
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+            {responsibility.responsibility_title}
+            <span className={`ml-1.5 rounded-full px-1.5 py-0 text-[9px] font-semibold ${responsibility.tier === 'foundational' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}`}>
+              {responsibility.tier === 'foundational' ? 'Foundational' : 'Differentiator'}
+            </span>
+          </p>
+          {responsibility.responsibility_detail && (
+            <p className="text-[11px] text-slate-400 mt-0.5">{responsibility.responsibility_detail}</p>
+          )}
+        </div>
+        {canEdit && (
+          <button
+            onClick={() => setRating(s => !s)}
+            className="flex-shrink-0 rounded-md border px-2 py-1 text-[10px] font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+          >
+            Rate
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <StarRating score={current} />
+        <RatingTrend history={history.map(h => ({ score: h.score, ratedAt: h.rated_at }))} />
+      </div>
+
+      {rating && (
+        <div className="rounded-md border dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 p-2.5 space-y-2">
+          <div className="flex items-center gap-1">
+            {[0, 1, 2, 3, 4, 5].map(n => (
+              <button
+                key={n}
+                onClick={() => setPendingScore(n)}
+                className={`flex items-center justify-center h-6 w-6 rounded text-[10px] font-semibold ${pendingScore === n ? 'bg-brand text-white' : 'bg-white dark:bg-slate-800 border dark:border-slate-600 text-slate-500 dark:text-slate-400'}`}
+              >
+                {n}
+              </button>
+            ))}
+            {pendingScore != null && <StarRating score={pendingScore} />}
+          </div>
+          <textarea
+            rows={2}
+            placeholder="Notes (optional)"
+            className="w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+          />
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setRating(false)} className="rounded-md border px-2.5 py-1 text-[11px] text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+            <button
+              onClick={handleSave}
+              disabled={pendingScore == null || saving}
+              className="flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <Star className="h-3 w-3" /> {saving ? 'Saving…' : 'Save Rating'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

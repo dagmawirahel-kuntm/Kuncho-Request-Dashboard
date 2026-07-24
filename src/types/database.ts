@@ -1759,3 +1759,32 @@ export interface StaffFfeSkillLevelRow {
   differentiator_total: number
   skill_level: FfeSkillLevel
 }
+
+// ── FF&E 0-5 scored rating history (140) ───────────────────────────
+export interface StaffFfeSkillRating {
+  id: string
+  staff_id: string
+  responsibility_id: string
+  score: number
+  rated_by: string | null
+  rated_at: string
+  notes: string | null
+}
+export type StaffFfeSkillRatingInsert = Omit<StaffFfeSkillRating, 'id' | 'rated_at'>
+
+export interface StaffFfeCurrentScoreRow {
+  staff_id: string
+  responsibility_id: string
+  score: number
+  rated_at: string
+  rated_by: string | null
+}
+
+export interface StaffFfeRoleSummaryRow {
+  staff_id: string
+  job_description_id: string
+  role_name: string
+  avg_score: number
+  rated_responsibility_count: number
+  total_active_responsibilities: number
+}

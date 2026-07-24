@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { WorkOrder, WorkOrderInsert, WorkOrderType, StaffFfeSkillLevelRow } from '@/types/database'
+import { StarRating } from '@/components/shared/StarRating'
+import type { WorkOrder, WorkOrderInsert, WorkOrderType, FfeJobDescription, FfeKeyResponsibility, StaffFfeCurrentScoreRow } from '@/types/database'
 import { useProjects, useStaffDirectory } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -72,27 +73,48 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
 
   function set(key: keyof WorkOrderInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
-  // Skill-matched staffing (§3): for a workshop work order, surface FF&E
-  // staff sorted by computed level — a suggestion, never an enforced
-  // restriction. Not tied to any particular role by the scope text
-  // (there's no parsing of scope_of_work into a role) — shows every
-  // staff member's FF&E levels across all roles so a lead can pick
-  // whoever fits, same spirit as the org chart's "informs, doesn't
-  // gate" pattern used elsewhere in this app.
-  const { data: skillLevels = [] } = useQuery({
-    queryKey: ['staff-ffe-skill-levels-all'],
+  // Skill-matched staffing (§3): for a workshop work order, a lead
+  // picks the SPECIFIC responsibility the job is really about (e.g.
+  // "Welding & Joining" for a mirror-polish weld job, not just "Metal
+  // Fabricator" in general) and candidates are sorted by their current
+  // score for that exact responsibility — a suggestion, never an
+  // enforced restriction.
+  const [relevantResponsibilityId, setRelevantResponsibilityId] = useState<string | null>(null)
+
+  const { data: roles = [] } = useQuery({
+    queryKey: ['ffe-job-descriptions-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_ffe_skill_level').select('*')
+      const { data, error } = await supabase.from('ffe_job_descriptions').select('*').eq('active', true).order('sort_order')
       if (error) throw error
-      return data as StaffFfeSkillLevelRow[]
+      return data as FfeJobDescription[]
     },
     enabled: form.work_type === 'workshop',
   })
-  const levelRank: Record<string, number> = { Advanced: 3, Intermediate: 2, Beginner: 1 }
-  const sortedCandidates = useMemo(
-    () => [...skillLevels].sort((a, b) => (levelRank[b.skill_level] ?? 0) - (levelRank[a.skill_level] ?? 0)),
-    [skillLevels]
+  const { data: responsibilities = [] } = useQuery({
+    queryKey: ['ffe-key-responsibilities-active'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('ffe_key_responsibilities').select('*').eq('active', true).order('sort_order')
+      if (error) throw error
+      return data as FfeKeyResponsibility[]
+    },
+    enabled: form.work_type === 'workshop',
+  })
+  const roleNameById = useMemo(() => new Map(roles.map(r => [r.id, r.role_name])), [roles])
+  const responsibilityOptions = useMemo(
+    () => responsibilities.map(r => ({ id: r.id, label: `${roleNameById.get(r.job_description_id) ?? ''} — ${r.responsibility_title}` })),
+    [responsibilities, roleNameById]
   )
+
+  const { data: currentScores = [] } = useQuery({
+    queryKey: ['staff-ffe-current-scores', relevantResponsibilityId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_staff_ffe_current_scores').select('*').eq('responsibility_id', relevantResponsibilityId!)
+      if (error) throw error
+      return data as StaffFfeCurrentScoreRow[]
+    },
+    enabled: form.work_type === 'workshop' && !!relevantResponsibilityId,
+  })
+  const sortedCandidates = useMemo(() => [...currentScores].sort((a, b) => b.score - a.score), [currentScores])
 
   async function handleSave() {
     setError('')
@@ -130,26 +152,27 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
         <SearchableSelect value={form.assigned_lead_staff_id ?? null} onChange={id => set('assigned_lead_staff_id', id)} options={staffOptions} placeholder="Select staff…" />
       </Field>
 
-      {form.work_type === 'workshop' && sortedCandidates.length > 0 && (
-        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
-          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">FF&E-skilled staff (suggestion only — doesn't block your choice)</p>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {sortedCandidates.map(c => (
-              <button
-                type="button"
-                key={`${c.staff_id}-${c.job_description_id}`}
-                onClick={() => set('assigned_lead_staff_id', c.staff_id)}
-                className="flex w-full items-center justify-between rounded px-2 py-1.5 text-xs hover:bg-white dark:hover:bg-slate-800 text-left"
-              >
-                <span className="text-slate-700 dark:text-slate-200">{staffNameById.get(c.staff_id) ?? '—'} <span className="text-slate-400">· {c.role_name}</span></span>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                  c.skill_level === 'Advanced' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                  : c.skill_level === 'Intermediate' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                }`}>{c.skill_level}</span>
-              </button>
-            ))}
-          </div>
+      {form.work_type === 'workshop' && (
+        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3 space-y-2">
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Skill-matched staffing (suggestion only — doesn't block your choice)</p>
+          <SearchableSelect value={relevantResponsibilityId} onChange={setRelevantResponsibilityId} options={responsibilityOptions} placeholder="Which responsibility is this job really about?" />
+          {relevantResponsibilityId && (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {sortedCandidates.length === 0 ? (
+                <p className="text-xs text-slate-400 px-2 py-1.5">No one has been rated on this responsibility yet.</p>
+              ) : sortedCandidates.map(c => (
+                <button
+                  type="button"
+                  key={c.staff_id}
+                  onClick={() => set('assigned_lead_staff_id', c.staff_id)}
+                  className="flex w-full items-center justify-between rounded px-2 py-1.5 text-xs hover:bg-white dark:hover:bg-slate-800 text-left"
+                >
+                  <span className="text-slate-700 dark:text-slate-200">{staffNameById.get(c.staff_id) ?? '—'}</span>
+                  <StarRating score={c.score} />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
