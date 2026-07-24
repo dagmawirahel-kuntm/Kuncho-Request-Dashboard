@@ -60,10 +60,11 @@ function PropertyFormPageBody({ id, record }: { id?: string; record?: Property }
         lease_end_date: record.lease_end_date,
         deposit_amount: record.deposit_amount ?? undefined,
         renewal_notice_days: record.renewal_notice_days ?? undefined,
+        payment_interval_months: record.payment_interval_months,
         status: record.status,
         notes: record.notes,
       }
-      : { property_type: 'workshop', status: 'active' }
+      : { property_type: 'workshop', status: 'active', payment_interval_months: 1 }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -113,6 +114,15 @@ function PropertyFormPageBody({ id, record }: { id?: string; record?: Property }
           <FormattedNumberInput className={inputCls} value={form.deposit_amount ?? null} onChange={n => set('deposit_amount', n ?? null)} />
         </Field>
       </div>
+      <Field label="Rent Payment Interval">
+        <select className={inputCls} value={form.payment_interval_months ?? 1} onChange={e => set('payment_interval_months', parseInt(e.target.value, 10))}>
+          <option value={1}>Monthly</option>
+          <option value={3}>Quarterly (every 3 months)</option>
+          <option value={6}>Semi-Annual (every 6 months)</option>
+          <option value={12}>Annual (every 12 months)</option>
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">Monthly Rent above stays the lease's quoted monthly rate — a request for this interval is that rate × the number of months.</p>
+      </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Lease Start">
           <input type="date" className={inputCls} value={form.lease_start_date ?? ''} onChange={e => set('lease_start_date', e.target.value || null)} />

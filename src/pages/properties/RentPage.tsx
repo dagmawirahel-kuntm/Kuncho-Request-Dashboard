@@ -31,8 +31,8 @@ function toIsoDate(d: Date): string {
 // day of a month. If the anchor day doesn't exist in the target month
 // (e.g. day 31 into a 28/30-day month), the period simply runs through
 // that month's last day instead.
-function periodEndFrom(startY: number, startM0: number, startD: number): Date {
-  const targetM0 = startM0 + 1
+function periodEndFrom(startY: number, startM0: number, startD: number, intervalMonths: number): Date {
+  const targetM0 = startM0 + intervalMonths
   const daysInTarget = new Date(Date.UTC(startY, targetM0 + 1, 0)).getUTCDate()
   if (startD > daysInTarget) return new Date(Date.UTC(startY, targetM0, daysInTarget))
   return new Date(Date.UTC(startY, targetM0, startD - 1))
@@ -45,6 +45,11 @@ function periodEndFrom(startY: number, startM0: number, startD: number): Date {
 // came before it. Purely computed — nothing is written until a person
 // confirms it (see §2a: no persisted "draft" state).
 //
+// The period spans property.payment_interval_months months (default
+// 1 = monthly) — not every lease is billed monthly. monthly_rent_amount
+// stays the lease's quoted monthly rate regardless; the request amount
+// (see handleConfirmRentDue) is that rate × this interval.
+//
 // All arithmetic here goes through Date.UTC/getUTC* rather than local
 // constructors/mutators (`new Date(y, m, d)`, `.setDate()`, or
 // `toISOString()` on a local-midnight Date) — mixing those silently
@@ -52,6 +57,7 @@ function periodEndFrom(startY: number, startM0: number, startD: number): Date {
 // (Ethiopia is UTC+3): a local midnight serialized with toISOString()
 // rolls back into the previous UTC day.
 function computeNextPeriod(lastRequest: RentPaymentRequest | undefined, property: Property): { start: string; end: string } {
+  const intervalMonths = property.payment_interval_months || 1
   let startY: number, startM0: number, startD: number
   if (lastRequest) {
     const [y, m, d] = lastRequest.period_end.split('-').map(Number)
@@ -65,9 +71,11 @@ function computeNextPeriod(lastRequest: RentPaymentRequest | undefined, property
     startY = now.getFullYear(); startM0 = now.getMonth(); startD = 1
   }
   const start = new Date(Date.UTC(startY, startM0, startD))
-  const end = periodEndFrom(startY, startM0, startD)
+  const end = periodEndFrom(startY, startM0, startD, intervalMonths)
   return { start: toIsoDate(start), end: toIsoDate(end) }
 }
+
+const PAYMENT_INTERVAL_LABEL: Record<number, string> = { 1: 'Monthly', 3: 'Quarterly', 6: 'Semi-Annual', 12: 'Annual' }
 
 const RENT_DUE_LEAD_DAYS = 14
 
@@ -145,7 +153,7 @@ export default function RentPage() {
       property_id: property.id,
       period_start: period.start,
       period_end: period.end,
-      amount: property.monthly_rent_amount ?? 0,
+      amount: (property.monthly_rent_amount ?? 0) * (property.payment_interval_months || 1),
     }])
     if (error) { toast(error.message, 'error'); return }
     toast('Rent payment request created — awaiting approval', 'success')
@@ -258,7 +266,14 @@ export default function RentPage() {
                     </div>
                     <div>
                       <p className="text-slate-400">Monthly Rent</p>
-                      <p className="font-medium text-slate-700 dark:text-slate-200">{p.monthly_rent_amount != null ? formatCurrency(p.monthly_rent_amount) : '—'}</p>
+                      <p className="font-medium text-slate-700 dark:text-slate-200">
+                        {p.monthly_rent_amount != null ? formatCurrency(p.monthly_rent_amount) : '—'}
+                        {p.payment_interval_months !== 1 && (
+                          <span className="ml-1.5 text-[10px] font-normal text-slate-400">
+                            (billed {PAYMENT_INTERVAL_LABEL[p.payment_interval_months]?.toLowerCase() ?? `every ${p.payment_interval_months}mo`})
+                          </span>
+                        )}
+                      </p>
                     </div>
                     <div>
                       <p className="text-slate-400">Lease Start</p>

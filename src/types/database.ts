@@ -432,6 +432,7 @@ export interface Property {
   lease_end_date: string | null
   deposit_amount: number | null
   renewal_notice_days: number | null
+  payment_interval_months: number
   status: 'active' | 'vacated'
   notes: string | null
   created_at: string
