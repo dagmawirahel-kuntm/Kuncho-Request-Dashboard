@@ -21,10 +21,29 @@ function toIsoDate(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-// Next calendar-month period after the most recent request for this
+// A period runs one lease-month from its start day, anchored to the
+// day-of-month the lease actually started on (e.g. a lease starting
+// 8 Jul runs 8th-to-7th every cycle) — NOT calendar month boundaries.
+// Calendar-aligned periods would either truncate the first period to
+// a few days (while still billing a full month's rent, since amount
+// is always property.monthly_rent_amount) or, worse, degenerate to a
+// single day whenever a computed start happened to land on the last
+// day of a month. If the anchor day doesn't exist in the target month
+// (e.g. day 31 into a 28/30-day month), the period simply runs through
+// that month's last day instead.
+function periodEndFrom(startY: number, startM0: number, startD: number): Date {
+  const targetM0 = startM0 + 1
+  const daysInTarget = new Date(Date.UTC(startY, targetM0 + 1, 0)).getUTCDate()
+  if (startD > daysInTarget) return new Date(Date.UTC(startY, targetM0, daysInTarget))
+  return new Date(Date.UTC(startY, targetM0, startD - 1))
+}
+
+// Next period after the most recent non-rejected request for this
 // property, or anchored off lease_start_date / the current month if
-// no request exists yet. Purely computed — nothing is written until a
-// person confirms it (see §2a: no persisted "draft" state).
+// none exists yet. A rejected request is excluded — it never happened,
+// so the next suggestion should ignore it and fall back to whatever
+// came before it. Purely computed — nothing is written until a person
+// confirms it (see §2a: no persisted "draft" state).
 //
 // All arithmetic here goes through Date.UTC/getUTC* rather than local
 // constructors/mutators (`new Date(y, m, d)`, `.setDate()`, or
@@ -33,18 +52,20 @@ function toIsoDate(d: Date): string {
 // (Ethiopia is UTC+3): a local midnight serialized with toISOString()
 // rolls back into the previous UTC day.
 function computeNextPeriod(lastRequest: RentPaymentRequest | undefined, property: Property): { start: string; end: string } {
-  let start: Date
+  let startY: number, startM0: number, startD: number
   if (lastRequest) {
     const [y, m, d] = lastRequest.period_end.split('-').map(Number)
-    start = new Date(Date.UTC(y, m - 1, d + 1))
+    const next = new Date(Date.UTC(y, m - 1, d + 1))
+    startY = next.getUTCFullYear(); startM0 = next.getUTCMonth(); startD = next.getUTCDate()
   } else if (property.lease_start_date) {
     const [y, m, d] = property.lease_start_date.split('-').map(Number)
-    start = new Date(Date.UTC(y, m - 1, d))
+    startY = y; startM0 = m - 1; startD = d
   } else {
     const now = new Date()
-    start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))
+    startY = now.getFullYear(); startM0 = now.getMonth(); startD = 1
   }
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0))
+  const start = new Date(Date.UTC(startY, startM0, startD))
+  const end = periodEndFrom(startY, startM0, startD)
   return { start: toIsoDate(start), end: toIsoDate(end) }
 }
 
@@ -165,12 +186,13 @@ export default function RentPage() {
             const renewalDue = remaining != null && p.renewal_notice_days != null && remaining <= p.renewal_notice_days
             const history = expensesByProperty.get(p.id) ?? []
             const requests = (requestsByProperty.get(p.id) ?? []).sort((a, b) => b.period_start.localeCompare(a.period_start))
+            const activeRequests = requests.filter(r => r.status !== 'rejected')
             const expanded = expandedId === p.id
 
             const nextPeriod = p.status === 'active' && p.monthly_rent_amount != null
-              ? computeNextPeriod(requests[0], p)
+              ? computeNextPeriod(activeRequests[0], p)
               : null
-            const alreadyRequested = nextPeriod ? requests.some(r => r.period_start === nextPeriod.start) : true
+            const alreadyRequested = nextPeriod ? activeRequests.some(r => r.period_start === nextPeriod.start) : true
             const daysToNextPeriod = nextPeriod ? daysUntil(nextPeriod.start) : null
             const rentDue = nextPeriod && !alreadyRequested && daysToNextPeriod != null && daysToNextPeriod <= RENT_DUE_LEAD_DAYS
 
