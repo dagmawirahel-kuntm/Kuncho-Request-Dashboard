@@ -1,19 +1,23 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { Order, OrderItem, OrderItemStatus } from '@/types/database'
+import type { Order, OrderItem, OrderItemStatus, FinanceSourcingReview } from '@/types/database'
 import { useProjects, useStaff, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsManager, canApproveAsFinance } from '@/lib/expenseAccess'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatCurrency } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
-  ChevronDown, ChevronRight, Zap, Copy, Receipt,
+  ChevronDown, ChevronRight, Zap, Copy, Receipt, Wallet,
 } from 'lucide-react'
+
+type OrderItemWithCostGroup = OrderItem & {
+  sub_categories: { parent_category_id: string | null; categories: { cost_group_id: string | null } | null } | null
+}
 
 type StepStatus = 'done' | 'active' | 'rejected' | 'waiting'
 
@@ -65,9 +69,11 @@ export default function OrderDetailPage() {
     queryKey: ['order-items', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('order_items').select('*').eq('order_id', id!).order('sort_order')
+        .from('order_items')
+        .select('*, sub_categories(parent_category_id, categories(cost_group_id))')
+        .eq('order_id', id!).order('sort_order')
       if (error) throw error
-      return data as OrderItem[]
+      return data as unknown as OrderItemWithCostGroup[]
     },
     enabled: !!id,
   })
@@ -89,7 +95,7 @@ export default function OrderDetailPage() {
 }
 
 // ── Main detail content ───────────────────────────────────────────────────────
-function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
+function DetailContent({ order, items }: { order: Order; items: OrderItemWithCostGroup[] }) {
   const { role } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -101,6 +107,54 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const [rejecting, setRejecting]         = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
   const [expanded, setExpanded]           = useState<Set<string>>(new Set())
+
+  // ── Finance sourcing review (147) — the "should we pursue this"
+  // gate between stock check and sourcing bundle creation, distinct
+  // from the manager/finance approval above (which answers "release
+  // this payment"). §3/§4: any finance role holder can act, no
+  // identity lock and no separate escalation tier.
+  const itemIds = useMemo(() => items.map(i => i.id), [items])
+  const canReviewSourcing = role === 'admin' || role === 'finance'
+
+  const { data: sourcingReviews = [] } = useQuery({
+    queryKey: ['finance-sourcing-reviews', order.id],
+    queryFn: async () => {
+      if (itemIds.length === 0) return []
+      const { data, error } = await supabase.from('finance_sourcing_reviews').select('*').in('order_item_id', itemIds)
+      if (error) throw error
+      return data as FinanceSourcingReview[]
+    },
+    enabled: itemIds.length > 0,
+  })
+  const reviewByItem = useMemo(() => new Map(sourcingReviews.map(r => [r.order_item_id, r])), [sourcingReviews])
+
+  const { data: costGroupBudgets = [] } = useQuery({
+    queryKey: ['cost-group-remaining', order.project_id],
+    queryFn: async () => {
+      if (!order.project_id) return []
+      const { data, error } = await supabase
+        .from('v_project_cost_group_budget')
+        .select('cost_group_id, cost_group_name, remaining_amount')
+        .eq('project_id', order.project_id)
+      if (error) throw error
+      return data
+    },
+    enabled: !!order.project_id,
+  })
+  const costGroupById = useMemo(() => {
+    const m = new Map<string, { name: string; remaining: number }>()
+    for (const g of costGroupBudgets) {
+      if (g.cost_group_id) m.set(g.cost_group_id, { name: g.cost_group_name, remaining: g.remaining_amount })
+    }
+    return m
+  }, [costGroupBudgets])
+
+  async function handleFinanceReviewDecision(orderItemId: string, decision: 'approved' | 'rejected') {
+    const { error } = await supabase.from('finance_sourcing_reviews').update({ status: decision }).eq('order_item_id', orderItemId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['finance-sourcing-reviews', order.id] })
+    toast(decision === 'approved' ? 'Cleared for sourcing' : 'Rejected — will not be sourced', 'success')
+  }
 
   function profileName(uid: string | null) {
     if (!uid) return null
@@ -515,6 +569,67 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                         <p className="text-xs text-slate-400 dark:text-slate-500 italic">{item.fulfillment_notes}</p>
                       </div>
                     )}
+
+                    {/* Finance sourcing review — a separate gate from
+                        the manager/finance approval above; this one
+                        answers "should we pursue sourcing this line,"
+                        not "release this payment" (147). */}
+                    {(() => {
+                      const review = reviewByItem.get(item.id)
+                      if (!review) return null
+                      const costGroupId = item.sub_categories?.categories?.cost_group_id ?? null
+                      const budgetInfo = costGroupId ? costGroupById.get(costGroupId) : undefined
+                      if (review.status === 'exempt') {
+                        return (
+                          <div className="px-4 pb-3 pl-12">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                              <Wallet className="h-3 w-3" />Finance review not needed — below the budget threshold
+                            </span>
+                          </div>
+                        )
+                      }
+                      if (review.status === 'approved' || review.status === 'rejected') {
+                        return (
+                          <div className="px-4 pb-3 pl-12">
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${review.status === 'approved' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                              <Wallet className="h-3 w-3" />
+                              Finance {review.status === 'approved' ? 'cleared for sourcing' : 'rejected — will not be sourced'}
+                              {review.reviewed_by && ` · ${profileName(review.reviewed_by)}`}
+                              {review.reviewed_at && ` · ${formatDate(review.reviewed_at)}`}
+                            </span>
+                          </div>
+                        )
+                      }
+                      // pending
+                      return (
+                        <div className="mx-4 mb-3 ml-12 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 p-3 space-y-2">
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                            <Wallet className="h-3.5 w-3.5" />Finance review needed before this can be sourced
+                          </p>
+                          {budgetInfo ? (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                              {formatCurrency(budgetInfo.remaining)} remaining in {budgetInfo.name} for this project
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">Budget context unavailable for this line's cost group</p>
+                          )}
+                          {canReviewSourcing && (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleFinanceReviewDecision(item.id, 'approved')}
+                                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors">
+                                Approve Sourcing
+                              </button>
+                              <button
+                                onClick={() => handleFinanceReviewDecision(item.id, 'rejected')}
+                                className="rounded-md bg-white dark:bg-slate-700 border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })}

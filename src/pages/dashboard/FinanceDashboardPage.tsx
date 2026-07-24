@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CreditCard, TrendingUp, Shield, DollarSign } from 'lucide-react'
+import { CreditCard, TrendingUp, Shield, DollarSign, Wallet, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, buildMonthlyTrend } from '@/lib/utils'
 import { KpiCard } from '@/components/shared/KpiCard'
@@ -10,6 +10,16 @@ import { TrendLineChart } from '@/components/shared/TrendLineChart'
 interface AccountRow { status: string | null }
 interface SaleRow { amount: number | null; sales_status: string | null; date: string | null }
 interface BondRow { total_bond_amount: number | null; bond_status: string | null }
+
+type PendingSourcingReviewRow = {
+  order_item_id: string
+  order_items: {
+    item_name: string
+    quantity: number | null
+    unit_price_est: number | null
+    orders: { id: string; request_code: string | null; project_id: string | null; projects: { project_name: string } | null } | null
+  } | null
+}
 
 export default function FinanceDashboardPage() {
   const { data } = useQuery({
@@ -51,6 +61,22 @@ export default function FinanceDashboardPage() {
 
   const trend = buildMonthlyTrend(sales.map(s => ({ date: s.date, value: s.amount ?? 0 })))
 
+  // Cross-project queue (147) — a finance role holder shouldn't have
+  // to hunt through individual PRs to find what's waiting on them.
+  const { data: pendingSourcingReviews = [] } = useQuery({
+    queryKey: ['dashboard-finance-pending-sourcing-reviews'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('finance_sourcing_reviews')
+        .select('order_item_id, order_items(item_name, quantity, unit_price_est, orders(id, request_code, project_id, projects(project_name)))')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(10)
+      if (error) throw error
+      return data as unknown as PendingSourcingReviewRow[]
+    },
+  })
+
   return (
     <div className="space-y-6">
       <div>
@@ -64,6 +90,40 @@ export default function FinanceDashboardPage() {
         <KpiCard label="Active CPO Bonds" value={formatCurrency(activeBondAmount)} sub="outstanding bond value" icon={Shield} color="bg-purple-50 text-purple-500" to="/cpo-bonds" />
         <KpiCard label="Batch Payments" value={data?.batchCount ?? '—'} sub="batches processed" icon={DollarSign} color="bg-orange-50 text-orange-500" to="/batch-payments" />
       </div>
+
+      {pendingSourcingReviews.length > 0 && (
+        <div className="rounded-xl border bg-white p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Wallet className="h-4 w-4 text-brand" />Pending Sourcing Reviews
+              <span className="text-slate-400 font-normal">({pendingSourcingReviews.length})</span>
+            </h2>
+          </div>
+          <div className="divide-y">
+            {pendingSourcingReviews.map(r => {
+              const oi = r.order_items
+              const order = oi?.orders
+              const lineValue = oi?.quantity != null && oi?.unit_price_est != null ? oi.quantity * oi.unit_price_est : null
+              return (
+                <Link
+                  key={r.order_item_id}
+                  to={order ? `/purchase-requests/${order.id}` : '#'}
+                  className="flex items-center justify-between gap-2 py-2 text-sm hover:bg-slate-50 -mx-2 px-2 rounded transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-700">{oi?.item_name ?? 'Unknown item'}</p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {order?.request_code ?? '—'}{order?.projects?.project_name ? ` · ${order.projects.project_name}` : ''}
+                      {lineValue != null ? ` · ${formatCurrency(lineValue)}` : ''}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BreakdownBarList title="Accounts by Status" items={[...accountStatusCounts.entries()].map(([label, value]) => ({ label, value }))} />

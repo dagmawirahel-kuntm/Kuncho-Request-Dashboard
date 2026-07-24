@@ -5,8 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Project, ProjectInsert } from '@/types/database'
-import { useStaff, useLocations } from '@/hooks/useLookups'
+import { useStaff, useLocations, useFinanceContacts } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -47,10 +48,17 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     const navigate = useNavigate()
     const { toast } = useToast()
     const qc = useQueryClient()
+    const { role } = useAuth()
     const { data: staff = [] } = useStaff()
     const { data: locations = [] } = useLocations()
+    const { data: financeContacts = [] } = useFinanceContacts()
     const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
     const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+    const financeContactOptions = useMemo(() => financeContacts.map(f => ({ id: f.id, label: f.full_name })), [financeContacts])
+    // Reassignment is admin-only, enforced server-side (147) regardless
+    // of this check — this just avoids a confusing "why didn't that save"
+    // for anyone else who happens to have projects.UPDATE access.
+    const canEditFinanceContact = role === 'admin'
 
   const [form, setForm] = useState<Partial<ProjectInsert>>(
     record
@@ -60,6 +68,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
         start_date: record.start_date,
         active_for_year: record.active_for_year,
         project_manager_id: record.project_manager_id,
+        finance_contact_id: record.finance_contact_id,
         location_id: record.location_id,
       }
       : { active_for_year: true }
@@ -106,6 +115,19 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
           <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
         </Field>
       </div>
+      <Field label="Finance Contact">
+        {canEditFinanceContact ? (
+          <SearchableSelect value={form.finance_contact_id ?? null} onChange={id => set('finance_contact_id', id)} options={financeContactOptions} placeholder="Select finance contact…" />
+        ) : (
+          <p className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}>
+            {financeContactOptions.find(f => f.id === form.finance_contact_id)?.label ?? 'Unassigned'}
+            <span className="ml-1.5 text-xs text-slate-400">(admin only)</span>
+          </p>
+        )}
+        <p className="mt-1 text-[11px] text-slate-400">
+          First reviewer on this project's finance sourcing gate — but any finance role holder can still act if unavailable.
+        </p>
+      </Field>
       <label className="flex items-center gap-2 cursor-pointer text-sm">
         <input type="checkbox" checked={!!form.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
         Active for Year

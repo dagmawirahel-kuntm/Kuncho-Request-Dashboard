@@ -250,6 +250,27 @@ export function useUserProfiles() {
   })
 }
 
+// Finance role holders — for assigning a project's finance_contact_id
+// (147). Any of these can also act on a finance_sourcing_reviews
+// decision regardless of whose project it is (§3/§4: no identity lock,
+// any finance role holder is sufficient) — this list is only for
+// picking who to show as the suggested/primary contact.
+export function useFinanceContacts() {
+  return useQuery({
+    queryKey: ['finance-contacts-lookup'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .eq('role', 'finance')
+        .order('full_name')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 export function useCashAdvancesList() {
   return useQuery({
     queryKey: ['cash-advances-lookup'],

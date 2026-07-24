@@ -157,6 +157,7 @@ export interface Project {
   start_date: string | null
   active_for_year: boolean
   project_manager_id: string | null
+  finance_contact_id: string | null
   location_id: string | null
   client_id: string | null
   contract_value: number | null
@@ -887,6 +888,19 @@ export interface SourcingBundle {
   updated_at: string
 }
 export type SourcingBundleInsert = Omit<SourcingBundle, 'id' | 'bundle_code' | 'created_at' | 'updated_at' | 'total_value'>
+
+// ── Finance sourcing review (the "should we pursue this" gate between
+// stock check and sourcing bundle creation) ────────────────────────
+export type FinanceSourcingReviewStatus = 'pending' | 'approved' | 'rejected' | 'exempt'
+export interface FinanceSourcingReview {
+  id: string
+  order_item_id: string
+  status: FinanceSourcingReviewStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
+  notes: string | null
+  created_at: string
+}
 
 export interface SourcingBundleItem {
   id: string
