@@ -413,6 +413,7 @@ export interface Expense {
   payment_method: ExpensePaymentMethod | null
   payment_state_changed_at: string | null
   property_id: string | null
+  rent_payment_request_id: string | null
   created_at: string
   updated_at: string
 }
@@ -437,6 +438,21 @@ export interface Property {
   updated_at: string
 }
 export type PropertyInsert = Omit<Property, 'id' | 'created_at' | 'updated_at'>
+
+export type RentPaymentRequestStatus = 'pending' | 'approved' | 'rejected' | 'paid'
+export interface RentPaymentRequest {
+  id: string
+  property_id: string
+  period_start: string
+  period_end: string
+  amount: number
+  status: RentPaymentRequestStatus
+  requested_by: string | null
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
+}
+export type RentPaymentRequestInsert = Omit<RentPaymentRequest, 'id' | 'created_at' | 'status' | 'approved_by' | 'approved_at'>
 
 // ── Orders ───────────────────────────────────────────────────────
 export type OrderPriority = 'normal' | 'urgent' | 'critical'

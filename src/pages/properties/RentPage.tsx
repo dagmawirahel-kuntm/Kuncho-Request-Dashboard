@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { Property, Expense } from '@/types/database'
-import { Building2, Pencil, Plus, AlertTriangle, ChevronDown, ChevronRight, Receipt, Trash2 } from 'lucide-react'
+import type { Property, Expense, RentPaymentRequest } from '@/types/database'
+import { Building2, Pencil, Plus, AlertTriangle, ChevronDown, ChevronRight, Trash2, CalendarClock, CheckCircle2, XCircle } from 'lucide-react'
 
 type PropertyWithLandlord = Property & { vendors: { vendor_name: string } | null }
 
@@ -16,10 +17,37 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.round(ms / 86400000)
 }
 
+function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+// Next calendar-month period after the most recent request for this
+// property, or anchored off lease_start_date / the current month if
+// no request exists yet. Purely computed — nothing is written until a
+// person confirms it (see §2a: no persisted "draft" state).
+function computeNextPeriod(lastRequest: RentPaymentRequest | undefined, property: Property): { start: string; end: string } {
+  let start: Date
+  if (lastRequest) {
+    start = new Date(lastRequest.period_end)
+    start.setDate(start.getDate() + 1)
+  } else if (property.lease_start_date) {
+    start = new Date(property.lease_start_date)
+  } else {
+    const now = new Date()
+    start = new Date(now.getFullYear(), now.getMonth(), 1)
+  }
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0)
+  return { start: toIsoDate(start), end: toIsoDate(end) }
+}
+
+const RENT_DUE_LEAD_DAYS = 14
+
 export default function RentPage() {
   const { role } = useAuth()
+  const { toast } = useToast()
   const canManage = role === 'admin' || role === 'operations_manager'
   const canDelete = role === 'admin'
+  const canRequestRent = role === 'admin' || role === 'operations_manager' || role === 'finance'
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const qc = useQueryClient()
 
@@ -53,6 +81,15 @@ export default function RentPage() {
     },
   })
 
+  const { data: rentRequests = [] } = useQuery({
+    queryKey: ['rent-payment-requests'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('rent_payment_requests').select('*').order('period_start', { ascending: false })
+      if (error) throw error
+      return data as RentPaymentRequest[]
+    },
+  })
+
   const expensesByProperty = useMemo(() => {
     const map = new Map<string, Expense[]>()
     for (const e of expenses) {
@@ -64,12 +101,43 @@ export default function RentPage() {
     return map
   }, [expenses])
 
+  const requestsByProperty = useMemo(() => {
+    const map = new Map<string, RentPaymentRequest[]>()
+    for (const r of rentRequests) {
+      const list = map.get(r.property_id) ?? []
+      list.push(r)
+      map.set(r.property_id, list)
+    }
+    return map
+  }, [rentRequests])
+
+  async function handleConfirmRentDue(property: Property, period: { start: string; end: string }) {
+    const { error } = await supabase.from('rent_payment_requests').insert([{
+      property_id: property.id,
+      period_start: period.start,
+      period_end: period.end,
+      amount: property.monthly_rent_amount ?? 0,
+    }])
+    if (error) { toast(error.message, 'error'); return }
+    toast('Rent payment request created — awaiting approval', 'success')
+    qc.invalidateQueries({ queryKey: ['rent-payment-requests'] })
+  }
+
+  async function handleDecision(request: RentPaymentRequest, status: 'approved' | 'rejected') {
+    const { error } = await supabase.from('rent_payment_requests').update({ status }).eq('id', request.id)
+    if (error) { toast(error.message, 'error'); return }
+    toast(status === 'approved' ? 'Approved — expense created' : 'Rejected', 'success')
+    qc.invalidateQueries({ queryKey: ['rent-payment-requests'] })
+    qc.invalidateQueries({ queryKey: ['property-rent-expenses'] })
+    qc.invalidateQueries({ queryKey: ['expenses'] })
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Rent</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Leased workshops — rent, lease terms, and renewal proximity</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Leased workshops — rent, lease terms, renewal proximity, and payment requests</p>
         </div>
         {canManage && (
           <Link to="/rent/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
@@ -88,7 +156,17 @@ export default function RentPage() {
             const remaining = daysUntil(p.lease_end_date)
             const renewalDue = remaining != null && p.renewal_notice_days != null && remaining <= p.renewal_notice_days
             const history = expensesByProperty.get(p.id) ?? []
+            const requests = (requestsByProperty.get(p.id) ?? []).sort((a, b) => b.period_start.localeCompare(a.period_start))
             const expanded = expandedId === p.id
+
+            const nextPeriod = p.status === 'active' && p.monthly_rent_amount != null
+              ? computeNextPeriod(requests[0], p)
+              : null
+            const alreadyRequested = nextPeriod ? requests.some(r => r.period_start === nextPeriod.start) : true
+            const daysToNextPeriod = nextPeriod ? daysUntil(nextPeriod.start) : null
+            const rentDue = nextPeriod && !alreadyRequested && daysToNextPeriod != null && daysToNextPeriod <= RENT_DUE_LEAD_DAYS
+
+            const pendingRequests = requests.filter(r => r.status === 'pending')
 
             return (
               <div key={p.id} className={`rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden ${p.status === 'vacated' ? 'opacity-60' : ''}`}>
@@ -125,6 +203,24 @@ export default function RentPage() {
                     </div>
                   )}
 
+                  {rentDue && nextPeriod && (
+                    <div className="flex items-center justify-between gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/40 px-3 py-2 text-xs text-blue-700 dark:text-blue-400">
+                      <span className="flex items-center gap-2">
+                        <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                        Rent due for {formatDate(nextPeriod.start)} → {formatDate(nextPeriod.end)}
+                        {daysToNextPeriod != null && daysToNextPeriod < 0 ? ' (overdue)' : ''}
+                      </span>
+                      {canRequestRent && (
+                        <button
+                          onClick={() => handleConfirmRentDue(p, nextPeriod)}
+                          className="flex-shrink-0 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                        >
+                          Confirm & Request
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div>
                       <p className="text-slate-400">Landlord</p>
@@ -144,24 +240,47 @@ export default function RentPage() {
                     </div>
                   </div>
 
+                  {pendingRequests.length > 0 && canRequestRent && (
+                    <div className="rounded-lg border dark:border-slate-600 divide-y dark:divide-slate-700">
+                      {pendingRequests.map(r => (
+                        <div key={r.id} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+                          <span className="text-slate-600 dark:text-slate-300">
+                            Pending: {formatDate(r.period_start)} → {formatDate(r.period_end)} · {formatCurrency(r.amount)}
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button onClick={() => handleDecision(r, 'approved')} className="flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700">
+                              <CheckCircle2 className="h-3 w-3" /> Approve
+                            </button>
+                            <button onClick={() => handleDecision(r, 'rejected')} className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-red-600 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20">
+                              <XCircle className="h-3 w-3" /> Reject
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <button onClick={() => setExpandedId(expanded ? null : p.id)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-brand dark:text-slate-400">
                       {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                      Expense history ({history.length})
+                      Expense history ({history.length}) · Requests ({requests.length})
                     </button>
-                    {canManage && p.status === 'active' && (
-                      <Link
-                        to={`/expenses/new?property_id=${p.id}`}
-                        className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-                      >
-                        <Receipt className="h-3.5 w-3.5" /> Record Rent Payment
-                      </Link>
-                    )}
                   </div>
                 </div>
 
                 {expanded && (
                   <div className="border-t dark:border-slate-700 divide-y dark:divide-slate-700">
+                    {requests.length > 0 && (
+                      <div className="px-5 py-3 space-y-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Request History</p>
+                        {requests.map(r => (
+                          <div key={r.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-slate-600 dark:text-slate-300">{formatDate(r.period_start)} → {formatDate(r.period_end)} · {formatCurrency(r.amount)}</span>
+                            <StatusBadge status={r.status} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {history.length === 0 ? (
                       <p className="px-5 py-4 text-center text-xs text-slate-400">No rent expenses recorded for this property yet</p>
                     ) : (
