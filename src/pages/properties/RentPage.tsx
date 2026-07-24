@@ -18,25 +18,33 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 function toIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 // Next calendar-month period after the most recent request for this
 // property, or anchored off lease_start_date / the current month if
 // no request exists yet. Purely computed — nothing is written until a
 // person confirms it (see §2a: no persisted "draft" state).
+//
+// All arithmetic here goes through Date.UTC/getUTC* rather than local
+// constructors/mutators (`new Date(y, m, d)`, `.setDate()`, or
+// `toISOString()` on a local-midnight Date) — mixing those silently
+// drifts the result a day backward for anyone in a UTC-ahead timezone
+// (Ethiopia is UTC+3): a local midnight serialized with toISOString()
+// rolls back into the previous UTC day.
 function computeNextPeriod(lastRequest: RentPaymentRequest | undefined, property: Property): { start: string; end: string } {
   let start: Date
   if (lastRequest) {
-    start = new Date(lastRequest.period_end)
-    start.setDate(start.getDate() + 1)
+    const [y, m, d] = lastRequest.period_end.split('-').map(Number)
+    start = new Date(Date.UTC(y, m - 1, d + 1))
   } else if (property.lease_start_date) {
-    start = new Date(property.lease_start_date)
+    const [y, m, d] = property.lease_start_date.split('-').map(Number)
+    start = new Date(Date.UTC(y, m - 1, d))
   } else {
     const now = new Date()
-    start = new Date(now.getFullYear(), now.getMonth(), 1)
+    start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))
   }
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0)
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0))
   return { start: toIsoDate(start), end: toIsoDate(end) }
 }
 
