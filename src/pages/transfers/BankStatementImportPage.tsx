@@ -262,6 +262,8 @@ export default function BankStatementImportPage() {
 
 function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expense_code: string | null; item_service_description: string | null } | null })[] }) {
   if (lines.length === 0) return <div className="py-6 text-center text-xs text-slate-400">No lines.</div>
+  const totalDebit = lines.reduce((s, l) => s + (l.debit_amount ?? 0), 0)
+  const totalCredit = lines.reduce((s, l) => s + (l.credit_amount ?? 0), 0)
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -299,6 +301,14 @@ function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expen
             </tr>
           ))}
         </tbody>
+        <tfoot className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/60 font-semibold">
+          <tr>
+            <td className="px-4 py-2 text-slate-600 dark:text-slate-300" colSpan={2}>Total ({lines.length} line{lines.length === 1 ? '' : 's'})</td>
+            <td className="px-4 py-2 text-right tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalDebit)}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalCredit)}</td>
+            <td className="px-4 py-2 text-slate-500 dark:text-slate-400" colSpan={3}>Net: {formatCurrency(totalCredit - totalDebit)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   )
