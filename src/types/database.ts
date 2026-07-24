@@ -1310,6 +1310,8 @@ export interface Contract {
   opportunity_id: string | null
   contract_value: number | null
   signed_date: string | null
+  scope_of_work: string | null
+  completion_date: string | null
   payment_terms: string | null
   wht_rate: number | null
   retention_percent: number | null

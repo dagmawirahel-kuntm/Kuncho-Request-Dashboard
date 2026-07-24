@@ -66,6 +66,8 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
         opportunity_id: record.opportunity_id,
         contract_value: record.contract_value ?? undefined,
         signed_date: record.signed_date,
+        scope_of_work: record.scope_of_work,
+        completion_date: record.completion_date,
         payment_terms: record.payment_terms,
         wht_rate: record.wht_rate ?? undefined,
         retention_percent: record.retention_percent ?? undefined,
@@ -103,6 +105,8 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       opportunity_id: form.opportunity_id ?? null,
       contract_value: form.contract_value ?? null,
       signed_date: form.signed_date ?? null,
+      scope_of_work: form.scope_of_work ?? null,
+      completion_date: form.completion_date ?? null,
       payment_terms: form.payment_terms ?? null,
       wht_rate: form.wht_rate ?? null,
       retention_percent: form.retention_percent ?? null,
@@ -199,8 +203,16 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
           <input type="date" className={inputCls} value={form.signed_date ?? ''} onChange={e => set('signed_date', e.target.value || null)} />
         </Field>
       </div>
+      <Field label="Scope of Work">
+        <textarea rows={3} className={inputCls} value={form.scope_of_work ?? ''} onChange={e => set('scope_of_work', e.target.value)} placeholder="What the Contractor will deliver — labor, materials, fabrication, installation, etc." />
+      </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Target Completion Date">
+          <input type="date" className={inputCls} value={form.completion_date ?? ''} onChange={e => set('completion_date', e.target.value || null)} />
+        </Field>
+      </div>
       <Field label="Payment Terms">
-        <textarea rows={2} className={inputCls} value={form.payment_terms ?? ''} onChange={e => set('payment_terms', e.target.value)} />
+        <textarea rows={2} className={inputCls} value={form.payment_terms ?? ''} onChange={e => set('payment_terms', e.target.value)} placeholder="e.g. 30% advance, 40% on delivery, 30% on completion" />
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="WHT Rate (%)">
