@@ -30,14 +30,22 @@ const navGroups: NavGroup[] = [
   {
     title: 'Overview',
     items: [
-      { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
+      // "My Dashboard" / "Company Overview" (§0.2, §2): the generic,
+      // cross-departmental views — hidden from every role except
+      // admin/operations_manager, matching the server-side route guards
+      // (ProtectedRoute on /overview, and DashboardPage's own in-component
+      // gate on its GeneralDashboard branch). Everyone else has their own
+      // department/role landing page instead, listed in its own group
+      // below (or the Overview sub-items just above for Operations &
+      // Construction's role split).
+      { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operations_manager'] },
       { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'] },
       { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
       { label: 'Stock', to: '/stock-manager-view', icon: Warehouse, roles: ['stock_manager'] },
       { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'] },
       { label: 'Workshop', to: '/workshop-view', icon: Hammer, roles: ['admin', 'manager', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'] },
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
-      { label: 'Company Overview', to: '/overview', icon: Globe2 },
+      { label: 'Company Overview', to: '/overview', icon: Globe2, roles: ['admin', 'operations_manager'] },
       { label: 'Departments', to: '/departments', icon: Network },
     ],
   },
@@ -60,12 +68,14 @@ const navGroups: NavGroup[] = [
     title: 'Design',
     to: '/design',
     items: [
+      { label: 'Design Overview', to: '/design-view', icon: PenTool, roles: ['admin', 'manager', 'design'] },
       { label: 'Design Packages', to: '/design', icon: PenTool },
     ],
   },
   {
     title: 'Business Development',
     items: [
+      { label: 'Sales Overview', to: '/sales-view', icon: TrendingUp, roles: ['admin', 'manager', 'sales'] },
       { label: 'Opportunities', to: '/opportunities', icon: Target },
       { label: 'Contracts', to: '/contracts', icon: FileSignature },
     ],
@@ -88,7 +98,7 @@ const navGroups: NavGroup[] = [
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'manager', 'finance'] },
       { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
       { label: 'Bank Statement Import', to: '/bank-statement-import', icon: Upload, roles: ['admin', 'finance'] },
-      { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance'] },
+      { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'manager', 'finance', 'sales'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'manager', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'manager', 'finance'] },
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'manager', 'finance'] },
@@ -108,6 +118,7 @@ const navGroups: NavGroup[] = [
     title: 'HR',
     to: '/hr',
     items: [
+      { label: 'HR Overview', to: '/hr-view', icon: Briefcase, roles: ['admin', 'manager', 'hr_officer'] },
       { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
       { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
       { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'manager', 'finance', 'hr_officer'] },
@@ -124,6 +135,7 @@ const navGroups: NavGroup[] = [
   {
     title: 'HSE',
     items: [
+      { label: 'HSE Overview', to: '/hse-view', icon: Shield, roles: ['admin', 'manager', 'hse_officer'] },
       { label: 'Incidents', to: '/hse-incidents', icon: AlertTriangle },
       { label: 'Inductions', to: '/hse-inductions', icon: HardHat },
     ],

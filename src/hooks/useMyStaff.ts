@@ -27,6 +27,31 @@ export function useMyStaffId() {
   })
 }
 
+// Resolves the logged-in user's department NAME via their staff row's
+// department_id — used for department-primary landing-page routing
+// (LandingRedirect) since role alone doesn't identify a department for
+// roles like 'manager' that aren't tied to one specific department.
+// `department` is null once resolved for a user with no linked staff
+// row, or a staff row with no department_id set (the "unassigned"
+// case) — `isLoading` distinguishes that genuine null from "still
+// resolving," so callers don't act on a null department prematurely.
+export function useMyDepartment(): { department: string | null; isLoading: boolean } {
+  const staffQuery = useMyStaffId()
+  const departmentId = staffQuery.data?.department_id ?? null
+  const deptQuery = useQuery({
+    queryKey: ['my-department', departmentId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('departments').select('name').eq('id', departmentId!).single()
+      if (error) throw error
+      return data.name as string
+    },
+    enabled: !!departmentId,
+    staleTime: 300000,
+  })
+  const isLoading = staffQuery.isLoading || (!!departmentId && deptQuery.isLoading)
+  return { department: deptQuery.data ?? null, isLoading }
+}
+
 // Derived, not a stored permission (spec §0.2): true whenever the
 // resolved staff id currently appears as assigned_lead_staff_id on any
 // open (not completed/cancelled) workshop work order. Widens or

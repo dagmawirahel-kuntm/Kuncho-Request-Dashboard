@@ -137,6 +137,11 @@ import OperationsManagerViewPage from '@/pages/views/OperationsManagerViewPage'
 import StockManagerViewPage from '@/pages/views/StockManagerViewPage'
 import LogisticsOfficerViewPage from '@/pages/views/LogisticsOfficerViewPage'
 import WorkshopViewPage from '@/pages/views/WorkshopViewPage'
+import DesignViewPage from '@/pages/views/DesignViewPage'
+import BdSalesViewPage from '@/pages/views/BdSalesViewPage'
+import HrPeopleViewPage from '@/pages/views/HrPeopleViewPage'
+import HseViewPage from '@/pages/views/HseViewPage'
+import NoDepartmentPage from '@/pages/dashboard/NoDepartmentPage'
 import RentPage from '@/pages/properties/RentPage'
 import PropertyFormPage from '@/pages/properties/PropertyFormPage'
 import WorkOrdersPage from '@/pages/work-orders/WorkOrdersPage'
@@ -160,7 +165,7 @@ export const router = createBrowserRouter([
           { path: 'my-home', element: <MyRequestsDashboardPage /> },
           { path: 'my-leave', element: <MyLeavePage /> },
           { path: 'calendar', element: <CalendarPage /> },
-          { path: 'overview', element: <OverviewDashboardPage /> },
+          { path: 'no-department', element: <NoDepartmentPage /> },
           { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },
           { path: 'expenses/new', element: <ExpenseFormPage /> },
@@ -252,8 +257,6 @@ export const router = createBrowserRouter([
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'accounts/:id', element: <AccountDetailPage /> },
               { path: 'transfers', element: <TransfersPage /> },
-              { path: 'sales', element: <SalesPage /> },
-              { path: 'sales/:id', element: <SaleDetailPage /> },
               // Manager holds a broad UPDATE grant on sales (manager_approve_sales,
               // migration 007) that isn't limited to the approval columns at the
               // RLS layer, so full-field edit is legitimately open to them here —
@@ -273,6 +276,17 @@ export const router = createBrowserRouter([
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
               { path: 'reports/archive', element: <HistoricalArchivePage /> },
+            ],
+          },
+          {
+            // sales role added here only — read-only, matching the new
+            // sales_role_read_sales RLS grant (145). Edit/create stay
+            // admin/finance(/manager for the approval-adjacent edit
+            // above), unchanged.
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'finance', 'sales']} />,
+            children: [
+              { path: 'sales', element: <SalesPage /> },
+              { path: 'sales/:id', element: <SaleDetailPage /> },
             ],
           },
           {
@@ -517,6 +531,34 @@ export const router = createBrowserRouter([
           {
             element: <ProtectedRoute allowedRoles={['admin', 'manager', 'logistics_officer']} />,
             children: [{ path: 'logistics-view', element: <LogisticsOfficerViewPage /> }],
+          },
+          // ── Department landing pages: Design, Business Development/
+          // Sales, HR & People, HSE (§1 second half — extends the same
+          // pattern used for Operations & Construction above). Finance &
+          // Admin's landing is the existing Payment Hub (finance/payments);
+          // no new page needed there.
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'design']} />,
+            children: [{ path: 'design-view', element: <DesignViewPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'sales']} />,
+            children: [{ path: 'sales-view', element: <BdSalesViewPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hr_officer']} />,
+            children: [{ path: 'hr-view', element: <HrPeopleViewPage /> }],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'manager', 'hse_officer']} />,
+            children: [{ path: 'hse-view', element: <HseViewPage /> }],
+          },
+          // ── Company Overview: cross-departmental executive snapshot —
+          // restricted to admin/operations_manager (§0.4, §2). Previously
+          // had NO guard at all; any authenticated role could reach it.
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'operations_manager']} />,
+            children: [{ path: 'overview', element: <OverviewDashboardPage /> }],
           },
           // Workshop view: dynamic-access rule (§0.2) only governs the
           // default LANDING page; per confirmed decision, read access

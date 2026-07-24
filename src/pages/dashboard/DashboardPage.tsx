@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { Receipt, ShoppingCart, Truck, DollarSign, ArrowRight, Building2, Wallet, FolderKanban } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
 import { useAuth } from '@/contexts/AuthContext'
@@ -32,6 +32,14 @@ export default function DashboardPage() {
   // includes their department board and links into their section.
   if (role === 'staff' || role === 'procurement_officer' || role === 'hr_officer' || role === 'project_manager' || role === 'stock_manager') {
     return <MyRequestsDashboardPage />
+  }
+
+  // The generic, cross-departmental view (§0.2/§0.4 "My Dashboard")
+  // is admin/operations_manager only — anyone else who navigates here
+  // directly (not just via their default landing) gets sent back
+  // through LandingRedirect to their own department/role home instead.
+  if (role !== 'admin' && role !== 'operations_manager') {
+    return <Navigate to="/" replace />
   }
 
   return <GeneralDashboard role={role} />
