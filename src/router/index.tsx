@@ -71,6 +71,8 @@ import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
 import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
 import TaxSummaryPage from '@/pages/tax-summary/TaxSummaryPage'
 import TaxSummaryFormPage from '@/pages/tax-summary/TaxSummaryFormPage'
+import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
+import TaxEngagementFormPage from '@/pages/tax-summary/TaxEngagementFormPage'
 import BatchPaymentsPage from '@/pages/batch-payments/BatchPaymentsPage'
 import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
 import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
@@ -269,6 +271,7 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
               { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
               { path: 'tax-summary', element: <TaxSummaryPage /> },
+              { path: 'tax-management', element: <TaxManagementPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
               { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
@@ -306,6 +309,7 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
               { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
               { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
+              { path: 'tax-management/log', element: <TaxEngagementFormPage /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
               { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },

@@ -46,6 +46,8 @@ export interface Database {
       cash_advances: { Row: CashAdvance; Insert: CashAdvanceInsert; Update: Partial<CashAdvanceInsert> }
       vendor_receipt_facilitation: { Row: VendorReceiptFacilitation; Insert: VendorReceiptFacilitationInsert; Update: Partial<VendorReceiptFacilitationInsert> }
       tax_summary: { Row: TaxSummary; Insert: TaxSummaryInsert; Update: Partial<TaxSummaryInsert> }
+      tax_obligation_types: { Row: TaxObligationType; Insert: TaxObligationTypeInsert; Update: Partial<TaxObligationTypeInsert> }
+      tax_engagements: { Row: TaxEngagement; Insert: TaxEngagementInsert; Update: Partial<TaxEngagementInsert> }
       cpo_bonds: { Row: CpoBond; Insert: CpoBondInsert; Update: Partial<CpoBondInsert> }
       payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
       batch_payments: { Row: BatchPayment; Insert: BatchPaymentInsert; Update: Partial<BatchPaymentInsert> }
@@ -78,6 +80,7 @@ export interface UserProfile {
   is_vrf_manager: boolean
   is_logistics_officer: boolean
   is_ride_hailing_authorized: boolean
+  is_tax_officer: boolean
   email: string | null
   created_at: string
 }
@@ -959,6 +962,65 @@ export interface TaxSummary {
   created_at: string
 }
 export type TaxSummaryInsert = Omit<TaxSummary, 'id' | 'created_at'>
+
+// ── Tax Obligation Types / Engagements ───────────────────────────────
+export interface TaxObligationType {
+  id: string
+  tax_type: 'VAT' | 'WHT' | 'payroll_tax' | 'other'
+  name: string
+  frequency: 'monthly' | 'quarterly' | 'annual'
+  due_day_of_month: number | null
+  active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type TaxObligationTypeInsert = Omit<TaxObligationType, 'id' | 'created_at' | 'updated_at'>
+
+export interface TaxEngagement {
+  id: string
+  obligation_type_id: string
+  period_month: string
+  due_date: string | null
+  filed_date: string | null
+  reference_number: string | null
+  document_url: string | null
+  filed_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type TaxEngagementInsert = Omit<TaxEngagement, 'id' | 'created_at' | 'updated_at'>
+
+export interface TaxEngagementView {
+  id: string
+  period_month: string
+  due_date: string | null
+  filed_date: string | null
+  reference_number: string | null
+  document_url: string | null
+  notes: string | null
+  obligation_type_id: string
+  tax_type: string
+  obligation_name: string
+  filed_by_name: string | null
+  status: 'filed' | 'pending' | 'overdue'
+}
+
+export interface NextTaxObligation {
+  obligation_type_id: string
+  tax_type: string
+  name: string
+  due_day_of_month: number | null
+  next_period_month: string
+  suggested_due_date: string | null
+}
+
+export interface TaxLiabilityRow {
+  category: string
+  period: string
+  amount: number
+}
 
 // ── CPO Bonds ─────────────────────────────────────────────────────
 export interface CpoBond {
