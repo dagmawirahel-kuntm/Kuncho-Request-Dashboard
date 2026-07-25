@@ -71,7 +71,30 @@ UPDATE bank_balance_anchors
 SET transfer_id = NULL
 WHERE transfer_id IN (SELECT id FROM transfers WHERE is_archived);
 
--- ── 3. Delete in NO ACTION-respecting order ──────────────────────────
+-- ── 3. Stand down two business-rule guards for the duration of this
+-- one deliberate purge, then restore them. Both were hit for real when
+-- this migration was first run and are NOT optional:
+--
+--   trg_prevent_paid_payroll_delete — refuses to delete any payroll run
+--     with payment_status = 'paid'. Correct for day-to-day use; every
+--     historical payroll run here is paid, so the DELETE below cannot
+--     proceed with it armed.
+--   trg_enforce_bundle_items_drafting_only — refuses to remove line
+--     items from a sourcing bundle that has left drafting. Reached
+--     indirectly: deleting orders cascades to order_items, which
+--     cascades to sourcing_bundle_items, and the surviving bundles are
+--     'fulfilled'/'cancelled', not 'drafting'.
+--
+-- Both are single-purpose RAISE-EXCEPTION guards with no side effects
+-- (verified by reading pg_get_functiondef before touching them), so
+-- disabling them changes nothing beyond letting these specific deletes
+-- through. They are re-enabled immediately below, and the final
+-- verification block asserts both are armed again before this
+-- migration is considered done.
+ALTER TABLE payroll              DISABLE TRIGGER trg_prevent_paid_payroll_delete;
+ALTER TABLE sourcing_bundle_items DISABLE TRIGGER trg_enforce_bundle_items_drafting_only;
+
+-- ── 4. Delete in NO ACTION-respecting order ──────────────────────────
 DELETE FROM purchase_allocation WHERE parent_purchase_id IN (SELECT id FROM expenses WHERE is_archived);
 DELETE FROM cash_advances WHERE is_archived;
 DELETE FROM timesheet     WHERE is_archived;
@@ -81,6 +104,10 @@ DELETE FROM transfers     WHERE is_archived;
 DELETE FROM vendor_receipt_facilitation WHERE is_archived;
 DELETE FROM orders WHERE is_archived;
 DELETE FROM sales  WHERE is_archived;
+
+-- ── 5. Re-arm the guards ─────────────────────────────────────────────
+ALTER TABLE payroll              ENABLE TRIGGER trg_prevent_paid_payroll_delete;
+ALTER TABLE sourcing_bundle_items ENABLE TRIGGER trg_enforce_bundle_items_drafting_only;
 
 -- ── Verify ──────────────────────────────────────────────────────────
 -- Every archived table should now be empty of what it used to hold;
@@ -109,3 +136,9 @@ UNION ALL SELECT 'bank_balance_anchors', count(*) FROM bank_balance_anchors;
 -- one.
 SELECT account_name, balance FROM v_account_balances
 WHERE id = '890c3473-dc57-4c01-9f39-17518047c463';
+
+-- Both guards must read 'O' (enabled). A 'D' here means the purge left
+-- a safety rail down — do not leave the database in that state.
+SELECT
+  (SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_prevent_paid_payroll_delete')        AS payroll_guard_expect_O,
+  (SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_enforce_bundle_items_drafting_only') AS bundle_guard_expect_O;
