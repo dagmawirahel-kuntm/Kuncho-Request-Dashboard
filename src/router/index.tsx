@@ -354,7 +354,7 @@ export const router = createBrowserRouter([
           {
             // Workspace is also read by procurement (point-of-spend checks
             // reference it) — one step wider than the management CRUD above
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer']} allowAssignedProjectManager />,
             children: [
               { path: 'projects/:id', element: <ProjectWorkspacePage /> },
             ],
@@ -517,7 +517,12 @@ export const router = createBrowserRouter([
           // admin/manager included for cross-departmental oversight,
           // matching the pattern used everywhere else in this router.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            // allowAssignedProjectManager: PM access follows the
+            // assignment, not only the role — a finance/design/whatever
+            // user named on projects.project_manager_id reaches their
+            // own My Projects view, which the role list alone would
+            // never let them do (migration 151).
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} allowAssignedProjectManager />,
             children: [{ path: 'pm-view', element: <ProjectManagerViewPage /> }],
           },
           {

@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
@@ -497,7 +498,24 @@ function PurchaseRequestFormBody({
   const { data: recentItems = [] }  = useRecentOrderItems()
   const { data: stockItems = [] }   = useStockItems()
 
-  const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+  // A purchase request must be raised against a project the requester is
+  // actually responsible for. Roles with company-wide remit keep the
+  // full list; for everyone else, if they're a named project manager the
+  // picker is narrowed to their own projects — otherwise a PM could pick
+  // any of the ~89 projects from the dropdown, which is what was
+  // happening. The database enforces the same rule independently
+  // (raa_orders_insert, migration 151), so this is the honest UI for a
+  // restriction that already holds server-side, not the restriction
+  // itself.
+  const { projects: managedProjects, managesAny } = useMyManagedProjects()
+  const hasCompanyWideProjectAccess = !!role && ['admin', 'executive', 'finance', 'manager', 'procurement_officer'].includes(role)
+  const scopeToManaged = !hasCompanyWideProjectAccess && managesAny
+
+  const projectOptions = useMemo(() => {
+    const source: { id: string; project_name: string }[] =
+      scopeToManaged ? managedProjects : (projects as { id: string; project_name: string }[])
+    return source.map(p => ({ id: p.id, label: p.project_name }))
+  }, [projects, managedProjects, scopeToManaged])
   const staffOptions   = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
   const vendorOptions  = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
 
@@ -785,6 +803,11 @@ function PurchaseRequestFormBody({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Project">
             <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Select project…" />
+            {scopeToManaged && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Limited to the {managedProjects.length} project{managedProjects.length === 1 ? '' : 's'} you manage.
+              </p>
+            )}
           </Field>
           <Field label="Requested By">
             <div className={`${inputCls} bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 cursor-default select-none`}>

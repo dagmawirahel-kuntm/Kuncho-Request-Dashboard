@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { useToast } from '@/contexts/ToastContext'
 import { useUserProfiles, useVendorReceiptFacilitations } from '@/hooks/useLookups'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -187,6 +188,11 @@ export default function PaymentsDashboardPage() {
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Payments</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">Approval → to-pay → sent → paid, in one queue</p>
       </div>
+
+      {/* This is the landing page for finance, and a finance user can
+          also be the named PM on projects. Renders nothing for anyone
+          without an assignment. */}
+      <RoleViewSwitcher mode="assigned-pm" role={role} />
 
       {/* KPI summary */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

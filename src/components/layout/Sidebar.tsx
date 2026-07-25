@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { useState, useRef } from 'react'
 
 interface NavItem {
@@ -17,6 +18,9 @@ interface NavItem {
   to: string
   icon: React.ElementType
   roles?: string[]
+  // Shown to anyone named on projects.project_manager_id, in addition
+  // to `roles` — project management is an assignment, not only a role.
+  showIfAssignedProjectManager?: boolean
   animateIcon?: string
 }
 
@@ -39,7 +43,7 @@ const navGroups: NavGroup[] = [
       // below (or the Overview sub-items just above for Operations &
       // Construction's role split).
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operations_manager'] },
-      { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'] },
+      { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
       { label: 'Stock', to: '/stock-manager-view', icon: Warehouse, roles: ['stock_manager'] },
       { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'] },
@@ -174,10 +178,17 @@ const navGroups: NavGroup[] = [
 
 function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
   const { role } = useAuth()
+  const { managesAny } = useMyManagedProjects()
   const [open, setOpen] = useState(true)
 
   const visibleItems = group.items.filter(item =>
-    !item.roles || (role && item.roles.includes(role))
+    !item.roles
+    || (role && item.roles.includes(role))
+    // Derived access, alongside the role list: an assigned project
+    // manager sees the PM entries whatever their login role. Without
+    // this the assignment is invisible to the person who holds it —
+    // they'd have to be told the URL.
+    || (item.showIfAssignedProjectManager && managesAny)
   )
   if (visibleItems.length === 0) return null
 
