@@ -470,8 +470,26 @@ function PostingFailuresTab() {
     qc.invalidateQueries({ queryKey: ['ledger-posting-failures'] })
   }
 
+  // Auto-posting fires only on a NEW transition into paid, so correcting
+  // the general ledger or the payment account afterwards fixed the data
+  // but left the journal entry permanently missing — dismissing the
+  // failure would hide a payment that still isn't in the books. This
+  // re-runs the posting against the row's current state instead.
+  const [retrying, setRetrying] = useState<string | null>(null)
+  async function handleRetry(f: LedgerPostingFailure) {
+    setRetrying(f.id)
+    const { data, error } = await supabase.rpc('retry_expense_ledger_posting', { p_expense_id: f.source_id })
+    setRetrying(null)
+    if (error) { toast(error.message, 'error'); return }
+    const result = data as string
+    toast(result, result === 'Posted' ? 'success' : 'error')
+    qc.invalidateQueries({ queryKey: ['ledger-posting-failures'] })
+    qc.invalidateQueries({ queryKey: ['journal-entries'] })
+    qc.invalidateQueries({ queryKey: ['trial-balance'] })
+  }
+
   return (
-    <Section title="Posting Failures" sub="A caught, non-blocking posting attempt — the underlying transaction still succeeded, only the ledger entry didn't">
+    <Section title="Posting Failures" sub="A caught, non-blocking posting attempt — the underlying transaction still succeeded, only the ledger entry didn't. Fix the record it names, then Retry Posting; Dismiss only clears the notice and leaves the entry unposted.">
       <div className="flex items-center justify-end px-4 py-2 border-b dark:border-slate-700">
         <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} className="rounded border-slate-300 text-brand focus:ring-brand" />
@@ -491,9 +509,21 @@ function PostingFailuresTab() {
                 <p className="text-sm text-slate-700 dark:text-slate-200">{f.error_message}</p>
               </div>
               {!f.resolved ? (
-                <button onClick={() => handleResolve(f.id)} className="flex-shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">
-                  Mark Resolved
-                </button>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  {f.source_table === 'expenses' && (
+                    <button
+                      onClick={() => handleRetry(f)}
+                      disabled={retrying === f.id}
+                      title="Re-run the posting now that the underlying record has been corrected"
+                      className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                    >
+                      {retrying === f.id ? 'Posting…' : 'Retry Posting'}
+                    </button>
+                  )}
+                  <button onClick={() => handleResolve(f.id)} className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">
+                    Dismiss
+                  </button>
+                </div>
               ) : (
                 <span className="flex-shrink-0 text-xs text-emerald-600 dark:text-emerald-400">Resolved</span>
               )}

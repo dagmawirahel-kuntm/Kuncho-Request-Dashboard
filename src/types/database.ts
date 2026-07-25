@@ -860,9 +860,16 @@ export interface BankStatementLine {
   matched_expense_id: string | null
   transfer_id: string | null
   match_status: BankStatementLineMatchStatus
+  // Recorded at match time (migration 150), not derived on read — the
+  // expense's amount can be edited later, and what the reconciliation
+  // record needs is what the two sides were when they were matched.
+  matched_expense_amount: number | null
+  // Statement line amount minus matched expense amount. Negative = the
+  // line only partly offsets the expense, positive = it exceeds it.
+  variance_amount: number | null
   created_at: string
 }
-export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status'>
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
@@ -1632,6 +1639,17 @@ export interface LedgerPostingFailure {
   resolved: boolean
   resolved_at: string | null
   resolved_by: string | null
+}
+
+// ── Default general ledger per engagement type (migration 150) ─────
+// Auto-posting needs an expense-side account to debit, which comes from
+// expenses.category_id. This is the default applied when an expense has
+// none of its own — never an override of one a person chose.
+export interface ExpenseTypeLedgerDefault {
+  expense_type: ExpenseType
+  category_id: string
+  notes: string | null
+  updated_at: string
 }
 
 // ── General Ledger reporting views/functions (migration 107) ──────
