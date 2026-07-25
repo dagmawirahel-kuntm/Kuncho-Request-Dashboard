@@ -47,6 +47,7 @@ export interface Database {
       vendor_receipt_facilitation: { Row: VendorReceiptFacilitation; Insert: VendorReceiptFacilitationInsert; Update: Partial<VendorReceiptFacilitationInsert> }
       tax_summary: { Row: TaxSummary; Insert: TaxSummaryInsert; Update: Partial<TaxSummaryInsert> }
       tax_obligation_types: { Row: TaxObligationType; Insert: TaxObligationTypeInsert; Update: Partial<TaxObligationTypeInsert> }
+      vendor_receipts: { Row: VendorReceipt; Insert: VendorReceiptInsert; Update: Partial<VendorReceipt> }
       tax_engagements: { Row: TaxEngagement; Insert: TaxEngagementInsert; Update: Partial<TaxEngagementInsert> }
       cpo_bonds: { Row: CpoBond; Insert: CpoBondInsert; Update: Partial<CpoBondInsert> }
       payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
@@ -1020,6 +1021,70 @@ export interface TaxLiabilityRow {
   category: string
   period: string
   amount: number
+}
+
+// ── Vendor Receipts (the tax document — NOT vendor_receipt_facilitation,
+// which is the separate cost of paying a facilitator to obtain one) ──
+export type VendorReceiptStatus = 'pending_verification' | 'verified' | 'tax_reviewed' | 'rejected'
+
+export interface VendorReceipt {
+  id: string
+  expense_id: string | null
+  grn_id: string | null
+  vendor_id: string | null
+  project_id: string | null
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  withholding_amount: number | null
+  vendor_tin_on_receipt: string | null
+  document_url: string | null
+  document_name: string | null
+  notes: string | null
+  status: VendorReceiptStatus
+  entered_by: string | null
+  entered_at: string | null
+  verified_by: string | null
+  verified_at: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  tax_review_note: string | null
+  rejection_reason: string | null
+  created_at: string
+  updated_at: string
+}
+export type VendorReceiptInsert = Omit<VendorReceipt,
+  'id' | 'status' | 'entered_by' | 'entered_at' | 'verified_by' | 'verified_at'
+  | 'reviewed_by' | 'reviewed_at' | 'created_at' | 'updated_at'>
+
+export interface ReceiptAwaitingTaxReview {
+  id: string
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  withholding_amount: number | null
+  vendor_tin_on_receipt: string | null
+  document_url: string | null
+  vendor_name: string | null
+  project_id: string | null
+  project_name: string | null
+  expense_code: string | null
+  entered_by_name: string | null
+  verified_by_name: string | null
+  verified_at: string | null
+}
+
+export interface ReceiptOutstanding {
+  expense_id: string
+  expense_code: string | null
+  date: string | null
+  amount_etb: number | null
+  project_id: string | null
+  project_name: string | null
+  vendor_id: string | null
+  vendor_name: string | null
+  vendor_tin: string | null
+  receipt_status: string
 }
 
 // ── CPO Bonds ─────────────────────────────────────────────────────

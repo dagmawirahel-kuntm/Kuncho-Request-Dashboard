@@ -104,6 +104,7 @@ const navGroups: NavGroup[] = [
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive', 'finance'] },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'executive', 'finance'] },
       { label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
     ],
   },

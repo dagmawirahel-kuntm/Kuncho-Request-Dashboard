@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { TaxEngagementView, NextTaxObligation, TaxLiabilityRow, UserProfile } from '@/types/database'
-import { Landmark, AlertTriangle, CalendarClock, FileText, ExternalLink } from 'lucide-react'
+import type { TaxEngagementView, NextTaxObligation, TaxLiabilityRow, UserProfile, ReceiptAwaitingTaxReview, ReceiptOutstanding } from '@/types/database'
+import { Landmark, AlertTriangle, CalendarClock, FileText, ExternalLink, ReceiptText } from 'lucide-react'
 
 function daysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null
@@ -47,6 +47,24 @@ export default function TaxManagementPage() {
       const { data, error } = await supabase.from('v_tax_liability_summary').select('*')
       if (error) throw error
       return data as TaxLiabilityRow[]
+    },
+  })
+
+  const { data: awaitingReview = [] } = useQuery({
+    queryKey: ['receipts-awaiting-tax-review'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_receipts_awaiting_tax_review').select('*').order('verified_at')
+      if (error) throw error
+      return data as ReceiptAwaitingTaxReview[]
+    },
+  })
+
+  const { data: outstanding = [] } = useQuery({
+    queryKey: ['receipts-outstanding'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_receipts_outstanding').select('*').order('date', { ascending: false })
+      if (error) throw error
+      return data as ReceiptOutstanding[]
     },
   })
 
@@ -105,6 +123,81 @@ export default function TaxManagementPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Receipts the Tax Officer has to act on — cross-department verified,
+          waiting to be accepted into a filing. Only accepted ones count toward VAT. */}
+      {awaitingReview.length > 0 && (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Awaiting Your Tax Review</p>
+              <p className="text-xs text-slate-400">Verified by two departments — not yet counted toward any VAT return</p>
+            </div>
+            <Link to="/tax-receipts" className="rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+              Review
+            </Link>
+          </div>
+          <div className="divide-y dark:divide-slate-700">
+            {awaitingReview.map(r => (
+              <div key={r.id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-700 dark:text-slate-200">
+                    {r.receipt_no ?? 'No receipt no.'} · {r.vendor_name ?? 'Unknown vendor'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {r.receipt_date ? formatDate(r.receipt_date) : '—'}
+                    {r.project_name ? ` · ${r.project_name}` : ''}
+                    {r.entered_by_name ? ` · ${r.entered_by_name} → ${r.verified_by_name ?? '—'}` : ''}
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
+                  VAT {r.vat_amount != null ? formatCurrency(r.vat_amount) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Collection accountability — paid expenses with no tax-reviewed receipt,
+          which is what project finance / procurement still owe the tax officer. */}
+      {outstanding.length > 0 && (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b dark:border-slate-700">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+              <ReceiptText className="h-3.5 w-3.5" /> Receipts Still to Collect ({outstanding.length})
+            </p>
+            <p className="text-xs text-slate-400">Paid expenses with no tax-reviewed receipt — input VAT that can't be reclaimed until collected</p>
+          </div>
+          <div className="divide-y dark:divide-slate-700">
+            {outstanding.map(o => (
+              <div key={o.expense_id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-700 dark:text-slate-200">
+                    {o.expense_code ?? '—'} · {o.vendor_name ?? 'No vendor'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {o.date ? formatDate(o.date) : '—'}
+                    {o.project_name ? ` · ${o.project_name}` : ' · No project'}
+                    {o.vendor_tin ? ` · TIN ${o.vendor_tin}` : ' · No TIN on file'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                    {o.amount_etb != null ? formatCurrency(o.amount_etb) : '—'}
+                  </span>
+                  <Link
+                    to={`/tax-receipts/new?expense_id=${o.expense_id}${o.vendor_id ? `&vendor_id=${o.vendor_id}` : ''}${o.project_id ? `&project_id=${o.project_id}` : ''}`}
+                    className="rounded-md bg-brand px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand/90"
+                  >
+                    Enter Receipt
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
