@@ -103,6 +103,7 @@ export default function PurchaseRequestsPage() {
       const { data, error } = await supabase
         .from('orders')
         .select('*, projects(project_name), staff(employee_name)')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
       if (error) throw error
       return data as (Order & { projects: { project_name: string } | null; staff: { employee_name: string } | null })[]

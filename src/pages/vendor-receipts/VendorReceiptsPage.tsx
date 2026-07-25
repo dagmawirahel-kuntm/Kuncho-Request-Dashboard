@@ -44,6 +44,7 @@ export default function VendorReceiptsPage() {
       const { data, error } = await supabase
         .from('vendor_receipt_facilitation')
         .select('*, initial:accounts!initial_account_id(account_name), returned:accounts!return_account_id(account_name)')
+        .eq('is_archived', false)
         .order('trxn_date', { ascending: false, nullsFirst: false })
       if (error) throw error
       return data as VrfRow[]

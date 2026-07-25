@@ -20,7 +20,7 @@ export default function PayrollPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['payroll'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id, net_amount)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id, net_amount)').eq('is_archived', false).order('created_at', { ascending: false })
       if (error) throw error
       return data as PayrollRow[]
     },

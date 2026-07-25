@@ -102,6 +102,7 @@ export default function MyRequestsDashboardPage() {
       const { data } = await supabase
         .from('cash_advances')
         .select('*')
+        .eq('is_archived', false)
         .eq('staff_id', staffId!)
       return (data ?? []) as CashAdvance[]
     },
