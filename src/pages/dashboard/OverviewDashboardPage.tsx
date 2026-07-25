@@ -19,10 +19,10 @@ export default function OverviewDashboardPage() {
     queryKey: ['dashboard-overview'],
     queryFn: async () => {
       const [expenses, orders, transport, sales, vendors, staff, projects] = await Promise.all([
-        supabase.from('expenses').select('id, amount_etb, payment_status, item_service_description, created_at'),
-        supabase.from('orders').select('id, status, order_name, created_at'),
+        supabase.from('expenses').select('id, amount_etb, payment_status, item_service_description, created_at').eq('is_archived', false),
+        supabase.from('orders').select('id, status, order_name, created_at').eq('is_archived', false),
         supabase.from('transportation_requests').select('id, amount, payment_status, request_name, created_at'),
-        supabase.from('sales').select('id, amount, sales_description, created_at, date'),
+        supabase.from('sales').select('id, amount, sales_description, created_at, date').eq('is_archived', false),
         supabase.from('vendors').select('id, active'),
         supabase.from('staff').select('id'),
         supabase.from('projects').select('id, project_name, active_for_year, created_at'),

@@ -346,6 +346,8 @@ export type SubCategoryInsert = Omit<SubCategory, 'id' | 'created_at' | 'updated
 // ── Expenses ─────────────────────────────────────────────────────
 export interface Expense {
   id: string
+  /** Pre-FY2026/27 row from the Airtable import — hidden from lists and aggregates, still fetchable by id. */
+  is_archived: boolean
   expense_code: string | null
   item_service_description: string | null
   amount_etb: number | null
@@ -461,6 +463,7 @@ export type OrderPriority = 'normal' | 'urgent' | 'critical'
 
 export interface Order {
   id: string
+  is_archived: boolean
   request_code: string | null
   order_name: string | null
   order_date: string | null
@@ -605,6 +608,7 @@ export type AccountInsert = Omit<Account, 'id' | 'created_at' | 'updated_at'>
 // ── Transfers ────────────────────────────────────────────────────
 export interface Transfer {
   id: string
+  is_archived: boolean
   transfer_id_code: string | null
   date: string | null
   from_account_id: string | null
@@ -618,6 +622,7 @@ export type TransferInsert = Omit<Transfer, 'id' | 'created_at'>
 // ── Sales ────────────────────────────────────────────────────────
 export interface Sale {
   id: string
+  is_archived: boolean
   sales_description: string
   sales_status: SaleLifecycleStatus | null
   date: string | null
@@ -730,6 +735,7 @@ export type ProductInsert = Omit<Product, 'id' | 'created_at' | 'updated_at'>
 // ── Payroll ──────────────────────────────────────────────────────
 export interface Payroll {
   id: string
+  is_archived: boolean
   payroll_record: string | null
   pay_period: string | null
   start_date: string | null
@@ -774,6 +780,7 @@ export type EmergencyPayrollSummaryInsert = Omit<EmergencyPayrollSummary, 'id' |
 // ── Cash Advances ─────────────────────────────────────────────────
 export interface CashAdvance {
   id: string
+  is_archived: boolean
   advance_id_code: string | null
   amount_advanced: number | null
   date_given: string | null
@@ -796,6 +803,7 @@ export type CashAdvanceInsert = Omit<CashAdvance, 'id' | 'created_at' | 'updated
 export type VrfStatus = 'open' | 'partial' | 'settled'
 export interface VendorReceiptFacilitation {
   id: string
+  is_archived: boolean
   record_name: string | null
   amount_transferred: number | null
   money_returned: number | null
@@ -1060,6 +1068,7 @@ export interface RecentPaymentRow {
 // ── Timesheet ─────────────────────────────────────────────────────
 export interface Timesheet {
   id: string
+  is_archived: boolean
   code: string | null
   date: string | null
   check_in_time: string | null

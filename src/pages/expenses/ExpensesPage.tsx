@@ -279,6 +279,7 @@ export default function ExpensesPage() {
       let q = supabase
         .from('expenses')
         .select('*, projects(project_name), accounts(account_name), vendors(vendor_name)')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
       if (filterOwn && profile?.id) q = (q as any).eq('purchaser_user_id', profile.id)
       const { data, error } = await q
@@ -345,6 +346,7 @@ export default function ExpensesPage() {
       let q = supabase
         .from('expenses')
         .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation(record_name), transfers(transfer_id_code), tax_summary(month), locations(location_name)')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
       if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
       const { data, error } = await q

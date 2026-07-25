@@ -17,7 +17,7 @@ export default function ProcurementDashboardPage() {
       const [vendors, categories, receipts] = await Promise.all([
         supabase.from('vendors').select('vendor_type, category, active, wth_eligible'),
         supabase.from('categories').select('id'),
-        supabase.from('vendor_receipt_facilitation').select('net_facilitation_cost, trxn_date'),
+        supabase.from('vendor_receipt_facilitation').select('net_facilitation_cost, trxn_date').eq('is_archived', false),
       ])
       return {
         vendors: (vendors.data ?? []) as VendorRow[],

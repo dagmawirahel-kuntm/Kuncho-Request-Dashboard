@@ -50,7 +50,7 @@ export default function SalesPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['sales', fiscalPeriodId],
     queryFn: async () => {
-      let q = supabase.from('sales').select('*, clients(client_name), projects(project_name), accounts(account_name), tax_summary(month)').order('created_at', { ascending: false })
+      let q = supabase.from('sales').select('*, clients(client_name), projects(project_name), accounts(account_name), tax_summary(month)').eq('is_archived', false).order('created_at', { ascending: false })
       if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
       const { data, error } = await q
       if (error) throw error
