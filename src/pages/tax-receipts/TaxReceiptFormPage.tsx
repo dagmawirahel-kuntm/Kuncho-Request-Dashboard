@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { FileUpload } from '@/components/shared/FileUpload'
 import { useVendors, useProjects } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import type { VendorReceiptInsert } from '@/types/database'
@@ -111,18 +112,23 @@ export default function TaxReceiptFormPage() {
         </Field>
       </div>
 
-      <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-2">Digitized Document</p>
+      <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-2">Receipt Photo</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Document URL">
-          <input type="text" className={inputCls} placeholder="Link to the scanned receipt…"
-            value={form.document_url ?? ''} onChange={e => set('document_url', e.target.value || null)} />
-        </Field>
-        <Field label="Document Name">
-          <input type="text" className={inputCls}
-            value={form.document_name ?? ''} onChange={e => set('document_name', e.target.value || null)} />
-        </Field>
-      </div>
+      {/* Private 'tax-documents' bucket, not the public 'documents' one —
+          receipt images carry vendor TINs and commercial amounts. */}
+      <Field label="Photo or Scan" hint="Photograph the receipt at the point of collection. The paper is confirmed separately once it reaches the office.">
+        <FileUpload
+          bucket="tax-documents"
+          folder="vendor-receipts"
+          privateBucket
+          accept="image/*,application/pdf"
+          label="Capture / Upload Receipt"
+          fileUrl={form.document_url ?? null}
+          fileName={form.document_name ?? null}
+          onUpload={(url, name) => setForm(f => ({ ...f, document_url: url, document_name: name }))}
+          onClear={() => setForm(f => ({ ...f, document_url: null, document_name: null }))}
+        />
+      </Field>
 
       <Field label="Notes">
         <textarea rows={3} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value || null)} />

@@ -75,6 +75,8 @@ import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
 import TaxEngagementFormPage from '@/pages/tax-summary/TaxEngagementFormPage'
 import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
 import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
+import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
+import SalesReceiptFormPage from '@/pages/tax-receipts/SalesReceiptFormPage'
 import BatchPaymentsPage from '@/pages/batch-payments/BatchPaymentsPage'
 import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
 import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
@@ -231,6 +233,11 @@ export const router = createBrowserRouter([
               // can reach the page at all.
               { path: 'tax-receipts', element: <TaxReceiptsPage /> },
               { path: 'tax-receipts/new', element: <TaxReceiptFormPage /> },
+              // The tracker is the procurement-facing surface: capture a
+              // photo, then confirm the paper reached the office. Sales-side
+              // presentation is reachable from the same page.
+              { path: 'vat-tracker', element: <VatReceiptTrackerPage /> },
+              { path: 'sales-receipts/new', element: <SalesReceiptFormPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
               { path: 'vendors/:id', element: <VendorDetailPage /> },

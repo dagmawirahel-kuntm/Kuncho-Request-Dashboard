@@ -48,6 +48,7 @@ export interface Database {
       tax_summary: { Row: TaxSummary; Insert: TaxSummaryInsert; Update: Partial<TaxSummaryInsert> }
       tax_obligation_types: { Row: TaxObligationType; Insert: TaxObligationTypeInsert; Update: Partial<TaxObligationTypeInsert> }
       vendor_receipts: { Row: VendorReceipt; Insert: VendorReceiptInsert; Update: Partial<VendorReceipt> }
+      sales_receipts: { Row: SalesReceipt; Insert: SalesReceiptInsert; Update: Partial<SalesReceipt> }
       tax_engagements: { Row: TaxEngagement; Insert: TaxEngagementInsert; Update: Partial<TaxEngagementInsert> }
       cpo_bonds: { Row: CpoBond; Insert: CpoBondInsert; Update: Partial<CpoBondInsert> }
       payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
@@ -1050,12 +1051,17 @@ export interface VendorReceipt {
   reviewed_at: string | null
   tax_review_note: string | null
   rejection_reason: string | null
+  /** Physical custody — orthogonal to the review chain, not a fourth status. */
+  physical_received_at: string | null
+  physical_received_by: string | null
+  physical_note: string | null
   created_at: string
   updated_at: string
 }
 export type VendorReceiptInsert = Omit<VendorReceipt,
   'id' | 'status' | 'entered_by' | 'entered_at' | 'verified_by' | 'verified_at'
-  | 'reviewed_by' | 'reviewed_at' | 'created_at' | 'updated_at'>
+  | 'reviewed_by' | 'reviewed_at' | 'physical_received_at' | 'physical_received_by'
+  | 'created_at' | 'updated_at'>
 
 export interface ReceiptAwaitingTaxReview {
   id: string
@@ -1072,6 +1078,61 @@ export interface ReceiptAwaitingTaxReview {
   entered_by_name: string | null
   verified_by_name: string | null
   verified_at: string | null
+}
+
+// ── Sales Receipts (the VAT invoices we issue) ───────────────────────
+export type SalesReceiptStatus = 'pending_review' | 'tax_reviewed' | 'rejected'
+
+export interface SalesReceipt {
+  id: string
+  sale_id: string
+  project_id: string | null
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  document_url: string | null
+  document_name: string | null
+  notes: string | null
+  status: SalesReceiptStatus
+  presented_by: string | null
+  presented_at: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  tax_review_note: string | null
+  rejection_reason: string | null
+  physical_received_at: string | null
+  physical_received_by: string | null
+  physical_note: string | null
+  created_at: string
+  updated_at: string
+}
+export type SalesReceiptInsert = Omit<SalesReceipt,
+  'id' | 'status' | 'presented_by' | 'presented_at' | 'reviewed_by' | 'reviewed_at'
+  | 'physical_received_at' | 'physical_received_by' | 'created_at' | 'updated_at'>
+
+export interface SalesReceiptOutstanding {
+  sale_id: string
+  invoice_number: string | null
+  date: string | null
+  gross_amount: number | null
+  sales_status: string | null
+  is_vat_exempt: boolean
+  expected_vat: number | null
+  project_id: string | null
+  project_name: string | null
+  client_id: string | null
+  client_name: string | null
+  receipt_status: string
+}
+
+export interface TaxPositionRow {
+  month: string
+  output_vat: number
+  input_vat_reclaimable: number
+  net_vat: number
+  position: 'payable' | 'reclaimable'
+  sale_count: number
+  reviewed_receipt_count: number
 }
 
 export interface ReceiptOutstanding {
