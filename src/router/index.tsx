@@ -73,6 +73,8 @@ import TaxSummaryPage from '@/pages/tax-summary/TaxSummaryPage'
 import TaxSummaryFormPage from '@/pages/tax-summary/TaxSummaryFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
 import TaxEngagementFormPage from '@/pages/tax-summary/TaxEngagementFormPage'
+import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
+import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
 import BatchPaymentsPage from '@/pages/batch-payments/BatchPaymentsPage'
 import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
 import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
@@ -222,6 +224,13 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer']} />,
             children: [
               { path: 'procurement', element: <ProcurementDashboardPage /> },
+              // Tax receipts: entry is finance/procurement (whoever collected
+              // it), verification is the other department, tax review is the
+              // Tax Officer. All three steps are enforced server-side by the
+              // maker-checker-reviewer trigger — this route only decides who
+              // can reach the page at all.
+              { path: 'tax-receipts', element: <TaxReceiptsPage /> },
+              { path: 'tax-receipts/new', element: <TaxReceiptFormPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
               { path: 'vendors/:id', element: <VendorDetailPage /> },
