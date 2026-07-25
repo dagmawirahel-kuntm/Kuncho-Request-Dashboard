@@ -80,11 +80,18 @@ COMMENT ON TABLE expense_type_ledger_defaults IS
 --                     so it's derived per-bundle from the line items'
 --                     sub-ledgers instead (section 2 below), not from
 --                     a fixed default.
+--
+-- cpo_bond routes to 'Bonds' (nature = Asset, chart account 12002), not
+-- the 'CPO' expense ledger: a CPO bond is a refundable deposit the
+-- company still owns, so posting it debits an asset rather than
+-- consuming it as an expense. Confirmed with the user. The single
+-- historical expense already sitting on 'CPO' keeps that ledger — this
+-- is the default for new bonds only, and nothing here is retroactive.
 INSERT INTO expense_type_ledger_defaults (expense_type, category_id, notes)
 SELECT v.expense_type::expense_category, c.id, v.notes
 FROM (VALUES
   ('vrf',           'VRF',              'Vendor receipt facilitation settlements'),
-  ('cpo_bond',      'CPO',              'CPO bond payments'),
+  ('cpo_bond',      'Bonds',            'CPO bonds — refundable deposit, posts to an Asset ledger, not an expense'),
   ('fuel',          'Fuel',             'Vehicle fuel requests'),
   ('maintenance',   'Transportation',   'Fleet maintenance and penalties — matches migration 136''s existing hardcoded choice'),
   ('subcontract',   'Sub Contrcators',  'Subcontractor completion certificates'),
@@ -425,3 +432,19 @@ ORDER BY column_name;
 -- Nothing retroactive: historical rows keep the category/account they had.
 SELECT expense_type, count(*) FILTER (WHERE category_id IS NULL) AS still_null_category
 FROM expenses GROUP BY expense_type ORDER BY expense_type;
+
+-- ── 7. Migration 139's trigger was missing in the live database ──────
+-- Found while verifying this migration: auto_sync_expense_bank_ref
+-- existed as a function but trg_auto_sync_expense_bank_ref was absent
+-- from expenses, so 139's "link the transfer when bank_ref is typed in
+-- after the statement import" path had never actually run. Recreated
+-- here (idempotent) rather than left to be rediscovered later — section
+-- 4 above extends that same function to carry the cash account across,
+-- which is inert without the trigger attached.
+DROP TRIGGER IF EXISTS trg_auto_sync_expense_bank_ref ON expenses;
+CREATE TRIGGER trg_auto_sync_expense_bank_ref
+  BEFORE INSERT OR UPDATE OF bank_ref ON expenses
+  FOR EACH ROW EXECUTE FUNCTION auto_sync_expense_bank_ref();
+
+SELECT tgname FROM pg_trigger WHERE tgrelid = 'expenses'::regclass
+  AND tgname = 'trg_auto_sync_expense_bank_ref';

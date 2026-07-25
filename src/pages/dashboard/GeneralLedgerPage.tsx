@@ -508,25 +508,30 @@ function PostingFailuresTab() {
                 <p className="text-xs text-slate-400 dark:text-slate-500">{f.source_table} · {formatDate(f.attempted_at)}</p>
                 <p className="text-sm text-slate-700 dark:text-slate-200">{f.error_message}</p>
               </div>
-              {!f.resolved ? (
-                <div className="flex flex-shrink-0 items-center gap-2">
-                  {f.source_table === 'expenses' && (
-                    <button
-                      onClick={() => handleRetry(f)}
-                      disabled={retrying === f.id}
-                      title="Re-run the posting now that the underlying record has been corrected"
-                      className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-                    >
-                      {retrying === f.id ? 'Posting…' : 'Retry Posting'}
-                    </button>
-                  )}
+              <div className="flex flex-shrink-0 items-center gap-2">
+                {/* Offered on dismissed rows too: "resolved" only ever meant
+                    the notice was cleared, so a row can sit resolved with the
+                    transaction still absent from the books — precisely the
+                    case that needs re-posting. Retrying an entry that did post
+                    is harmless, it reports "Already posted". */}
+                {f.source_table === 'expenses' && (
+                  <button
+                    onClick={() => handleRetry(f)}
+                    disabled={retrying === f.id}
+                    title="Re-run the posting now that the underlying record has been corrected"
+                    className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {retrying === f.id ? 'Posting…' : 'Retry Posting'}
+                  </button>
+                )}
+                {!f.resolved ? (
                   <button onClick={() => handleResolve(f.id)} className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">
                     Dismiss
                   </button>
-                </div>
-              ) : (
-                <span className="flex-shrink-0 text-xs text-emerald-600 dark:text-emerald-400">Resolved</span>
-              )}
+                ) : (
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400">Dismissed</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
