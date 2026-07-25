@@ -504,7 +504,7 @@ function PurchaseRequestFormBody({
   // picker is narrowed to their own projects — otherwise a PM could pick
   // any of the ~89 projects from the dropdown, which is what was
   // happening. The database enforces the same rule independently
-  // (raa_orders_insert, migration 151), so this is the honest UI for a
+  // (raa_orders_insert, migration 155), so this is the honest UI for a
   // restriction that already holds server-side, not the restriction
   // itself.
   const { projects: managedProjects, managesAny } = useMyManagedProjects()

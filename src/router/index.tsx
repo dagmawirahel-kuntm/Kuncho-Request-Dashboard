@@ -521,7 +521,7 @@ export const router = createBrowserRouter([
             // assignment, not only the role — a finance/design/whatever
             // user named on projects.project_manager_id reaches their
             // own My Projects view, which the role list alone would
-            // never let them do (migration 151).
+            // never let them do (migration 155).
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} allowAssignedProjectManager />,
             children: [{ path: 'pm-view', element: <ProjectManagerViewPage /> }],
           },

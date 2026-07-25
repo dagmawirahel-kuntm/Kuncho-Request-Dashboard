@@ -860,7 +860,7 @@ export interface BankStatementLine {
   matched_expense_id: string | null
   transfer_id: string | null
   match_status: BankStatementLineMatchStatus
-  // Recorded at match time (migration 150), not derived on read — the
+  // Recorded at match time (migration 154), not derived on read — the
   // expense's amount can be edited later, and what the reconciliation
   // record needs is what the two sides were when they were matched.
   matched_expense_amount: number | null
@@ -1641,7 +1641,7 @@ export interface LedgerPostingFailure {
   resolved_by: string | null
 }
 
-// ── Default general ledger per engagement type (migration 150) ─────
+// ── Default general ledger per engagement type (migration 154) ─────
 // Auto-posting needs an expense-side account to debit, which comes from
 // expenses.category_id. This is the default applied when an expense has
 // none of its own — never an override of one a person chose.

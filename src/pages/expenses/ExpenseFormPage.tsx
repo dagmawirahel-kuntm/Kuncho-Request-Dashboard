@@ -459,7 +459,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   // classified as. Without it there's no expense-side account to debit
   // and the ledger silently refuses to post the payment (migration 105).
   //
-  // Resolved by asking the database (migration 150's
+  // Resolved by asking the database (migration 154's
   // resolve_expense_category) rather than keeping a second copy of the
   // mapping here — so what the form shows is exactly what the trigger
   // would store, and the two can't drift apart.
@@ -489,7 +489,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     setError(''); setSaving(true)
     let expenseId = id
     // Persist the ledger the form is actually showing. The database
-    // trigger would fill the same value anyway (migration 150), but
+    // trigger would fill the same value anyway (migration 154), but
     // saving it explicitly keeps what was on screen and what lands in
     // the row identical, rather than depending on the two agreeing.
     const payload = { ...form, category_id: effectiveCategoryId }
