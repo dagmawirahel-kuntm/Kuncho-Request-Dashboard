@@ -937,12 +937,21 @@ export interface GoodsReceivedNote {
 }
 export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
 
+// Per-line quality verdict at receipt (migration 156). 'damaged' still
+// enters stock — the material is physically on site and has to be
+// accounted for; 'rejected' was refused at the door and does not.
+export type GrnQualityStatus = 'accepted' | 'damaged' | 'rejected'
+
 export interface GoodsReceivedNoteItem {
   id: string
   grn_id: string
   sourcing_bundle_item_id: string
   quantity_received: number | null
   condition_notes: string | null
+  // Per-line, because one bundle can mix ledgers. Supersedes the
+  // header-level goods_received_notes.category_id.
+  category_id: string | null
+  quality_status: GrnQualityStatus
   created_at: string
 }
 export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at'>
@@ -1270,9 +1279,28 @@ export interface StockReturnRequest {
   confirmed_by: string | null
   confirmed_at: string | null
   stock_receipt_id: string | null
+  // NULL returns the material to the warehouse; set transfers it
+  // straight to another project, with no warehouse leg (migration 156).
+  destination_project_id: string | null
   created_at: string
 }
-export type StockReturnRequestInsert = Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+export type StockReturnRequestInsert =
+  Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+  & Partial<Pick<StockReturnRequest, 'destination_project_id'>>
+
+// What a project physically still holds: issued to it, less what has
+// already gone back or is awaiting confirmation (migration 156).
+export interface ProjectMaterialBalance {
+  project_id: string
+  project_name: string | null
+  stock_item_id: string
+  item_name: string
+  unit: string | null
+  qty_issued: number
+  qty_returned: number
+  qty_pending: number
+  qty_available_to_return: number
+}
 
 // ── Tool Units ────────────────────────────────────────────────────
 export interface ToolUnit {

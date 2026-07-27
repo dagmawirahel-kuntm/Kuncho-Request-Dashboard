@@ -33,11 +33,28 @@ type BundleForGrn = {
   sourcing_bundle_items: {
     id: string
     quantity_actual: number | null
-    order_items: { item_name: string; unit: string | null; quantity: number } | null
+    order_items: {
+      item_name: string
+      unit: string | null
+      quantity: number
+      sub_categories: { parent_category_id: string | null } | null
+    } | null
   }[]
 }
 
-type ItemDraft = { quantity_received: string; condition_notes: string }
+type QualityStatus = 'accepted' | 'damaged' | 'rejected'
+type ItemDraft = {
+  quantity_received: string
+  condition_notes: string
+  category_id: string | null
+  quality_status: QualityStatus
+}
+
+const QUALITY_OPTIONS: { value: QualityStatus; label: string; cls: string }[] = [
+  { value: 'accepted', label: 'Accepted', cls: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  { value: 'damaged',  label: 'Damaged',  cls: 'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300' },
+  { value: 'rejected', label: 'Rejected', cls: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-300' },
+]
 
 // The stock_manager/logistics_officer gateway for recording a GRN — a
 // different role than whoever placed the order, verifying what actually
@@ -57,7 +74,7 @@ export default function GoodsReceivedNoteFormPage() {
         .select(`
           id, bundle_code, vendor_name,
           vendors(vendor_name),
-          sourcing_bundle_items(id, quantity_actual, order_items(item_name, unit, quantity))
+          sourcing_bundle_items(id, quantity_actual, order_items(item_name, unit, quantity, sub_categories(parent_category_id)))
         `)
         .eq('id', id!)
         .single()
@@ -70,7 +87,6 @@ export default function GoodsReceivedNoteFormPage() {
   const { data: categories = [] } = useCategories()
   const categoryOptions = categories.map((c: { id: string; category_name: string }) => ({ id: c.id, label: c.category_name }))
 
-  const [categoryId, setCategoryId] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [photoName, setPhotoName] = useState<string | null>(null)
@@ -83,19 +99,34 @@ export default function GoodsReceivedNoteFormPage() {
     if (!bundle || initialized.current) return
     const init: Record<string, ItemDraft> = {}
     for (const it of bundle.sourcing_bundle_items) {
-      init[it.id] = { quantity_received: it.quantity_actual != null ? String(it.quantity_actual) : '', condition_notes: '' }
+      init[it.id] = {
+        quantity_received: it.quantity_actual != null ? String(it.quantity_actual) : '',
+        condition_notes: '',
+        // Pre-filled from the sub-ledger the PR line was already
+        // classified under, so the receiver confirms rather than
+        // re-derives it. Still editable per line.
+        category_id: it.order_items?.sub_categories?.parent_category_id ?? null,
+        quality_status: 'accepted',
+      }
     }
     setItems(init)
     initialized.current = true
   }, [bundle])
 
-  function setItemField(itemId: string, field: keyof ItemDraft, value: string) {
+  function setItemField<K extends keyof ItemDraft>(itemId: string, field: K, value: ItemDraft[K]) {
     setItems(prev => ({ ...prev, [itemId]: { ...prev[itemId], [field]: value } }))
   }
 
   async function handleSave() {
     if (!bundle) return
-    if (!categoryId) { setError('Select the General Ledger category these goods belong to'); return }
+    // A ledger per line, not one for the delivery — a bundle is a cart
+    // and routinely mixes Steel, Paints, Electrical in one PO.
+    const missingLedger = bundle.sourcing_bundle_items.filter(it => !items[it.id]?.category_id)
+    if (missingLedger.length > 0) {
+      const names = missingLedger.map(it => it.order_items?.item_name ?? 'line').join(', ')
+      setError(`Select a General Ledger for every line — still missing: ${names}`)
+      return
+    }
     setError(''); setSaving(true)
 
     const { data: grnRow, error: grnErr } = await supabase
@@ -103,7 +134,6 @@ export default function GoodsReceivedNoteFormPage() {
       .insert([{
         sourcing_bundle_id: bundle.id,
         received_by: profile?.id ?? null,
-        category_id: categoryId,
         notes: notes || null,
         photo_url: photoUrl,
         photo_name: photoName,
@@ -123,6 +153,8 @@ export default function GoodsReceivedNoteFormPage() {
       sourcing_bundle_item_id: it.id,
       quantity_received: items[it.id]?.quantity_received ? parseFloat(items[it.id].quantity_received) : null,
       condition_notes: items[it.id]?.condition_notes || null,
+      category_id: items[it.id]?.category_id ?? null,
+      quality_status: items[it.id]?.quality_status ?? 'accepted',
     }))
 
     const { error: itemsErr } = await supabase.from('goods_received_note_items').insert(itemRows)
@@ -154,52 +186,77 @@ export default function GoodsReceivedNoteFormPage() {
         </p>
       </div>
 
-      <Field label="General Ledger Category *">
-        <SearchableSelect value={categoryId} onChange={setCategoryId} options={categoryOptions} placeholder="Select the balance sheet / GL line item…" />
-        <p className="mt-1 text-[11px] text-slate-400">Determines how this purchase shows in the Balance Sheet / P&L once paid.</p>
-      </Field>
-
       <div className="space-y-2">
-        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Items Received</label>
+        <div>
+          <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Items Received</label>
+          <p className="text-[11px] text-slate-400">
+            Check each line as it comes off the truck. The General Ledger is set per line — one purchase order can mix
+            ledgers — and pre-fills from the sub-ledger the request was raised under. A rejected line does not enter stock.
+          </p>
+        </div>
         <div className="rounded-lg border dark:border-slate-700 overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-700/40 border-b dark:border-slate-700">
                 <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Item</th>
-                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-28">Ordered</th>
-                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-32">Received *</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Condition Notes</th>
+                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Ordered</th>
+                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-28">Received *</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-48">General Ledger *</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-36">Quality *</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Note (optional)</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-slate-700">
-              {bundle.sourcing_bundle_items.map(it => (
-                <tr key={it.id}>
-                  <td className="px-3 py-2">
-                    <p className="font-medium text-slate-800 dark:text-slate-100">{it.order_items?.item_name ?? '—'}</p>
-                    <p className="text-[11px] text-slate-400">{it.order_items?.unit ?? ''}</p>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400">
-                    {it.quantity_actual ?? it.order_items?.quantity ?? '—'}
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number" min={0} step="any"
-                      className="w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-                      value={items[it.id]?.quantity_received ?? ''}
-                      onChange={e => setItemField(it.id, 'quantity_received', e.target.value)}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      className="w-full rounded-md border px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-                      placeholder="e.g. minor scratch, otherwise good"
-                      value={items[it.id]?.condition_notes ?? ''}
-                      onChange={e => setItemField(it.id, 'condition_notes', e.target.value)}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {bundle.sourcing_bundle_items.map(it => {
+                const draft = items[it.id]
+                const quality = draft?.quality_status ?? 'accepted'
+                return (
+                  <tr key={it.id} className={quality === 'rejected' ? 'bg-red-50/40 dark:bg-red-900/10' : undefined}>
+                    <td className="px-3 py-2 align-top">
+                      <p className="font-medium text-slate-800 dark:text-slate-100">{it.order_items?.item_name ?? '—'}</p>
+                      <p className="text-[11px] text-slate-400">{it.order_items?.unit ?? ''}</p>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400 align-top">
+                      {it.quantity_actual ?? it.order_items?.quantity ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <input
+                        type="number" min={0} step="any"
+                        disabled={quality === 'rejected'}
+                        className="w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 disabled:opacity-40"
+                        value={draft?.quantity_received ?? ''}
+                        onChange={e => setItemField(it.id, 'quantity_received', e.target.value)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <SearchableSelect
+                        value={draft?.category_id ?? null}
+                        onChange={v => setItemField(it.id, 'category_id', v)}
+                        options={categoryOptions}
+                        placeholder="Select ledger…"
+                      />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <select
+                        className={`w-full rounded-md border px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 ${QUALITY_OPTIONS.find(q => q.value === quality)?.cls ?? ''}`}
+                        value={quality}
+                        onChange={e => setItemField(it.id, 'quality_status', e.target.value as QualityStatus)}
+                      >
+                        {QUALITY_OPTIONS.map(q => <option key={q.value} value={q.value}>{q.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <input
+                        type="text"
+                        className="w-full rounded-md border px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                        placeholder={quality === 'accepted' ? 'Optional…' : 'What was wrong with it?'}
+                        value={draft?.condition_notes ?? ''}
+                        onChange={e => setItemField(it.id, 'condition_notes', e.target.value)}
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
