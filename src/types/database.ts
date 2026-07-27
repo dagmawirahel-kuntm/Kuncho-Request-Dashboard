@@ -48,7 +48,6 @@ export interface Database {
       tax_summary: { Row: TaxSummary; Insert: TaxSummaryInsert; Update: Partial<TaxSummaryInsert> }
       tax_obligation_types: { Row: TaxObligationType; Insert: TaxObligationTypeInsert; Update: Partial<TaxObligationTypeInsert> }
       vendor_receipts: { Row: VendorReceipt; Insert: VendorReceiptInsert; Update: Partial<VendorReceipt> }
-      sales_receipts: { Row: SalesReceipt; Insert: SalesReceiptInsert; Update: Partial<SalesReceipt> }
       tax_engagements: { Row: TaxEngagement; Insert: TaxEngagementInsert; Update: Partial<TaxEngagementInsert> }
       cpo_bonds: { Row: CpoBond; Insert: CpoBondInsert; Update: Partial<CpoBondInsert> }
       payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
@@ -720,9 +719,29 @@ export interface ClientAttachment {
   notes: string | null
   amount: number | null
   sale_id: string | null
+  /** Stamped server-side on insert — this is the presenter for receipt categories. */
   uploaded_by: string | null
   created_at: string
+  // ── Tax workflow (migration 158). Set only for receipt/wht_receipt;
+  // null on contracts and other, where the workflow doesn't apply.
+  project_id: string | null
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  tax_status: ClientReceiptTaxStatus | null
+  tax_reviewed_by: string | null
+  tax_reviewed_at: string | null
+  tax_review_note: string | null
+  tax_rejection_reason: string | null
+  physical_received_at: string | null
+  physical_received_by: string | null
+  physical_note: string | null
 }
+export type ClientReceiptInsert = Pick<ClientAttachment,
+  'client_id' | 'file_name' | 'file_path' | 'category' | 'sale_id'>
+  & Partial<Pick<ClientAttachment,
+    'file_size' | 'mime_type' | 'notes' | 'amount' | 'project_id'
+    | 'receipt_no' | 'receipt_date' | 'vat_amount'>>
 
 // ── Products ─────────────────────────────────────────────────────
 export interface Product {
@@ -1041,6 +1060,8 @@ export interface VendorReceipt {
   vendor_tin_on_receipt: string | null
   document_url: string | null
   document_name: string | null
+  /** The same document filed under the vendor (vendor_attachments, category tax_receipt). */
+  vendor_attachment_id: string | null
   notes: string | null
   status: VendorReceiptStatus
   entered_by: string | null
@@ -1080,35 +1101,13 @@ export interface ReceiptAwaitingTaxReview {
   verified_at: string | null
 }
 
-// ── Sales Receipts (the VAT invoices we issue) ───────────────────────
-export type SalesReceiptStatus = 'pending_review' | 'tax_reviewed' | 'rejected'
-
-export interface SalesReceipt {
-  id: string
-  sale_id: string
-  project_id: string | null
-  receipt_no: string | null
-  receipt_date: string | null
-  vat_amount: number | null
-  document_url: string | null
-  document_name: string | null
-  notes: string | null
-  status: SalesReceiptStatus
-  presented_by: string | null
-  presented_at: string | null
-  reviewed_by: string | null
-  reviewed_at: string | null
-  tax_review_note: string | null
-  rejection_reason: string | null
-  physical_received_at: string | null
-  physical_received_by: string | null
-  physical_note: string | null
-  created_at: string
-  updated_at: string
-}
-export type SalesReceiptInsert = Omit<SalesReceipt,
-  'id' | 'status' | 'presented_by' | 'presented_at' | 'reviewed_by' | 'reviewed_at'
-  | 'physical_received_at' | 'physical_received_by' | 'created_at' | 'updated_at'>
+// ── Client receipts live on client_attachments (migration 158) ───────
+// There is deliberately no sales_receipts table: client_attachments has
+// carried category='receipt' + sale_id since 018, so a separate table
+// was a second home for the same document. The tax workflow columns
+// below are set only for receipt/wht_receipt categories; uploaded_by is
+// the presenter.
+export type ClientReceiptTaxStatus = 'pending_review' | 'tax_reviewed' | 'rejected'
 
 export interface SalesReceiptOutstanding {
   sale_id: string
