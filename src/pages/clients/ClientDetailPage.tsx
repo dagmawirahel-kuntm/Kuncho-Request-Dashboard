@@ -8,16 +8,31 @@ import {
   ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, FileText,
   TrendingUp, CheckCircle2, Clock, ExternalLink, Upload,
   FileBadge, Receipt, Paperclip, Download, X, RotateCcw, Check,
-  AlertTriangle, FileCheck, Banknote,
+  AlertTriangle, FileCheck, Banknote, PackageCheck, Landmark,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge, TierIconBadge, TIER_STYLES } from './ClientsPage'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const WHT_THRESHOLD = 20_000
 const WHT_RATE = 0.03
+
+// ── Tax workflow chip ─────────────────────────────────────────────────────────
+// Shown only on receipt/wht_receipt documents, which are the only ones
+// carrying a tax_status (migration 158).
+const TAX_CHIP: Record<string, { label: string; cls: string }> = {
+  pending_review: { label: 'Awaiting tax review', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  tax_reviewed:   { label: 'Tax reviewed',        cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  rejected:       { label: 'Rejected',            cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+}
+function TaxStatusChip({ status }: { status: string }) {
+  const c = TAX_CHIP[status]
+  if (!c) return null
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${c.cls}`}>{c.label}</span>
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(d: string | null) {
@@ -559,8 +574,23 @@ export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const { toast } = useToast()
+  const { role, user } = useAuth()
   const [tab, setTab] = useState<Tab>('sales')
   const [refunding, setRefunding] = useState<string | null>(null)
+
+  const canConfirmCustody = role === 'admin' || role === 'finance'
+
+  // The tax officer is a designation on user_profiles, not a role
+  // (migration 153), so it has to be read rather than inferred.
+  const { data: me } = useQuery({
+    queryKey: ['my-profile-tax-officer', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('user_profiles').select('id,is_tax_officer').eq('id', user!.id).maybeSingle()
+      return data as { id: string; is_tax_officer: boolean } | null
+    },
+    enabled: !!user?.id,
+  })
+  const isTaxOfficer = !!me?.is_tax_officer || role === 'admin'
 
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ['client', id],
@@ -640,6 +670,27 @@ export default function ClientDetailPage() {
     qc.invalidateQueries({ queryKey: ['client-sales', id] })
     qc.invalidateQueries({ queryKey: ['sales'] })
     toast('Payment marked as refunded', 'success')
+  }
+
+  // ── Tax workflow actions on receipt documents (migration 158) ─────
+  // Every rule is enforced by the trigger server-side; these checks only
+  // decide whether to draw a button, so a stale profile still fails
+  // loudly rather than writing something wrong.
+  async function confirmClientCustody(att: ClientAttachment) {
+    const note = window.prompt('Any note about the physical document received? (optional)') ?? null
+    const { error } = await supabase.rpc('confirm_client_receipt_physical', { p_attachment_id: att.id, p_note: note })
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['client-attachments', id] })
+    toast('Physical document confirmed received', 'success')
+  }
+
+  async function reviewClientReceipt(att: ClientAttachment) {
+    const { error } = await supabase.from('client_attachments').update({ tax_status: 'tax_reviewed' }).eq('id', att.id)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['client-attachments', id] })
+    qc.invalidateQueries({ queryKey: ['sales-receipts-outstanding'] })
+    qc.invalidateQueries({ queryKey: ['tax-position'] })
+    toast('Accepted into the tax filing', 'success')
   }
 
   async function handleDeleteAttachment(att: ClientAttachment) {
@@ -905,9 +956,33 @@ export default function ClientDetailPage() {
                           {att.notes && <span className="text-xs text-slate-400 italic truncate max-w-[200px]">{att.notes}</span>}
                           {att.file_size && <span className="text-xs text-slate-300 dark:text-slate-600">{fmtSize(att.file_size)}</span>}
                           <span className="text-xs text-slate-300 dark:text-slate-600">{fmt(att.created_at)}</span>
+                          {/* Tax workflow — set only on receipt/wht_receipt (migration 158).
+                              Null everywhere else, so contracts and other files are unaffected. */}
+                          {att.tax_status && <TaxStatusChip status={att.tax_status} />}
+                          {att.tax_status && (
+                            att.physical_received_at
+                              ? <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400" title={`Paper received ${fmt(att.physical_received_at)}`}>
+                                  <PackageCheck className="h-3 w-3" /> Paper in
+                                </span>
+                              : <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                  <PackageCheck className="h-3 w-3" /> Paper not received
+                                </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
+                        {att.tax_status === 'pending_review' && !att.physical_received_at && canConfirmCustody && (
+                          <button onClick={() => confirmClientCustody(att)} title="Confirm the paper reached the office"
+                            className="rounded-lg p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
+                            <PackageCheck className="h-4 w-4" />
+                          </button>
+                        )}
+                        {att.tax_status === 'pending_review' && isTaxOfficer && att.uploaded_by !== user?.id && (
+                          <button onClick={() => reviewClientReceipt(att)} title="Accept into tax filing"
+                            className="rounded-lg p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                            <Landmark className="h-4 w-4" />
+                          </button>
+                        )}
                         <button onClick={() => handleDownload(att)} title="Download" className="rounded-lg p-1.5 text-slate-400 hover:text-brand hover:bg-brand/10 transition-colors"><Download className="h-4 w-4" /></button>
                         <button onClick={() => handleDeleteAttachment(att)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"><X className="h-4 w-4" /></button>
                       </div>
