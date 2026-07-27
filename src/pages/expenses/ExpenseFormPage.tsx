@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -519,6 +520,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       }
     }
     setSaving(false)
+    dropRecordCache(qc, 'expense', 'pr-for-expense', 'pr-line-for-expense', 'vrf-for-expense', 'bundle-for-expense', 'property-for-expense', 'expense-linked-orders', 'expense-linked-batch-payments', 'expense-linked-cash-advances', 'expense-fuel-vehicle', 'expense-linked-source', 'expense-transport-job', 'default-expense-category')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
     toast(isEdit ? 'Expense updated' : 'Expense created', 'success')

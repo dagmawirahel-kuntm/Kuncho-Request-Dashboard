@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -135,6 +136,7 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
     const { error: err } = await op
     if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
     setSaving(false)
+    dropRecordCache(qc, 'stock-item')
     qc.invalidateQueries({ queryKey: ['stock-items'] })
     toast(isEdit ? 'Stock item updated' : 'Stock item created', 'success')
     navigate('/stock')

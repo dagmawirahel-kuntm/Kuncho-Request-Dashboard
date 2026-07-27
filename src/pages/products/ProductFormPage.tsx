@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -74,6 +75,7 @@ function ProductFormPageBody({ id, record }: { id?: string; record?: Product }) 
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'product')
     qc.invalidateQueries({ queryKey: ['products'] })
     toast(isEdit ? 'Product updated' : 'Product created', 'success')
     navigate('/products')

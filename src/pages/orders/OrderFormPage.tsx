@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -706,6 +707,7 @@ function PurchaseRequestFormBody({
     }
 
     setSaving(false)
+    dropRecordCache(qc, 'order', 'order-items')
     qc.invalidateQueries({ queryKey: ['orders'] })
     qc.invalidateQueries({ queryKey: ['order-items', orderId] })
     qc.invalidateQueries({ queryKey: ['order-item-counts'] })

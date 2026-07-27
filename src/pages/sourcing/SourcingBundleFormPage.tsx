@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -475,6 +476,7 @@ export default function SourcingBundleFormPage() {
         })
       }
 
+      dropRecordCache(qc, 'sourcing-bundle', 'order-items-for-sourcing', 'bundled-order-item-ids', 'stock-issued-by-order-item', 'finance-sourcing-reviews-for-sourcing')
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
       qc.invalidateQueries({ queryKey: ['bundled-order-item-ids'] })
       qc.invalidateQueries({ queryKey: ['order-item-counts'] })

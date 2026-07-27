@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -88,6 +89,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'project')
     qc.invalidateQueries({ queryKey: ['projects'] })
     qc.invalidateQueries({ queryKey: ['projects-lookup'] })
     toast(isEdit ? 'Project updated' : 'Project created', 'success')

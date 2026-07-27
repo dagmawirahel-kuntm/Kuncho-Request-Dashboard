@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -87,6 +88,7 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'subcontractor-engagement')
     qc.invalidateQueries({ queryKey: ['subcontractor-engagements'] })
     if (isEdit) qc.invalidateQueries({ queryKey: ['subcontractor-engagement', id] })
     toast(isEdit ? 'Engagement updated' : 'Engagement created', 'success')

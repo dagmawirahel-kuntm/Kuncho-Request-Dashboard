@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -91,6 +92,7 @@ function BatchPaymentFormPageBody({ id, record, linkedExpenseIds }: { id?: strin
     }
 
     setSaving(false)
+    dropRecordCache(qc, 'batch-payment', 'batch-payment-expenses')
     qc.invalidateQueries({ queryKey: ['batch-payments'] })
     qc.invalidateQueries({ queryKey: ['batch-payment-expenses', batchId] })
     toast(isEdit ? 'Payment updated' : 'Payment created', 'success')

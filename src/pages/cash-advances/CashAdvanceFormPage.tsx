@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -130,6 +131,7 @@ function CashAdvanceFormPageBody({ id, record, linkedExpenseIds }: { id?: string
     }
 
     setSaving(false)
+    dropRecordCache(qc, 'cash-advance', 'cash-advance-expenses')
     qc.invalidateQueries({ queryKey: ['cash-advances'] })
     qc.invalidateQueries({ queryKey: ['cash-advance-expenses', advanceId] })
     toast(isEdit ? 'Advance updated' : 'Advance created', 'success')

@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -91,6 +92,7 @@ function HseIncidentFormPageBody({ id, record }: { id?: string; record?: HseInci
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'hse-incident')
     qc.invalidateQueries({ queryKey: ['hse-incidents'] })
     toast(isEdit ? 'Incident updated' : 'Incident reported', 'success')
     navigate('/hse-incidents')

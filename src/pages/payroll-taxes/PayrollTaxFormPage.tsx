@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -80,6 +81,7 @@ function PayrollTaxFormPageBody({ id, record }: { id?: string; record?: PayrollT
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'payroll-tax')
     qc.invalidateQueries({ queryKey: ['payroll-taxes'] })
     toast(isEdit ? 'Tax record updated' : 'Tax record created', 'success')
     navigate('/payroll-taxes')

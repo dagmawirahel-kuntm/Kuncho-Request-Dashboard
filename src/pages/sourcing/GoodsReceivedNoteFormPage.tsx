@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -128,6 +129,7 @@ export default function GoodsReceivedNoteFormPage() {
     setSaving(false)
     if (itemsErr) { setError(itemsErr.message); toast(itemsErr.message, 'error'); return }
 
+    dropRecordCache(qc, 'sourcing-bundle-for-grn')
     qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundle.id] })
     qc.invalidateQueries({ queryKey: ['grn-for-bundle', bundle.id] })
     qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
