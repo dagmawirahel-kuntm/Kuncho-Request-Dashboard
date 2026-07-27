@@ -42,49 +42,22 @@
 
 SET search_path TO public;
 
--- ── 1. Who am I, as a staff member? ─────────────────────────────────
--- Mirrors useMyStaffId's resolution exactly: an explicit staff.user_id
--- link wins, else a case-insensitive email match, so a staff row that
--- was never linked to its login still resolves. Kept as one function
--- so the database and the frontend can't drift on who "I" am.
+-- ── 1. Identity helpers: defined in migration 148, used here ────────
+-- current_staff_id() ("who am I, as a staff member" — explicit
+-- staff.user_id link wins, else a case-insensitive email match, mirroring
+-- useMyStaffId) and manages_project() ("am I the named PM of this one")
+-- are declared once, in migration 148, which is the earliest migration
+-- that needs them for its site-delivery gate.
 --
--- DESC NULLS LAST matters: for an unlinked row (user_id NULL) the
--- comparison is NULL, and a plain DESC would sort those FIRST in
--- Postgres — handing precedence to the email match over the explicit
--- link, the exact inversion of the frontend's rule.
-CREATE OR REPLACE FUNCTION current_staff_id()
-RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT s.id
-  FROM staff s
-  WHERE auth.uid() IS NOT NULL
-    AND (
-      s.user_id = auth.uid()
-      OR (s.email IS NOT NULL
-          AND lower(s.email) = lower((SELECT u.email FROM auth.users u WHERE u.id = auth.uid())))
-    )
-  ORDER BY (s.user_id = auth.uid()) DESC NULLS LAST
-  LIMIT 1;
-$$;
-
-GRANT EXECUTE ON FUNCTION current_staff_id() TO authenticated;
-
--- ── 2. Do I manage this project? ────────────────────────────────────
--- SECURITY DEFINER and owned by the migration role, so reading
--- projects here is not itself subject to projects' RLS — no recursion
--- when this is called from a policy on another table. The policy on
--- projects itself deliberately does NOT use this function; it compares
--- the row's own column instead (section 3), which cannot recurse.
-CREATE OR REPLACE FUNCTION manages_project(p_project_id UUID)
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM projects p
-    WHERE p.id = p_project_id
-      AND p.project_manager_id IS NOT NULL
-      AND p.project_manager_id = current_staff_id()
-  );
-$$;
-
-GRANT EXECUTE ON FUNCTION manages_project(UUID) TO authenticated;
+-- This migration deliberately does NOT redeclare them. An earlier draft
+-- did, and the result was two pairs of functions answering the same two
+-- questions with separately-maintained bodies — precisely the drift the
+-- single definition exists to prevent. 148 runs first, so both are in
+-- place by the time anything below references them.
+--
+-- Note for the policy in section 3: the policy on `projects` itself does
+-- NOT call manages_project(); it compares the row's own column instead,
+-- which cannot recurse through projects' own RLS.
 
 -- Am I the named PM of anything at all? Drives the route guard and the
 -- sidebar entry, so someone with no assignment never sees PM surfaces.
