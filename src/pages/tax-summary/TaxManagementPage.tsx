@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { TaxEngagementView, NextTaxObligation, TaxLiabilityRow, UserProfile, ReceiptAwaitingTaxReview, ReceiptOutstanding } from '@/types/database'
-import { Landmark, AlertTriangle, CalendarClock, FileText, ExternalLink, ReceiptText } from 'lucide-react'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
+import { Landmark, AlertTriangle, CalendarClock, FileText, ReceiptText } from 'lucide-react'
 
 function daysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null
@@ -253,11 +254,7 @@ export default function TaxManagementPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {e.document_url && (
-                    <a href={e.document_url} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-brand" title="View filed document">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
+                  {e.document_url && <PrivateDocLink path={e.document_url} title="View filed declaration" />}
                   <StatusBadge status={e.status} />
                 </div>
               </div>

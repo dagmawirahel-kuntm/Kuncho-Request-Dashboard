@@ -3,12 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
+import { FileUpload } from '@/components/shared/FileUpload'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { TaxObligationType, TaxEngagementInsert } from '@/types/database'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   const required = label.endsWith('*')
   return (
     <div>
@@ -17,6 +18,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {required && <span className="text-brand"> *</span>}
       </label>
       {children}
+      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
     </div>
   )
 }
@@ -45,6 +47,9 @@ export default function TaxEngagementFormPage() {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // tax_engagements stores only the path; the filename is display-only,
+  // so it lives in component state rather than being persisted.
+  const [docName, setDocName] = useState<string | null>(null)
 
   function set(key: keyof TaxEngagementInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
@@ -100,9 +105,21 @@ export default function TaxEngagementFormPage() {
           value={form.reference_number ?? ''} onChange={e => set('reference_number', e.target.value || null)} />
       </Field>
 
-      <Field label="Filed Document URL">
-        <input type="text" className={inputCls} placeholder="Link to the digitized filing…"
-          value={form.document_url ?? ''} onChange={e => set('document_url', e.target.value || null)} />
+      {/* The filing itself, not a link to it. Private 'tax-documents'
+          bucket — an ERCA declaration carries the company's TIN and full
+          period figures, so it never goes in the public bucket. */}
+      <Field label="Filed Declaration" hint="Upload the stamped/submitted declaration. This is the document an audit asks for.">
+        <FileUpload
+          bucket="tax-documents"
+          folder="declarations"
+          privateBucket
+          accept="image/*,application/pdf"
+          label="Upload Declaration"
+          fileUrl={form.document_url ?? null}
+          fileName={docName}
+          onUpload={(url, name) => { set('document_url', url); setDocName(name) }}
+          onClear={() => { set('document_url', null); setDocName(null) }}
+        />
       </Field>
 
       <Field label="Notes">
