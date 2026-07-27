@@ -7,7 +7,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { VendorReceipt } from '@/types/database'
-import { Plus, ExternalLink, CheckCircle2, XCircle, Landmark, Info } from 'lucide-react'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
+import { Plus, CheckCircle2, XCircle, Landmark, Info, PackageCheck } from 'lucide-react'
 
 type ReceiptRow = VendorReceipt & {
   vendors: { vendor_name: string } | null
@@ -126,10 +127,11 @@ export default function TaxReceiptsPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {r.document_url && (
-                      <a href={r.document_url} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-brand" title="View receipt document">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
+                    {r.document_url && <PrivateDocLink path={r.document_url} title="View receipt document" />}
+                    {r.physical_received_at && (
+                      <span title={`Paper received ${formatDate(r.physical_received_at)}`} className="text-emerald-600 dark:text-emerald-400">
+                        <PackageCheck className="h-3.5 w-3.5" />
+                      </span>
                     )}
                     <StatusBadge status={STATUS_LABEL[r.status] ?? r.status} />
                   </div>
