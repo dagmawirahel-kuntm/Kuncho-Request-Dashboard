@@ -1134,6 +1134,33 @@ export interface TaxPositionRow {
   reviewed_receipt_count: number
 }
 
+/** v_vendor_tax_receipts — the vendor page's own Tax Receipts section. */
+export interface VendorTaxReceipt {
+  id: string
+  vendor_id: string | null
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  withholding_amount: number | null
+  vendor_tin_on_receipt: string | null
+  status: VendorReceiptStatus
+  physical_received_at: string | null
+  document_path: string | null
+  document_bucket: string
+  document_name: string | null
+  project_id: string | null
+  project_name: string | null
+  expense_code: string | null
+  expense_id: string | null
+  grn_id: string | null
+  entered_by_name: string | null
+  verified_by_name: string | null
+  reviewed_by_name: string | null
+  entered_at: string | null
+  verified_at: string | null
+  reviewed_at: string | null
+}
+
 export interface ReceiptOutstanding {
   expense_id: string
   expense_code: string | null

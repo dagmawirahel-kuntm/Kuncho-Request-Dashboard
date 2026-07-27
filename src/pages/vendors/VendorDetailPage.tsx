@@ -3,13 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { Vendor, Expense, SourcingBundle, CpoBond, VendorAttachment, VendorAttachmentCategory, SourcingBundleItem } from '@/types/database'
+import type { Vendor, Expense, SourcingBundle, CpoBond, VendorAttachment, VendorAttachmentCategory, SourcingBundleItem, VendorTaxReceipt } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, User, CreditCard,
   FileText, Package, Shield, Check, X, Building2, Tag, ExternalLink,
   Plus, Trash2, AlertCircle, FileBadge, ScrollText, Upload, Download,
-  Eye, Loader2, PackageCheck,
+  Eye, Loader2, PackageCheck, Receipt,
 } from 'lucide-react'
 
 // Review-chain chip for tax receipts filed against a vendor document.
@@ -179,27 +180,23 @@ export default function VendorDetailPage() {
     enabled: !!id,
   })
 
-  // Tax receipts filed against this vendor's documents, keyed by the
-  // attachment they point at, so a document row can show its own
-  // review state without a second lookup per row.
+  // Tax receipts get their own section rather than being filed among
+  // the compliance documents below — those are a handful of long-lived
+  // licences and certificates whose value is being easy to scan, and
+  // transactional receipts would bury them once volume picks up.
   const { data: vendorTaxReceipts = [] } = useQuery({
     queryKey: ['vendor-tax-receipts', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('vendor_receipts')
-        .select('id,status,physical_received_at,vendor_attachment_id')
+        .from('v_vendor_tax_receipts')
+        .select('*')
         .eq('vendor_id', id!)
-        .not('vendor_attachment_id', 'is', null)
+        .order('receipt_date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      return data as { id: string; status: string; physical_received_at: string | null; vendor_attachment_id: string }[]
+      return data as VendorTaxReceipt[]
     },
     enabled: !!id,
   })
-
-  const taxReceiptByAttachment = useMemo(
-    () => new Map(vendorTaxReceipts.map(r => [r.vendor_attachment_id, r])),
-    [vendorTaxReceipts]
-  )
 
   const { data: docs = [] } = useQuery<VendorAttachment[]>({
     queryKey: ['vendor-documents', id],
@@ -725,6 +722,53 @@ export default function VendorDetailPage() {
           {/* ── Documents tab ── */}
           {tab === 'documents' && (
             <div className="p-4 space-y-4">
+              {/* Tax receipts, kept separate from the compliance documents
+                  below. Read straight off the receipt record — there is no
+                  second attachment row mirroring it, so nothing can fall out
+                  of step. */}
+              {vendorTaxReceipts.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <Receipt className="h-3.5 w-3.5 text-brand" /> Tax Receipts ({vendorTaxReceipts.length})
+                  </h4>
+                  <div className="rounded-xl border dark:border-slate-700 divide-y dark:divide-slate-700 overflow-hidden">
+                    {vendorTaxReceipts.map(r => (
+                      <div key={r.id} className="flex items-start gap-3 bg-white dark:bg-slate-800 px-4 py-3">
+                        <Receipt className="h-4 w-4 text-brand shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                              {r.receipt_no ?? r.document_name ?? 'Receipt'}
+                            </span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${VR_CHIP[r.status]?.cls ?? ''}`}>
+                              {VR_CHIP[r.status]?.label ?? r.status}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${r.physical_received_at ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                              <PackageCheck className="h-3 w-3" />
+                              {r.physical_received_at ? 'Paper in' : 'Paper not received'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                            {r.receipt_date ? formatDate(r.receipt_date) : 'No receipt date'}
+                            {r.vat_amount != null ? ` · VAT ${formatCurrency(Number(r.vat_amount))}` : ' · No VAT recorded'}
+                            {r.expense_code ? ` · ${r.expense_code}` : ''}
+                            {r.project_name ? ` · ${r.project_name}` : ''}
+                          </p>
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                            {r.entered_by_name ?? '—'}
+                            {r.verified_by_name ? ` → ${r.verified_by_name}` : ''}
+                            {r.reviewed_by_name ? ` → ${r.reviewed_by_name}` : ''}
+                          </p>
+                        </div>
+                        {r.document_path && (
+                          <PrivateDocLink path={r.document_path} bucket={r.document_bucket} title="View receipt" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(expired.length > 0 || expiringSoon.length > 0) && (
                 <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 space-y-1">
                   {expired.length > 0 && (
@@ -821,21 +865,6 @@ export default function VendorDetailPage() {
                               {cat?.label ?? doc.category}
                             </span>
                             {isExpired && <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">EXPIRED</span>}
-                            {/* Tax receipts filed against this vendor carry a review
-                                chain of their own (vendor_receipts, migration 158) —
-                                surfaced here so procurement sees the movement without
-                                leaving the vendor. */}
-                            {taxReceiptByAttachment.get(doc.id) && (
-                              <>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${VR_CHIP[taxReceiptByAttachment.get(doc.id)!.status]?.cls ?? ''}`}>
-                                  {VR_CHIP[taxReceiptByAttachment.get(doc.id)!.status]?.label ?? taxReceiptByAttachment.get(doc.id)!.status}
-                                </span>
-                                <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${taxReceiptByAttachment.get(doc.id)!.physical_received_at ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                                  <PackageCheck className="h-3 w-3" />
-                                  {taxReceiptByAttachment.get(doc.id)!.physical_received_at ? 'Paper in' : 'Paper not received'}
-                                </span>
-                              </>
-                            )}
                             {!isExpired && daysLeft !== null && daysLeft <= 60 && (
                               <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">Expires in {daysLeft}d</span>
                             )}
