@@ -1263,6 +1263,37 @@ export interface StockDeliveryConfirmationRow {
   confirmed_at: string | null
   is_confirmed: boolean
   has_discrepancy: boolean
+  // Migration 157. Same vocabulary as the GRN's own per-line verdict, so
+  // a vendor delivery and a site-to-site transfer read identically.
+  quality_status: GrnQualityStatus | null
+  stock_return_request_id: string | null
+  // 'project_transfer' means it came off another site rather than out of
+  // the warehouse; source_project_* names where from.
+  source_kind: 'warehouse_dispatch' | 'project_transfer'
+  source_project_id: string | null
+  source_project_name: string | null
+}
+
+// One row per GRN with its worst line verdict — the register that lets
+// "what did we receive, and was any of it rejected" be answered without
+// opening each purchase order (migration 157).
+export interface GrnRegisterRow {
+  id: string
+  grn_code: string | null
+  received_at: string
+  sourcing_bundle_id: string
+  bundle_code: string | null
+  vendor_name: string | null
+  received_by: string | null
+  received_by_name: string | null
+  photo_url: string | null
+  notes: string | null
+  line_count: number
+  total_quantity_received: number
+  damaged_lines: number
+  rejected_lines: number
+  worst_quality: GrnQualityStatus
+  ledgers: string | null
 }
 
 export type StockReturnRequestStatus = 'pending' | 'received' | 'rejected'

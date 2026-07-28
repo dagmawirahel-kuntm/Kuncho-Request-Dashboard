@@ -11,8 +11,16 @@ import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
-import type { Project, ProjectCostGroupBudget, Order, LaborAllocation, WorkOrder, StockDeliveryConfirmationRow } from '@/types/database'
-import { Wallet, Clock3, Receipt, TrendingUp, TrendingDown, AlertTriangle, ShoppingCart, HardHat, Hammer, Truck, CheckCircle2 } from 'lucide-react'
+import type { Project, ProjectCostGroupBudget, Order, LaborAllocation, WorkOrder, StockDeliveryConfirmationRow, GrnQualityStatus } from '@/types/database'
+import { Wallet, Clock3, Receipt, TrendingUp, TrendingDown, AlertTriangle, ShoppingCart, HardHat, Hammer, Truck, CheckCircle2, PackageCheck } from 'lucide-react'
+
+// Shared with the GRN form's own palette so the same word looks the same
+// wherever material is checked in.
+const DELIVERY_QUALITY_CLS: Record<GrnQualityStatus, string> = {
+  accepted: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-300',
+  damaged:  'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300',
+  rejected: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-300',
+}
 
 interface BudgetSummary {
   project_id: string
@@ -33,7 +41,7 @@ export default function ProjectManagerViewPage() {
   const { data: staff } = useMyStaffId()
   const staffId = staff?.id
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [confirmDrafts, setConfirmDrafts] = useState<Record<string, { quantity: string; notes: string }>>({})
+  const [confirmDrafts, setConfirmDrafts] = useState<Record<string, { quantity: string; notes: string; quality: GrnQualityStatus }>>({})
 
   const { data: myProjects = [], isLoading: loadingProjects } = useQuery({
     queryKey: ['pm-view-my-projects', staffId],
@@ -142,8 +150,28 @@ export default function ProjectManagerViewPage() {
     enabled: projectIds.length > 0,
   })
 
+  // The other half of the same record: what has already landed on site.
+  // Pending confirmations answer "what am I still waiting on"; this
+  // answers "what actually arrived, in what state" — which is the
+  // question anyone asks when material goes missing or turns up broken.
+  const { data: recentDeliveries = [] } = useQuery({
+    queryKey: ['pm-view-recent-deliveries', projectIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_stock_delivery_confirmations')
+        .select('*')
+        .in('project_id', projectIds)
+        .eq('is_confirmed', true)
+        .order('confirmed_at', { ascending: false })
+        .limit(15)
+      if (error) throw error
+      return data as StockDeliveryConfirmationRow[]
+    },
+    enabled: projectIds.length > 0,
+  })
+
   function draftFor(stockIssueId: string, dispatchedQty: number) {
-    return confirmDrafts[stockIssueId] ?? { quantity: String(dispatchedQty), notes: '' }
+    return confirmDrafts[stockIssueId] ?? { quantity: String(dispatchedQty), notes: '', quality: 'accepted' as GrnQualityStatus }
   }
 
   async function handleConfirmDelivery(stockIssueId: string) {
@@ -154,11 +182,13 @@ export default function ProjectManagerViewPage() {
       stock_issue_id: stockIssueId,
       quantity_confirmed: qty,
       condition_notes: draft.notes || null,
+      quality_status: draft.quality ?? 'accepted',
     }])
     if (error) { toast(error.message, 'error'); return }
     setConfirmDrafts(d => { const n = { ...d }; delete n[stockIssueId]; return n })
     qc.invalidateQueries({ queryKey: ['pm-view-pending-deliveries'] })
-    toast('Delivery confirmed', 'success')
+    qc.invalidateQueries({ queryKey: ['pm-view-recent-deliveries'] })
+    toast('Delivery checked in', 'success')
   }
 
   const budgetUsedPct = summary && summary.total_budget > 0
@@ -269,8 +299,17 @@ export default function ProjectManagerViewPage() {
                             {d.project_name} · {d.quantity_dispatched} dispatched on {formatDate(d.issued_date)}
                           </p>
                         </div>
+                        {/* Material off another site behaves nothing like a
+                            warehouse dispatch — you're accepting whatever
+                            condition the other project left it in, so where
+                            it came from belongs on the row. */}
+                        {d.source_kind === 'project_transfer' && (
+                          <span className="shrink-0 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                            Transfer from {d.source_project_name ?? 'another project'}
+                          </span>
+                        )}
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-[8rem_1fr_auto] gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-[7rem_9rem_1fr_auto] gap-2">
                         <input
                           type="number" min={0} step="any"
                           value={draft.quantity}
@@ -278,24 +317,80 @@ export default function ProjectManagerViewPage() {
                           className="rounded-md border px-2 py-1.5 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40"
                           placeholder="Qty received"
                         />
+                        <select
+                          value={draft.quality}
+                          onChange={e => setConfirmDrafts(prev => ({ ...prev, [d.stock_issue_id]: { ...draft, quality: e.target.value as GrnQualityStatus } }))}
+                          className={`rounded-md border px-2 py-1.5 text-xs font-medium dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-brand/40 ${DELIVERY_QUALITY_CLS[draft.quality]}`}
+                        >
+                          <option value="accepted">Accepted</option>
+                          <option value="damaged">Damaged</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
                         <input
                           type="text"
                           value={draft.notes}
                           onChange={e => setConfirmDrafts(prev => ({ ...prev, [d.stock_issue_id]: { ...draft, notes: e.target.value } }))}
                           className="rounded-md border px-2 py-1.5 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                          placeholder="Condition notes (optional)"
+                          placeholder={draft.quality === 'accepted' ? 'Note (optional)' : 'What was wrong with it?'}
                         />
                         <button
                           onClick={() => handleConfirmDelivery(d.stock_issue_id)}
                           className="flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
                         >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Check In
                         </button>
                       </div>
                     </div>
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {recentDeliveries.length > 0 && (
+            <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-5 space-y-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                <PackageCheck className="h-4 w-4 text-brand" /> Delivered to Site
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b dark:border-slate-700">
+                      <th className="py-2 pr-3">Item</th>
+                      <th className="py-2 pr-3">Project</th>
+                      <th className="py-2 pr-3">Source</th>
+                      <th className="py-2 pr-3 text-right">Sent</th>
+                      <th className="py-2 pr-3 text-right">Received</th>
+                      <th className="py-2 pr-3">Quality</th>
+                      <th className="py-2">Checked in</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y dark:divide-slate-700">
+                    {recentDeliveries.map(d => (
+                      <tr key={d.stock_issue_id} className={d.has_discrepancy ? 'bg-amber-50/50 dark:bg-amber-900/10' : undefined}>
+                        <td className="py-2 pr-3 font-medium text-slate-700 dark:text-slate-200">{d.stock_item_name}</td>
+                        <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">{d.project_name}</td>
+                        <td className="py-2 pr-3 text-xs text-slate-500 dark:text-slate-400">
+                          {d.source_kind === 'project_transfer' ? (d.source_project_name ?? 'Another project') : 'Warehouse'}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-slate-500 dark:text-slate-400">{d.quantity_dispatched}</td>
+                        <td className={`py-2 pr-3 text-right tabular-nums ${d.has_discrepancy ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                          {d.quantity_confirmed}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${DELIVERY_QUALITY_CLS[d.quality_status ?? 'accepted']}`}>
+                            {d.quality_status ?? 'accepted'}
+                          </span>
+                        </td>
+                        <td className="py-2 text-xs text-slate-400">{d.confirmed_at ? formatDate(d.confirmed_at) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Highlighted rows arrived short or over what was sent. The quality verdict uses the same scale as a GRN.
+              </p>
             </div>
           )}
 
