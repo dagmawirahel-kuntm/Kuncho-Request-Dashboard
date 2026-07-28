@@ -43,7 +43,7 @@ export default function StaffFfeSkillsPage() {
   const { data: roles = [] } = useQuery({
     queryKey: ['ffe-job-descriptions-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ffe_job_descriptions').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('job_descriptions').select('*').eq('active', true).order('sort_order')
       if (error) throw error
       return data as FfeJobDescription[]
     },
@@ -52,7 +52,7 @@ export default function StaffFfeSkillsPage() {
   const { data: responsibilities = [] } = useQuery({
     queryKey: ['ffe-key-responsibilities-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ffe_key_responsibilities').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('key_responsibilities').select('*').eq('active', true).order('sort_order')
       if (error) throw error
       return data as FfeKeyResponsibility[]
     },
@@ -61,12 +61,12 @@ export default function StaffFfeSkillsPage() {
   // Full history, not just the current score — the whole point is a
   // visible progression, not a snapshot. "Current" is derived here as
   // the most recent entry per responsibility, matching
-  // v_staff_ffe_current_scores' own logic exactly.
+  // v_staff_current_scores' own logic exactly.
   const { data: ratings = [] } = useQuery({
     queryKey: ['staff-ffe-skill-ratings', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('staff_ffe_skill_ratings')
+        .from('staff_skill_ratings')
         .select('*')
         .eq('staff_id', id!)
         .order('rated_at', { ascending: true })
@@ -79,7 +79,7 @@ export default function StaffFfeSkillsPage() {
   const { data: roleSummaries = [] } = useQuery({
     queryKey: ['staff-ffe-role-summary', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_ffe_role_summary').select('*').eq('staff_id', id!)
+      const { data, error } = await supabase.from('v_staff_role_summary').select('*').eq('staff_id', id!)
       if (error) throw error
       return data as StaffFfeRoleSummaryRow[]
     },
@@ -109,7 +109,7 @@ export default function StaffFfeSkillsPage() {
   const summaryByRole = useMemo(() => new Map(roleSummaries.map(s => [s.job_description_id, s])), [roleSummaries])
 
   async function submitRating(responsibilityId: string, score: number, notes: string) {
-    const { error } = await supabase.from('staff_ffe_skill_ratings').insert([{
+    const { error } = await supabase.from('staff_skill_ratings').insert([{
       staff_id: id!,
       responsibility_id: responsibilityId,
       score,

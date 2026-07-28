@@ -21,7 +21,7 @@ export default function FfeJobDescriptionsPage() {
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ['ffe-job-descriptions', showInactive],
     queryFn: async () => {
-      let q = supabase.from('ffe_job_descriptions').select('*').order('sort_order')
+      let q = supabase.from('job_descriptions').select('*').order('sort_order')
       if (!showInactive) q = q.eq('active', true)
       const { data, error } = await q
       if (error) throw error
@@ -32,7 +32,7 @@ export default function FfeJobDescriptionsPage() {
   const { data: responsibilities = [] } = useQuery({
     queryKey: ['ffe-key-responsibilities-all', showInactive],
     queryFn: async () => {
-      let q = supabase.from('ffe_key_responsibilities').select('*').order('sort_order')
+      let q = supabase.from('key_responsibilities').select('*').order('sort_order')
       if (!showInactive) q = q.eq('active', true)
       const { data, error } = await q
       if (error) throw error
@@ -121,13 +121,13 @@ function RoleCard({ role, responsibilities, expanded, onToggle, canManage, onEdi
   const [editingResp, setEditingResp] = useState<FfeKeyResponsibility | 'new' | null>(null)
 
   async function toggleRoleActive() {
-    const { error } = await supabase.from('ffe_job_descriptions').update({ active: !role.active }).eq('id', role.id)
+    const { error } = await supabase.from('job_descriptions').update({ active: !role.active }).eq('id', role.id)
     if (error) { toast(error.message, 'error'); return }
     onChanged()
   }
 
   async function toggleRespActive(r: FfeKeyResponsibility) {
-    const { error } = await supabase.from('ffe_key_responsibilities').update({ active: !r.active }).eq('id', r.id)
+    const { error } = await supabase.from('key_responsibilities').update({ active: !r.active }).eq('id', r.id)
     if (error) { toast(error.message, 'error'); return }
     onChanged()
   }
@@ -206,8 +206,8 @@ function RoleModal({ role, onClose, onSaved }: { role: FfeJobDescription | null;
     setSaving(true)
     const payload = { role_name: roleName.trim(), role_overview: overview.trim() || null, sort_order: sortOrder }
     const { error } = role
-      ? await supabase.from('ffe_job_descriptions').update(payload).eq('id', role.id)
-      : await supabase.from('ffe_job_descriptions').insert([payload])
+      ? await supabase.from('job_descriptions').update(payload).eq('id', role.id)
+      : await supabase.from('job_descriptions').insert([payload])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     onSaved()
@@ -263,8 +263,8 @@ function ResponsibilityModal({ responsibility, jobDescriptionId, onClose, onSave
     setSaving(true)
     const payload = { job_description_id: jobDescriptionId, responsibility_title: title.trim(), responsibility_detail: detail.trim() || null, tier, sort_order: sortOrder }
     const { error } = responsibility
-      ? await supabase.from('ffe_key_responsibilities').update(payload).eq('id', responsibility.id)
-      : await supabase.from('ffe_key_responsibilities').insert([payload])
+      ? await supabase.from('key_responsibilities').update(payload).eq('id', responsibility.id)
+      : await supabase.from('key_responsibilities').insert([payload])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     onSaved()

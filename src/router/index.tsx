@@ -533,7 +533,7 @@ export const router = createBrowserRouter([
           // ── FF&E job descriptions & staff skill checklists: read for
           // everyone; write (roles/responsibilities and checklist toggles)
           // gated in-page to admin/operations_manager, matching
-          // ffe_job_descriptions/ffe_key_responsibilities/staff_ffe_checklist RLS (128).
+          // job_descriptions/key_responsibilities/staff_competency_checklist RLS (128).
           { path: 'ffe-job-descriptions', element: <FfeJobDescriptionsPage /> },
           { path: 'staff/:id/ffe-skills', element: <StaffFfeSkillsPage /> },
           // ── Role-based Operations & Construction views: each role lands

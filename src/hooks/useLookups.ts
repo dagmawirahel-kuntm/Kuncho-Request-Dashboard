@@ -462,7 +462,7 @@ export function useFfeJobDescriptions() {
     staleTime: 60000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('ffe_job_descriptions')
+        .from('job_descriptions')
         .select('id,role_name,role_overview,sort_order')
         .eq('active', true)
         .order('sort_order')

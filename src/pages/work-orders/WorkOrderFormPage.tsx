@@ -85,7 +85,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
   const { data: roles = [] } = useQuery({
     queryKey: ['ffe-job-descriptions-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ffe_job_descriptions').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('job_descriptions').select('*').eq('active', true).order('sort_order')
       if (error) throw error
       return data as FfeJobDescription[]
     },
@@ -94,7 +94,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
   const { data: responsibilities = [] } = useQuery({
     queryKey: ['ffe-key-responsibilities-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ffe_key_responsibilities').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('key_responsibilities').select('*').eq('active', true).order('sort_order')
       if (error) throw error
       return data as FfeKeyResponsibility[]
     },
@@ -109,7 +109,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
   const { data: currentScores = [] } = useQuery({
     queryKey: ['staff-ffe-current-scores', relevantResponsibilityId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_ffe_current_scores').select('*').eq('responsibility_id', relevantResponsibilityId!)
+      const { data, error } = await supabase.from('v_staff_current_scores').select('*').eq('responsibility_id', relevantResponsibilityId!)
       if (error) throw error
       return data as StaffFfeCurrentScoreRow[]
     },
