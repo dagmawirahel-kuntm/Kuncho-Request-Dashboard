@@ -115,6 +115,9 @@ export interface Staff {
   user_id: string | null
   department_id: string | null
   sub_team: string | null          // Operations/Construction only: e.g. "Workshop — Carpentry", "Site"
+  // Line manager (migration 161). Null is legal — department heads and
+  // Executive legitimately have none. Cycles rejected by trigger.
+  reports_to_id: string | null
   created_at: string
   updated_at: string
 }
@@ -1678,7 +1681,33 @@ export interface LeaveRequest {
   status: LeaveStatus
   approved_by: string | null
   approved_at: string | null
+  // Migration 161. Resolved at submission and stored, because who should
+  // have decided is a fact about that moment — recomputing it later would
+  // silently re-route history every time someone's manager changed.
+  assigned_approver_id: string | null
+  routing_basis: LeaveRoutingBasis | null
   created_at: string
+}
+
+// Which tier of the fallback chain answered: line manager, then primary
+// department head, then HR, then admin as the terminal tier.
+export type LeaveRoutingBasis = 'line_manager' | 'department_head' | 'hr_officer' | 'admin' | 'unresolved'
+
+// Secondary (hybrid) department membership — descriptive only, grants no
+// authority. staff.department_id remains the primary (migration 161).
+export interface StaffDepartmentMembership {
+  id: string
+  staff_id: string
+  department_id: string
+  note: string | null
+  created_at: string
+}
+
+export interface OrgStructureGaps {
+  staff_without_manager: number
+  staff_without_department: number
+  departments_without_head: number
+  staff_without_login: number
 }
 export type LeaveRequestInsert = Omit<LeaveRequest, 'id' | 'approved_by' | 'approved_at' | 'created_at'>
 

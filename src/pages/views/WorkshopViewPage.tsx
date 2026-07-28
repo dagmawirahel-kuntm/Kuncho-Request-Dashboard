@@ -48,7 +48,7 @@ export default function WorkshopViewPage() {
   const { data: skillLevels = [] } = useQuery({
     queryKey: ['workshop-view-skill-levels'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_ffe_skill_level').select('*')
+      const { data, error } = await supabase.from('v_staff_skill_level').select('*')
       if (error) throw error
       return data as StaffFfeSkillLevelRow[]
     },

@@ -7,7 +7,7 @@ import type { Staff } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDepartments } from '@/hooks/useLookups'
-import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye, UserX } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye, UserX, Network } from 'lucide-react'
 
 // ── Department colour palette (shared) ────────────────────────────────────────
 import { DEPT_COLORS, getDeptColor, getManagementLevelMeta, initials } from '@/lib/departments'
@@ -39,6 +39,10 @@ export default function StaffPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeptId, setBulkDeptId] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
+  // Reporting-line tooling, deliberately mirroring the department tool
+  // above rather than inventing a second interaction for the same job.
+  const [noManagerOnly, setNoManagerOnly] = useState(false)
+  const [bulkManagerId, setBulkManagerId] = useState('')
 
   // Assignment is restricted to admin/hr_officer — everyone else sees the
   // org department as read-only, enforced again server-side by the
@@ -66,6 +70,7 @@ export default function StaffPage() {
     const depts: Record<string, number> = {}
     let monthlyPayroll = 0
     let unassigned = 0
+    let noManager = 0
     for (const s of data) {
       const d = s.staff_type ?? 'Unknown'
       depts[d] = (depts[d] ?? 0) + 1
@@ -73,9 +78,23 @@ export default function StaffPage() {
         monthlyPayroll += s.monthly_salary
       }
       if (!s.department_id) unassigned++
+      if (!s.reports_to_id) noManager++
     }
-    return { depts, monthlyPayroll, total: data.length, unassigned }
+    return { depts, monthlyPayroll, total: data.length, unassigned, noManager }
   }, [data])
+
+  // Name lookup for the manager column — the roster is already loaded, so
+  // this avoids a second round trip just to resolve reports_to_id.
+  const nameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of data) m.set(s.id, s.employee_name)
+    return m
+  }, [data])
+
+  const managerOptions = useMemo(
+    () => [...data].sort((a, b) => a.employee_name.localeCompare(b.employee_name)),
+    [data]
+  )
 
   const deptTabs = ['All', ...Object.keys(DEPT_COLORS), 'Unknown']
 
@@ -89,6 +108,9 @@ export default function StaffPage() {
     }
     if (unassignedOnly) {
       list = list.filter(s => !s.department_id)
+    }
+    if (noManagerOnly) {
+      list = list.filter(s => !s.reports_to_id)
     }
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -106,7 +128,7 @@ export default function StaffPage() {
       if (aUnassigned !== bUnassigned) return aUnassigned - bUnassigned
       return a.employee_name.localeCompare(b.employee_name)
     })
-  }, [data, deptFilter, unassignedOnly, search])
+  }, [data, deptFilter, unassignedOnly, noManagerOnly, search])
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
@@ -123,6 +145,37 @@ export default function StaffPage() {
     qc.invalidateQueries({ queryKey: ['staff'] })
     qc.invalidateQueries({ queryKey: ['staff-department-ids'] })
     toast('Department updated', 'success')
+  }
+
+  // The database rejects self-reference and loops at any depth
+  // (migration 161); this surfaces that rejection rather than
+  // duplicating the rule badly on the client.
+  async function handleAssignManager(staffId: string, managerId: string | null) {
+    const { error } = await supabase.from('staff').update({ reports_to_id: managerId }).eq('id', staffId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['staff'] })
+    qc.invalidateQueries({ queryKey: ['org-structure-gaps'] })
+    toast('Manager updated', 'success')
+  }
+
+  async function handleBulkAssignManager() {
+    if (selectedIds.size === 0) return
+    if (bulkManagerId && selectedIds.has(bulkManagerId)) {
+      toast("That person is in the selection — someone can't report to themselves", 'error')
+      return
+    }
+    setBulkSaving(true)
+    const { error } = await supabase
+      .from('staff')
+      .update({ reports_to_id: bulkManagerId || null })
+      .in('id', Array.from(selectedIds))
+    setBulkSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['staff'] })
+    qc.invalidateQueries({ queryKey: ['org-structure-gaps'] })
+    toast(`Manager updated for ${selectedIds.size} staff`, 'success')
+    setSelectedIds(new Set())
+    setBulkManagerId('')
   }
 
   function toggleSelected(id: string) {
@@ -153,7 +206,7 @@ export default function StaffPage() {
     setBulkDeptId('')
   }
 
-  const colCount = canAssign ? 11 : 10
+  const colCount = canAssign ? 12 : 11
 
   return (
     <div className="space-y-5">
@@ -172,7 +225,7 @@ export default function StaffPage() {
       </div>
 
       {/* Stat cards */}
-      <div className={`grid grid-cols-2 gap-4 ${canAssign ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
+      <div className={`grid grid-cols-2 gap-4 ${canAssign ? 'sm:grid-cols-6' : 'sm:grid-cols-4'}`}>
         <StatCard label="Total Staff" value={String(stats.total)} icon={<Users className="h-5 w-5" />} />
         <StatCard label="Monthly Payroll" value={formatCurrency(stats.monthlyPayroll)} icon={<Wallet className="h-5 w-5" />} sub="Monthly-paid only" />
         <StatCard label="Office" value={String(stats.depts['Office'] ?? 0)} icon={<Users className="h-4 w-4" />} sub="Management & admin" />
@@ -184,6 +237,19 @@ export default function StaffPage() {
               value={String(stats.unassigned)}
               icon={<UserX className="h-4 w-4" />}
               sub={unassignedOnly ? 'Showing only these' : 'Click to filter'}
+            />
+          </button>
+        )}
+        {/* Passive visibility, same pattern as the unassigned count: a
+            number someone sees every time they open the page, so the gap
+            can't quietly grow back. */}
+        {canAssign && (
+          <button onClick={() => setNoManagerOnly(v => !v)} className="text-left">
+            <StatCard
+              label="No Manager"
+              value={String(stats.noManager)}
+              icon={<Network className="h-4 w-4" />}
+              sub={noManagerOnly ? 'Showing only these' : 'Click to filter'}
             />
           </button>
         )}
@@ -257,6 +323,24 @@ export default function StaffPage() {
           >
             {bulkSaving ? 'Applying…' : `Set department for ${selectedIds.size}`}
           </button>
+          <span className="mx-1 h-5 w-px bg-brand/20" aria-hidden />
+          <select
+            className="rounded-md border px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            value={bulkManagerId}
+            onChange={e => setBulkManagerId(e.target.value)}
+          >
+            <option value="">No manager</option>
+            {managerOptions.map(m => (
+              <option key={m.id} value={m.id}>{m.employee_name}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleBulkAssignManager}
+            disabled={bulkSaving}
+            className="rounded-md border border-brand/40 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/10 disabled:opacity-50"
+          >
+            {bulkSaving ? 'Applying…' : `Set manager for ${selectedIds.size}`}
+          </button>
           <button
             onClick={() => setSelectedIds(new Set())}
             className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -289,6 +373,7 @@ export default function StaffPage() {
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Employee</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Department</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Org Dept.</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Reports To</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Workplace</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Level</th>
                   <th className="text-right px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Salary</th>
@@ -369,6 +454,29 @@ export default function StaffPage() {
                           <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                             Unassigned
                           </span>
+                        )}
+                      </td>
+
+                      {/* Reports To — the manager assignment tool. The
+                          database rejects self-reference and loops at any
+                          depth, so a bad pick surfaces as an error rather
+                          than being silently accepted. */}
+                      <td className="px-4 py-3">
+                        {canAssign ? (
+                          <select
+                            className="rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 max-w-[10rem]"
+                            value={s.reports_to_id ?? ''}
+                            onChange={e => handleAssignManager(s.id, e.target.value || null)}
+                          >
+                            <option value="">No manager</option>
+                            {managerOptions.filter(m => m.id !== s.id).map(m => (
+                              <option key={m.id} value={m.id}>{m.employee_name}</option>
+                            ))}
+                          </select>
+                        ) : s.reports_to_id ? (
+                          <span className="text-slate-600 dark:text-slate-300">{nameById.get(s.reports_to_id) ?? '—'}</span>
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600">—</span>
                         )}
                       </td>
 
