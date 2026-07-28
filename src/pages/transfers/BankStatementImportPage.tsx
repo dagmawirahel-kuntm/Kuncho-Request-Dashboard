@@ -264,6 +264,9 @@ function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expen
   if (lines.length === 0) return <div className="py-6 text-center text-xs text-slate-400">No lines.</div>
   const totalDebit = lines.reduce((s, l) => s + (l.debit_amount ?? 0), 0)
   const totalCredit = lines.reduce((s, l) => s + (l.credit_amount ?? 0), 0)
+  const offsetLines = lines.filter(l => l.variance_amount != null && Number(l.variance_amount) !== 0)
+  const offsetCount = offsetLines.length
+  const totalVariance = offsetLines.reduce((s, l) => s + Number(l.variance_amount ?? 0), 0)
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -276,6 +279,7 @@ function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expen
             <th className="px-4 py-2">Reference</th>
             <th className="px-4 py-2">Status</th>
             <th className="px-4 py-2">Matched Expense</th>
+            <th className="px-4 py-2 text-right">Offset</th>
           </tr>
         </thead>
         <tbody className="divide-y dark:divide-slate-700">
@@ -298,6 +302,7 @@ function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expen
                   </Link>
                 ) : '—'}
               </td>
+              <td className="px-4 py-2 text-right whitespace-nowrap"><VarianceCell line={l} /></td>
             </tr>
           ))}
         </tbody>
@@ -307,9 +312,48 @@ function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expen
             <td className="px-4 py-2 text-right tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalDebit)}</td>
             <td className="px-4 py-2 text-right tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalCredit)}</td>
             <td className="px-4 py-2 text-slate-500 dark:text-slate-400" colSpan={3}>Net: {formatCurrency(totalCredit - totalDebit)}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-slate-800 dark:text-slate-100">
+              {offsetCount > 0 ? formatCurrency(totalVariance) : '—'}
+            </td>
           </tr>
         </tfoot>
       </table>
+      {offsetCount > 0 && (
+        <div className="flex items-start gap-2 border-t dark:border-slate-700 bg-amber-50 dark:bg-amber-900/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <p>
+            {offsetCount} matched line{offsetCount === 1 ? '' : 's'} {offsetCount === 1 ? 'does' : 'do'} not fully offset the expense
+            {offsetCount === 1 ? ' it' : ' they'} matched — net {formatCurrency(totalVariance)}. The reference still identifies the payment, so the match stands;
+            the residual is shown so it can be settled or written off deliberately.
+          </p>
+        </div>
+      )}
     </div>
+  )
+}
+
+// The statement line and the expense it matched should be the same
+// money. When they aren't, the amount of the difference is the thing
+// finance actually needs to see — a partial settlement, a bank charge
+// deducted at source, or a wrong match.
+function VarianceCell({ line }: { line: BankStatementLine }) {
+  if (line.match_status !== 'matched_expense' || line.variance_amount == null) {
+    return <span className="text-slate-300 dark:text-slate-600">—</span>
+  }
+  if (Number(line.variance_amount) === 0) {
+    return <span className="text-xs text-emerald-600 dark:text-emerald-400">Exact</span>
+  }
+  const over = Number(line.variance_amount) > 0
+  return (
+    <span
+      className={`tabular-nums text-xs font-medium ${over ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'}`}
+      title={
+        `Statement line ${formatCurrency(Math.abs(Number(line.debit_amount) || Number(line.credit_amount) || 0))} vs expense ` +
+        `${formatCurrency(Number(line.matched_expense_amount ?? 0))}`
+      }
+    >
+      {over ? '+' : '−'}{formatCurrency(Math.abs(Number(line.variance_amount)))}
+      <span className="ml-1 font-normal text-slate-400">{over ? 'over' : 'short'}</span>
+    </span>
   )
 }

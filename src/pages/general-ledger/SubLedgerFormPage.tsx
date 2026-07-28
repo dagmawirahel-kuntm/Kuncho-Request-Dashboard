@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -71,6 +72,7 @@ function SubLedgerFormPageBody({ id, record, presetParentId }: { id?: string; re
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'sub-category')
     qc.invalidateQueries({ queryKey: ['sub-categories-lookup'] })
     qc.invalidateQueries({ queryKey: ['general-ledger'] })
     toast(isEdit ? 'Sub ledger updated' : 'Sub ledger created', 'success')

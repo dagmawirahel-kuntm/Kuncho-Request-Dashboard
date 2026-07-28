@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -117,6 +118,7 @@ export default function TransportPaymentFormPage() {
     const { error: linkErr } = await supabase.from('transportation_requests').update({ expense_id: data.id }).eq('id', job.id)
     setSaving(false)
     if (linkErr) { toast(`Expense saved but linking to the job failed: ${linkErr.message}`, 'error') }
+    dropRecordCache(qc, 'transport-for-payment')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['transport-for-expense', job.id] })
     toast('Payment request submitted', 'success')

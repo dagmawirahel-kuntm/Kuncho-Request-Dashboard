@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -158,6 +159,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
       .update({ approval_status: next, ...extra })
       .eq('id', id!)
     if (err) { toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'payroll-entry', 'payroll-staff')
     qc.invalidateQueries({ queryKey: ['payroll'] })
     qc.invalidateQueries({ queryKey: ['payroll-entry', id] })
     toast('Approval status updated', 'success')
@@ -189,6 +191,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
     }
 
     setSaving(false)
+    dropRecordCache(qc, 'payroll-entry', 'payroll-staff')
     qc.invalidateQueries({ queryKey: ['payroll'] })
     qc.invalidateQueries({ queryKey: ['payroll-lookup'] })
     qc.invalidateQueries({ queryKey: ['payroll-staff', payrollId] })

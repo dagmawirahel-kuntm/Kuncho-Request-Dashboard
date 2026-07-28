@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -68,6 +69,7 @@ function AccountFormPageBody({ id, record }: { id?: string; record?: Account }) 
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'account')
     qc.invalidateQueries({ queryKey: ['accounts'] })
     qc.invalidateQueries({ queryKey: ['accounts-lookup'] })
     toast(isEdit ? 'Account updated' : 'Account created', 'success')

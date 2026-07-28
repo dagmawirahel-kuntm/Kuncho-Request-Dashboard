@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -37,6 +38,17 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
       {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
     </div>
   )
+}
+
+const EXPENSE_TYPE_LABEL: Record<string, string> = {
+  general: 'expense',
+  purchase_order: 'purchase order',
+  vrf: 'VRF settlement',
+  cpo_bond: 'CPO bond',
+  fuel: 'fuel request',
+  subcontract: 'subcontract certificate',
+  maintenance: 'fleet record',
+  property_rent: 'rent payment',
 }
 
 const UOM_OPTIONS = ['Pcs', 'Kg', 'L', 'm', 'm²', 'm³', 'Hr', 'Day', 'Month', 'Set', 'Other']
@@ -442,16 +454,53 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.vendor_id, vendors])
 
+  // The general ledger follows the nature of the engagement: a rent
+  // payment belongs to Property Rent, a subcontract certificate to Sub
+  // Contractors, a purchase order to whatever its line items were
+  // classified as. Without it there's no expense-side account to debit
+  // and the ledger silently refuses to post the payment (migration 105).
+  //
+  // Resolved by asking the database (migration 154's
+  // resolve_expense_category) rather than keeping a second copy of the
+  // mapping here — so what the form shows is exactly what the trigger
+  // would store, and the two can't drift apart.
+  const bundleForCategory = record?.sourcing_bundle_id ?? form.sourcing_bundle_id ?? null
+  const { data: defaultCategoryId } = useQuery({
+    queryKey: ['default-expense-category', form.expense_type, bundleForCategory],
+    enabled: !!form.expense_type && form.expense_type !== 'general',
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('resolve_expense_category', {
+        p_expense_type: form.expense_type,
+        p_sourcing_bundle_id: bundleForCategory,
+      })
+      if (error) throw error
+      return (data as string | null) ?? null
+    },
+  })
+
+  // Fill-only, the same rule the database trigger follows: a ledger
+  // someone picked by hand stays picked, and re-saving can't revert it.
+  // Derived rather than written into form state by an effect, so the
+  // default can't be mistaken for an edit and there's no render cascade.
+  const effectiveCategoryId = form.category_id ?? defaultCategoryId ?? null
+  const categoryIsDefaulted = !form.category_id && !!defaultCategoryId
+
   async function handleSave() {
     setError(''); setSaving(true)
     let expenseId = id
+    // Persist the ledger the form is actually showing. The database
+    // trigger would fill the same value anyway (migration 154), but
+    // saving it explicitly keeps what was on screen and what lands in
+    // the row identical, rather than depending on the two agreeing.
+    const payload = { ...form, category_id: effectiveCategoryId }
     if (isEdit) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: err } = await supabase.from('expenses').update(form as any).eq('id', id!)
+      const { error: err } = await supabase.from('expenses').update(payload as any).eq('id', id!)
       if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: err } = await supabase.from('expenses').insert([form as any]).select('id').single()
+      const { data, error: err } = await supabase.from('expenses').insert([payload as any]).select('id').single()
       if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
       expenseId = (data as any).id
       // Link to PR line item if this expense was created from a purchase request
@@ -471,6 +520,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       }
     }
     setSaving(false)
+    dropRecordCache(qc, 'expense', 'pr-for-expense', 'pr-line-for-expense', 'vrf-for-expense', 'bundle-for-expense', 'property-for-expense', 'expense-linked-orders', 'expense-linked-batch-payments', 'expense-linked-cash-advances', 'expense-fuel-vehicle', 'expense-linked-source', 'expense-transport-job', 'default-expense-category')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
     toast(isEdit ? 'Expense updated' : 'Expense created', 'success')
@@ -775,7 +825,17 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       <SectionHeader title="Classification" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="General Ledger">
-          <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
+          <SearchableSelect value={effectiveCategoryId} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
+          {categoryIsDefaulted && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              Set automatically from this {EXPENSE_TYPE_LABEL[form.expense_type ?? 'general'] ?? 'expense'}. Change it if the posting belongs elsewhere.
+            </p>
+          )}
+          {!effectiveCategoryId && (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+              Without a general ledger this expense can't post to the ledger when it's paid.
+            </p>
+          )}
         </Field>
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />

@@ -892,9 +892,16 @@ export interface BankStatementLine {
   matched_expense_id: string | null
   transfer_id: string | null
   match_status: BankStatementLineMatchStatus
+  // Recorded at match time (migration 154), not derived on read — the
+  // expense's amount can be edited later, and what the reconciliation
+  // record needs is what the two sides were when they were matched.
+  matched_expense_amount: number | null
+  // Statement line amount minus matched expense amount. Negative = the
+  // line only partly offsets the expense, positive = it exceeds it.
+  variance_amount: number | null
   created_at: string
 }
-export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status'>
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
@@ -962,12 +969,21 @@ export interface GoodsReceivedNote {
 }
 export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
 
+// Per-line quality verdict at receipt (migration 159). 'damaged' still
+// enters stock — the material is physically on site and has to be
+// accounted for; 'rejected' was refused at the door and does not.
+export type GrnQualityStatus = 'accepted' | 'damaged' | 'rejected'
+
 export interface GoodsReceivedNoteItem {
   id: string
   grn_id: string
   sourcing_bundle_item_id: string
   quantity_received: number | null
   condition_notes: string | null
+  // Per-line, because one bundle can mix ledgers. Supersedes the
+  // header-level goods_received_notes.category_id.
+  category_id: string | null
+  quality_status: GrnQualityStatus
   created_at: string
 }
 export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at'>
@@ -1443,6 +1459,37 @@ export interface StockDeliveryConfirmationRow {
   confirmed_at: string | null
   is_confirmed: boolean
   has_discrepancy: boolean
+  // Migration 160. Same vocabulary as the GRN's own per-line verdict, so
+  // a vendor delivery and a site-to-site transfer read identically.
+  quality_status: GrnQualityStatus | null
+  stock_return_request_id: string | null
+  // 'project_transfer' means it came off another site rather than out of
+  // the warehouse; source_project_* names where from.
+  source_kind: 'warehouse_dispatch' | 'project_transfer'
+  source_project_id: string | null
+  source_project_name: string | null
+}
+
+// One row per GRN with its worst line verdict — the register that lets
+// "what did we receive, and was any of it rejected" be answered without
+// opening each purchase order (migration 160).
+export interface GrnRegisterRow {
+  id: string
+  grn_code: string | null
+  received_at: string
+  sourcing_bundle_id: string
+  bundle_code: string | null
+  vendor_name: string | null
+  received_by: string | null
+  received_by_name: string | null
+  photo_url: string | null
+  notes: string | null
+  line_count: number
+  total_quantity_received: number
+  damaged_lines: number
+  rejected_lines: number
+  worst_quality: GrnQualityStatus
+  ledgers: string | null
 }
 
 export type StockReturnRequestStatus = 'pending' | 'received' | 'rejected'
@@ -1459,9 +1506,28 @@ export interface StockReturnRequest {
   confirmed_by: string | null
   confirmed_at: string | null
   stock_receipt_id: string | null
+  // NULL returns the material to the warehouse; set transfers it
+  // straight to another project, with no warehouse leg (migration 159).
+  destination_project_id: string | null
   created_at: string
 }
-export type StockReturnRequestInsert = Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+export type StockReturnRequestInsert =
+  Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+  & Partial<Pick<StockReturnRequest, 'destination_project_id'>>
+
+// What a project physically still holds: issued to it, less what has
+// already gone back or is awaiting confirmation (migration 159).
+export interface ProjectMaterialBalance {
+  project_id: string
+  project_name: string | null
+  stock_item_id: string
+  item_name: string
+  unit: string | null
+  qty_issued: number
+  qty_returned: number
+  qty_pending: number
+  qty_available_to_return: number
+}
 
 // ── Tool Units ────────────────────────────────────────────────────
 export interface ToolUnit {
@@ -1828,6 +1894,17 @@ export interface LedgerPostingFailure {
   resolved: boolean
   resolved_at: string | null
   resolved_by: string | null
+}
+
+// ── Default general ledger per engagement type (migration 154) ─────
+// Auto-posting needs an expense-side account to debit, which comes from
+// expenses.category_id. This is the default applied when an expense has
+// none of its own — never an override of one a person chose.
+export interface ExpenseTypeLedgerDefault {
+  expense_type: ExpenseType
+  category_id: string
+  notes: string | null
+  updated_at: string
 }
 
 // ── General Ledger reporting views/functions (migration 107) ──────

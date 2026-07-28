@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -216,6 +217,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     const { error: err } = await supabase.from('transportation_requests').update(patch).eq('id', id!)
     if (err) { toast(err.message, 'error'); return }
     await syncVehicle(record?.vehicle_id, next)
+    dropRecordCache(qc, 'transport-request', 'sourcing-bundle-for-transport', 'transport-linked-expense')
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['transport-request', id] })
     qc.invalidateQueries({ queryKey: ['fleet-active-jobs'] })
@@ -238,6 +240,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'transport-request', 'sourcing-bundle-for-transport', 'transport-linked-expense')
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['fleet-active-jobs'] })
     if (bundleId) qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundleId] })

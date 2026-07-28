@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -119,6 +120,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'sale')
     qc.invalidateQueries({ queryKey: ['sales'] })
     toast(isEdit ? 'Sale updated' : 'Sale created', 'success')
     navigate('/sales')

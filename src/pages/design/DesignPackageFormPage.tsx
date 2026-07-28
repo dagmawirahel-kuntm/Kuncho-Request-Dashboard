@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -77,6 +78,7 @@ function DesignPackageFormPageBody({ id, record }: { id?: string; record?: Desig
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'design-package')
     qc.invalidateQueries({ queryKey: ['design-packages'] })
     if (isEdit) qc.invalidateQueries({ queryKey: ['design-package', id] })
     toast(isEdit ? 'Design package updated' : 'Design package created', 'success')

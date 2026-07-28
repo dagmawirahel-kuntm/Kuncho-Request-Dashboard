@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -74,6 +75,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'vendor')
     qc.invalidateQueries({ queryKey: ['vendors'] })
     qc.invalidateQueries({ queryKey: ['vendors-lookup'] })
     toast(isEdit ? 'Vendor updated' : 'Vendor added', 'success')

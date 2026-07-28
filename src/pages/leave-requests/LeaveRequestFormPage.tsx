@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -84,6 +85,7 @@ function LeaveRequestFormPageBody({ id, record }: { id?: string; record?: LeaveR
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'leave-request')
     qc.invalidateQueries({ queryKey: ['leave-requests'] })
     toast(isEdit ? 'Leave request updated' : 'Leave request created', 'success')
     navigate('/leave-requests')

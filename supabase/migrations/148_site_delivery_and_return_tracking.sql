@@ -35,32 +35,60 @@
 SET search_path TO public;
 
 -- ── Shared identity-scoping helpers ──────────────────────────────────
--- Mirrors useMyStaffId()'s own resolution order (user_id link, else
--- email match) so "is this the project's own PM" means the same thing
--- server-side as it already does client-side everywhere else.
-CREATE OR REPLACE FUNCTION my_staff_id() RETURNS UUID
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  v_email TEXT;
-  v_id    UUID;
-BEGIN
-  SELECT id INTO v_id FROM staff WHERE user_id = auth.uid() LIMIT 1;
-  IF v_id IS NOT NULL THEN RETURN v_id; END IF;
-
-  SELECT email INTO v_email FROM auth.users WHERE id = auth.uid();
-  IF v_email IS NOT NULL THEN
-    SELECT id INTO v_id FROM staff WHERE lower(email) = lower(v_email) LIMIT 1;
-  END IF;
-  RETURN v_id;
-END;
+-- Mirrors useMyStaffId()'s own resolution order (explicit user_id link
+-- wins, else a case-insensitive email match) so "is this the project's
+-- own PM" means the same thing server-side as it already does
+-- client-side everywhere else.
+--
+-- THE canonical definition of this pair, defined here because this is
+-- the earliest migration that needs it. Migration 155 uses the same two
+-- functions for its own project-manager scoping rather than declaring a
+-- second pair — one answer to "who am I" and "do I manage this", not two
+-- that can drift apart. Do not add a third; extend these.
+--
+-- Written as plain SQL (not plpgsql) in one query rather than two
+-- sequential lookups: DESC NULLS LAST is what keeps the explicit link
+-- ahead of the email match, because for an unlinked row (user_id NULL)
+-- the comparison is NULL and a bare DESC would sort those FIRST in
+-- Postgres — silently inverting the precedence rule.
+CREATE OR REPLACE FUNCTION current_staff_id()
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT s.id
+  FROM staff s
+  WHERE auth.uid() IS NOT NULL
+    AND (
+      s.user_id = auth.uid()
+      OR (s.email IS NOT NULL
+          AND lower(s.email) = lower((SELECT u.email FROM auth.users u WHERE u.id = auth.uid())))
+    )
+  ORDER BY (s.user_id = auth.uid()) DESC NULLS LAST
+  LIMIT 1;
 $$;
 
-CREATE OR REPLACE FUNCTION is_my_managed_project(p_project_id UUID) RETURNS BOOLEAN
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+GRANT EXECUTE ON FUNCTION current_staff_id() TO authenticated;
+
+-- SECURITY DEFINER and owned by the migration role, so reading projects
+-- here is not itself subject to projects' RLS — no recursion when this
+-- is called from a policy on another table.
+CREATE OR REPLACE FUNCTION manages_project(p_project_id UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT EXISTS (
-    SELECT 1 FROM projects WHERE id = p_project_id AND project_manager_id = my_staff_id()
-  )
+    SELECT 1 FROM projects p
+    WHERE p.id = p_project_id
+      AND p.project_manager_id IS NOT NULL
+      AND p.project_manager_id = current_staff_id()
+  );
 $$;
+
+GRANT EXECUTE ON FUNCTION manages_project(UUID) TO authenticated;
+
+-- Earlier drafts of this migration shipped the same two helpers under
+-- the names is_my_managed_project/my_staff_id. Dropped so no environment
+-- that ran one of those drafts is left with a second, diverging copy.
+-- No-ops everywhere else. Order matters: is_my_managed_project called
+-- my_staff_id, so the dependent goes first.
+DROP FUNCTION IF EXISTS is_my_managed_project(UUID);
+DROP FUNCTION IF EXISTS my_staff_id();
 
 -- ── 1. Site delivery confirmation ───────────────────────────────────
 -- One row per stock_issues dispatch — its absence IS "not yet
@@ -94,7 +122,7 @@ CREATE POLICY "stock_delivery_confirmations_insert" ON stock_delivery_confirmati
     OR (
       get_user_role() = 'project_manager'
       AND EXISTS (
-        SELECT 1 FROM stock_issues si WHERE si.id = stock_issue_id AND is_my_managed_project(si.project_id)
+        SELECT 1 FROM stock_issues si WHERE si.id = stock_issue_id AND manages_project(si.project_id)
       )
     )
   );
@@ -179,7 +207,7 @@ DROP POLICY IF EXISTS "stock_return_requests_insert" ON stock_return_requests;
 CREATE POLICY "stock_return_requests_insert" ON stock_return_requests FOR INSERT
   WITH CHECK (
     get_user_role() IN ('admin', 'manager', 'operations_manager')
-    OR (get_user_role() = 'project_manager' AND (project_id IS NULL OR is_my_managed_project(project_id)))
+    OR (get_user_role() = 'project_manager' AND (project_id IS NULL OR manages_project(project_id)))
   );
 
 -- Confirming/rejecting: the warehouse side — same roles as GRN intake
@@ -246,7 +274,7 @@ CREATE TRIGGER trg_confirm_stock_return
   FOR EACH ROW EXECUTE FUNCTION confirm_stock_return();
 
 -- Verify
-SELECT proname FROM pg_proc WHERE proname IN ('my_staff_id', 'is_my_managed_project', 'confirm_stock_return');
+SELECT proname FROM pg_proc WHERE proname IN ('current_staff_id', 'manages_project', 'confirm_stock_return');
 SELECT tablename FROM pg_tables WHERE tablename IN ('stock_delivery_confirmations', 'stock_return_requests') ORDER BY tablename;
 SELECT viewname FROM pg_views WHERE viewname = 'v_stock_delivery_confirmations';
 SELECT tgname FROM pg_trigger WHERE tgname IN ('trg_stamp_stock_delivery_confirmation', 'trg_stamp_stock_return_request', 'trg_confirm_stock_return') ORDER BY tgname;
