@@ -5,7 +5,7 @@
 -- Confirmed by testing against the live schema before writing:
 --
 --   • A project-to-project transfer ALREADY reaches the receiving
---     project's confirmation queue. confirm_stock_return (156) writes
+--     project's confirmation queue. confirm_stock_return (159) writes
 --     a stock_issues row with issue_type='project_use' for the
 --     destination, and v_stock_delivery_confirmations selects exactly
 --     those — so a 40-unit transfer showed up at the destination as
@@ -65,7 +65,7 @@ COMMENT ON COLUMN stock_issues.stock_return_request_id IS
   'Set on the destination leg of a project-to-project transfer, linking back to the request that moved it. NULL means an ordinary warehouse dispatch.';
 
 -- ── 2. Quality verdict on receipt at site ────────────────────────────
--- Same three states as goods_received_note_items.quality_status (156),
+-- Same three states as goods_received_note_items.quality_status (159),
 -- deliberately identical so "damaged" means the same thing whether the
 -- material came from a vendor or another site. condition_notes (148)
 -- remains the optional free-text detail beside it.

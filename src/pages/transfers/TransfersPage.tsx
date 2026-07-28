@@ -24,6 +24,7 @@ export default function TransfersPage() {
       let q = supabase
         .from('transfers')
         .select('*, from_account:accounts!from_account_id(account_name), to_account:accounts!to_account_id(account_name)')
+        .eq('is_archived', false)
         .order('date', { ascending: false })
       if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
       const { data, error } = await q

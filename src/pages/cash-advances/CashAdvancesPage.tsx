@@ -33,7 +33,7 @@ export default function CashAdvancesPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['cash-advances', fiscalPeriodId],
     queryFn: async () => {
-      let q = supabase.from('cash_advances').select('*, staff(employee_name), accounts(account_name), payroll(payroll_record)').order('created_at', { ascending: false })
+      let q = supabase.from('cash_advances').select('*, staff(employee_name), accounts(account_name), payroll(payroll_record)').eq('is_archived', false).order('created_at', { ascending: false })
       if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
       const { data, error } = await q
       if (error) throw error

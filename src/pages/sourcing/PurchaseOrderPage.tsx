@@ -90,11 +90,12 @@ function buildPoHtml(p: {
   sortedItems: BundleDetail['sourcing_bundle_items']
   grandTotal: number
   vatAmount: number
+  grossTotal: number
   whtAmount: number
   whtEligible: boolean
   netPayable: number
 }): string {
-  const { bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, whtAmount, whtEligible, netPayable } = p
+  const { bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable } = p
 
   const rows = sortedItems.map((item, i) => {
     const oi = item.order_items
@@ -145,6 +146,7 @@ td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
 .totals .lbl{color:#555}
 .totals .val{text-align:right}
 .totals .net td{border-top:2px solid #1B3A5C;padding-top:8px;font-weight:700;font-size:12pt;color:#1B3A5C}
+.totals .gross td{border-top:1px solid #d4d4d4;padding-top:6px;font-weight:600}
 .wht{color:#b45309}
 .notes{font-size:9.5pt;color:#555;margin-top:16px}
 .foot{margin-top:50px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:10px;display:flex;justify-content:space-between}
@@ -193,7 +195,8 @@ td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
 <table class="totals">
   <tr><td class="lbl">Subtotal</td><td class="val">${fmt(grandTotal)}</td></tr>
   <tr><td class="lbl">VAT (15%, added)</td><td class="val">${fmt(vatAmount)}</td></tr>
-  ${whtEligible ? `<tr class="wht"><td class="lbl">WHT (3%, withheld)</td><td class="val">−${fmt(whtAmount)}</td></tr>` : ''}
+  ${whtEligible ? `<tr class="gross"><td class="lbl">Gross Total (before WHT)</td><td class="val">${fmt(grossTotal)}</td></tr>
+  <tr class="wht"><td class="lbl">WHT (3%, withheld)</td><td class="val">−${fmt(whtAmount)}</td></tr>` : ''}
   <tr class="net"><td>Net Payable to Vendor</td><td class="val">${fmt(netPayable)}</td></tr>
 </table>
 ${bundle.notes ? `<div class="notes"><b>Notes:</b> ${bundle.notes}</div>` : ''}
@@ -347,10 +350,14 @@ export default function PurchaseOrderPage() {
 
   const whtEligible = !!bundle.vendors?.wth_eligible
   const vatAmount = grandTotal * VAT_RATE
+  // Gross = what the vendor invoices. WHT is withheld from this at payment
+  // and remitted to ERCA, so it is the figure the vendor's own invoice and
+  // the withholding receipt are both written against — not netPayable.
+  const grossTotal = grandTotal + vatAmount
   const whtAmount = whtEligible ? grandTotal * WHT_RATE : 0
-  const netPayable = grandTotal + vatAmount - whtAmount
+  const netPayable = grossTotal - whtAmount
 
-  const poHtml = buildPoHtml({ bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, whtAmount, whtEligible, netPayable })
+  const poHtml = buildPoHtml({ bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable })
 
   function handlePrint() {
     printRef.current?.contentWindow?.print()
@@ -661,10 +668,16 @@ export default function PurchaseOrderPage() {
                 <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(vatAmount)}</td>
               </tr>
               {whtEligible && (
-                <tr className="bg-slate-50 dark:bg-slate-700/30">
-                  <td colSpan={7} className="px-4 py-2 text-right text-xs text-amber-600 dark:text-amber-400">WHT (3%, withheld)</td>
-                  <td className="px-4 py-2 text-right text-sm text-amber-600 dark:text-amber-400 tabular-nums">−{formatCurrency(whtAmount)}</td>
-                </tr>
+                <>
+                  <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
+                    <td colSpan={7} className="px-4 py-2 text-right text-xs font-medium text-slate-600 dark:text-slate-300">Gross Total (before WHT)</td>
+                    <td className="px-4 py-2 text-right text-sm font-medium text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(grossTotal)}</td>
+                  </tr>
+                  <tr className="bg-slate-50 dark:bg-slate-700/30">
+                    <td colSpan={7} className="px-4 py-2 text-right text-xs text-amber-600 dark:text-amber-400">WHT (3%, withheld)</td>
+                    <td className="px-4 py-2 text-right text-sm text-amber-600 dark:text-amber-400 tabular-nums">−{formatCurrency(whtAmount)}</td>
+                  </tr>
+                </>
               )}
               <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
                 <td colSpan={7} className="px-4 py-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-300">

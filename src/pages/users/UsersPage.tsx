@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useDepartments } from '@/hooks/useLookups'
 import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
-import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront } from 'lucide-react'
+import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront, Landmark } from 'lucide-react'
 
 // Department -> valid roles, per the map documented in migration
 // 081_department_roles_enum.sql. admin/manager are always included
@@ -193,7 +193,7 @@ export default function UsersPage() {
     toast('Role updated', 'success')
   }
 
-  async function handleBadgeToggle(id: string, field: 'is_vrf_manager' | 'is_logistics_officer' | 'is_ride_hailing_authorized', next: boolean, label: string) {
+  async function handleBadgeToggle(id: string, field: 'is_vrf_manager' | 'is_logistics_officer' | 'is_ride_hailing_authorized' | 'is_tax_officer', next: boolean, label: string) {
     setUpdatingId(id)
     const { error } = await supabase.from('user_profiles').update({ [field]: next }).eq('id', id)
     setUpdatingId(null)
@@ -373,6 +373,20 @@ export default function UsersPage() {
                         }`}
                       >
                         <Banknote className="h-2.5 w-2.5" /> VRF{p.is_vrf_manager ? '' : ' (off)'}
+                      </button>
+                    )}
+                    {p.role === 'finance' && (
+                      <button
+                        onClick={() => handleBadgeToggle(p.id, 'is_tax_officer', !p.is_tax_officer, 'Tax Officer')}
+                        disabled={updatingId === p.id}
+                        title="Tax Officer: the designated owner of ERCA filings and tax obligations — UI designation only, not an access gate (any admin/finance holder can still act)"
+                        className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                          p.is_tax_officer
+                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                            : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        }`}
+                      >
+                        <Landmark className="h-2.5 w-2.5" /> Tax Officer{p.is_tax_officer ? '' : ' (off)'}
                       </button>
                     )}
                     <button

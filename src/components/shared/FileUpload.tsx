@@ -11,6 +11,12 @@ interface FileUploadProps {
   onClear: () => void
   accept?: string
   label?: string
+  /**
+   * Set for buckets that are NOT public. getPublicUrl() on a private
+   * bucket returns a URL that 403s, so instead the storage PATH is
+   * stored and a short-lived signed URL is minted on click.
+   */
+  privateBucket?: boolean
 }
 
 export function FileUpload({
@@ -22,6 +28,7 @@ export function FileUpload({
   onClear,
   accept = 'image/*,application/pdf,.doc,.docx',
   label = 'Upload File',
+  privateBucket = false,
 }: FileUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,9 +48,21 @@ export function FileUpload({
       setShowUrlInput(true)
       return
     }
+    if (privateBucket) {
+      // Store the path; the URL is minted per-view and expires.
+      onUpload(path, file.name)
+      setUploading(false)
+      return
+    }
     const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)
     onUpload(publicUrl, file.name)
     setUploading(false)
+  }
+
+  async function openPrivate(path: string) {
+    const { data, error: signErr } = await supabase.storage.from(bucket).createSignedUrl(path, 60)
+    if (signErr || !data) { setError(`Could not open file: ${signErr?.message ?? 'unknown error'}`); return }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
   function handleUrlAttach() {
@@ -57,14 +76,24 @@ export function FileUpload({
     return (
       <div className="flex items-center gap-2 rounded-lg border dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
         <FileText className="h-4 w-4 text-brand flex-shrink-0" />
-        <a
-          href={fileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex flex-1 items-center gap-1 truncate text-sm text-brand hover:underline"
-        >
-          {fileName || 'Attached file'} <ExternalLink className="h-3 w-3 flex-shrink-0" />
-        </a>
+        {privateBucket ? (
+          <button
+            type="button"
+            onClick={() => openPrivate(fileUrl)}
+            className="flex flex-1 items-center gap-1 truncate text-left text-sm text-brand hover:underline"
+          >
+            {fileName || 'Attached file'} <ExternalLink className="h-3 w-3 flex-shrink-0" />
+          </button>
+        ) : (
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex flex-1 items-center gap-1 truncate text-sm text-brand hover:underline"
+          >
+            {fileName || 'Attached file'} <ExternalLink className="h-3 w-3 flex-shrink-0" />
+          </a>
+        )}
         <button
           type="button"
           onClick={onClear}

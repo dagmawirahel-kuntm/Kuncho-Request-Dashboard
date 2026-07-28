@@ -53,6 +53,7 @@ export default function InvoicesPage() {
       const { data, error } = await supabase
         .from('sales')
         .select('*, clients(client_name)')
+        .eq('is_archived', false)
         .in('sales_status', ['Draft', 'Invoiced'])
         .order('date', { ascending: true, nullsFirst: false })
       if (error) throw error

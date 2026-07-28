@@ -82,6 +82,7 @@ export default function LogisticsDashboardPage() {
       const { data, error } = await supabase
         .from('expenses')
         .select('id, expense_code, item_service_description, fuel_liters, amount_etb, approval_status, date')
+        .eq('is_archived', false)
         .eq('expense_type', 'fuel')
         .order('created_at', { ascending: false })
         .limit(5)

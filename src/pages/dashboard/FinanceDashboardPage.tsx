@@ -27,7 +27,7 @@ export default function FinanceDashboardPage() {
     queryFn: async () => {
       const [accounts, sales, bonds, batches] = await Promise.all([
         supabase.from('accounts').select('status'),
-        supabase.from('sales').select('amount, sales_status, date'),
+        supabase.from('sales').select('amount, sales_status, date').eq('is_archived', false),
         supabase.from('cpo_bonds').select('total_bond_amount, bond_status'),
         supabase.from('batch_payments').select('id'),
       ])

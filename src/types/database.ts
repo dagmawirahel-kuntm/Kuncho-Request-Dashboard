@@ -46,6 +46,9 @@ export interface Database {
       cash_advances: { Row: CashAdvance; Insert: CashAdvanceInsert; Update: Partial<CashAdvanceInsert> }
       vendor_receipt_facilitation: { Row: VendorReceiptFacilitation; Insert: VendorReceiptFacilitationInsert; Update: Partial<VendorReceiptFacilitationInsert> }
       tax_summary: { Row: TaxSummary; Insert: TaxSummaryInsert; Update: Partial<TaxSummaryInsert> }
+      tax_obligation_types: { Row: TaxObligationType; Insert: TaxObligationTypeInsert; Update: Partial<TaxObligationTypeInsert> }
+      vendor_receipts: { Row: VendorReceipt; Insert: VendorReceiptInsert; Update: Partial<VendorReceipt> }
+      tax_engagements: { Row: TaxEngagement; Insert: TaxEngagementInsert; Update: Partial<TaxEngagementInsert> }
       cpo_bonds: { Row: CpoBond; Insert: CpoBondInsert; Update: Partial<CpoBondInsert> }
       payroll_taxes: { Row: PayrollTax; Insert: PayrollTaxInsert; Update: Partial<PayrollTaxInsert> }
       batch_payments: { Row: BatchPayment; Insert: BatchPaymentInsert; Update: Partial<BatchPaymentInsert> }
@@ -78,6 +81,7 @@ export interface UserProfile {
   is_vrf_manager: boolean
   is_logistics_officer: boolean
   is_ride_hailing_authorized: boolean
+  is_tax_officer: boolean
   email: string | null
   created_at: string
 }
@@ -346,6 +350,8 @@ export type SubCategoryInsert = Omit<SubCategory, 'id' | 'created_at' | 'updated
 // ── Expenses ─────────────────────────────────────────────────────
 export interface Expense {
   id: string
+  /** Pre-FY2026/27 row from the Airtable import — hidden from lists and aggregates, still fetchable by id. */
+  is_archived: boolean
   expense_code: string | null
   item_service_description: string | null
   amount_etb: number | null
@@ -461,6 +467,7 @@ export type OrderPriority = 'normal' | 'urgent' | 'critical'
 
 export interface Order {
   id: string
+  is_archived: boolean
   request_code: string | null
   order_name: string | null
   order_date: string | null
@@ -605,6 +612,7 @@ export type AccountInsert = Omit<Account, 'id' | 'created_at' | 'updated_at'>
 // ── Transfers ────────────────────────────────────────────────────
 export interface Transfer {
   id: string
+  is_archived: boolean
   transfer_id_code: string | null
   date: string | null
   from_account_id: string | null
@@ -618,6 +626,7 @@ export type TransferInsert = Omit<Transfer, 'id' | 'created_at'>
 // ── Sales ────────────────────────────────────────────────────────
 export interface Sale {
   id: string
+  is_archived: boolean
   sales_description: string
   sales_status: SaleLifecycleStatus | null
   date: string | null
@@ -710,9 +719,29 @@ export interface ClientAttachment {
   notes: string | null
   amount: number | null
   sale_id: string | null
+  /** Stamped server-side on insert — this is the presenter for receipt categories. */
   uploaded_by: string | null
   created_at: string
+  // ── Tax workflow (migration 158). Set only for receipt/wht_receipt;
+  // null on contracts and other, where the workflow doesn't apply.
+  project_id: string | null
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  tax_status: ClientReceiptTaxStatus | null
+  tax_reviewed_by: string | null
+  tax_reviewed_at: string | null
+  tax_review_note: string | null
+  tax_rejection_reason: string | null
+  physical_received_at: string | null
+  physical_received_by: string | null
+  physical_note: string | null
 }
+export type ClientReceiptInsert = Pick<ClientAttachment,
+  'client_id' | 'file_name' | 'file_path' | 'category' | 'sale_id'>
+  & Partial<Pick<ClientAttachment,
+    'file_size' | 'mime_type' | 'notes' | 'amount' | 'project_id'
+    | 'receipt_no' | 'receipt_date' | 'vat_amount'>>
 
 // ── Products ─────────────────────────────────────────────────────
 export interface Product {
@@ -730,6 +759,7 @@ export type ProductInsert = Omit<Product, 'id' | 'created_at' | 'updated_at'>
 // ── Payroll ──────────────────────────────────────────────────────
 export interface Payroll {
   id: string
+  is_archived: boolean
   payroll_record: string | null
   pay_period: string | null
   start_date: string | null
@@ -774,6 +804,7 @@ export type EmergencyPayrollSummaryInsert = Omit<EmergencyPayrollSummary, 'id' |
 // ── Cash Advances ─────────────────────────────────────────────────
 export interface CashAdvance {
   id: string
+  is_archived: boolean
   advance_id_code: string | null
   amount_advanced: number | null
   date_given: string | null
@@ -796,6 +827,7 @@ export type CashAdvanceInsert = Omit<CashAdvance, 'id' | 'created_at' | 'updated
 export type VrfStatus = 'open' | 'partial' | 'settled'
 export interface VendorReceiptFacilitation {
   id: string
+  is_archived: boolean
   record_name: string | null
   amount_transferred: number | null
   money_returned: number | null
@@ -937,7 +969,7 @@ export interface GoodsReceivedNote {
 }
 export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
 
-// Per-line quality verdict at receipt (migration 156). 'damaged' still
+// Per-line quality verdict at receipt (migration 159). 'damaged' still
 // enters stock — the material is physically on site and has to be
 // accounted for; 'rejected' was refused at the door and does not.
 export type GrnQualityStatus = 'accepted' | 'damaged' | 'rejected'
@@ -967,6 +999,169 @@ export interface TaxSummary {
   created_at: string
 }
 export type TaxSummaryInsert = Omit<TaxSummary, 'id' | 'created_at'>
+
+// ── Tax Obligation Types / Engagements ───────────────────────────────
+export interface TaxObligationType {
+  id: string
+  tax_type: 'VAT' | 'WHT' | 'payroll_tax' | 'other'
+  name: string
+  frequency: 'monthly' | 'quarterly' | 'annual'
+  due_day_of_month: number | null
+  active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type TaxObligationTypeInsert = Omit<TaxObligationType, 'id' | 'created_at' | 'updated_at'>
+
+export interface TaxEngagement {
+  id: string
+  obligation_type_id: string
+  period_month: string
+  due_date: string | null
+  filed_date: string | null
+  reference_number: string | null
+  document_url: string | null
+  filed_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type TaxEngagementInsert = Omit<TaxEngagement, 'id' | 'created_at' | 'updated_at'>
+
+export interface TaxEngagementView {
+  id: string
+  period_month: string
+  due_date: string | null
+  filed_date: string | null
+  reference_number: string | null
+  document_url: string | null
+  notes: string | null
+  obligation_type_id: string
+  tax_type: string
+  obligation_name: string
+  filed_by_name: string | null
+  status: 'filed' | 'pending' | 'overdue'
+}
+
+export interface NextTaxObligation {
+  obligation_type_id: string
+  tax_type: string
+  name: string
+  due_day_of_month: number | null
+  next_period_month: string
+  suggested_due_date: string | null
+}
+
+export interface TaxLiabilityRow {
+  category: string
+  period: string
+  amount: number
+}
+
+// ── Vendor Receipts (the tax document — NOT vendor_receipt_facilitation,
+// which is the separate cost of paying a facilitator to obtain one) ──
+export type VendorReceiptStatus = 'pending_verification' | 'verified' | 'tax_reviewed' | 'rejected'
+
+export interface VendorReceipt {
+  id: string
+  expense_id: string | null
+  grn_id: string | null
+  vendor_id: string | null
+  project_id: string | null
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  withholding_amount: number | null
+  vendor_tin_on_receipt: string | null
+  document_url: string | null
+  document_name: string | null
+  /** The same document filed under the vendor (vendor_attachments, category tax_receipt). */
+  vendor_attachment_id: string | null
+  notes: string | null
+  status: VendorReceiptStatus
+  entered_by: string | null
+  entered_at: string | null
+  verified_by: string | null
+  verified_at: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  tax_review_note: string | null
+  rejection_reason: string | null
+  /** Physical custody — orthogonal to the review chain, not a fourth status. */
+  physical_received_at: string | null
+  physical_received_by: string | null
+  physical_note: string | null
+  created_at: string
+  updated_at: string
+}
+export type VendorReceiptInsert = Omit<VendorReceipt,
+  'id' | 'status' | 'entered_by' | 'entered_at' | 'verified_by' | 'verified_at'
+  | 'reviewed_by' | 'reviewed_at' | 'physical_received_at' | 'physical_received_by'
+  | 'created_at' | 'updated_at'>
+
+export interface ReceiptAwaitingTaxReview {
+  id: string
+  receipt_no: string | null
+  receipt_date: string | null
+  vat_amount: number | null
+  withholding_amount: number | null
+  vendor_tin_on_receipt: string | null
+  document_url: string | null
+  vendor_name: string | null
+  project_id: string | null
+  project_name: string | null
+  expense_code: string | null
+  entered_by_name: string | null
+  verified_by_name: string | null
+  verified_at: string | null
+}
+
+// ── Client receipts live on client_attachments (migration 158) ───────
+// There is deliberately no sales_receipts table: client_attachments has
+// carried category='receipt' + sale_id since 018, so a separate table
+// was a second home for the same document. The tax workflow columns
+// below are set only for receipt/wht_receipt categories; uploaded_by is
+// the presenter.
+export type ClientReceiptTaxStatus = 'pending_review' | 'tax_reviewed' | 'rejected'
+
+export interface SalesReceiptOutstanding {
+  sale_id: string
+  invoice_number: string | null
+  date: string | null
+  gross_amount: number | null
+  sales_status: string | null
+  is_vat_exempt: boolean
+  expected_vat: number | null
+  project_id: string | null
+  project_name: string | null
+  client_id: string | null
+  client_name: string | null
+  receipt_status: string
+}
+
+export interface TaxPositionRow {
+  month: string
+  output_vat: number
+  input_vat_reclaimable: number
+  net_vat: number
+  position: 'payable' | 'reclaimable'
+  sale_count: number
+  reviewed_receipt_count: number
+}
+
+export interface ReceiptOutstanding {
+  expense_id: string
+  expense_code: string | null
+  date: string | null
+  amount_etb: number | null
+  project_id: string | null
+  project_name: string | null
+  vendor_id: string | null
+  vendor_name: string | null
+  vendor_tin: string | null
+  receipt_status: string
+}
 
 // ── CPO Bonds ─────────────────────────────────────────────────────
 export interface CpoBond {
@@ -1076,6 +1271,7 @@ export interface RecentPaymentRow {
 // ── Timesheet ─────────────────────────────────────────────────────
 export interface Timesheet {
   id: string
+  is_archived: boolean
   code: string | null
   date: string | null
   check_in_time: string | null
@@ -1263,7 +1459,7 @@ export interface StockDeliveryConfirmationRow {
   confirmed_at: string | null
   is_confirmed: boolean
   has_discrepancy: boolean
-  // Migration 157. Same vocabulary as the GRN's own per-line verdict, so
+  // Migration 160. Same vocabulary as the GRN's own per-line verdict, so
   // a vendor delivery and a site-to-site transfer read identically.
   quality_status: GrnQualityStatus | null
   stock_return_request_id: string | null
@@ -1276,7 +1472,7 @@ export interface StockDeliveryConfirmationRow {
 
 // One row per GRN with its worst line verdict — the register that lets
 // "what did we receive, and was any of it rejected" be answered without
-// opening each purchase order (migration 157).
+// opening each purchase order (migration 160).
 export interface GrnRegisterRow {
   id: string
   grn_code: string | null
@@ -1311,7 +1507,7 @@ export interface StockReturnRequest {
   confirmed_at: string | null
   stock_receipt_id: string | null
   // NULL returns the material to the warehouse; set transfers it
-  // straight to another project, with no warehouse leg (migration 156).
+  // straight to another project, with no warehouse leg (migration 159).
   destination_project_id: string | null
   created_at: string
 }
@@ -1320,7 +1516,7 @@ export type StockReturnRequestInsert =
   & Partial<Pick<StockReturnRequest, 'destination_project_id'>>
 
 // What a project physically still holds: issued to it, less what has
-// already gone back or is awaiting confirmation (migration 156).
+// already gone back or is awaiting confirmation (migration 159).
 export interface ProjectMaterialBalance {
   project_id: string
   project_name: string | null

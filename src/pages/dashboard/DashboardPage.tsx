@@ -66,6 +66,7 @@ function GeneralDashboard({ role }: { role: UserRole | null }) {
       const { count } = await supabase
         .from('orders')
         .select('*', { count: 'exact', head: true })
+        .eq('is_archived', false)
         .eq('status', 'pending')
       return { pending: count ?? 0 }
     },

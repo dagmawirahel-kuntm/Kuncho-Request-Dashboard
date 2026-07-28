@@ -18,8 +18,8 @@ export default function HRDashboardPage() {
     queryFn: async () => {
       const [staff, payroll, advances, emergency] = await Promise.all([
         supabase.from('staff').select('staff_type'),
-        supabase.from('payroll').select('payment_status'),
-        supabase.from('cash_advances').select('amount_advanced, date_given'),
+        supabase.from('payroll').select('payment_status').eq('is_archived', false),
+        supabase.from('cash_advances').select('amount_advanced, date_given').eq('is_archived', false),
         supabase.from('emergency_payroll_summary').select('payment_status'),
       ])
       return {

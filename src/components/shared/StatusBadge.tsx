@@ -13,6 +13,7 @@ const variantClasses: Record<Variant, string> = {
 
 const statusVariantMap: Record<string, Variant> = {
   paid: 'green',
+  filed: 'green',
   completed: 'green',
   approved: 'green',
   finance_approved: 'green',

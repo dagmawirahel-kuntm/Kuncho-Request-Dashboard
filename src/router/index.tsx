@@ -71,6 +71,12 @@ import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
 import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
 import TaxSummaryPage from '@/pages/tax-summary/TaxSummaryPage'
 import TaxSummaryFormPage from '@/pages/tax-summary/TaxSummaryFormPage'
+import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
+import TaxEngagementFormPage from '@/pages/tax-summary/TaxEngagementFormPage'
+import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
+import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
+import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
+import SalesReceiptFormPage from '@/pages/tax-receipts/SalesReceiptFormPage'
 import BatchPaymentsPage from '@/pages/batch-payments/BatchPaymentsPage'
 import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
 import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
@@ -221,6 +227,18 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer']} />,
             children: [
               { path: 'procurement', element: <ProcurementDashboardPage /> },
+              // Tax receipts: entry is finance/procurement (whoever collected
+              // it), verification is the other department, tax review is the
+              // Tax Officer. All three steps are enforced server-side by the
+              // maker-checker-reviewer trigger — this route only decides who
+              // can reach the page at all.
+              { path: 'tax-receipts', element: <TaxReceiptsPage /> },
+              { path: 'tax-receipts/new', element: <TaxReceiptFormPage /> },
+              // The tracker is the procurement-facing surface: capture a
+              // photo, then confirm the paper reached the office. Sales-side
+              // presentation is reachable from the same page.
+              { path: 'vat-tracker', element: <VatReceiptTrackerPage /> },
+              { path: 'sales-receipts/new', element: <SalesReceiptFormPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
               { path: 'vendors/:id', element: <VendorDetailPage /> },
@@ -274,6 +292,7 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
               { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
               { path: 'tax-summary', element: <TaxSummaryPage /> },
+              { path: 'tax-management', element: <TaxManagementPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
               { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
@@ -311,6 +330,7 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
               { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
               { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
+              { path: 'tax-management/log', element: <TaxEngagementFormPage /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
               { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },

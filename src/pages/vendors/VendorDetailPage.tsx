@@ -9,8 +9,16 @@ import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, User, CreditCard,
   FileText, Package, Shield, Check, X, Building2, Tag, ExternalLink,
   Plus, Trash2, AlertCircle, FileBadge, ScrollText, Upload, Download,
-  Eye, Loader2,
+  Eye, Loader2, PackageCheck,
 } from 'lucide-react'
+
+// Review-chain chip for tax receipts filed against a vendor document.
+const VR_CHIP: Record<string, { label: string; cls: string }> = {
+  pending_verification: { label: 'Awaiting verification', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
+  verified:             { label: 'Awaiting tax review',   cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  tax_reviewed:         { label: 'Tax reviewed',          cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  rejected:             { label: 'Rejected',              cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+}
 
 const PALETTE = [
   '#3B82F6','#8B5CF6','#10B981','#F59E0B','#EF4444',
@@ -170,6 +178,28 @@ export default function VendorDetailPage() {
     },
     enabled: !!id,
   })
+
+  // Tax receipts filed against this vendor's documents, keyed by the
+  // attachment they point at, so a document row can show its own
+  // review state without a second lookup per row.
+  const { data: vendorTaxReceipts = [] } = useQuery({
+    queryKey: ['vendor-tax-receipts', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vendor_receipts')
+        .select('id,status,physical_received_at,vendor_attachment_id')
+        .eq('vendor_id', id!)
+        .not('vendor_attachment_id', 'is', null)
+      if (error) throw error
+      return data as { id: string; status: string; physical_received_at: string | null; vendor_attachment_id: string }[]
+    },
+    enabled: !!id,
+  })
+
+  const taxReceiptByAttachment = useMemo(
+    () => new Map(vendorTaxReceipts.map(r => [r.vendor_attachment_id, r])),
+    [vendorTaxReceipts]
+  )
 
   const { data: docs = [] } = useQuery<VendorAttachment[]>({
     queryKey: ['vendor-documents', id],
@@ -791,6 +821,21 @@ export default function VendorDetailPage() {
                               {cat?.label ?? doc.category}
                             </span>
                             {isExpired && <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">EXPIRED</span>}
+                            {/* Tax receipts filed against this vendor carry a review
+                                chain of their own (vendor_receipts, migration 158) —
+                                surfaced here so procurement sees the movement without
+                                leaving the vendor. */}
+                            {taxReceiptByAttachment.get(doc.id) && (
+                              <>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${VR_CHIP[taxReceiptByAttachment.get(doc.id)!.status]?.cls ?? ''}`}>
+                                  {VR_CHIP[taxReceiptByAttachment.get(doc.id)!.status]?.label ?? taxReceiptByAttachment.get(doc.id)!.status}
+                                </span>
+                                <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${taxReceiptByAttachment.get(doc.id)!.physical_received_at ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                  <PackageCheck className="h-3 w-3" />
+                                  {taxReceiptByAttachment.get(doc.id)!.physical_received_at ? 'Paper in' : 'Paper not received'}
+                                </span>
+                              </>
+                            )}
                             {!isExpired && daysLeft !== null && daysLeft <= 60 && (
                               <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">Expires in {daysLeft}d</span>
                             )}

@@ -242,7 +242,7 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
   // Only material this project was actually issued, less whatever has
   // already gone back or is awaiting confirmation. Offering the whole
   // catalogue let a project "return" things it was never sent, which the
-  // database now refuses outright (migration 156) — this is the picker
+  // database now refuses outright (migration 159) — this is the picker
   // telling the same truth rather than letting someone hit the error.
   const { data: onSite = [] } = useQuery({
     queryKey: ['project-material-balance', projectId],

@@ -18,8 +18,8 @@ export default function RequestsDashboardPage() {
     queryKey: ['dashboard-requests'],
     queryFn: async () => {
       const [expenses, orders, transport, allocation] = await Promise.all([
-        supabase.from('expenses').select('id, amount_etb, payment_status, date, item_service_description, created_at, categories(category_name)'),
-        supabase.from('orders').select('id, status, order_name, created_at'),
+        supabase.from('expenses').select('id, amount_etb, payment_status, date, item_service_description, created_at, categories(category_name)').eq('is_archived', false),
+        supabase.from('orders').select('id, status, order_name, created_at').eq('is_archived', false),
         supabase.from('transportation_requests').select('id, amount, payment_status, requested_date, request_name, created_at'),
         supabase.from('purchase_allocation').select('id'),
       ])

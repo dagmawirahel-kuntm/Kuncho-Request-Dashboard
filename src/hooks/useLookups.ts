@@ -131,6 +131,7 @@ export function usePayrollList() {
       const { data } = await supabase
         .from('payroll')
         .select('id,payroll_record,pay_period')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
         .limit(200)
       return data ?? []
@@ -146,6 +147,7 @@ export function useExpensesList() {
       const { data } = await supabase
         .from('expenses')
         .select('id,expense_code,item_service_description,amount_etb')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
         .limit(500)
       return data ?? []
@@ -189,6 +191,7 @@ export function useTransfers() {
       const { data } = await supabase
         .from('transfers')
         .select('id,transfer_id_code,amount')
+        .eq('is_archived', false)
         .order('date', { ascending: false })
         .limit(200)
       return data ?? []
@@ -204,6 +207,7 @@ export function useVendorReceiptFacilitations() {
       const { data } = await supabase
         .from('vendor_receipt_facilitation')
         .select('id,record_name,money_returned,amount_transferred,facilitator_name,status,trxn_date')
+        .eq('is_archived', false)
         .order('trxn_date', { ascending: false })
         .limit(200)
       return data ?? []
@@ -247,6 +251,7 @@ export function useOrdersList() {
       const { data } = await supabase
         .from('orders')
         .select('id,order_name,item_service_description')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
         .limit(500)
       return data ?? []
@@ -297,6 +302,7 @@ export function useCashAdvancesList() {
       const { data } = await supabase
         .from('cash_advances')
         .select('id,advance_id_code,amount_advanced')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
         .limit(200)
       return data ?? []
@@ -334,6 +340,7 @@ export function useRecentOrderItems() {
       const { data, error } = await supabase
         .from('orders')
         .select('order_name,item_service_description,unit,unit_price_estimate,category_id,recommended_vendor_id')
+        .eq('is_archived', false)
         .not('item_service_description', 'is', null)
         .order('created_at', { ascending: false })
         .limit(300)
