@@ -509,7 +509,7 @@ function PurchaseRequestFormBody({
   // restriction that already holds server-side, not the restriction
   // itself.
   const { projects: managedProjects, managesAny } = useMyManagedProjects()
-  const hasCompanyWideProjectAccess = !!role && ['admin', 'executive', 'finance', 'manager', 'procurement_officer'].includes(role)
+  const hasCompanyWideProjectAccess = !!role && ['admin', 'executive', 'finance', 'procurement_officer'].includes(role)
   const scopeToManaged = !hasCompanyWideProjectAccess && managesAny
 
   const projectOptions = useMemo(() => {
