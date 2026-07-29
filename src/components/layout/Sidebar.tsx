@@ -155,7 +155,7 @@ const navGroups: NavGroup[] = [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
-      { label: 'FF&E Job Descriptions', to: '/ffe-job-descriptions', icon: Award, roles: ['admin', 'executive', 'operations_manager', 'project_manager'] },
+      { label: 'Job Descriptions', to: '/ffe-job-descriptions', icon: Award, roles: ['admin', 'executive', 'operations_manager', 'project_manager', 'hr_officer'] },
       { label: 'Rent', to: '/rent', icon: Building2, roles: ['admin', 'executive', 'finance', 'operations_manager'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'executive', 'finance', 'project_manager', 'sales'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'executive', 'finance', 'project_manager'] },
