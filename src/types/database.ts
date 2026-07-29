@@ -2097,11 +2097,19 @@ export interface WorkOrderCostRow {
 }
 
 // ── FF&E job descriptions & computed skill levels ──────────────────
+// Named FfeJobDescription for continuity, but the table is now
+// job_descriptions and covers every department (migration 162) — the
+// five FF&E fabrication roles are simply Operations/Construction rows.
 export interface FfeJobDescription {
   id: string
   role_name: string
   role_overview: string | null
+  // Which department this role belongs to. Null only for a role created
+  // before the framework was generalized.
+  department_id: string | null
   sort_order: number
+  // Drafts are seeded inactive: visible for a department head to review
+  // and confirm, not usable for assessment until activated.
   active: boolean
   created_at: string
   updated_at: string
