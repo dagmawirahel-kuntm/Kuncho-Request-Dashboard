@@ -171,8 +171,9 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
   }
 
   const approvalStatus   = order.approval_status ?? 'pending'
-  // The PR approval ladder was retired in migration 149 (Operations
-  // Manual v0.1 §4.1 has no PR approval step). What remains is a
+  // The PR approval ladder was retired in migrations 149/163 (Operations
+  // Manual v0.1 §4.1 has no PR approval step; 163 dropped the enforcing
+  // trigger, so approval_status now gates nothing). What remains is a
   // simple "don't source this" switch: rejected requests are excluded
   // from the sourcing bundle builder, and can be reopened.
   const canCancelRequest = canApproveAsExecutive(role) || canApproveAsFinance(role)

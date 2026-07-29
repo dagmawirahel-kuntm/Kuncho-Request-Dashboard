@@ -14,7 +14,6 @@ import {
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects } from '@/hooks/useMyStaff'
-import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import {
@@ -568,8 +567,6 @@ function PurchaseRequestFormBody({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [rejecting, setRejecting] = useState(false)
-  const [rejectionReason, setRejectionReason] = useState('')
 
   function setHdr(key: keyof OrderInsert, value: unknown) { setHeader(h => ({ ...h, [key]: value })) }
 
@@ -617,8 +614,11 @@ function PurchaseRequestFormBody({
   const flaggedChecks = Object.values(budgetChecks).filter(r => r.outcome === 'warn' || r.outcome === 'block')
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
-  const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
+  // Migration 163 retired the purchase request as an approval step
+  // entirely — the Materials chain has no PR gate. Authority is
+  // exercised downstream at pre-sourcing finance review and at bundle
+  // approval by amount. The status is still displayed because historical
+  // rows carry real values, but nothing here approves any more.
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
@@ -628,7 +628,6 @@ function PurchaseRequestFormBody({
     qc.invalidateQueries({ queryKey: ['order', id] })
     qc.invalidateQueries({ queryKey: ['orders'] })
     toast('Approval updated', 'success')
-    setRejecting(false); setRejectionReason('')
   }
 
   async function handleSave() {
@@ -769,28 +768,6 @@ function PurchaseRequestFormBody({
           )}
           {approvalStatus === 'rejected' && record?.rejection_reason && (
             <p className="text-xs text-red-600 dark:text-red-400">Rejected: {record.rejection_reason}</p>
-          )}
-          {(showManagerActions || showFinanceActions) && !rejecting && (
-            <div className="flex gap-2">
-              <button type="button" onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
-                className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700">
-                {showFinanceActions ? 'Final Approval' : 'Approve'}
-              </button>
-              <button type="button" onClick={() => setRejecting(true)}
-                className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">Reject</button>
-            </div>
-          )}
-          {(showManagerActions || showFinanceActions) && rejecting && (
-            <div className="space-y-2">
-              <textarea rows={2} className={inputCls} placeholder="Reason for rejection…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
-              <div className="flex gap-2">
-                <button type="button" disabled={!rejectionReason.trim()}
-                  onClick={() => handleApprovalTransition('rejected', { rejection_reason: rejectionReason })}
-                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">Confirm Reject</button>
-                <button type="button" onClick={() => { setRejecting(false); setRejectionReason('') }}
-                  className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
-              </div>
-            </div>
           )}
           {canResubmit && (
             <button type="button" onClick={() => handleApprovalTransition('pending')}
