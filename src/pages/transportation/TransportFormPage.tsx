@@ -8,7 +8,8 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatCurrency } from '@/lib/utils'
 import type {
   TransportationRequest, TransportationRequestInsert, Vehicle,
-  TransportJobType, HiredVehicleClass, TransportJobStatus,
+  TransportJobType, HiredVehicleClass, TransportJobStatus, VehicleCapacityClass,
+  SuggestedVehicle,
 } from '@/types/database'
 import { useProjects, useLocations, useVendors, useStaff } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
@@ -34,6 +35,13 @@ const JOB_TYPES: { value: TransportJobType; label: string }[] = [
   { value: 'purchase_pickup',  label: 'Purchase Pickup (from vendor)' },
   { value: 'document_courier', label: 'Document Courier (receipts, checks, contracts)' },
   { value: 'people_move',      label: 'People (site-to-site / office-to-office)' },
+]
+
+const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
+  { value: 'motorbike', label: 'Motorbike load (small parcel, documents)' },
+  { value: 'light',     label: 'Light (pickup/van load)' },
+  { value: 'medium',    label: 'Medium (truck load)' },
+  { value: 'heavy',     label: 'Heavy (full truck+)' },
 ]
 
 const HIRED_CLASSES: { value: HiredVehicleClass; label: string }[] = [
@@ -110,6 +118,14 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const locationById    = useMemo(() => new Map(locations.map((l: any) => [l.id, l])), [locations])
   const vendorOptions   = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
   const staffOptions    = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
+  // Named drivers (staff.role = 'Driver') are the primary picker for an
+  // own_fleet job — reusing the existing role value rather than a
+  // parallel driver identity. Falls back to the full staff list if no
+  // one is tagged 'Driver' yet, so the field never goes blank.
+  const driverOptions   = useMemo(() => {
+    const drivers = staff.filter((s: any) => s.role === 'Driver')
+    return (drivers.length > 0 ? drivers : staff).map((s: any) => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined }))
+  }, [staff])
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const { data: vehicles = [] } = useQuery({
@@ -158,6 +174,8 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           vendor_name: record.vendor_name,
           notes: record.notes,
           project_id: record.project_id,
+          cargo_size_estimate: record.cargo_size_estimate,
+          expected_duration_hours: record.expected_duration_hours ?? undefined,
         }
       : {
           requested_date: new Date().toISOString().slice(0, 10),
@@ -167,6 +185,21 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           sourcing_bundle_id: bundleId,
         }
   )
+
+  // Advisory-only vehicle fit for the chosen cargo size — never filters
+  // the picker, just orders/labels it. Suggestion, not enforcement,
+  // same principle as FF&E skill matching on work orders.
+  const { data: suggestedVehicles = [] } = useQuery({
+    queryKey: ['suggest-vehicles', form.cargo_size_estimate],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('suggest_vehicles_for_transport', { p_cargo_size: form.cargo_size_estimate ?? null })
+      if (error) throw error
+      return data as SuggestedVehicle[]
+    },
+    enabled: form.transport_mode === 'own_fleet',
+  })
+  const fitRankByVehicle = useMemo(() => new Map(suggestedVehicles.map(v => [v.vehicle_id, v.fit_rank])), [suggestedVehicles])
+  const FIT_LABEL: Record<number, string> = { 0: ' ✓ good fit', 1: ' (larger than needed)', 3: ' ⚠ may be too small' }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [bundlePrefilled, setBundlePrefilled] = useState(false)
@@ -307,16 +340,24 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       </Field>
 
       {form.transport_mode === 'own_fleet' && (
-        <Field label="Vehicle">
-          <select className={inputCls} value={form.vehicle_id ?? ''} onChange={e => set('vehicle_id', e.target.value || null)}>
-            <option value="">— Select vehicle —</option>
-            {vehicles.map(v => (
-              <option key={v.id} value={v.id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
-                {v.name} — {v.status.replace('_', ' ')}{v.status !== 'available' ? ' ⚠' : ''}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Cargo Size (optional)">
+            <select className={inputCls} value={form.cargo_size_estimate ?? ''} onChange={e => set('cargo_size_estimate', e.target.value || null)}>
+              <option value="">— Not specified —</option>
+              {CARGO_SIZES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Vehicle">
+            <select className={inputCls} value={form.vehicle_id ?? ''} onChange={e => set('vehicle_id', e.target.value || null)}>
+              <option value="">— Select vehicle —</option>
+              {vehicles.map(v => (
+                <option key={v.id} value={v.id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
+                  {v.name} — {v.status.replace('_', ' ')}{v.status !== 'available' ? ' ⚠' : ''}{FIT_LABEL[fitRankByVehicle.get(v.id) ?? 2] ?? ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
       )}
 
       {form.transport_mode === 'hired' && (
@@ -334,13 +375,27 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Assigned Staff (logistics)">
-          <SearchableSelect value={form.assigned_staff_id ?? null} onChange={sid => set('assigned_staff_id', sid)} options={staffOptions} placeholder="Who runs this job…" />
+        <Field label={form.transport_mode === 'own_fleet' ? 'Driver' : 'Assigned Staff (logistics)'}>
+          <SearchableSelect
+            value={form.assigned_staff_id ?? null}
+            onChange={sid => set('assigned_staff_id', sid)}
+            options={form.transport_mode === 'own_fleet' ? driverOptions : staffOptions}
+            placeholder={form.transport_mode === 'own_fleet' ? 'Select driver…' : 'Who runs this job…'}
+          />
         </Field>
-        <Field label="Driver Name (if different)">
+        <Field label="Driver Name (if different / hired)">
           <input type="text" className={inputCls} value={form.driver_name ?? ''} onChange={e => set('driver_name', e.target.value)} />
         </Field>
       </div>
+
+      <Field label="Expected Duration, queue → delivered (hours, optional)">
+        <input
+          type="number" step="0.5" min="0.1" className={inputCls}
+          value={form.expected_duration_hours ?? ''}
+          onChange={e => set('expected_duration_hours', e.target.value ? parseFloat(e.target.value) : null)}
+          placeholder="e.g. 4"
+        />
+      </Field>
 
       {/* ── Route ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

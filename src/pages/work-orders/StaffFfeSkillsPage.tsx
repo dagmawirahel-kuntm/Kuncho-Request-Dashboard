@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { StarRating } from '@/components/shared/StarRating'
 import { RatingTrend } from '@/components/shared/RatingTrend'
-import type { FfeJobDescription, FfeKeyResponsibility, StaffFfeSkillRating, StaffFfeRoleSummaryRow } from '@/types/database'
+import type { FfeJobDescription, FfeKeyResponsibility, StaffFfeSkillRating, StaffFfeRoleSummaryRow, LogisticsTransportTurnaroundKpi } from '@/types/database'
 import { ArrowLeft, Star } from 'lucide-react'
 
 // Roles #1-3 are profiled together as one "Carpenter" competency
@@ -108,6 +108,20 @@ export default function StaffFfeSkillsPage() {
 
   const summaryByRole = useMemo(() => new Map(roleSummaries.map(s => [s.job_description_id, s])), [roleSummaries])
 
+  // Observable data behind "Transport turnaround" (Logistics Officer),
+  // shown next to that one responsibility's star rating so the assessor
+  // sees real completion history instead of only an abstract score.
+  // Never written back as a score — that stays a human judgment call.
+  const { data: transportKpi } = useQuery({
+    queryKey: ['transport-turnaround-kpi', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_logistics_transport_turnaround_kpi').select('*').eq('staff_id', id!).maybeSingle()
+      if (error) throw error
+      return data as LogisticsTransportTurnaroundKpi | null
+    },
+    enabled: !!id,
+  })
+
   async function submitRating(responsibilityId: string, score: number, notes: string) {
     const { error } = await supabase.from('staff_skill_ratings').insert([{
       staff_id: id!,
@@ -143,7 +157,7 @@ export default function StaffFfeSkillsPage() {
             {carpenterRoles.map(r => (
               <RoleCard key={r.id} role={r} responsibilities={responsibilitiesByRole.get(r.id) ?? []}
                 summary={summaryByRole.get(r.id) ?? null} historyByResponsibility={historyByResponsibility}
-                canEdit={canEdit} onRate={submitRating} />
+                canEdit={canEdit} onRate={submitRating} transportKpi={transportKpi ?? null} />
             ))}
           </div>
         </div>
@@ -156,7 +170,7 @@ export default function StaffFfeSkillsPage() {
             {standaloneRoles.map(r => (
               <RoleCard key={r.id} role={r} responsibilities={responsibilitiesByRole.get(r.id) ?? []}
                 summary={summaryByRole.get(r.id) ?? null} historyByResponsibility={historyByResponsibility}
-                canEdit={canEdit} onRate={submitRating} />
+                canEdit={canEdit} onRate={submitRating} transportKpi={transportKpi ?? null} />
             ))}
           </div>
         </div>
@@ -165,13 +179,14 @@ export default function StaffFfeSkillsPage() {
   )
 }
 
-function RoleCard({ role, responsibilities, summary, historyByResponsibility, canEdit, onRate }: {
+function RoleCard({ role, responsibilities, summary, historyByResponsibility, canEdit, onRate, transportKpi }: {
   role: FfeJobDescription
   responsibilities: FfeKeyResponsibility[]
   summary: StaffFfeRoleSummaryRow | null
   historyByResponsibility: Map<string, StaffFfeSkillRating[]>
   canEdit: boolean
   onRate: (responsibilityId: string, score: number, notes: string) => Promise<void>
+  transportKpi: LogisticsTransportTurnaroundKpi | null
 }) {
   return (
     <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-4 space-y-3">
@@ -192,7 +207,8 @@ function RoleCard({ role, responsibilities, summary, historyByResponsibility, ca
           const history = historyByResponsibility.get(r.id) ?? []
           const current = history.length > 0 ? history[history.length - 1].score : null
           return (
-            <ResponsibilityRow key={r.id} responsibility={r} history={history} current={current} canEdit={canEdit} onRate={onRate} />
+            <ResponsibilityRow key={r.id} responsibility={r} history={history} current={current} canEdit={canEdit} onRate={onRate}
+              transportKpi={r.responsibility_title === 'Transport turnaround' ? transportKpi : null} />
           )
         })}
         {responsibilities.length === 0 && <p className="text-xs text-slate-400">No active responsibilities defined</p>}
@@ -201,12 +217,13 @@ function RoleCard({ role, responsibilities, summary, historyByResponsibility, ca
   )
 }
 
-function ResponsibilityRow({ responsibility, history, current, canEdit, onRate }: {
+function ResponsibilityRow({ responsibility, history, current, canEdit, onRate, transportKpi }: {
   responsibility: FfeKeyResponsibility
   history: StaffFfeSkillRating[]
   current: number | null
   canEdit: boolean
   onRate: (responsibilityId: string, score: number, notes: string) => Promise<void>
+  transportKpi?: LogisticsTransportTurnaroundKpi | null
 }) {
   const [rating, setRating] = useState(false)
   const [pendingScore, setPendingScore] = useState<number | null>(null)
@@ -250,6 +267,18 @@ function ResponsibilityRow({ responsibility, history, current, canEdit, onRate }
         <StarRating score={current} />
         <RatingTrend history={history.map(h => ({ score: h.score, ratedAt: h.rated_at }))} />
       </div>
+
+      {transportKpi !== undefined && transportKpi !== null && (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          Observed: {transportKpi.jobs_with_target_completed} job{transportKpi.jobs_with_target_completed === 1 ? '' : 's'} with a duration target
+          {transportKpi.jobs_with_target_completed > 0 && (
+            <> — {transportKpi.jobs_on_time} on time, {transportKpi.jobs_late} late ({transportKpi.on_time_pct}% on-time)</>
+          )}
+        </p>
+      )}
+      {transportKpi === null && responsibility.responsibility_title === 'Transport turnaround' && (
+        <p className="text-[11px] text-slate-400">Observed: no completed jobs with a duration target yet</p>
+      )}
 
       {rating && (
         <div className="rounded-md border dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 p-2.5 space-y-2">

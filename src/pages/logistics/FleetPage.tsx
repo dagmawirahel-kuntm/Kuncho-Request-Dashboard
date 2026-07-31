@@ -138,6 +138,7 @@ export default function FleetPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [name, setName] = useState('')
   const [vehicleType, setVehicleType] = useState<Vehicle['vehicle_type']>('pickup')
+  const [capacityClass, setCapacityClass] = useState<Vehicle['capacity_class']>('light')
   const [plate, setPlate] = useState('')
   const [inBooks, setInBooks] = useState(false)
   const [notes, setNotes] = useState('')
@@ -185,7 +186,7 @@ export default function FleetPage() {
     if (!name.trim()) { toast('Vehicle name is required', 'error'); return }
     setSaving(true)
     const { error } = await supabase.from('vehicles').insert([{
-      name: name.trim(), vehicle_type: vehicleType, plate_number: plate.trim() || null,
+      name: name.trim(), vehicle_type: vehicleType, capacity_class: capacityClass, plate_number: plate.trim() || null,
       recognized_in_books: inBooks, purpose_notes: notes.trim() || null, image_url: imageUrl,
       fuel_tank_liters: fuelTankLiters ? parseFloat(fuelTankLiters) : null,
       status: 'available', active: true,
@@ -239,6 +240,16 @@ export default function FleetPage() {
                 <option value="motorbike">Motorbike</option>
                 <option value="van">Van</option>
                 <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Capacity Class</label>
+              <select className={inputCls} value={capacityClass ?? ''} onChange={e => setCapacityClass((e.target.value || null) as Vehicle['capacity_class'])}>
+                <option value="">— Not specified —</option>
+                <option value="motorbike">Motorbike</option>
+                <option value="light">Light (pickup/van)</option>
+                <option value="medium">Medium (truck)</option>
+                <option value="heavy">Heavy (full truck+)</option>
               </select>
             </div>
             <div>

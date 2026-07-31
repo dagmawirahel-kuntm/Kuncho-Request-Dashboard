@@ -558,10 +558,13 @@ export interface TransportationRequest {
   assigned_staff_id: string | null
   job_status: TransportJobStatus
   priority: 'normal' | 'urgent' | 'critical'
+  cargo_size_estimate: VehicleCapacityClass | null
+  expected_duration_hours: number | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
-export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at'>
+export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at' | 'completed_at'>
 
 // ── Locations ────────────────────────────────────────────────────
 export type LocationKind = 'site' | 'vendor_shop' | 'office' | 'workshop' | 'warehouse' | 'client' | 'other'
@@ -582,6 +585,7 @@ export type LocationInsert = Omit<Location, 'id' | 'created_at'>
 
 // ── Vehicles (owned fleet) ────────────────────────────────────────
 export type VehicleStatus = 'available' | 'on_job' | 'maintenance' | 'offline'
+export type VehicleCapacityClass = 'motorbike' | 'light' | 'medium' | 'heavy'
 
 export interface Vehicle {
   id: string
@@ -593,11 +597,47 @@ export interface Vehicle {
   purpose_notes: string | null
   image_url: string | null
   fuel_tank_liters: number | null
+  capacity_class: VehicleCapacityClass | null
   active: boolean
   created_at: string
   updated_at: string
 }
 export type VehicleInsert = Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>
+
+// ── Transportation: overdue/on-time derivation and driver KPI ──────
+export interface TransportationPickupStatus {
+  id: string
+  request_name: string | null
+  job_type: TransportJobType
+  job_status: TransportJobStatus
+  priority: 'normal' | 'urgent' | 'critical'
+  assigned_staff_id: string | null
+  vehicle_id: string | null
+  sourcing_bundle_id: string | null
+  created_at: string
+  expected_duration_hours: number | null
+  completed_at: string | null
+  expected_by: string | null
+  is_overdue: boolean
+  completed_on_time: boolean | null
+}
+
+export interface LogisticsTransportTurnaroundKpi {
+  staff_id: string
+  jobs_with_target_completed: number
+  jobs_on_time: number
+  jobs_late: number
+  on_time_pct: number | null
+}
+
+export interface SuggestedVehicle {
+  vehicle_id: string
+  name: string
+  vehicle_type: string
+  capacity_class: VehicleCapacityClass | null
+  status: VehicleStatus
+  fit_rank: number
+}
 
 // ── Accounts ─────────────────────────────────────────────────────
 export interface Account {
