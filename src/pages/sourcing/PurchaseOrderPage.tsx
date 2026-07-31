@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle } from '@/types/database'
+import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
@@ -40,11 +40,15 @@ type BundleDetail = {
   finance_notes: string | null
   expense_id: string | null
   total_value: number
+  payment_pattern: SourcingBundlePaymentPattern
   created_at: string
   vendors: { vendor_name: string; wth_eligible: boolean | null } | null
   procurement_officer: { full_name: string } | null
   approver: { full_name: string } | null
-  expenses: { expense_code: string | null; item_service_description: string | null; amount_etb: number | null } | null
+  expenses: {
+    id: string; expense_code: string | null; item_service_description: string | null; amount_etb: number | null
+    approval_status: string; payment_state: string
+  } | null
   sourcing_bundle_items: {
     id: string
     order_item_id: string
@@ -226,6 +230,7 @@ export default function PurchaseOrderPage() {
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
+  const [closingAdvance, setClosingAdvance] = useState(false)
   const printRef = useRef<HTMLIFrameElement>(null)
 
   // Queue-pickup panel (C3) — raising the transport job right at PO
@@ -244,6 +249,28 @@ export default function PurchaseOrderPage() {
     return (drivers.length > 0 ? drivers : (allStaff as any[])).map(s => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined }))
   })()
   /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  // Dedicated vehicle per driver (migration 166) — how the fleet
+  // actually operates, so picking a driver here should default straight
+  // to their own vehicle rather than making someone re-pick it from a
+  // ranked list every time. Still overridable (e.g. their vehicle is in
+  // maintenance) — this only sets the initial value.
+  const { data: fleetVehicles = [] } = useQuery({
+    queryKey: ['vehicles-for-dedicated-lookup'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vehicles').select('id, name, status, assigned_driver_id').eq('active', true)
+      if (error) throw error
+      return data as { id: string; name: string; status: string; assigned_driver_id: string | null }[]
+    },
+    enabled: showQueuePanel,
+  })
+  const vehicleByDriver = new Map(fleetVehicles.filter(v => v.assigned_driver_id).map(v => [v.assigned_driver_id as string, v]))
+
+  function pickQueueDriver(driverId: string | null) {
+    setQueueDriverId(driverId)
+    const dedicated = driverId ? vehicleByDriver.get(driverId) : null
+    if (dedicated) setQueueVehicleId(dedicated.id)
+  }
 
   const { data: suggestedVehicles = [] } = useQuery({
     queryKey: ['suggest-vehicles', queueCargoSize],
@@ -266,7 +293,7 @@ export default function PurchaseOrderPage() {
           vendors(vendor_name, wth_eligible),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
-          expenses!sourcing_bundles_expense_id_fkey(expense_code, item_service_description, amount_etb),
+          expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state),
           sourcing_bundle_items(
             *,
             order_items(
@@ -377,6 +404,17 @@ export default function PurchaseOrderPage() {
   const canRecordGrn = (isStockOrLogistics || isAdmin) && status === 'ordered' && !grn
   const transportClearForExpense = !transportJob || transportJob.job_status === 'in_progress' || transportJob.job_status === 'completed'
   const canCreateExpense = !!grn && transportClearForExpense
+
+  // Advance payment (pattern B, migration 110): the vendor demands
+  // payment before goods arrive, so the expense has to exist before a
+  // GRN does — the opposite gate from canCreateExpense above, and only
+  // for bundles that actually declared this pattern. Creating the
+  // expense here does NOT itself send money; it still goes through the
+  // normal finance-approval and to-pay-queue flow, landing in
+  // payment_state = 'advance' instead of the usual 'sent'/'paid'.
+  const isPayInAdvance = bundle.payment_pattern === 'pay_in_advance'
+  const canCreateAdvanceExpense = isPayInAdvance && ['ordered', 'fulfilled'].includes(status) && !grn && !bundle.expense_id
+  const canCloseAdvance = (isFinance || isAdmin) && !!grn && bundle.expenses?.payment_state === 'advance'
 
   const sortedItems = [...(bundle.sourcing_bundle_items ?? [])].sort((a, b) => a.sort_order - b.sort_order)
 
@@ -502,6 +540,18 @@ export default function PurchaseOrderPage() {
     toast(expenseId ? 'Linked to expense' : 'Expense link removed', 'success')
   }
 
+  async function handleCloseAdvance() {
+    const expenseId = bundle?.expenses?.id
+    if (!expenseId) return
+    setClosingAdvance(true)
+    const { error } = await supabase.rpc('close_vendor_advance', { p_expense_id: expenseId })
+    setClosingAdvance(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
+    qc.invalidateQueries({ queryKey: ['v-open-vendor-advances'] })
+    toast('Advance closed — expense is now paid', 'success')
+  }
+
   async function handleDelete() {
     if (!window.confirm('Delete this sourcing bundle? This cannot be undone.')) return
     const { error } = await supabase.from('sourcing_bundles').delete().eq('id', id!)
@@ -548,6 +598,11 @@ export default function PurchaseOrderPage() {
               <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_CLS[status]}`}>
                 {STATUS_STEPS.find(s => s.status === status)?.label ?? status}
               </span>
+              {isPayInAdvance && (
+                <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                  Pay in Advance
+                </span>
+              )}
             </div>
             <p className="text-sm text-slate-500 dark:text-slate-400">Purchase Order — {vendorDisplay}</p>
           </div>
@@ -887,13 +942,16 @@ export default function PurchaseOrderPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Driver</label>
-                <SearchableSelect value={queueDriverId} onChange={setQueueDriverId} options={driverOptions} placeholder="Select driver…" />
+                <SearchableSelect value={queueDriverId} onChange={pickQueueDriver} options={driverOptions} placeholder="Select driver…" />
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Cargo Size</label>
                 <select
                   className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                  value={queueCargoSize} onChange={e => { setQueueCargoSize(e.target.value as VehicleCapacityClass | ''); setQueueVehicleId(null) }}>
+                  value={queueCargoSize} onChange={e => {
+                    setQueueCargoSize(e.target.value as VehicleCapacityClass | '')
+                    if (!queueDriverId || !vehicleByDriver.has(queueDriverId)) setQueueVehicleId(null)
+                  }}>
                   <option value="">— Not specified —</option>
                   {CARGO_SIZES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
@@ -907,10 +965,16 @@ export default function PurchaseOrderPage() {
                   {suggestedVehicles.map(v => (
                     <option key={v.vehicle_id} value={v.vehicle_id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
                       {v.name} — {v.status.replace('_', ' ')}
+                      {queueDriverId && vehicleByDriver.get(queueDriverId)?.id === v.vehicle_id ? ' (their dedicated vehicle)' : ''}
                       {v.fit_rank === 0 ? ' ✓ good fit' : v.fit_rank === 1 ? ' (larger than needed)' : v.fit_rank === 3 ? ' ⚠ may be too small' : ''}
                     </option>
                   ))}
                 </select>
+                {queueDriverId && vehicleByDriver.get(queueDriverId) && vehicleByDriver.get(queueDriverId)!.status !== 'available' && (
+                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                    Their dedicated vehicle is {vehicleByDriver.get(queueDriverId)!.status.replace('_', ' ')} — pick a different one or clear it to leave unassigned for now.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Expected Duration (hours)</label>
@@ -1015,24 +1079,53 @@ export default function PurchaseOrderPage() {
               <Receipt className="h-3.5 w-3.5" /> Reconciled Expense
             </label>
             {bundle.expenses ? (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">
-                  <span className="font-mono text-xs font-semibold text-brand mr-1.5">{bundle.expenses.expense_code}</span>
-                  {bundle.expenses.item_service_description}
-                  {bundle.expenses.amount_etb != null && ` — ${formatCurrency(bundle.expenses.amount_etb)}`}
-                </span>
-                <button onClick={() => linkExpense(null)}
-                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
-                  <Link2Off className="h-3 w-3" /> Unlink
-                </button>
-              </div>
-            ) : canCreateExpense ? (
               <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">
+                    <span className="font-mono text-xs font-semibold text-brand mr-1.5">{bundle.expenses.expense_code}</span>
+                    {bundle.expenses.item_service_description}
+                    {bundle.expenses.amount_etb != null && ` — ${formatCurrency(bundle.expenses.amount_etb)}`}
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    bundle.expenses.payment_state === 'paid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : bundle.expenses.payment_state === 'advance' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : bundle.expenses.approval_status === 'pending' ? 'bg-slate-200 text-slate-600 dark:bg-slate-600 dark:text-slate-300'
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                  }`}>
+                    {bundle.expenses.payment_state === 'paid' ? 'Paid'
+                      : bundle.expenses.payment_state === 'advance' ? 'Advance Sent — awaiting GRN'
+                      : bundle.expenses.payment_state === 'approved_to_pay' ? (isPayInAdvance ? 'Approved — ready to send advance' : 'Approved — ready to pay')
+                      : bundle.expenses.approval_status === 'pending' ? 'Awaiting Finance Approval'
+                      : 'Unpaid'}
+                  </span>
+                  <Link to={`/expenses/${bundle.expenses.id}`} className="text-xs text-brand hover:underline">View expense</Link>
+                  <button onClick={() => linkExpense(null)}
+                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
+                    <Link2Off className="h-3 w-3" /> Unlink
+                  </button>
+                </div>
+                {canCloseAdvance && (
+                  <button onClick={handleCloseAdvance} disabled={closingAdvance}
+                    className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {closingAdvance ? 'Closing…' : 'Close Advance — Mark Paid'}
+                  </button>
+                )}
+                {isPayInAdvance && bundle.expenses.payment_state === 'advance' && !grn && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Waiting on a GRN before this advance can be closed to a real expense.</p>
+                )}
+              </div>
+            ) : canCreateExpense || canCreateAdvanceExpense ? (
+              <div className="space-y-2">
+                {canCreateAdvanceExpense && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    No GRN yet — this records the advance payment now. Closing it to a real expense will require a GRN once goods arrive.
+                  </p>
+                )}
                 <Link
                   to={`/expenses/new?bundle_id=${id}`}
                   className="flex w-fit items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
                 >
-                  <Plus className="h-3.5 w-3.5" /> Create Expense for this PO
+                  <Plus className="h-3.5 w-3.5" /> {canCreateAdvanceExpense ? 'Record Advance Payment for this PO' : 'Create Expense for this PO'}
                 </Link>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-400">or link an existing one:</span>

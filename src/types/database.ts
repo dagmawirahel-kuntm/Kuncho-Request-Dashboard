@@ -598,6 +598,7 @@ export interface Vehicle {
   image_url: string | null
   fuel_tank_liters: number | null
   capacity_class: VehicleCapacityClass | null
+  assigned_driver_id: string | null
   active: boolean
   created_at: string
   updated_at: string
@@ -949,6 +950,8 @@ export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
 
+export type SourcingBundlePaymentPattern = 'pay_on_delivery' | 'pay_in_advance'
+
 export interface SourcingBundle {
   id: string
   bundle_code: string
@@ -966,6 +969,7 @@ export interface SourcingBundle {
   finance_notes: string | null
   expense_id: string | null
   total_value: number
+  payment_pattern: SourcingBundlePaymentPattern
   created_at: string
   updated_at: string
 }
@@ -1267,6 +1271,22 @@ export interface ToPayQueueRow {
   finance_approved_by: string | null
   finance_approved_at: string | null
   days_since_approval: number | null
+  sourcing_bundle_id: string | null
+  payment_pattern: SourcingBundlePaymentPattern | null
+}
+
+export interface OpenVendorAdvanceRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  vendor_id: string | null
+  vendor_name: string | null
+  sourcing_bundle_id: string | null
+  bundle_code: string | null
+  disbursed_by: string | null
+  payment_state_changed_at: string | null
+  days_open: number | null
 }
 
 export interface FinancePendingApprovalRow {

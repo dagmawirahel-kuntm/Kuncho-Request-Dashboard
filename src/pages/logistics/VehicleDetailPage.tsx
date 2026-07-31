@@ -7,8 +7,9 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { useStaff } from '@/hooks/useLookups'
 import type { Expense, Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
-import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera, Fuel, Pencil } from 'lucide-react'
+import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera, Fuel, Pencil, UserCircle2 } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
   available:   { label: 'Available',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -82,6 +83,19 @@ export default function VehicleDetailPage() {
     qc.invalidateQueries({ queryKey: ['vehicles'] })
     toast('Photo updated', 'success')
     setEditingPhoto(false)
+  }
+
+  const { data: allStaff = [] } = useStaff()
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const driverOptions = (allStaff as any[]).filter(s => s.role === 'Driver').map(s => ({ id: s.id, employee_name: s.employee_name }))
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  async function setDriver(driverId: string | null) {
+    const { error } = await supabase.from('vehicles').update({ assigned_driver_id: driverId }).eq('id', id!)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vehicle', id] })
+    qc.invalidateQueries({ queryKey: ['vehicles'] })
+    toast(driverId ? 'Driver assigned' : 'Driver unassigned', 'success')
   }
 
   const { data: fuelExpenses = [] } = useQuery({
@@ -208,6 +222,28 @@ export default function VehicleDetailPage() {
               </select>
             </div>
           )}
+
+          {/* Dedicated driver — how the fleet actually operates, not a
+              per-job assignment (that's the transport request form) */}
+          <div>
+            <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <UserCircle2 className="h-3 w-3" /> Dedicated Driver
+            </p>
+            {canManage ? (
+              <select
+                value={vehicle.assigned_driver_id ?? ''}
+                onChange={e => setDriver(e.target.value || null)}
+                className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+              >
+                <option value="">No dedicated driver</option>
+                {driverOptions.map(d => <option key={d.id} value={d.id}>{d.employee_name}</option>)}
+              </select>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {driverOptions.find(d => d.id === vehicle.assigned_driver_id)?.employee_name ?? 'No dedicated driver'}
+              </p>
+            )}
+          </div>
 
           {/* Fuel tank capacity */}
           <div>

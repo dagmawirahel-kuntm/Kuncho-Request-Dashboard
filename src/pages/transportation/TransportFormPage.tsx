@@ -229,6 +229,15 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     })
   }
 
+  // Dedicated vehicle per driver (migration 166) — the fleet's real
+  // operating model. Picking a driver defaults straight to their own
+  // vehicle instead of a ranked list; still overridable.
+  const vehicleByDriver = new Map(vehicles.filter(v => v.assigned_driver_id).map(v => [v.assigned_driver_id as string, v]))
+  function pickDriver(driverId: string | null) {
+    const dedicated = driverId ? vehicleByDriver.get(driverId) : null
+    setForm(f => ({ ...f, assigned_staff_id: driverId, ...(dedicated ? { vehicle_id: dedicated.id } : {}) }))
+  }
+
   const jobStatus: TransportJobStatus = record?.job_status ?? 'requested'
   const flow = STATUS_FLOW[jobStatus]
   const isMoneyJob = form.transport_mode === 'ride_hailing' || form.transport_mode === 'hired'
@@ -352,10 +361,17 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
               <option value="">— Select vehicle —</option>
               {vehicles.map(v => (
                 <option key={v.id} value={v.id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
-                  {v.name} — {v.status.replace('_', ' ')}{v.status !== 'available' ? ' ⚠' : ''}{FIT_LABEL[fitRankByVehicle.get(v.id) ?? 2] ?? ''}
+                  {v.name} — {v.status.replace('_', ' ')}{v.status !== 'available' ? ' ⚠' : ''}
+                  {form.assigned_staff_id && vehicleByDriver.get(form.assigned_staff_id)?.id === v.id ? ' (their dedicated vehicle)' : ''}
+                  {FIT_LABEL[fitRankByVehicle.get(v.id) ?? 2] ?? ''}
                 </option>
               ))}
             </select>
+            {form.assigned_staff_id && vehicleByDriver.get(form.assigned_staff_id) && vehicleByDriver.get(form.assigned_staff_id)!.status !== 'available' && (
+              <p className="mt-1 text-[11px] text-amber-600">
+                Their dedicated vehicle is {vehicleByDriver.get(form.assigned_staff_id)!.status.replace('_', ' ')} — pick a different one if this job can't wait.
+              </p>
+            )}
           </Field>
         </div>
       )}
@@ -378,7 +394,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         <Field label={form.transport_mode === 'own_fleet' ? 'Driver' : 'Assigned Staff (logistics)'}>
           <SearchableSelect
             value={form.assigned_staff_id ?? null}
-            onChange={sid => set('assigned_staff_id', sid)}
+            onChange={sid => form.transport_mode === 'own_fleet' ? pickDriver(sid) : set('assigned_staff_id', sid)}
             options={form.transport_mode === 'own_fleet' ? driverOptions : staffOptions}
             placeholder={form.transport_mode === 'own_fleet' ? 'Select driver…' : 'Who runs this job…'}
           />
