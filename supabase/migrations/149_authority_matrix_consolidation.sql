@@ -55,6 +55,14 @@
 -- pending final confirmation against Kuncho's real thresholds."
 -- Hard-coding provisional figures into RLS would bake guesses into
 -- access control. They stay open pending confirmed numbers.
+--
+-- APPLICATION NOTE (added when sections 1, 1b and 2 were applied):
+-- section 3 has NOT been applied. It is a real authority change — it
+-- caps procurement_officer PO approval at ETB 50,000 — and there are
+-- two live procurement_officer accounts, so it was held pending an
+-- explicit decision rather than shipped as a side effect of fixing the
+-- executive role. Re-running this whole file applies it; every
+-- statement is idempotent.
 -- ============================================================
 
 SET search_path TO public;
@@ -85,30 +93,38 @@ END $$;
 -- Split into two independent, accurately-named policies. Net
 -- effective access is unchanged; it just can't be removed by accident.
 DROP POLICY IF EXISTS "manager_read" ON expenses;
+DROP POLICY IF EXISTS "expenses_executive_read" ON expenses;
 CREATE POLICY "expenses_executive_read" ON expenses FOR SELECT
   USING (get_user_role() = 'executive');
+DROP POLICY IF EXISTS "expenses_finance_read" ON expenses;
 CREATE POLICY "expenses_finance_read" ON expenses FOR SELECT
   USING (get_user_role() = 'finance');
 
 DROP POLICY IF EXISTS "manager_write" ON expenses;
+DROP POLICY IF EXISTS "expenses_executive_insert" ON expenses;
 CREATE POLICY "expenses_executive_insert" ON expenses FOR INSERT
   WITH CHECK (get_user_role() = 'executive');
 
 DROP POLICY IF EXISTS "manager_update" ON expenses;
+DROP POLICY IF EXISTS "expenses_executive_update" ON expenses;
 CREATE POLICY "expenses_executive_update" ON expenses FOR UPDATE
   USING (get_user_role() = 'executive');
 
 DROP POLICY IF EXISTS "manager_read" ON orders;
+DROP POLICY IF EXISTS "orders_executive_read" ON orders;
 CREATE POLICY "orders_executive_read" ON orders FOR SELECT
   USING (get_user_role() = 'executive');
+DROP POLICY IF EXISTS "orders_finance_read" ON orders;
 CREATE POLICY "orders_finance_read" ON orders FOR SELECT
   USING (get_user_role() = 'finance');
 
 DROP POLICY IF EXISTS "manager_write" ON orders;
+DROP POLICY IF EXISTS "orders_executive_insert" ON orders;
 CREATE POLICY "orders_executive_insert" ON orders FOR INSERT
   WITH CHECK (get_user_role() = 'executive');
 
 DROP POLICY IF EXISTS "manager_approve_orders" ON orders;
+DROP POLICY IF EXISTS "orders_executive_update" ON orders;
 CREATE POLICY "orders_executive_update" ON orders FOR UPDATE
   USING (get_user_role() = 'executive');
 

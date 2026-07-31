@@ -11,7 +11,7 @@ import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitatio
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canEditFinanceFields, canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
@@ -541,8 +541,13 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const deliveryStatuses = (form.delivery_status as string[]) ?? []
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
-  const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && record?.requires_finance_approval && canApproveAsFinance(role)
+  // Single gate since migration 163: Finance approves straight from
+  // pending, which releases the expense to payment. `manager_approved`
+  // is accepted here only so rows stranded in that retired state by the
+  // old first rung still have a way forward.
+  const showFinanceActions = isEdit
+    && (approvalStatus === 'pending' || approvalStatus === 'manager_approved')
+    && canApproveAsFinance(role)
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || record?.purchaser_user_id === user?.id)
 
   return (
@@ -558,10 +563,10 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <StatusBadge status={approvalStatus} />
           </div>
           {record?.requires_finance_approval && (
-            <p className="text-xs text-amber-600">Amount exceeds 50,000 ETB — requires Finance's final approval before payment.</p>
+            <p className="text-xs text-amber-600">Amount exceeds 50,000 ETB.</p>
           )}
           {record?.manager_approved_by && (
-            <p className="text-xs text-slate-500">Approved by manager: {profileName(record.manager_approved_by)} on {formatDate(record.manager_approved_at)}</p>
+            <p className="text-xs text-slate-500">Approved by manager: {profileName(record.manager_approved_by)} on {formatDate(record.manager_approved_at)} <span className="text-slate-400">(retired approval step)</span></p>
           )}
           {record?.finance_approved_by && (
             <p className="text-xs text-slate-500">Approved by finance: {profileName(record.finance_approved_by)} on {formatDate(record.finance_approved_at)}</p>
@@ -570,21 +575,21 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <p className="text-xs text-red-600">Rejection reason: {record.rejection_reason}</p>
           )}
 
-          {(showManagerActions || showFinanceActions) && !rejecting && (
+          {showFinanceActions && !rejecting && (
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
+                onClick={() => handleApprovalTransition('finance_approved')}
                 className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
               >
-                {showFinanceActions ? 'Give Final Approval' : 'Approve'}
+                Approve for Payment
               </button>
               <button type="button" onClick={() => setRejecting(true)} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">
                 Reject
               </button>
             </div>
           )}
-          {(showManagerActions || showFinanceActions) && rejecting && (
+          {showFinanceActions && rejecting && (
             <div className="space-y-2">
               <textarea rows={2} className={inputCls} placeholder="Reason for rejection…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
               <div className="flex gap-2">

@@ -7,7 +7,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import type { Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
-import { Car, Truck, Bike, Plus, BookOpen, BookX, ArrowRight, MapPin, Camera } from 'lucide-react'
+import { useStaff } from '@/hooks/useLookups'
+import { Car, Truck, Bike, Plus, BookOpen, BookX, ArrowRight, MapPin, Camera, UserCircle2 } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string; dot: string }> = {
   available:   { label: 'Available',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', dot: '#10B981' },
@@ -27,13 +28,16 @@ function vehicleIcon(type: Vehicle['vehicle_type']) {
 }
 
 function VehicleCard({
-  vehicle, jobs, canManage, onStatusChange, onImageSaved,
+  vehicle, jobs, canManage, onStatusChange, onImageSaved, driverOptions, driverName, onDriverChange,
 }: {
   vehicle: Vehicle
   jobs: JobRow[]
   canManage: boolean
   onStatusChange: (id: string, status: VehicleStatus) => void
   onImageSaved: (id: string, url: string) => void
+  driverOptions: { id: string; employee_name: string }[]
+  driverName: string | null
+  onDriverChange: (vehicleId: string, driverId: string | null) => void
 }) {
   const meta = STATUS_META[vehicle.status]
   const [editingPhoto, setEditingPhoto] = useState(false)
@@ -96,6 +100,21 @@ function VehicleCard({
         {vehicle.purpose_notes && (
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{vehicle.purpose_notes}</p>
         )}
+        <div className="mt-2 flex items-center gap-1.5 text-xs">
+          <UserCircle2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          {canManage ? (
+            <select
+              value={vehicle.assigned_driver_id ?? ''}
+              onChange={e => onDriverChange(vehicle.id, e.target.value || null)}
+              className="w-full rounded-md border px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+            >
+              <option value="">No dedicated driver</option>
+              {driverOptions.map(d => <option key={d.id} value={d.id}>{d.employee_name}</option>)}
+            </select>
+          ) : (
+            <span className="text-slate-500 dark:text-slate-400">{driverName ?? 'No dedicated driver'}</span>
+          )}
+        </div>
       </div>
 
       {/* Active jobs on this vehicle */}
@@ -138,6 +157,8 @@ export default function FleetPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [name, setName] = useState('')
   const [vehicleType, setVehicleType] = useState<Vehicle['vehicle_type']>('pickup')
+  const [capacityClass, setCapacityClass] = useState<Vehicle['capacity_class']>('light')
+  const [assignedDriverId, setAssignedDriverId] = useState<string | null>(null)
   const [plate, setPlate] = useState('')
   const [inBooks, setInBooks] = useState(false)
   const [notes, setNotes] = useState('')
@@ -153,6 +174,12 @@ export default function FleetPage() {
       return data as Vehicle[]
     },
   })
+
+  const { data: allStaff = [] } = useStaff()
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const driverOptions = (allStaff as any[]).filter(s => s.role === 'Driver').map(s => ({ id: s.id, employee_name: s.employee_name }))
+  const driverNameById = new Map((allStaff as any[]).map(s => [s.id, s.employee_name]))
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Active jobs per vehicle (assigned or in progress)
   const { data: activeJobs = [] } = useQuery({
@@ -181,18 +208,26 @@ export default function FleetPage() {
     toast('Photo updated', 'success')
   }
 
+  async function setDriver(id: string, driverId: string | null) {
+    const { error } = await supabase.from('vehicles').update({ assigned_driver_id: driverId }).eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vehicles'] })
+    toast(driverId ? 'Driver assigned' : 'Driver unassigned', 'success')
+  }
+
   async function handleAdd() {
     if (!name.trim()) { toast('Vehicle name is required', 'error'); return }
     setSaving(true)
     const { error } = await supabase.from('vehicles').insert([{
-      name: name.trim(), vehicle_type: vehicleType, plate_number: plate.trim() || null,
+      name: name.trim(), vehicle_type: vehicleType, capacity_class: capacityClass, plate_number: plate.trim() || null,
       recognized_in_books: inBooks, purpose_notes: notes.trim() || null, image_url: imageUrl,
       fuel_tank_liters: fuelTankLiters ? parseFloat(fuelTankLiters) : null,
+      assigned_driver_id: assignedDriverId,
       status: 'available', active: true,
     }])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
-    setShowAdd(false); setName(''); setPlate(''); setNotes(''); setInBooks(false); setImageUrl(null); setFuelTankLiters('')
+    setShowAdd(false); setName(''); setPlate(''); setNotes(''); setInBooks(false); setImageUrl(null); setFuelTankLiters(''); setAssignedDriverId(null)
     qc.invalidateQueries({ queryKey: ['vehicles'] })
     toast('Vehicle added', 'success')
   }
@@ -239,6 +274,23 @@ export default function FleetPage() {
                 <option value="motorbike">Motorbike</option>
                 <option value="van">Van</option>
                 <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Capacity Class</label>
+              <select className={inputCls} value={capacityClass ?? ''} onChange={e => setCapacityClass((e.target.value || null) as Vehicle['capacity_class'])}>
+                <option value="">— Not specified —</option>
+                <option value="motorbike">Motorbike</option>
+                <option value="light">Light (pickup/van)</option>
+                <option value="medium">Medium (truck)</option>
+                <option value="heavy">Heavy (full truck+)</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Dedicated Driver</label>
+              <select className={inputCls} value={assignedDriverId ?? ''} onChange={e => setAssignedDriverId(e.target.value || null)}>
+                <option value="">No dedicated driver</option>
+                {driverOptions.map(d => <option key={d.id} value={d.id}>{d.employee_name}</option>)}
               </select>
             </div>
             <div>
@@ -291,6 +343,9 @@ export default function FleetPage() {
               canManage={canManage}
               onStatusChange={setStatus}
               onImageSaved={setImage}
+              driverOptions={driverOptions}
+              driverName={v.assigned_driver_id ? (driverNameById.get(v.assigned_driver_id) ?? null) : null}
+              onDriverChange={setDriver}
             />
           ))}
         </div>
