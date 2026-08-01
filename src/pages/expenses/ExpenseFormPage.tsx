@@ -7,7 +7,7 @@ import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
-import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property } from '@/types/database'
+import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement } from '@/types/database'
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -66,6 +66,8 @@ export default function ExpenseFormPage() {
   const vrfId  = searchParams.get('vrf_id')
   const bundleId = searchParams.get('bundle_id')
   const propertyId = searchParams.get('property_id')
+  const cpoBondId = searchParams.get('cpo_bond_id')
+  const engagementId = searchParams.get('engagement_id')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -141,6 +143,26 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!propertyId,
   })
 
+  const { data: linkedCpoBond } = useQuery({
+    queryKey: ['cpo-bond-for-expense', cpoBondId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cpo_bonds').select('*').eq('id', cpoBondId!).single()
+      if (error) throw error
+      return data as CpoBond
+    },
+    enabled: !isEdit && !!cpoBondId,
+  })
+
+  const { data: linkedEngagement } = useQuery({
+    queryKey: ['engagement-for-expense', engagementId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('subcontractor_engagements').select('*').eq('id', engagementId!).single()
+      if (error) throw error
+      return data as SubcontractorEngagement
+    },
+    enabled: !isEdit && !!engagementId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -155,6 +177,8 @@ export default function ExpenseFormPage() {
       linkedVrf={linkedVrf}
       linkedBundle={linkedBundle}
       linkedProperty={linkedProperty}
+      linkedCpoBond={linkedCpoBond}
+      linkedEngagement={linkedEngagement}
     />
   )
 }
@@ -167,12 +191,14 @@ type LinkedBundle = {
   }[]
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty, linkedCpoBond, linkedEngagement }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
   linkedBundle?: LinkedBundle
   linkedProperty?: Property
+  linkedCpoBond?: CpoBond
+  linkedEngagement?: SubcontractorEngagement
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -421,6 +447,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       item_service_description: `Rent — ${linkedProperty.property_name}`,
       amount_etb: linkedProperty.monthly_rent_amount ?? undefined,
       vendor_id: linkedProperty.landlord_vendor_id ?? undefined,
+    } : {}),
+    // pre-fill from a linked CPO bond — same ?xxx_id= gateway pattern as
+    // PO/VRF/property above. cpo_bonds.project is free text, not a real
+    // project_id FK, so it's left for the user to pick if relevant.
+    ...(linkedCpoBond ? {
+      cpo_bond_id: linkedCpoBond.id,
+      expense_type: 'cpo_bond' as const,
+      item_service_description: linkedCpoBond.bond_id_ref ? `CPO Bond ${linkedCpoBond.bond_id_ref}` : undefined,
+      amount_etb: linkedCpoBond.total_bond_amount ?? undefined,
+      vendor_id: linkedCpoBond.vendor_id ?? undefined,
+    } : {}),
+    // pre-fill from a linked subcontractor engagement — the manual
+    // "Subcontractor Engagement" picker below already supports this
+    // relationship; this just arrives with it pre-selected instead of
+    // making the user search for the engagement by hand.
+    ...(linkedEngagement ? {
+      subcontractor_engagement_id: linkedEngagement.id,
+      expense_type: 'subcontract' as const,
+      vendor_id: linkedEngagement.vendor_id,
+      project_id: linkedEngagement.project_id,
+      amount_etb: linkedEngagement.agreed_amount ?? undefined,
     } : {}),
   }
   )

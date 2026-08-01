@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -61,6 +61,8 @@ export default function CashAdvanceFormPage() {
 function CashAdvanceFormPageBody({ id, record, linkedExpenseIds }: { id?: string; record?: CashAdvance; linkedExpenseIds: string[] }) {
   const isEdit = !!id
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const prefillStaffId = searchParams.get('staff_id')
     const { role } = useAuth()
     const { toast } = useToast()
     const qc = useQueryClient()
@@ -90,7 +92,7 @@ function CashAdvanceFormPageBody({ id, record, linkedExpenseIds }: { id?: string
         account_used_id: record.account_used_id,
         payroll_id: record.payroll_id,
       }
-      : {}
+      : { staff_id: prefillStaffId ?? undefined }
   )
     const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>(linkedExpenseIds)
     const [saving, setSaving] = useState(false)

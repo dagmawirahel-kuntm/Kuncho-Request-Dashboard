@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -73,6 +73,8 @@ export default function PayrollFormPage() {
 function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?: Payroll; linkedRows: PayrollStaff[] }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillStaffId = searchParams.get('staff_id')
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
@@ -140,6 +142,17 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
   function setLine(staffId: string, key: 'gross' | 'deductions', value: number) {
     setLines(prev => prev.map(l => (l.staff_id === staffId ? { ...l, [key]: value } : l)))
   }
+
+  // Arriving from a staff member's detail page with ?staff_id= — add them
+  // as the first pay line once the staff list has actually loaded (it's
+  // fetched async, so this can't be done in the lines useState initializer).
+  const [staffPrefilled, setStaffPrefilled] = useState(false)
+  useEffect(() => {
+    if (isEdit || !prefillStaffId || staffPrefilled || staff.length === 0) return
+    handleStaffSelection([prefillStaffId])
+    setStaffPrefilled(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, prefillStaffId, staffPrefilled, staff])
 
   const totals = useMemo(() => {
     const gross = lines.reduce((s, l) => s + l.gross, 0)

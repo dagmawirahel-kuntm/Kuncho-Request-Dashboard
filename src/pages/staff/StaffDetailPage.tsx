@@ -280,17 +280,26 @@ function OverviewTab({ staff }: { staff: Staff }) {
   )
 }
 
-function PayrollTab({ records }: { records: EmergencyPayrollSummary[] }) {
+function PayrollTab({ records, staffId }: { records: EmergencyPayrollSummary[]; staffId: string }) {
   if (records.length === 0) {
     return (
       <div className="py-16 text-center">
         <Wallet className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
         <p className="text-sm text-slate-500 dark:text-slate-400">No payroll records found.</p>
+        <Link to={`/payroll/new?staff_id=${staffId}`} className="mt-2 inline-block text-xs text-brand hover:underline">
+          Add this employee to a payroll run →
+        </Link>
       </div>
     )
   }
   return (
-    <div className="overflow-x-auto rounded-xl border dark:border-slate-700">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Link to={`/payroll/new?staff_id=${staffId}`} className="text-xs text-slate-400 hover:text-brand transition-colors">
+          Add this employee to a payroll run →
+        </Link>
+      </div>
+      <div className="overflow-x-auto rounded-xl border dark:border-slate-700">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 dark:bg-slate-900/60 border-b dark:border-slate-700">
           <tr>
@@ -324,16 +333,20 @@ function PayrollTab({ records }: { records: EmergencyPayrollSummary[] }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
 
-function AdvancesTab({ advances }: { advances: (CashAdvance & { accounts: { account_name: string } | null })[] }) {
+function AdvancesTab({ advances, staffId }: { advances: (CashAdvance & { accounts: { account_name: string } | null })[]; staffId: string }) {
   if (advances.length === 0) {
     return (
       <div className="py-16 text-center">
         <DollarSign className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
         <p className="text-sm text-slate-500 dark:text-slate-400">No cash advance records found.</p>
+        <Link to={`/cash-advances/new?staff_id=${staffId}`} className="mt-2 inline-block text-xs text-brand hover:underline">
+          Record a new cash advance →
+        </Link>
       </div>
     )
   }
@@ -342,9 +355,14 @@ function AdvancesTab({ advances }: { advances: (CashAdvance & { accounts: { acco
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500 dark:text-slate-400">{advances.length} advance{advances.length !== 1 ? 's' : ''}</p>
-        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Total: {formatCurrency(total)}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Total: {formatCurrency(total)}
+          </p>
+          <Link to={`/cash-advances/new?staff_id=${staffId}`} className="text-xs text-slate-400 hover:text-brand transition-colors">
+            Record a new advance →
+          </Link>
+        </div>
       </div>
       <div className="overflow-x-auto rounded-xl border dark:border-slate-700">
         <table className="w-full text-sm">
@@ -679,8 +697,8 @@ export default function StaffDetailPage() {
               <OrgPlacementSection staff={staff} />
             </div>
           )}
-          {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} />}
-          {activeTab === 'advances'   && <AdvancesTab advances={advances} />}
+          {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
+          {activeTab === 'advances'   && <AdvancesTab advances={advances} staffId={staff.id} />}
           {activeTab === 'timesheets' && <TimesheetsTab timesheets={timesheets} />}
         </div>
       </div>
