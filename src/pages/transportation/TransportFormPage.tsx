@@ -15,7 +15,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Receipt, ExternalLink } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   const required = label.endsWith('*')
   return (
     <div>
@@ -24,6 +24,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {required && <span className="text-brand"> *</span>}
       </label>
       {children}
+      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
     </div>
   )
 }
@@ -148,6 +149,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           priority: record.priority,
           driver_name: record.driver_name,
           expected_delivery_date: record.expected_delivery_date,
+          expected_duration_minutes: record.expected_duration_minutes,
           actual_delivery_date: record.actual_delivery_date,
           pickup_location_id: record.pickup_location_id,
           dropoff_location_id: record.dropoff_location_id,
@@ -363,6 +365,11 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </Field>
         <Field label="Expected">
           <input type="date" className={inputCls} value={form.expected_delivery_date ?? ''} onChange={e => set('expected_delivery_date', e.target.value)} />
+        </Field>
+        <Field label="Job Duration (hours)" hint="How long this ties up the vehicle — feeds the fleet queue ETA below, not the date above">
+          <input type="number" step="0.25" min="0" className={inputCls}
+            value={form.expected_duration_minutes != null ? form.expected_duration_minutes / 60 : ''}
+            onChange={e => set('expected_duration_minutes', e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null)} />
         </Field>
         <Field label="Actual">
           <input type="date" className={inputCls} value={form.actual_delivery_date ?? ''} onChange={e => set('actual_delivery_date', e.target.value)} />

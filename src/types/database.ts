@@ -555,10 +555,28 @@ export interface TransportationRequest {
   assigned_staff_id: string | null
   job_status: TransportJobStatus
   priority: 'normal' | 'urgent' | 'critical'
+  /** How long this job occupies the vehicle. Feeds the per-vehicle queue ETA — distinct from expected_delivery_date. */
+  expected_duration_minutes: number | null
   created_at: string
   updated_at: string
 }
 export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at'>
+
+/** v_transport_vehicle_queue — chained ETA per vehicle, own_fleet jobs only. */
+export interface TransportVehicleQueueRow {
+  id: string
+  vehicle_id: string
+  vehicle_name: string
+  request_name: string | null
+  job_type: TransportJobType
+  job_status: TransportJobStatus
+  priority: 'normal' | 'urgent' | 'critical'
+  queue_position: number
+  expected_duration_minutes: number | null
+  estimated_start: string | null
+  estimated_finish: string | null
+  chain_intact: boolean
+}
 
 // ── Locations ────────────────────────────────────────────────────
 export type LocationKind = 'site' | 'vendor_shop' | 'office' | 'workshop' | 'warehouse' | 'client' | 'other'
