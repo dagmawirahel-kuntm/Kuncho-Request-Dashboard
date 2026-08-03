@@ -1,10 +1,132 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Pencil, ReceiptText, ArrowLeftRight, TrendingDown, TrendingUp, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Pencil, ReceiptText, ArrowLeftRight, TrendingDown, TrendingUp, AlertCircle, ScaleIcon, CheckCircle2 } from 'lucide-react'
 import type { Account, Expense } from '@/types/database'
+import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
+
+interface ReconStatus {
+  account_id: string
+  current_balance: number
+  last_reconciled_date: string | null
+  reconciled_balance: number | null
+  last_variance: number | null
+  unreconciled_movement: number | null
+  days_since_reconciled: number | null
+}
+
+// #8: shows the account's reconciled balance vs live balance, the movement
+// since the last statement, and how stale it is — with a Reconcile action
+// that records a bank-statement balance and adopts it as the new anchor.
+function ReconciliationPanel({ accountId, accountName }: { accountId: string; accountName: string }) {
+  const { role } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const canReconcile = role === 'admin' || role === 'finance'
+  const [open, setOpen] = useState(false)
+  const [stmtDate, setStmtDate] = useState('')
+  const [stmtBal, setStmtBal] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const { data: s } = useQuery({
+    queryKey: ['account-reconciliation', accountId],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_account_reconciliation_status').select('*').eq('account_id', accountId).maybeSingle()
+      return data as ReconStatus | null
+    },
+  })
+
+  async function reconcile() {
+    if (!stmtDate || stmtBal === '') { toast('Enter the statement date and balance', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('reconcile_account', {
+      p_account_id: accountId, p_statement_date: stmtDate, p_statement_balance: parseFloat(stmtBal),
+      p_statement_url: null, p_statement_name: null, p_note: note.trim() || null,
+    })
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['account-reconciliation', accountId] })
+    qc.invalidateQueries({ queryKey: ['account-balance', accountId] })
+    qc.invalidateQueries({ queryKey: ['v_account_balances'] })
+    setOpen(false); setStmtDate(''); setStmtBal(''); setNote('')
+    toast('Account reconciled — balance now anchored to the statement', 'success')
+  }
+
+  const reconciled = s?.last_reconciled_date != null
+  const movement = s?.unreconciled_movement ?? null
+
+  return (
+    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+          <ScaleIcon className="h-4 w-4 text-brand" /> Reconciliation
+        </p>
+        {canReconcile && (
+          <button onClick={() => setOpen(o => !o)} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
+            {open ? 'Cancel' : 'Reconcile'}
+          </button>
+        )}
+      </div>
+
+      {reconciled ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div>
+            <p className="text-slate-400">Reconciled balance</p>
+            <p className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(s!.reconciled_balance ?? 0)}</p>
+            <p className="text-[10px] text-slate-400">as of {formatDate(s!.last_reconciled_date!)}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">Unreconciled since</p>
+            <p className={`font-semibold tabular-nums ${(movement ?? 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>
+              {movement != null ? `${movement >= 0 ? '+' : '−'}${formatCurrency(Math.abs(movement))}` : '—'}
+            </p>
+            <p className="text-[10px] text-slate-400">activity after the statement</p>
+          </div>
+          <div>
+            <p className="text-slate-400">Live balance</p>
+            <p className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(s!.current_balance ?? 0)}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">Last off by</p>
+            <p className={`font-semibold tabular-nums ${Math.abs(s!.last_variance ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {formatCurrency(Math.abs(s!.last_variance ?? 0))}
+            </p>
+            <p className="text-[10px] text-slate-400">{s!.days_since_reconciled}d ago</p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400 flex items-center gap-1.5">
+          <AlertCircle className="h-3.5 w-3.5" /> Never reconciled. The balance shown is the system's own running figure, not a bank-confirmed one.
+        </p>
+      )}
+
+      {open && canReconcile && (
+        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3 space-y-2">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Enter the balance from a bank statement for {accountName}. It becomes the confirmed balance; the app tracks movement forward from there.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input type="date" value={stmtDate} onChange={e => setStmtDate(e.target.value)}
+              className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+            <input type="number" step="0.01" placeholder="Statement balance (ETB)" value={stmtBal} onChange={e => setStmtBal(e.target.value)}
+              className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          </div>
+          <input type="text" placeholder="Note / statement reference (optional)" value={note} onChange={e => setNote(e.target.value)}
+            className="w-full rounded-md border px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          <div className="flex justify-end">
+            <button onClick={reconcile} disabled={saving} className="flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+              <CheckCircle2 className="h-3.5 w-3.5" /> {saving ? 'Reconciling…' : 'Confirm Reconciliation'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Bank colour map ────────────────────────────────────────────────────────────
 const BANKS: { key: string; bg: string; initials: string }[] = [
@@ -248,6 +370,8 @@ export default function AccountDetailPage() {
           </div>
         </div>
       </div>
+
+      <ReconciliationPanel accountId={id!} accountName={account.account_name} />
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <div className="flex gap-0 border-b dark:border-slate-700">
