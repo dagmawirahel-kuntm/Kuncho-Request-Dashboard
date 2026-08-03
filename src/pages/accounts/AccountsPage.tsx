@@ -140,6 +140,23 @@ export default function AccountsPage() {
     [balancesRaw]
   )
 
+  // Reconciliation age per account — a standing reminder that a balance is
+  // system-computed until a bank statement confirms it.
+  const { data: reconRaw = [] } = useQuery({
+    queryKey: ['account-reconciliation-status'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_account_reconciliation_status')
+        .select('account_id, last_reconciled_date, days_since_reconciled')
+      if (error) throw error
+      return data as { account_id: string; last_reconciled_date: string | null; days_since_reconciled: number | null }[]
+    },
+  })
+  const reconMap = useMemo(
+    () => Object.fromEntries(reconRaw.map(r => [r.account_id, r])),
+    [reconRaw]
+  )
+
   const stats = useMemo(() => {
     const balances = data.map(a => Number(balanceMap[a.id] ?? 0))
     const total = balances.reduce((s, b) => s + b, 0)
@@ -168,6 +185,22 @@ export default function AccountsPage() {
         : null,
     },
     { key: 'status', label: 'Status', render: a => a.status ? <StatusBadge status={a.status} /> : null },
+    {
+      key: 'reconciled',
+      label: 'Reconciled',
+      render: a => {
+        if (!a.type?.toLowerCase().includes('bank')) return null
+        const r = reconMap[a.id]
+        const ever = !!r?.last_reconciled_date
+        const d = r?.days_since_reconciled ?? 0
+        const { label, cls } = !ever
+          ? { label: 'Never', cls: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' }
+          : d <= 35 ? { label: `${d}d`, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }
+          : d <= 75 ? { label: `${d}d`, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' }
+          : { label: `${d}d`, cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' }
+        return <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`} title={ever ? `Last reconciled ${d} days ago` : 'Never reconciled to a bank statement'}>{label}</span>
+      },
+    },
     {
       key: 'balance',
       label: 'Balance',

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { PackageCheck, MapPin, Receipt, Info } from 'lucide-react'
+import { PackageCheck, MapPin, Receipt, Info, Camera, CameraOff } from 'lucide-react'
 
 interface PickupRow {
   kind: 'vendor' | 'client'
@@ -15,12 +15,13 @@ interface PickupRow {
   pickup_hint: string | null
   captured_at: string | null
   workflow_status: string
+  has_photo: boolean
 }
 
-// #4: receipts photographed but not yet physically delivered to the
-// office — a pickup run for the e-bike driver. Confirming a pickup sets
-// the receipt's physical custody (confirm_receipt_pickup), the same
-// field finance would otherwise confirm.
+// Every receipt the tax officer hasn't marked collected yet — photographed or
+// not. Confirming collection sets the receipt's physical custody
+// (confirm_receipt_pickup), which the tax officer, pickup driver, or finance
+// can do.
 export default function ReceiptPickupQueuePage() {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -48,13 +49,13 @@ export default function ReceiptPickupQueuePage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Receipt Pickup Queue</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Receipts photographed in the field, waiting to be physically collected and brought to the office</p>
+        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Receipt Collection Queue</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Every receipt not yet marked collected by the tax officer — waiting to be physically brought into custody</p>
       </div>
 
       <div className="flex items-start gap-2 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <span>Each row is a receipt already captured as a photo but whose paper hasn't reached the office. Collect the paper, then mark it here — that confirms physical custody for the tax record.</span>
+        <span>Each row is a receipt whose paper isn't yet in the office's custody — whether or not it's been photographed. Collect the paper, then mark it here — that confirms physical custody for the tax record.</span>
       </div>
 
       {isLoading ? (
@@ -74,6 +75,9 @@ export default function ReceiptPickupQueuePage() {
                   </span>
                 </p>
                 <p className="text-xs text-slate-400 flex items-center gap-1 truncate">
+                  {r.has_photo
+                    ? <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400" title="Photographed"><Camera className="h-3 w-3" /></span>
+                    : <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400" title="No photo yet"><CameraOff className="h-3 w-3" /></span>}
                   {r.pickup_hint && <><MapPin className="h-3 w-3 shrink-0" />{r.pickup_hint} · </>}
                   {r.receipt_date ? formatDate(r.receipt_date) : 'no date'}
                   {r.vat_amount != null ? ` · VAT ${formatCurrency(r.vat_amount)}` : ''}

@@ -214,6 +214,8 @@ export default function BankStatementImportPage() {
         </div>
       </Section>
 
+      <PayrollReconcilePanel />
+
       {activeImportId && (
         <Section title="Review" sub="Confirm matches before committing — committing creates real transfer records">
           <div className="px-4 py-2 border-b dark:border-slate-700 flex justify-end">
@@ -355,5 +357,124 @@ function VarianceCell({ line }: { line: BankStatementLine }) {
       {over ? '+' : '−'}{formatCurrency(Math.abs(Number(line.variance_amount)))}
       <span className="ml-1 font-normal text-slate-400">{over ? 'over' : 'short'}</span>
     </span>
+  )
+}
+
+// Payments that never touch the payments page — payroll first — still leave the
+// bank and need a statement line against them, or they sit forever unreconciled.
+// This lists paid payroll runs with no matched line and lets finance point each
+// at an unmatched debit line from a committed statement for the same account.
+interface UnreconciledPayroll {
+  payroll_id: string
+  payroll_record: string | null
+  end_date: string | null
+  account_id: string | null
+  account_name: string | null
+  net_amount: number
+}
+interface UnmatchedDebitLine {
+  id: string
+  value_date: string | null
+  debit_amount: number | null
+  narration: string | null
+  reference: string | null
+  bank_statement_imports: { account_id: string | null } | null
+}
+
+function PayrollReconcilePanel() {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const { data: payrolls = [] } = useQuery({
+    queryKey: ['unreconciled-payroll'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_unreconciled_payroll').select('*').order('end_date', { ascending: false })
+      if (error) throw error
+      return data as UnreconciledPayroll[]
+    },
+  })
+
+  const { data: unmatchedLines = [] } = useQuery({
+    queryKey: ['unmatched-debit-lines'],
+    enabled: !!expanded,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bank_statement_lines')
+        .select('id, value_date, debit_amount, narration, reference, bank_statement_imports!inner(account_id)')
+        .eq('match_status', 'unmatched')
+        .not('debit_amount', 'is', null)
+        .order('value_date', { ascending: false })
+      if (error) throw error
+      return data as unknown as UnmatchedDebitLine[]
+    },
+  })
+
+  async function match(lineId: string, payrollId: string) {
+    setBusy(true)
+    const { error } = await supabase.rpc('match_line_to_payroll', { p_line_id: lineId, p_payroll_id: payrollId })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    setExpanded(null)
+    qc.invalidateQueries({ queryKey: ['unreconciled-payroll'] })
+    qc.invalidateQueries({ queryKey: ['unmatched-debit-lines'] })
+    toast('Payroll matched to bank line', 'success')
+  }
+
+  if (payrolls.length === 0) return null
+
+  return (
+    <Section title="Payroll to Reconcile" sub="Paid payroll runs with no matching bank line yet — off-payments-page disbursements">
+      <div className="divide-y dark:divide-slate-700">
+        {payrolls.map(p => {
+          const linesForAccount = unmatchedLines.filter(l => l.bank_statement_imports?.account_id === p.account_id)
+          return (
+            <div key={p.payroll_id} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
+                    {p.payroll_record ?? 'Payroll run'} · {p.account_name ?? 'No account'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {p.end_date ? formatDate(p.end_date) : '—'} · net {formatCurrency(p.net_amount)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setExpanded(expanded === p.payroll_id ? null : p.payroll_id)}
+                  className="shrink-0 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  {expanded === p.payroll_id ? 'Cancel' : 'Match to bank line'}
+                </button>
+              </div>
+
+              {expanded === p.payroll_id && (
+                <div className="mt-2 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 divide-y dark:divide-slate-700">
+                  {linesForAccount.length === 0 ? (
+                    <p className="px-3 py-3 text-xs text-slate-400">
+                      No unmatched debit lines on committed statements for this account. Import the statement that contains this payroll first.
+                    </p>
+                  ) : linesForAccount.map(l => (
+                    <button
+                      key={l.id}
+                      onClick={() => match(l.id, p.payroll_id)}
+                      disabled={busy}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-white dark:hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      <span className="min-w-0 truncate text-slate-600 dark:text-slate-300">
+                        {l.value_date ? formatDate(l.value_date) : '—'} · {l.narration ?? l.reference ?? 'no narration'}
+                      </span>
+                      <span className="shrink-0 font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                        {l.debit_amount != null ? formatCurrency(l.debit_amount) : '—'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Section>
   )
 }

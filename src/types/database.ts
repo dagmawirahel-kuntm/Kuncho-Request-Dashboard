@@ -1425,6 +1425,12 @@ export interface Timesheet {
   staff_id: string | null
   project_id: string | null
   payroll_id: string | null
+  labor_tier: number | null
+  labor_allocation_id: string | null
+  labor_requisition_id: string | null
+  casual_worker_name: string | null
+  day_rate: number | null
+  days_worked: number | null
   created_at: string
   updated_at: string
 }

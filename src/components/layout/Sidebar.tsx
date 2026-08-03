@@ -63,7 +63,7 @@ const navGroups: NavGroup[] = [
       { label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
       { label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },
-      { label: 'Receipt Pickups', to: '/receipt-pickups', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'logistics_officer', 'operations_manager'] },
+      { label: 'Receipt Collection', to: '/receipt-pickups', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'logistics_officer', 'operations_manager'] },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'executive', 'finance'] },
       { label: 'My Leave', to: '/my-leave', icon: CalendarClock },
@@ -120,6 +120,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'P&L Report', to: '/reports/pl', icon: PieChart, roles: ['admin', 'executive', 'finance'] },
       { label: 'Balance Sheet', to: '/reports/balance-sheet', icon: Scale, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Government Statement', to: '/reports/government-statement', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
       { label: 'Historical Archive', to: '/reports/archive', icon: Archive, roles: ['admin', 'executive', 'finance'] },
     ],
   },

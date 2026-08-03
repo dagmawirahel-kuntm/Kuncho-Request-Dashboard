@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Pencil, ReceiptText, ArrowLeftRight, TrendingDown, TrendingUp, AlertCircle, ScaleIcon, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Pencil, ReceiptText, ArrowLeftRight, TrendingDown, TrendingUp, AlertCircle, ScaleIcon, CheckCircle2, Upload } from 'lucide-react'
 import type { Account, Expense } from '@/types/database'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -16,6 +16,16 @@ interface ReconStatus {
   last_variance: number | null
   unreconciled_movement: number | null
   days_since_reconciled: number | null
+}
+
+// How stale a reconciliation is, as a badge. Colour ramps with age so a
+// long-unreconciled account reads as a warning at a glance, not fine print.
+function reconStaleness(days: number | null, everReconciled: boolean): { label: string; cls: string } {
+  if (!everReconciled) return { label: 'Never reconciled', cls: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' }
+  const d = days ?? 0
+  if (d <= 35) return { label: `Reconciled ${d}d ago`, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }
+  if (d <= 75) return { label: `${d}d since reconciliation`, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' }
+  return { label: `${d}d — overdue to reconcile`, cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' }
 }
 
 // #8: shows the account's reconciled balance vs live balance, the movement
@@ -40,6 +50,38 @@ function ReconciliationPanel({ accountId, accountName }: { accountId: string; ac
     },
   })
 
+  // The latest committed bank-statement import for this account is a
+  // ready-made reconciliation source: its period_end and ending_balance are
+  // exactly what reconcile_account needs. Offer it instead of retyping figures.
+  const { data: latestImport } = useQuery({
+    queryKey: ['account-latest-import', accountId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('bank_statement_imports')
+        .select('id, period_end, ending_balance, file_name')
+        .eq('account_id', accountId)
+        .eq('status', 'committed')
+        .not('ending_balance', 'is', null)
+        .order('period_end', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      return data as { id: string; period_end: string; ending_balance: number; file_name: string | null } | null
+    },
+  })
+
+  // Only worth surfacing if the import is newer than the last reconciliation —
+  // reconcile_account rejects a statement date at/behind the current anchor.
+  const importAhead = !!latestImport?.period_end &&
+    (!s?.last_reconciled_date || latestImport.period_end > s.last_reconciled_date)
+
+  function loadFromImport() {
+    if (!latestImport) return
+    setStmtDate(latestImport.period_end)
+    setStmtBal(String(latestImport.ending_balance))
+    setNote(n => n || (latestImport.file_name ? `From import: ${latestImport.file_name}` : ''))
+    setOpen(true)
+  }
+
   async function reconcile() {
     if (!stmtDate || stmtBal === '') { toast('Enter the statement date and balance', 'error'); return }
     setSaving(true)
@@ -50,6 +92,8 @@ function ReconciliationPanel({ accountId, accountName }: { accountId: string; ac
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['account-reconciliation', accountId] })
+    qc.invalidateQueries({ queryKey: ['account-reconciliation-status'] })
+    qc.invalidateQueries({ queryKey: ['account-latest-import', accountId] })
     qc.invalidateQueries({ queryKey: ['account-balance', accountId] })
     qc.invalidateQueries({ queryKey: ['v_account_balances'] })
     setOpen(false); setStmtDate(''); setStmtBal(''); setNote('')
@@ -64,6 +108,10 @@ function ReconciliationPanel({ accountId, accountName }: { accountId: string; ac
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
           <ScaleIcon className="h-4 w-4 text-brand" /> Reconciliation
+          {(() => {
+            const b = reconStaleness(s?.days_since_reconciled ?? null, reconciled)
+            return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${b.cls}`}>{b.label}</span>
+          })()}
         </p>
         {canReconcile && (
           <button onClick={() => setOpen(o => !o)} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
@@ -71,6 +119,20 @@ function ReconciliationPanel({ accountId, accountName }: { accountId: string; ac
           </button>
         )}
       </div>
+
+      {canReconcile && importAhead && !open && (
+        <button
+          onClick={loadFromImport}
+          className="flex w-full items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-left text-xs text-slate-600 dark:text-slate-300 hover:bg-brand/10"
+        >
+          <Upload className="h-3.5 w-3.5 shrink-0 text-brand" />
+          <span>
+            A committed statement ending <span className="font-medium">{formatDate(latestImport!.period_end)}</span>{' '}
+            (<span className="font-medium tabular-nums">{formatCurrency(latestImport!.ending_balance)}</span>) is ready.{' '}
+            <span className="font-semibold text-brand">Reconcile to it →</span>
+          </span>
+        </button>
+      )}
 
       {reconciled ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
