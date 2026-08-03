@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -163,6 +164,7 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'contract', 'client-for-contract-doc')
     qc.invalidateQueries({ queryKey: ['contracts'] })
     toast(isEdit ? 'Contract updated' : 'Contract created', 'success')
     navigate('/contracts')

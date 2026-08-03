@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { dropRecordCache } from '@/lib/queryCache'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -47,6 +48,8 @@ export default function WorkOrderFormPage() {
 function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillProjectId = searchParams.get('project_id')
   const { toast } = useToast()
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -66,7 +69,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
         status: record.status,
         target_completion_date: record.target_completion_date,
       }
-      : { work_type: 'workshop', status: 'requested' }
+      : { work_type: 'workshop', status: 'requested', project_id: prefillProjectId ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -84,7 +87,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
   const { data: roles = [] } = useQuery({
     queryKey: ['ffe-job-descriptions-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ffe_job_descriptions').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('job_descriptions').select('*').eq('active', true).order('sort_order')
       if (error) throw error
       return data as FfeJobDescription[]
     },
@@ -93,7 +96,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
   const { data: responsibilities = [] } = useQuery({
     queryKey: ['ffe-key-responsibilities-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ffe_key_responsibilities').select('*').eq('active', true).order('sort_order')
+      const { data, error } = await supabase.from('key_responsibilities').select('*').eq('active', true).order('sort_order')
       if (error) throw error
       return data as FfeKeyResponsibility[]
     },
@@ -108,7 +111,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
   const { data: currentScores = [] } = useQuery({
     queryKey: ['staff-ffe-current-scores', relevantResponsibilityId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_ffe_current_scores').select('*').eq('responsibility_id', relevantResponsibilityId!)
+      const { data, error } = await supabase.from('v_staff_current_scores').select('*').eq('responsibility_id', relevantResponsibilityId!)
       if (error) throw error
       return data as StaffFfeCurrentScoreRow[]
     },
@@ -127,6 +130,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
     const { data, error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'work-order', 'staff-ffe-current-scores')
     qc.invalidateQueries({ queryKey: ['work-orders'] })
     toast(isEdit ? 'Work order updated' : 'Work order created', 'success')
     navigate(isEdit ? `/work-orders/${id}` : `/work-orders/${(data as { id: string })?.id}`)

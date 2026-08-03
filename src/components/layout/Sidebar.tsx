@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { useState, useRef } from 'react'
 
 interface NavItem {
@@ -17,6 +18,9 @@ interface NavItem {
   to: string
   icon: React.ElementType
   roles?: string[]
+  // Shown to anyone named on projects.project_manager_id, in addition
+  // to `roles` — project management is an assignment, not only a role.
+  showIfAssignedProjectManager?: boolean
   animateIcon?: string
 }
 
@@ -39,7 +43,7 @@ const navGroups: NavGroup[] = [
       // below (or the Overview sub-items just above for Operations &
       // Construction's role split).
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operations_manager'] },
-      { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'] },
+      { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
       { label: 'Stock', to: '/stock-manager-view', icon: Warehouse, roles: ['stock_manager'] },
       { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'] },
@@ -87,6 +91,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Sourcing Bundles', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      { label: 'Goods Received', to: '/goods-received', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer'] },
       { label: 'General Ledger', to: '/general-ledger', icon: BookOpen, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
     ],
   },
@@ -151,7 +156,7 @@ const navGroups: NavGroup[] = [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
-      { label: 'FF&E Job Descriptions', to: '/ffe-job-descriptions', icon: Award, roles: ['admin', 'executive', 'operations_manager', 'project_manager'] },
+      { label: 'Job Descriptions', to: '/ffe-job-descriptions', icon: Award, roles: ['admin', 'executive', 'operations_manager', 'project_manager', 'hr_officer'] },
       { label: 'Rent', to: '/rent', icon: Building2, roles: ['admin', 'executive', 'finance', 'operations_manager'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'executive', 'finance', 'project_manager', 'sales'] },
       { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'executive', 'finance', 'project_manager'] },
@@ -178,10 +183,17 @@ const navGroups: NavGroup[] = [
 
 function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
   const { role } = useAuth()
+  const { managesAny } = useMyManagedProjects()
   const [open, setOpen] = useState(true)
 
   const visibleItems = group.items.filter(item =>
-    !item.roles || (role && item.roles.includes(role))
+    !item.roles
+    || (role && item.roles.includes(role))
+    // Derived access, alongside the role list: an assigned project
+    // manager sees the PM entries whatever their login role. Without
+    // this the assignment is invisible to the person who holds it —
+    // they'd have to be told the URL.
+    || (item.showIfAssignedProjectManager && managesAny)
   )
   if (visibleItems.length === 0) return null
 

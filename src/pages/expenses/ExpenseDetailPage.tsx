@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
@@ -251,8 +251,9 @@ export default function ExpenseDetailPage() {
   const canEdit = role === 'admin' || role === 'executive' || role === 'finance'
 
   const approvalStatus = expense.approval_status ?? 'pending'
-  const showManagerActions = approvalStatus === 'pending' && canApproveAsExecutive(role)
-  const showFinanceActions = approvalStatus === 'manager_approved' && expense.requires_finance_approval && canApproveAsFinance(role)
+  // Single gate since migration 163 — see ExpenseFormPage for the rationale.
+  const showFinanceActions = (approvalStatus === 'pending' || approvalStatus === 'manager_approved')
+    && canApproveAsFinance(role)
   const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'executive')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
@@ -277,12 +278,15 @@ export default function ExpenseDetailPage() {
       date: expense.created_at,
       by: null,
     },
-    {
+    // The manager rung was retired in migration 163. Show it only for
+    // rows that actually went through it, rather than leaving a step
+    // that can never complete sitting in every expense's timeline.
+    ...(expense.manager_approved_at ? [{
       label: 'Manager Approved',
-      done: !!expense.manager_approved_at,
+      done: true,
       date: expense.manager_approved_at,
       by: (expense as any).manager_profile?.full_name ?? null,
-    },
+    }] : []),
     {
       label: 'Finance Approved',
       done: !!expense.finance_approved_at,
@@ -310,14 +314,14 @@ export default function ExpenseDetailPage() {
             <ArrowLeft className="h-4 w-4" /> Approvals
           </button>
           <div className="flex items-center gap-2 flex-wrap">
-            {(showManagerActions || showFinanceActions) && !rejecting && (
+            {showFinanceActions && !rejecting && (
               <>
                 <button
-                  onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
+                  onClick={() => handleApprovalTransition('finance_approved')}
                   className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  {showFinanceActions ? 'Final Approve' : 'Approve'}
+                  Approve for Payment
                 </button>
                 <button
                   onClick={() => setRejecting(true)}

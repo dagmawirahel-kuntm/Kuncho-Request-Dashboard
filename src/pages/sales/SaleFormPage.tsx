@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { dropRecordCache } from '@/lib/queryCache'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -50,6 +51,8 @@ export default function SaleFormPage() {
 function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
   const isEdit = !!id
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const clientId = searchParams.get('client_id')
     const { role } = useAuth()
     const { toast } = useToast()
     const qc = useQueryClient()
@@ -86,7 +89,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         due_date: record.due_date,
         payment_date: record.payment_date,
       }
-      : { sales_status: 'Draft', is_project_funded: true }
+      : { sales_status: 'Draft', is_project_funded: true, client_id: clientId ?? undefined }
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -119,6 +122,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'sale')
     qc.invalidateQueries({ queryKey: ['sales'] })
     toast(isEdit ? 'Sale updated' : 'Sale created', 'success')
     navigate('/sales')

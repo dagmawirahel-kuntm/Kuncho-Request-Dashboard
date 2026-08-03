@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency } from '@/lib/utils'
 import type { CpoBond } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Receipt } from 'lucide-react'
 
 export default function CpoBondsPage() {
   const [searchParams] = useSearchParams()
@@ -40,7 +40,18 @@ export default function CpoBondsPage() {
     { id: 'vendor_name', header: 'Vendor', cell: ({ row }) => (row.original as any).vendors?.vendor_name ?? '—' },
     { id: 'account_name', header: 'Paid From', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-xs">{(getValue() as string) ?? '—'}</span> },
-    { id: 'related_expense', header: 'Related Expense', cell: ({ row }) => (row.original as any).expenses?.item_service_description ?? '—' },
+    {
+      id: 'related_expense', header: 'Related Expense',
+      cell: ({ row }) => {
+        const desc = (row.original as any).expenses?.item_service_description
+        if (desc) return desc
+        return (
+          <Link to={`/expenses/new?cpo_bond_id=${row.original.id}`} className="flex items-center gap-1 text-xs text-brand hover:underline">
+            <Receipt className="h-3 w-3" /> Create Expense
+          </Link>
+        )
+      },
+    },
     {
       id: 'actions',
       header: '',

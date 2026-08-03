@@ -52,6 +52,42 @@ export function useMyDepartment(): { department: string | null; isLoading: boole
   return { department: deptQuery.data ?? null, isLoading }
 }
 
+// Derived, not a stored permission — the same shape as
+// useIsWorkshopLead below, for project management. Being named on
+// projects.project_manager_id is what confers PM access, whatever the
+// login role, so someone whose role is finance still gets their own
+// projects here without giving up any finance access. Widens and
+// narrows automatically as assignments change.
+//
+// Returns the projects themselves, not just a flag: every caller
+// (route guard, sidebar entry, the order form's project picker) needs
+// either the count or the list, and one query serves all three.
+export function useMyManagedProjects() {
+  const { data: staff, isLoading: staffLoading } = useMyStaffId()
+  const staffId = staff?.id
+  const query = useQuery({
+    queryKey: ['my-managed-projects', staffId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id,project_name')
+        .eq('project_manager_id', staffId!)
+        .order('project_name')
+      if (error) throw error
+      return (data ?? []) as { id: string; project_name: string }[]
+    },
+    enabled: !!staffId,
+    staleTime: 300000,
+  })
+  return {
+    projects: query.data ?? [],
+    managesAny: (query.data?.length ?? 0) > 0,
+    // A caller gating access must not act on "no projects" before the
+    // staff row has even resolved, or it redirects a real PM away.
+    isLoading: staffLoading || (!!staffId && query.isLoading),
+  }
+}
+
 // Derived, not a stored permission (spec §0.2): true whenever the
 // resolved staff id currently appears as assigned_lead_staff_id on any
 // open (not completed/cancelled) workshop work order. Widens or

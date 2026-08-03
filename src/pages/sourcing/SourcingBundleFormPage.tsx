@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
-import type { SourcingBundleInsert, FinanceSourcingReview } from '@/types/database'
+import type { SourcingBundleInsert, FinanceSourcingReview, SourcingBundlePaymentPattern } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert } from 'lucide-react'
 
@@ -65,6 +66,7 @@ export default function SourcingBundleFormPage() {
   const [vendorId, setVendorId] = useState<string>('')
   const [vendorName, setVendorName] = useState<string>('')
   const [deliveryDate, setDeliveryDate] = useState<string>('')
+  const [paymentPattern, setPaymentPattern] = useState<SourcingBundlePaymentPattern>('pay_on_delivery')
   const [notes, setNotes] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [itemSearch, setItemSearch] = useState<string>('')
@@ -261,6 +263,7 @@ export default function SourcingBundleFormPage() {
     setVendorId(existingBundle.vendor_id ?? '')
     setVendorName(existingBundle.vendor_name ?? '')
     setDeliveryDate(existingBundle.expected_delivery_date ?? '')
+    setPaymentPattern(existingBundle.payment_pattern ?? 'pay_on_delivery')
     setNotes(existingBundle.notes ?? '')
     setExistingLoaded(true)
   }, [existingBundle, existingLoaded])
@@ -400,6 +403,7 @@ export default function SourcingBundleFormPage() {
         vendor_id: vendorId || null,
         vendor_name: vendorId ? null : (vendorName || null),
         expected_delivery_date: deliveryDate || null,
+        payment_pattern: paymentPattern,
         notes: notes || null,
       }
       // Only stamp the procurement officer at creation — editing
@@ -475,6 +479,7 @@ export default function SourcingBundleFormPage() {
         })
       }
 
+      dropRecordCache(qc, 'sourcing-bundle', 'order-items-for-sourcing', 'bundled-order-item-ids', 'stock-issued-by-order-item', 'finance-sourcing-reviews-for-sourcing')
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
       qc.invalidateQueries({ queryKey: ['bundled-order-item-ids'] })
       qc.invalidateQueries({ queryKey: ['order-item-counts'] })
@@ -571,6 +576,21 @@ export default function SourcingBundleFormPage() {
               value={deliveryDate}
               onChange={e => setDeliveryDate(e.target.value)}
               className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Payment Pattern</label>
+            <select
+              value={paymentPattern}
+              onChange={e => setPaymentPattern(e.target.value as SourcingBundlePaymentPattern)}
+              className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40">
+              <option value="pay_on_delivery">Pay on Delivery (goods first)</option>
+              <option value="pay_in_advance">Pay in Advance (vendor demands payment first)</option>
+            </select>
+            {paymentPattern === 'pay_in_advance' && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                Once ordered, this lets Finance record and send the advance before a GRN exists. Closing it to a real expense still requires a GRN.
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Notes for Finance</label>

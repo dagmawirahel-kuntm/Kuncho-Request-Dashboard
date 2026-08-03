@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -80,6 +81,7 @@ function PettyCashFloatFormPageBody({ id, record }: { id?: string; record?: Pett
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'petty-cash-float')
     qc.invalidateQueries({ queryKey: ['petty-cash-floats'] })
     qc.invalidateQueries({ queryKey: ['petty-cash-floats-lookup'] })
     toast(isEdit ? 'Float updated' : 'Float created', 'success')

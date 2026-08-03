@@ -6,11 +6,19 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { SourcingBundleStatus, TransportJobStatus } from '@/types/database'
+import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern } from '@/types/database'
+import { useStaff } from '@/hooks/useLookups'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
   Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck, Undo2
 } from 'lucide-react'
+
+const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
+  { value: 'motorbike', label: 'Motorbike load' },
+  { value: 'light',     label: 'Light (pickup/van)' },
+  { value: 'medium',    label: 'Medium (truck)' },
+  { value: 'heavy',     label: 'Heavy (full truck+)' },
+]
 
 const VAT_RATE = 0.15
 const WHT_RATE = 0.03
@@ -32,11 +40,15 @@ type BundleDetail = {
   finance_notes: string | null
   expense_id: string | null
   total_value: number
+  payment_pattern: SourcingBundlePaymentPattern
   created_at: string
   vendors: { vendor_name: string; wth_eligible: boolean | null } | null
   procurement_officer: { full_name: string } | null
   approver: { full_name: string } | null
-  expenses: { expense_code: string | null; item_service_description: string | null; amount_etb: number | null } | null
+  expenses: {
+    id: string; expense_code: string | null; item_service_description: string | null; amount_etb: number | null
+    approval_status: string; payment_state: string
+  } | null
   sourcing_bundle_items: {
     id: string
     order_item_id: string
@@ -218,7 +230,57 @@ export default function PurchaseOrderPage() {
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
+  const [closingAdvance, setClosingAdvance] = useState(false)
   const printRef = useRef<HTMLIFrameElement>(null)
+
+  // Queue-pickup panel (C3) — raising the transport job right at PO
+  // placement instead of only offering a click-through to a separate form.
+  const [showQueuePanel, setShowQueuePanel] = useState(false)
+  const [queueDriverId, setQueueDriverId] = useState<string | null>(null)
+  const [queueVehicleId, setQueueVehicleId] = useState<string | null>(null)
+  const [queueCargoSize, setQueueCargoSize] = useState<VehicleCapacityClass | ''>('')
+  const [queueDurationHours, setQueueDurationHours] = useState('')
+  const [queuing, setQueuing] = useState(false)
+
+  const { data: allStaff = [] } = useStaff()
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const driverOptions = (() => {
+    const drivers = (allStaff as any[]).filter(s => s.role === 'Driver')
+    return (drivers.length > 0 ? drivers : (allStaff as any[])).map(s => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined }))
+  })()
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  // Dedicated vehicle per driver (migration 166) — how the fleet
+  // actually operates, so picking a driver here should default straight
+  // to their own vehicle rather than making someone re-pick it from a
+  // ranked list every time. Still overridable (e.g. their vehicle is in
+  // maintenance) — this only sets the initial value.
+  const { data: fleetVehicles = [] } = useQuery({
+    queryKey: ['vehicles-for-dedicated-lookup'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vehicles').select('id, name, status, assigned_driver_id').eq('active', true)
+      if (error) throw error
+      return data as { id: string; name: string; status: string; assigned_driver_id: string | null }[]
+    },
+    enabled: showQueuePanel,
+  })
+  const vehicleByDriver = new Map(fleetVehicles.filter(v => v.assigned_driver_id).map(v => [v.assigned_driver_id as string, v]))
+
+  function pickQueueDriver(driverId: string | null) {
+    setQueueDriverId(driverId)
+    const dedicated = driverId ? vehicleByDriver.get(driverId) : null
+    if (dedicated) setQueueVehicleId(dedicated.id)
+  }
+
+  const { data: suggestedVehicles = [] } = useQuery({
+    queryKey: ['suggest-vehicles', queueCargoSize],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('suggest_vehicles_for_transport', { p_cargo_size: queueCargoSize || null })
+      if (error) throw error
+      return data as SuggestedVehicle[]
+    },
+    enabled: showQueuePanel,
+  })
 
   const { data: bundle, isLoading, error: bundleError } = useQuery({
     queryKey: ['sourcing-bundle-detail', id],
@@ -231,7 +293,7 @@ export default function PurchaseOrderPage() {
           vendors(vendor_name, wth_eligible),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
-          expenses!sourcing_bundles_expense_id_fkey(expense_code, item_service_description, amount_etb),
+          expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state),
           sourcing_bundle_items(
             *,
             order_items(
@@ -343,6 +405,17 @@ export default function PurchaseOrderPage() {
   const transportClearForExpense = !transportJob || transportJob.job_status === 'in_progress' || transportJob.job_status === 'completed'
   const canCreateExpense = !!grn && transportClearForExpense
 
+  // Advance payment (pattern B, migration 110): the vendor demands
+  // payment before goods arrive, so the expense has to exist before a
+  // GRN does — the opposite gate from canCreateExpense above, and only
+  // for bundles that actually declared this pattern. Creating the
+  // expense here does NOT itself send money; it still goes through the
+  // normal finance-approval and to-pay-queue flow, landing in
+  // payment_state = 'advance' instead of the usual 'sent'/'paid'.
+  const isPayInAdvance = bundle.payment_pattern === 'pay_in_advance'
+  const canCreateAdvanceExpense = isPayInAdvance && ['ordered', 'fulfilled'].includes(status) && !grn && !bundle.expense_id
+  const canCloseAdvance = (isFinance || isAdmin) && !!grn && bundle.expenses?.payment_state === 'advance'
+
   const sortedItems = [...(bundle.sourcing_bundle_items ?? [])].sort((a, b) => a.sort_order - b.sort_order)
 
   const grandTotal = sortedItems.reduce((sum, item) =>
@@ -422,11 +495,61 @@ export default function PurchaseOrderPage() {
     }
   }
 
+  // C3: raise the pickup job directly at PO placement, pre-assigned to
+  // a driver, tied to this bundle — instead of only offering a
+  // click-through to a blank transport form later.
+  async function handleQueuePickup() {
+    if (!bundle) return
+    setQueuing(true)
+    try {
+      const { error } = await supabase.from('transportation_requests').insert([{
+        request_name: `Pickup — ${bundle.bundle_code}`,
+        job_type: 'purchase_pickup',
+        transport_mode: 'own_fleet',
+        job_status: queueDriverId || queueVehicleId ? 'assigned' : 'requested',
+        priority: 'normal',
+        sourcing_bundle_id: id,
+        vendor_id: bundle.vendor_id,
+        vendor_name: bundle.vendor_id ? null : (bundle.vendors?.vendor_name ?? bundle.vendor_name),
+        requested_by_id: profile?.id,
+        requested_date: new Date().toISOString().slice(0, 10),
+        assigned_staff_id: queueDriverId,
+        vehicle_id: queueVehicleId,
+        cargo_size_estimate: queueCargoSize || null,
+        expected_duration_hours: queueDurationHours ? parseFloat(queueDurationHours) : null,
+      }])
+      if (error) throw error
+      if (queueVehicleId) await supabase.from('vehicles').update({ status: 'on_job' }).eq('id', queueVehicleId)
+      qc.invalidateQueries({ queryKey: ['transport-job-for-bundle', id] })
+      qc.invalidateQueries({ queryKey: ['transportation'] })
+      qc.invalidateQueries({ queryKey: ['vehicles'] })
+      toast('Pickup queued', 'success')
+      setShowQueuePanel(false)
+      setQueueDriverId(null); setQueueVehicleId(null); setQueueCargoSize(''); setQueueDurationHours('')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      setQueuing(false)
+    }
+  }
+
   async function linkExpense(expenseId: string | null) {
     const { error } = await supabase.from('sourcing_bundles').update({ expense_id: expenseId }).eq('id', id!)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
     toast(expenseId ? 'Linked to expense' : 'Expense link removed', 'success')
+  }
+
+  async function handleCloseAdvance() {
+    const expenseId = bundle?.expenses?.id
+    if (!expenseId) return
+    setClosingAdvance(true)
+    const { error } = await supabase.rpc('close_vendor_advance', { p_expense_id: expenseId })
+    setClosingAdvance(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
+    qc.invalidateQueries({ queryKey: ['v-open-vendor-advances'] })
+    toast('Advance closed — expense is now paid', 'success')
   }
 
   async function handleDelete() {
@@ -475,6 +598,11 @@ export default function PurchaseOrderPage() {
               <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_CLS[status]}`}>
                 {STATUS_STEPS.find(s => s.status === status)?.label ?? status}
               </span>
+              {isPayInAdvance && (
+                <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                  Pay in Advance
+                </span>
+              )}
             </div>
             <p className="text-sm text-slate-500 dark:text-slate-400">Purchase Order — {vendorDisplay}</p>
           </div>
@@ -789,15 +917,83 @@ export default function PurchaseOrderPage() {
           </div>
         )}
 
-        {/* Transportation — optional, procurement/admin/manager request it */}
-        {canRequestTransport && (
-          <div className="flex items-center gap-3">
+        {/* Transportation — optional, procurement/admin/manager queue it right
+            at PO placement instead of only through a separate later step */}
+        {canRequestTransport && !showQueuePanel && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button" onClick={() => setShowQueuePanel(true)}
+              className="flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700">
+              <TruckIcon className="h-3.5 w-3.5" /> Queue Pickup for this PO
+            </button>
             <Link
               to={`/transportation/new?bundle_id=${id}`}
-              className="flex items-center gap-1.5 rounded-md border border-purple-200 dark:border-purple-800/40 px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20">
-              <TruckIcon className="h-3.5 w-3.5" /> Request Transportation for this PO
+              className="text-xs text-purple-700 dark:text-purple-300 hover:underline">
+              …or open the full transport form
             </Link>
-            <p className="text-xs text-slate-400">Only if this order needs a dedicated pickup/delivery job</p>
+          </div>
+        )}
+
+        {canRequestTransport && showQueuePanel && (
+          <div className="rounded-lg border border-purple-200 dark:border-purple-800/40 bg-purple-50/40 dark:bg-purple-900/10 p-3 space-y-2.5">
+            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+              <TruckIcon className="h-3.5 w-3.5" /> Queue Pickup — {bundle.bundle_code}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Driver</label>
+                <SearchableSelect value={queueDriverId} onChange={pickQueueDriver} options={driverOptions} placeholder="Select driver…" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Cargo Size</label>
+                <select
+                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  value={queueCargoSize} onChange={e => {
+                    setQueueCargoSize(e.target.value as VehicleCapacityClass | '')
+                    if (!queueDriverId || !vehicleByDriver.has(queueDriverId)) setQueueVehicleId(null)
+                  }}>
+                  <option value="">— Not specified —</option>
+                  {CARGO_SIZES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Vehicle</label>
+                <select
+                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  value={queueVehicleId ?? ''} onChange={e => setQueueVehicleId(e.target.value || null)}>
+                  <option value="">— Select vehicle —</option>
+                  {suggestedVehicles.map(v => (
+                    <option key={v.vehicle_id} value={v.vehicle_id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
+                      {v.name} — {v.status.replace('_', ' ')}
+                      {queueDriverId && vehicleByDriver.get(queueDriverId)?.id === v.vehicle_id ? ' (their dedicated vehicle)' : ''}
+                      {v.fit_rank === 0 ? ' ✓ good fit' : v.fit_rank === 1 ? ' (larger than needed)' : v.fit_rank === 3 ? ' ⚠ may be too small' : ''}
+                    </option>
+                  ))}
+                </select>
+                {queueDriverId && vehicleByDriver.get(queueDriverId) && vehicleByDriver.get(queueDriverId)!.status !== 'available' && (
+                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                    Their dedicated vehicle is {vehicleByDriver.get(queueDriverId)!.status.replace('_', ' ')} — pick a different one or clear it to leave unassigned for now.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Expected Duration (hours)</label>
+                <input
+                  type="number" step="0.5" min="0.1"
+                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  value={queueDurationHours} onChange={e => setQueueDurationHours(e.target.value)} placeholder="e.g. 4" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={handleQueuePickup} disabled={queuing}
+                className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 disabled:opacity-60">
+                {queuing ? 'Queuing…' : 'Queue Pickup'}
+              </button>
+              <button type="button" onClick={() => setShowQueuePanel(false)} className="rounded-md border px-3 py-1.5 text-xs dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">
+                Cancel
+              </button>
+              <p className="text-[11px] text-slate-400">Driver and vehicle are optional here — leave blank to dispatch later from the Transportation page.</p>
+            </div>
           </div>
         )}
         {transportJob && status !== 'fulfilled' && (
@@ -883,24 +1079,53 @@ export default function PurchaseOrderPage() {
               <Receipt className="h-3.5 w-3.5" /> Reconciled Expense
             </label>
             {bundle.expenses ? (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">
-                  <span className="font-mono text-xs font-semibold text-brand mr-1.5">{bundle.expenses.expense_code}</span>
-                  {bundle.expenses.item_service_description}
-                  {bundle.expenses.amount_etb != null && ` — ${formatCurrency(bundle.expenses.amount_etb)}`}
-                </span>
-                <button onClick={() => linkExpense(null)}
-                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
-                  <Link2Off className="h-3 w-3" /> Unlink
-                </button>
-              </div>
-            ) : canCreateExpense ? (
               <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">
+                    <span className="font-mono text-xs font-semibold text-brand mr-1.5">{bundle.expenses.expense_code}</span>
+                    {bundle.expenses.item_service_description}
+                    {bundle.expenses.amount_etb != null && ` — ${formatCurrency(bundle.expenses.amount_etb)}`}
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    bundle.expenses.payment_state === 'paid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : bundle.expenses.payment_state === 'advance' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : bundle.expenses.approval_status === 'pending' ? 'bg-slate-200 text-slate-600 dark:bg-slate-600 dark:text-slate-300'
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                  }`}>
+                    {bundle.expenses.payment_state === 'paid' ? 'Paid'
+                      : bundle.expenses.payment_state === 'advance' ? 'Advance Sent — awaiting GRN'
+                      : bundle.expenses.payment_state === 'approved_to_pay' ? (isPayInAdvance ? 'Approved — ready to send advance' : 'Approved — ready to pay')
+                      : bundle.expenses.approval_status === 'pending' ? 'Awaiting Finance Approval'
+                      : 'Unpaid'}
+                  </span>
+                  <Link to={`/expenses/${bundle.expenses.id}`} className="text-xs text-brand hover:underline">View expense</Link>
+                  <button onClick={() => linkExpense(null)}
+                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
+                    <Link2Off className="h-3 w-3" /> Unlink
+                  </button>
+                </div>
+                {canCloseAdvance && (
+                  <button onClick={handleCloseAdvance} disabled={closingAdvance}
+                    className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {closingAdvance ? 'Closing…' : 'Close Advance — Mark Paid'}
+                  </button>
+                )}
+                {isPayInAdvance && bundle.expenses.payment_state === 'advance' && !grn && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Waiting on a GRN before this advance can be closed to a real expense.</p>
+                )}
+              </div>
+            ) : canCreateExpense || canCreateAdvanceExpense ? (
+              <div className="space-y-2">
+                {canCreateAdvanceExpense && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    No GRN yet — this records the advance payment now. Closing it to a real expense will require a GRN once goods arrive.
+                  </p>
+                )}
                 <Link
                   to={`/expenses/new?bundle_id=${id}`}
                   className="flex w-fit items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
                 >
-                  <Plus className="h-3.5 w-3.5" /> Create Expense for this PO
+                  <Plus className="h-3.5 w-3.5" /> {canCreateAdvanceExpense ? 'Record Advance Payment for this PO' : 'Create Expense for this PO'}
                 </Link>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-400">or link an existing one:</span>

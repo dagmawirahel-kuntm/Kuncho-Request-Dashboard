@@ -1,14 +1,16 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
+import { useDepartments } from '@/hooks/useLookups'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
   Building2, Clock, DollarSign, Briefcase, Hash, User,
-  CheckCircle2, Wallet, Shield,
+  CheckCircle2, Wallet, Shield, Network, Users,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -76,6 +78,137 @@ function DetailRow({ label, value, icon }: { label: string; value: React.ReactNo
 }
 
 // ── Tab content ───────────────────────────────────────────────────
+
+// Where this person sits: who they report to, and any department they
+// belong to beyond their primary. Secondary membership is descriptive —
+// it grants no authority (migration 161) — so this is presented as
+// information, not as a permission control.
+function OrgPlacementSection({ staff }: { staff: Staff }) {
+  const { role } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const canManage = role === 'admin' || role === 'hr_officer'
+  const [addDeptId, setAddDeptId] = useState('')
+
+  const { data: departments = [] } = useDepartments()
+
+  const { data: manager } = useQuery({
+    queryKey: ['staff-manager', staff.reports_to_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('id, employee_name, role').eq('id', staff.reports_to_id!).single()
+      if (error) throw error
+      return data as { id: string; employee_name: string; role: string | null }
+    },
+    enabled: !!staff.reports_to_id,
+  })
+
+  const { data: directReports = [] } = useQuery({
+    queryKey: ['staff-direct-reports', staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('id, employee_name').eq('reports_to_id', staff.id).order('employee_name')
+      if (error) throw error
+      return data as { id: string; employee_name: string }[]
+    },
+  })
+
+  const { data: secondary = [] } = useQuery({
+    queryKey: ['staff-secondary-departments', staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_department_memberships')
+        .select('id, department_id, note, departments(name)')
+        .eq('staff_id', staff.id)
+      if (error) throw error
+      return data as unknown as { id: string; department_id: string; note: string | null; departments: { name: string } | null }[]
+    },
+  })
+
+  async function addSecondary() {
+    if (!addDeptId) return
+    const { error } = await supabase.from('staff_department_memberships').insert([{ staff_id: staff.id, department_id: addDeptId }])
+    if (error) { toast(error.message, 'error'); return }
+    setAddDeptId('')
+    qc.invalidateQueries({ queryKey: ['staff-secondary-departments', staff.id] })
+    toast('Secondary department added', 'success')
+  }
+
+  async function removeSecondary(id: string) {
+    const { error } = await supabase.from('staff_department_memberships').delete().eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['staff-secondary-departments', staff.id] })
+    toast('Secondary department removed', 'success')
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+      <div>
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Reporting Line</h3>
+        <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 px-4">
+          <DetailRow label="Reports To" icon={<Network className="h-3.5 w-3.5" />}
+            value={manager
+              ? <Link to={`/staff/${manager.id}`} className="text-brand hover:underline">{manager.employee_name}</Link>
+              : null} />
+          <DetailRow label="Direct Reports" icon={<Users className="h-3.5 w-3.5" />}
+            value={directReports.length > 0
+              ? <span className="flex flex-wrap gap-1">
+                  {directReports.map(r => (
+                    <Link key={r.id} to={`/staff/${r.id}`} className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs hover:text-brand">
+                      {r.employee_name}
+                    </Link>
+                  ))}
+                </span>
+              : null} />
+        </div>
+        {!staff.reports_to_id && (
+          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+            No manager recorded — their leave requests fall back to the department head, then an administrator.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">
+          Also Works In
+        </h3>
+        <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 p-4 space-y-2">
+          {secondary.length === 0 ? (
+            <p className="text-xs text-slate-400">Primary department only.</p>
+          ) : (
+            secondary.map(m => (
+              <div key={m.id} className="flex items-center justify-between gap-2">
+                <span className="text-sm text-slate-700 dark:text-slate-200">{m.departments?.name ?? '—'}</span>
+                {canManage && (
+                  <button onClick={() => removeSecondary(m.id)} className="text-xs text-slate-400 hover:text-red-600">Remove</button>
+                )}
+              </div>
+            ))
+          )}
+          {canManage && (
+            <div className="flex items-center gap-2 pt-1">
+              <select
+                value={addDeptId}
+                onChange={e => setAddDeptId(e.target.value)}
+                className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              >
+                <option value="">Add a department…</option>
+                {(departments as { id: string; name: string }[])
+                  .filter(d => d.id !== staff.department_id && !secondary.some(m => m.department_id === d.id))
+                  .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <button onClick={addSecondary} disabled={!addDeptId}
+                className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-40">
+                Add
+              </button>
+            </div>
+          )}
+          <p className="text-[11px] text-slate-400">
+            Descriptive only — being listed here grants no extra approval rights.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function OverviewTab({ staff }: { staff: Staff }) {
   const managementMeta = getManagementLevelMeta(staff.management_level)
@@ -147,17 +280,26 @@ function OverviewTab({ staff }: { staff: Staff }) {
   )
 }
 
-function PayrollTab({ records }: { records: EmergencyPayrollSummary[] }) {
+function PayrollTab({ records, staffId }: { records: EmergencyPayrollSummary[]; staffId: string }) {
   if (records.length === 0) {
     return (
       <div className="py-16 text-center">
         <Wallet className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
         <p className="text-sm text-slate-500 dark:text-slate-400">No payroll records found.</p>
+        <Link to={`/payroll/new?staff_id=${staffId}`} className="mt-2 inline-block text-xs text-brand hover:underline">
+          Add this employee to a payroll run →
+        </Link>
       </div>
     )
   }
   return (
-    <div className="overflow-x-auto rounded-xl border dark:border-slate-700">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Link to={`/payroll/new?staff_id=${staffId}`} className="text-xs text-slate-400 hover:text-brand transition-colors">
+          Add this employee to a payroll run →
+        </Link>
+      </div>
+      <div className="overflow-x-auto rounded-xl border dark:border-slate-700">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 dark:bg-slate-900/60 border-b dark:border-slate-700">
           <tr>
@@ -191,16 +333,20 @@ function PayrollTab({ records }: { records: EmergencyPayrollSummary[] }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
 
-function AdvancesTab({ advances }: { advances: (CashAdvance & { accounts: { account_name: string } | null })[] }) {
+function AdvancesTab({ advances, staffId }: { advances: (CashAdvance & { accounts: { account_name: string } | null })[]; staffId: string }) {
   if (advances.length === 0) {
     return (
       <div className="py-16 text-center">
         <DollarSign className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
         <p className="text-sm text-slate-500 dark:text-slate-400">No cash advance records found.</p>
+        <Link to={`/cash-advances/new?staff_id=${staffId}`} className="mt-2 inline-block text-xs text-brand hover:underline">
+          Record a new cash advance →
+        </Link>
       </div>
     )
   }
@@ -209,9 +355,14 @@ function AdvancesTab({ advances }: { advances: (CashAdvance & { accounts: { acco
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500 dark:text-slate-400">{advances.length} advance{advances.length !== 1 ? 's' : ''}</p>
-        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Total: {formatCurrency(total)}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Total: {formatCurrency(total)}
+          </p>
+          <Link to={`/cash-advances/new?staff_id=${staffId}`} className="text-xs text-slate-400 hover:text-brand transition-colors">
+            Record a new advance →
+          </Link>
+        </div>
       </div>
       <div className="overflow-x-auto rounded-xl border dark:border-slate-700">
         <table className="w-full text-sm">
@@ -540,9 +691,14 @@ export default function StaffDetailPage() {
 
         {/* Tab content */}
         <div className="p-6">
-          {activeTab === 'overview'   && <OverviewTab staff={staff} />}
-          {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} />}
-          {activeTab === 'advances'   && <AdvancesTab advances={advances} />}
+          {activeTab === 'overview'   && (
+            <div className="space-y-6">
+              <OverviewTab staff={staff} />
+              <OrgPlacementSection staff={staff} />
+            </div>
+          )}
+          {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
+          {activeTab === 'advances'   && <AdvancesTab advances={advances} staffId={staff.id} />}
           {activeTab === 'timesheets' && <TimesheetsTab timesheets={timesheets} />}
         </div>
       </div>

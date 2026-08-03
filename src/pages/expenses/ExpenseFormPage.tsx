@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -6,11 +7,11 @@ import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
-import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property } from '@/types/database'
+import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement } from '@/types/database'
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canEditFinanceFields, canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
+import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
@@ -39,6 +40,17 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   )
 }
 
+const EXPENSE_TYPE_LABEL: Record<string, string> = {
+  general: 'expense',
+  purchase_order: 'purchase order',
+  vrf: 'VRF settlement',
+  cpo_bond: 'CPO bond',
+  fuel: 'fuel request',
+  subcontract: 'subcontract certificate',
+  maintenance: 'fleet record',
+  property_rent: 'rent payment',
+}
+
 const UOM_OPTIONS = ['Pcs', 'Kg', 'L', 'm', 'm²', 'm³', 'Hr', 'Day', 'Month', 'Set', 'Other']
 const DELIVERY_STATUS_OPTIONS = ['Ordered', 'In Transit', 'Delivered', 'Returned']
 const WHT_HANDLING_OPTIONS = ['Withheld & Remitted', 'Vendor Exempt', 'Company Absorbs', 'Not Applicable']
@@ -54,6 +66,8 @@ export default function ExpenseFormPage() {
   const vrfId  = searchParams.get('vrf_id')
   const bundleId = searchParams.get('bundle_id')
   const propertyId = searchParams.get('property_id')
+  const cpoBondId = searchParams.get('cpo_bond_id')
+  const engagementId = searchParams.get('engagement_id')
 
   const { data: record, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -129,6 +143,26 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!propertyId,
   })
 
+  const { data: linkedCpoBond } = useQuery({
+    queryKey: ['cpo-bond-for-expense', cpoBondId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cpo_bonds').select('*').eq('id', cpoBondId!).single()
+      if (error) throw error
+      return data as CpoBond
+    },
+    enabled: !isEdit && !!cpoBondId,
+  })
+
+  const { data: linkedEngagement } = useQuery({
+    queryKey: ['engagement-for-expense', engagementId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('subcontractor_engagements').select('*').eq('id', engagementId!).single()
+      if (error) throw error
+      return data as SubcontractorEngagement
+    },
+    enabled: !isEdit && !!engagementId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
   }
@@ -143,6 +177,8 @@ export default function ExpenseFormPage() {
       linkedVrf={linkedVrf}
       linkedBundle={linkedBundle}
       linkedProperty={linkedProperty}
+      linkedCpoBond={linkedCpoBond}
+      linkedEngagement={linkedEngagement}
     />
   )
 }
@@ -155,12 +191,14 @@ type LinkedBundle = {
   }[]
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty, linkedCpoBond, linkedEngagement }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
   linkedBundle?: LinkedBundle
   linkedProperty?: Property
+  linkedCpoBond?: CpoBond
+  linkedEngagement?: SubcontractorEngagement
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -410,6 +448,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       amount_etb: linkedProperty.monthly_rent_amount ?? undefined,
       vendor_id: linkedProperty.landlord_vendor_id ?? undefined,
     } : {}),
+    // pre-fill from a linked CPO bond — same ?xxx_id= gateway pattern as
+    // PO/VRF/property above. cpo_bonds.project is free text, not a real
+    // project_id FK, so it's left for the user to pick if relevant.
+    ...(linkedCpoBond ? {
+      cpo_bond_id: linkedCpoBond.id,
+      expense_type: 'cpo_bond' as const,
+      item_service_description: linkedCpoBond.bond_id_ref ? `CPO Bond ${linkedCpoBond.bond_id_ref}` : undefined,
+      amount_etb: linkedCpoBond.total_bond_amount ?? undefined,
+      vendor_id: linkedCpoBond.vendor_id ?? undefined,
+    } : {}),
+    // pre-fill from a linked subcontractor engagement — the manual
+    // "Subcontractor Engagement" picker below already supports this
+    // relationship; this just arrives with it pre-selected instead of
+    // making the user search for the engagement by hand.
+    ...(linkedEngagement ? {
+      subcontractor_engagement_id: linkedEngagement.id,
+      expense_type: 'subcontract' as const,
+      vendor_id: linkedEngagement.vendor_id,
+      project_id: linkedEngagement.project_id,
+      amount_etb: linkedEngagement.agreed_amount ?? undefined,
+    } : {}),
   }
   )
     const [saving, setSaving] = useState(false)
@@ -442,16 +501,53 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.vendor_id, vendors])
 
+  // The general ledger follows the nature of the engagement: a rent
+  // payment belongs to Property Rent, a subcontract certificate to Sub
+  // Contractors, a purchase order to whatever its line items were
+  // classified as. Without it there's no expense-side account to debit
+  // and the ledger silently refuses to post the payment (migration 105).
+  //
+  // Resolved by asking the database (migration 154's
+  // resolve_expense_category) rather than keeping a second copy of the
+  // mapping here — so what the form shows is exactly what the trigger
+  // would store, and the two can't drift apart.
+  const bundleForCategory = record?.sourcing_bundle_id ?? form.sourcing_bundle_id ?? null
+  const { data: defaultCategoryId } = useQuery({
+    queryKey: ['default-expense-category', form.expense_type, bundleForCategory],
+    enabled: !!form.expense_type && form.expense_type !== 'general',
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('resolve_expense_category', {
+        p_expense_type: form.expense_type,
+        p_sourcing_bundle_id: bundleForCategory,
+      })
+      if (error) throw error
+      return (data as string | null) ?? null
+    },
+  })
+
+  // Fill-only, the same rule the database trigger follows: a ledger
+  // someone picked by hand stays picked, and re-saving can't revert it.
+  // Derived rather than written into form state by an effect, so the
+  // default can't be mistaken for an edit and there's no render cascade.
+  const effectiveCategoryId = form.category_id ?? defaultCategoryId ?? null
+  const categoryIsDefaulted = !form.category_id && !!defaultCategoryId
+
   async function handleSave() {
     setError(''); setSaving(true)
     let expenseId = id
+    // Persist the ledger the form is actually showing. The database
+    // trigger would fill the same value anyway (migration 154), but
+    // saving it explicitly keeps what was on screen and what lands in
+    // the row identical, rather than depending on the two agreeing.
+    const payload = { ...form, category_id: effectiveCategoryId }
     if (isEdit) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: err } = await supabase.from('expenses').update(form as any).eq('id', id!)
+      const { error: err } = await supabase.from('expenses').update(payload as any).eq('id', id!)
       if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: err } = await supabase.from('expenses').insert([form as any]).select('id').single()
+      const { data, error: err } = await supabase.from('expenses').insert([payload as any]).select('id').single()
       if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
       expenseId = (data as any).id
       // Link to PR line item if this expense was created from a purchase request
@@ -471,6 +567,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       }
     }
     setSaving(false)
+    dropRecordCache(qc, 'expense', 'pr-for-expense', 'pr-line-for-expense', 'vrf-for-expense', 'bundle-for-expense', 'property-for-expense', 'expense-linked-orders', 'expense-linked-batch-payments', 'expense-linked-cash-advances', 'expense-fuel-vehicle', 'expense-linked-source', 'expense-transport-job', 'default-expense-category')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
     toast(isEdit ? 'Expense updated' : 'Expense created', 'success')
@@ -491,8 +588,13 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const deliveryStatuses = (form.delivery_status as string[]) ?? []
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
-  const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && record?.requires_finance_approval && canApproveAsFinance(role)
+  // Single gate since migration 163: Finance approves straight from
+  // pending, which releases the expense to payment. `manager_approved`
+  // is accepted here only so rows stranded in that retired state by the
+  // old first rung still have a way forward.
+  const showFinanceActions = isEdit
+    && (approvalStatus === 'pending' || approvalStatus === 'manager_approved')
+    && canApproveAsFinance(role)
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || record?.purchaser_user_id === user?.id)
 
   return (
@@ -508,10 +610,10 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <StatusBadge status={approvalStatus} />
           </div>
           {record?.requires_finance_approval && (
-            <p className="text-xs text-amber-600">Amount exceeds 50,000 ETB — requires Finance's final approval before payment.</p>
+            <p className="text-xs text-amber-600">Amount exceeds 50,000 ETB.</p>
           )}
           {record?.manager_approved_by && (
-            <p className="text-xs text-slate-500">Approved by manager: {profileName(record.manager_approved_by)} on {formatDate(record.manager_approved_at)}</p>
+            <p className="text-xs text-slate-500">Approved by manager: {profileName(record.manager_approved_by)} on {formatDate(record.manager_approved_at)} <span className="text-slate-400">(retired approval step)</span></p>
           )}
           {record?.finance_approved_by && (
             <p className="text-xs text-slate-500">Approved by finance: {profileName(record.finance_approved_by)} on {formatDate(record.finance_approved_at)}</p>
@@ -520,21 +622,21 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <p className="text-xs text-red-600">Rejection reason: {record.rejection_reason}</p>
           )}
 
-          {(showManagerActions || showFinanceActions) && !rejecting && (
+          {showFinanceActions && !rejecting && (
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
+                onClick={() => handleApprovalTransition('finance_approved')}
                 className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
               >
-                {showFinanceActions ? 'Give Final Approval' : 'Approve'}
+                Approve for Payment
               </button>
               <button type="button" onClick={() => setRejecting(true)} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">
                 Reject
               </button>
             </div>
           )}
-          {(showManagerActions || showFinanceActions) && rejecting && (
+          {showFinanceActions && rejecting && (
             <div className="space-y-2">
               <textarea rows={2} className={inputCls} placeholder="Reason for rejection…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
               <div className="flex gap-2">
@@ -775,7 +877,17 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       <SectionHeader title="Classification" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="General Ledger">
-          <SearchableSelect value={form.category_id ?? null} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
+          <SearchableSelect value={effectiveCategoryId} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
+          {categoryIsDefaulted && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              Set automatically from this {EXPENSE_TYPE_LABEL[form.expense_type ?? 'general'] ?? 'expense'}. Change it if the posting belongs elsewhere.
+            </p>
+          )}
+          {!effectiveCategoryId && (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+              Without a general ledger this expense can't post to the ledger when it's paid.
+            </p>
+          )}
         </Field>
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />

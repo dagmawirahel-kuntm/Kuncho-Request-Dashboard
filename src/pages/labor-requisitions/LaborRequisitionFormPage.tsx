@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { dropRecordCache } from '@/lib/queryCache'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -46,6 +47,8 @@ export default function LaborRequisitionFormPage() {
 function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: LaborRequisition }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillProjectId = searchParams.get('project_id')
   const { toast } = useToast()
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -66,7 +69,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         requested_by: record.requested_by,
         notes: record.notes,
       }
-      : { is_casual_or_new: true, headcount: 1 }
+      : { is_casual_or_new: true, headcount: 1, project_id: prefillProjectId ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -81,6 +84,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'labor-requisition')
     qc.invalidateQueries({ queryKey: ['labor-requisitions'] })
     toast(isEdit ? 'Labor requisition updated' : 'Labor requisition created', 'success')
     navigate('/labor-requisitions')

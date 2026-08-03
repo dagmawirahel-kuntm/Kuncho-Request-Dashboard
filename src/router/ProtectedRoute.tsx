@@ -1,16 +1,27 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { AccountStatusPage } from '@/pages/auth/AccountStatusPage'
 import { LoadingScreen } from '@/components/shared/LoadingScreen'
 import type { UserRole } from '@/types/database'
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[]
+  // Widens the role gate with a derived, per-assignment grant: anyone
+  // named on projects.project_manager_id reaches this route whatever
+  // their login role. Without it, project management is only ever a
+  // global role and an assigned PM whose role is something else (the
+  // real case here — a finance user managing 3 projects) can never
+  // reach their own project surfaces.
+  allowAssignedProjectManager?: boolean
 }
 
-export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
+export function ProtectedRoute({ allowedRoles, allowAssignedProjectManager }: ProtectedRouteProps) {
   const { user, profile, role, loading } = useAuth()
   const location = useLocation()
+  // Called unconditionally — hooks can't sit behind the early returns
+  // below. It no-ops for anyone without a staff row.
+  const { managesAny, isLoading: pmLoading } = useMyManagedProjects()
 
   if (loading) {
     return <LoadingScreen />
@@ -26,7 +37,11 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   if (profile?.account_status === 'disabled') return <AccountStatusPage status="disabled" />
 
   if (allowedRoles && role && !allowedRoles.includes(role)) {
-    return <Navigate to="/" replace />
+    if (!allowAssignedProjectManager) return <Navigate to="/" replace />
+    // Don't bounce a genuine PM out while the assignment is still
+    // resolving — "not loaded yet" is not "not permitted".
+    if (pmLoading) return <LoadingScreen />
+    if (!managesAny) return <Navigate to="/" replace />
   }
 
   return <Outlet />

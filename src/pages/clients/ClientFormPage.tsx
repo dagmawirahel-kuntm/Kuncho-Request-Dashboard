@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -76,6 +77,7 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'client')
     qc.invalidateQueries({ queryKey: ['clients'] })
     qc.invalidateQueries({ queryKey: ['clients-lookup'] })
     if (isEdit) qc.invalidateQueries({ queryKey: ['client', id] })

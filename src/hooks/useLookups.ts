@@ -45,6 +45,24 @@ export function useCategories() {
   })
 }
 
+// Which general ledger each kind of engagement defaults to (migration
+// 150). The same mapping the database applies on write — read here so
+// the expense form can show the resulting ledger immediately rather
+// than only after a save round-trip.
+export function useExpenseTypeLedgerDefaults() {
+  return useQuery({
+    queryKey: ['expense-type-ledger-defaults'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expense_type_ledger_defaults')
+        .select('expense_type,category_id')
+      if (error) throw error
+      return (data ?? []) as { expense_type: string; category_id: string }[]
+    },
+  })
+}
+
 export function useSubCategories(categoryId?: string | null) {
   return useQuery({
     queryKey: ['sub-categories-lookup', categoryId ?? 'all'],
@@ -444,7 +462,7 @@ export function useFfeJobDescriptions() {
     staleTime: 60000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('ffe_job_descriptions')
+        .from('job_descriptions')
         .select('id,role_name,role_overview,sort_order')
         .eq('active', true)
         .order('sort_order')

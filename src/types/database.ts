@@ -117,6 +117,9 @@ export interface Staff {
   user_id: string | null
   department_id: string | null
   sub_team: string | null          // Operations/Construction only: e.g. "Workshop — Carpentry", "Site"
+  // Line manager (migration 161). Null is legal — department heads and
+  // Executive legitimately have none. Cycles rejected by trigger.
+  reports_to_id: string | null
   created_at: string
   updated_at: string
 }
@@ -563,10 +566,13 @@ export interface TransportationRequest {
   priority: 'normal' | 'urgent' | 'critical'
   /** How long this job occupies the vehicle. Feeds the per-vehicle queue ETA — distinct from expected_delivery_date. */
   expected_duration_minutes: number | null
+  cargo_size_estimate: VehicleCapacityClass | null
+  expected_duration_hours: number | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
-export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at'>
+export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at' | 'completed_at'>
 
 /** v_transport_vehicle_queue — chained ETA per vehicle, own_fleet jobs only. */
 export interface TransportVehicleQueueRow {
@@ -603,6 +609,7 @@ export type LocationInsert = Omit<Location, 'id' | 'created_at'>
 
 // ── Vehicles (owned fleet) ────────────────────────────────────────
 export type VehicleStatus = 'available' | 'on_job' | 'maintenance' | 'offline'
+export type VehicleCapacityClass = 'motorbike' | 'light' | 'medium' | 'heavy'
 
 export interface Vehicle {
   id: string
@@ -615,6 +622,7 @@ export interface Vehicle {
   image_url: string | null
   fuel_tank_liters: number | null
   energy_type: 'fuel' | 'electric'
+  capacity_class: VehicleCapacityClass | null
   assigned_driver_id: string | null
   active: boolean
   created_at: string
@@ -650,6 +658,41 @@ export interface VehicleEnergyCurrent {
   note: string | null
   percent_remaining: number | null
   depleted: number | null
+}
+
+// ── Transportation: overdue/on-time derivation and driver KPI ──────
+export interface TransportationPickupStatus {
+  id: string
+  request_name: string | null
+  job_type: TransportJobType
+  job_status: TransportJobStatus
+  priority: 'normal' | 'urgent' | 'critical'
+  assigned_staff_id: string | null
+  vehicle_id: string | null
+  sourcing_bundle_id: string | null
+  created_at: string
+  expected_duration_hours: number | null
+  completed_at: string | null
+  expected_by: string | null
+  is_overdue: boolean
+  completed_on_time: boolean | null
+}
+
+export interface LogisticsTransportTurnaroundKpi {
+  staff_id: string
+  jobs_with_target_completed: number
+  jobs_on_time: number
+  jobs_late: number
+  on_time_pct: number | null
+}
+
+export interface SuggestedVehicle {
+  vehicle_id: string
+  name: string
+  vehicle_type: string
+  capacity_class: VehicleCapacityClass | null
+  status: VehicleStatus
+  fit_rank: number
 }
 
 // ── Accounts ─────────────────────────────────────────────────────
@@ -948,12 +991,21 @@ export interface BankStatementLine {
   matched_expense_id: string | null
   transfer_id: string | null
   match_status: BankStatementLineMatchStatus
+  // Recorded at match time (migration 154), not derived on read — the
+  // expense's amount can be edited later, and what the reconciliation
+  // record needs is what the two sides were when they were matched.
+  matched_expense_amount: number | null
+  // Statement line amount minus matched expense amount. Negative = the
+  // line only partly offsets the expense, positive = it exceeds it.
+  variance_amount: number | null
   created_at: string
 }
-export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status'>
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
+
+export type SourcingBundlePaymentPattern = 'pay_on_delivery' | 'pay_in_advance'
 
 export interface SourcingBundle {
   id: string
@@ -972,6 +1024,7 @@ export interface SourcingBundle {
   finance_notes: string | null
   expense_id: string | null
   total_value: number
+  payment_pattern: SourcingBundlePaymentPattern
   created_at: string
   updated_at: string
 }
@@ -1018,12 +1071,21 @@ export interface GoodsReceivedNote {
 }
 export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
 
+// Per-line quality verdict at receipt (migration 159). 'damaged' still
+// enters stock — the material is physically on site and has to be
+// accounted for; 'rejected' was refused at the door and does not.
+export type GrnQualityStatus = 'accepted' | 'damaged' | 'rejected'
+
 export interface GoodsReceivedNoteItem {
   id: string
   grn_id: string
   sourcing_bundle_item_id: string
   quantity_received: number | null
   condition_notes: string | null
+  // Per-line, because one bundle can mix ledgers. Supersedes the
+  // header-level goods_received_notes.category_id.
+  category_id: string | null
+  quality_status: GrnQualityStatus
   created_at: string
 }
 export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at'>
@@ -1291,6 +1353,22 @@ export interface ToPayQueueRow {
   finance_approved_by: string | null
   finance_approved_at: string | null
   days_since_approval: number | null
+  sourcing_bundle_id: string | null
+  payment_pattern: SourcingBundlePaymentPattern | null
+}
+
+export interface OpenVendorAdvanceRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  vendor_id: string | null
+  vendor_name: string | null
+  sourcing_bundle_id: string | null
+  bundle_code: string | null
+  disbursed_by: string | null
+  payment_state_changed_at: string | null
+  days_open: number | null
 }
 
 export interface FinancePendingApprovalRow {
@@ -1526,6 +1604,37 @@ export interface StockDeliveryConfirmationRow {
   confirmed_at: string | null
   is_confirmed: boolean
   has_discrepancy: boolean
+  // Migration 160. Same vocabulary as the GRN's own per-line verdict, so
+  // a vendor delivery and a site-to-site transfer read identically.
+  quality_status: GrnQualityStatus | null
+  stock_return_request_id: string | null
+  // 'project_transfer' means it came off another site rather than out of
+  // the warehouse; source_project_* names where from.
+  source_kind: 'warehouse_dispatch' | 'project_transfer'
+  source_project_id: string | null
+  source_project_name: string | null
+}
+
+// One row per GRN with its worst line verdict — the register that lets
+// "what did we receive, and was any of it rejected" be answered without
+// opening each purchase order (migration 160).
+export interface GrnRegisterRow {
+  id: string
+  grn_code: string | null
+  received_at: string
+  sourcing_bundle_id: string
+  bundle_code: string | null
+  vendor_name: string | null
+  received_by: string | null
+  received_by_name: string | null
+  photo_url: string | null
+  notes: string | null
+  line_count: number
+  total_quantity_received: number
+  damaged_lines: number
+  rejected_lines: number
+  worst_quality: GrnQualityStatus
+  ledgers: string | null
 }
 
 export type StockReturnRequestStatus = 'pending' | 'received' | 'rejected'
@@ -1542,9 +1651,28 @@ export interface StockReturnRequest {
   confirmed_by: string | null
   confirmed_at: string | null
   stock_receipt_id: string | null
+  // NULL returns the material to the warehouse; set transfers it
+  // straight to another project, with no warehouse leg (migration 159).
+  destination_project_id: string | null
   created_at: string
 }
-export type StockReturnRequestInsert = Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+export type StockReturnRequestInsert =
+  Pick<StockReturnRequest, 'stock_item_id' | 'project_id' | 'quantity_requested' | 'notes'>
+  & Partial<Pick<StockReturnRequest, 'destination_project_id'>>
+
+// What a project physically still holds: issued to it, less what has
+// already gone back or is awaiting confirmation (migration 159).
+export interface ProjectMaterialBalance {
+  project_id: string
+  project_name: string | null
+  stock_item_id: string
+  item_name: string
+  unit: string | null
+  qty_issued: number
+  qty_returned: number
+  qty_pending: number
+  qty_available_to_return: number
+}
 
 // ── Tool Units ────────────────────────────────────────────────────
 export interface ToolUnit {
@@ -1695,7 +1823,33 @@ export interface LeaveRequest {
   status: LeaveStatus
   approved_by: string | null
   approved_at: string | null
+  // Migration 161. Resolved at submission and stored, because who should
+  // have decided is a fact about that moment — recomputing it later would
+  // silently re-route history every time someone's manager changed.
+  assigned_approver_id: string | null
+  routing_basis: LeaveRoutingBasis | null
   created_at: string
+}
+
+// Which tier of the fallback chain answered: line manager, then primary
+// department head, then HR, then admin as the terminal tier.
+export type LeaveRoutingBasis = 'line_manager' | 'department_head' | 'hr_officer' | 'admin' | 'unresolved'
+
+// Secondary (hybrid) department membership — descriptive only, grants no
+// authority. staff.department_id remains the primary (migration 161).
+export interface StaffDepartmentMembership {
+  id: string
+  staff_id: string
+  department_id: string
+  note: string | null
+  created_at: string
+}
+
+export interface OrgStructureGaps {
+  staff_without_manager: number
+  staff_without_department: number
+  departments_without_head: number
+  staff_without_login: number
 }
 export type LeaveRequestInsert = Omit<LeaveRequest, 'id' | 'approved_by' | 'approved_at' | 'created_at'>
 
@@ -1913,6 +2067,17 @@ export interface LedgerPostingFailure {
   resolved_by: string | null
 }
 
+// ── Default general ledger per engagement type (migration 154) ─────
+// Auto-posting needs an expense-side account to debit, which comes from
+// expenses.category_id. This is the default applied when an expense has
+// none of its own — never an override of one a person chose.
+export interface ExpenseTypeLedgerDefault {
+  expense_type: ExpenseType
+  category_id: string
+  notes: string | null
+  updated_at: string
+}
+
 // ── General Ledger reporting views/functions (migration 107) ──────
 export interface TrialBalanceRow {
   chart_of_accounts_id: string
@@ -2074,11 +2239,19 @@ export interface WorkOrderCostRow {
 }
 
 // ── FF&E job descriptions & computed skill levels ──────────────────
+// Named FfeJobDescription for continuity, but the table is now
+// job_descriptions and covers every department (migration 162) — the
+// five FF&E fabrication roles are simply Operations/Construction rows.
 export interface FfeJobDescription {
   id: string
   role_name: string
   role_overview: string | null
+  // Which department this role belongs to. Null only for a role created
+  // before the framework was generalized.
+  department_id: string | null
   sort_order: number
+  // Drafts are seeded inactive: visible for a department head to review
+  // and confirm, not usable for assessment until activated.
   active: boolean
   created_at: string
   updated_at: string

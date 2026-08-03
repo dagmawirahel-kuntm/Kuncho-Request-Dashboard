@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { useToast } from '@/contexts/ToastContext'
 import { useUserProfiles, useVendorReceiptFacilitations } from '@/hooks/useLookups'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -11,11 +12,11 @@ import { KpiCard } from '@/components/shared/KpiCard'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import type {
-  ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow,
+  ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow, OpenVendorAdvanceRow,
   ExpensePaymentMethod,
 } from '@/types/database'
 import {
-  Wallet, Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt,
+  Wallet, Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt, HandCoins,
 } from 'lucide-react'
 
 const PAYMENT_METHODS: { value: ExpensePaymentMethod; label: string }[] = [
@@ -110,6 +111,15 @@ export default function PaymentsDashboardPage() {
     },
   })
 
+  const { data: openAdvances = [] } = useQuery({
+    queryKey: ['v-open-vendor-advances'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_open_vendor_advances').select('*')
+      if (error) throw error
+      return data as OpenVendorAdvanceRow[]
+    },
+  })
+
   const { data: userProfiles = [] } = useUserProfiles()
   const payerOptions = useMemo(
     () => (userProfiles as { id: string; full_name: string; role: string }[])
@@ -123,6 +133,7 @@ export default function PaymentsDashboardPage() {
     qc.invalidateQueries({ queryKey: ['v-finance-pending-approval'] })
     qc.invalidateQueries({ queryKey: ['v-account-cash-position'] })
     qc.invalidateQueries({ queryKey: ['v-recent-payments'] })
+    qc.invalidateQueries({ queryKey: ['v-open-vendor-advances'] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
   }
 
@@ -132,6 +143,14 @@ export default function PaymentsDashboardPage() {
   const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('transfer')
   const [sendingBulk, setSendingBulk] = useState(false)
   const [batchModalOpen, setBatchModalOpen] = useState(false)
+  const [recordingAdvanceId, setRecordingAdvanceId] = useState<string | null>(null)
+
+  // Pay-in-advance rows need a different action (payment_state = 'advance',
+  // not 'sent') — bulk "Mark as Sent" would leave them stranded, since the
+  // DB won't let a pattern-B expense reach 'paid' except by way of
+  // 'advance' first. Kept out of the bulk-selectable set entirely rather
+  // than relying on everyone remembering not to select them.
+  const bulkSelectableQueue = useMemo(() => toPayQueue.filter(r => r.payment_pattern !== 'pay_in_advance'), [toPayQueue])
 
   function toggleQueueRow(id: string) {
     setSelectedQueue(prev => {
@@ -141,7 +160,20 @@ export default function PaymentsDashboardPage() {
     })
   }
   function toggleQueueAll() {
-    setSelectedQueue(prev => (prev.size === toPayQueue.length ? new Set() : new Set(toPayQueue.map(r => r.id))))
+    setSelectedQueue(prev => (prev.size === bulkSelectableQueue.length ? new Set() : new Set(bulkSelectableQueue.map(r => r.id))))
+  }
+
+  async function handleRecordAdvance(id: string) {
+    if (!payerId) { toast('Select who is sending this payment first', 'error'); return }
+    setRecordingAdvanceId(id)
+    const { error } = await supabase
+      .from('expenses')
+      .update({ payment_state: 'advance', disbursed_by: payerId, payment_method: paymentMethod })
+      .eq('id', id)
+    setRecordingAdvanceId(null)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Advance payment recorded', 'success')
+    invalidateAll()
   }
 
   const selfApprovedConflict = useMemo(() => {
@@ -196,6 +228,19 @@ export default function PaymentsDashboardPage() {
     invalidateAll()
   }
 
+  const [closingAdvanceId, setClosingAdvanceId] = useState<string | null>(null)
+  async function handleCloseAdvance(id: string) {
+    setClosingAdvanceId(id)
+    const { error } = await supabase.rpc('close_vendor_advance', { p_expense_id: id })
+    setClosingAdvanceId(null)
+    // The RPC itself is the source of truth on whether this is legal (e.g.
+    // "no GRN exists yet") — surfacing its own message rather than
+    // duplicating that check client-side.
+    if (error) { toast(error.message, 'error'); return }
+    toast('Advance closed — expense is now paid', 'success')
+    invalidateAll()
+  }
+
   const kpis = {
     toPayTotal: toPayQueue.reduce((s, r) => s + (r.amount_etb ?? 0), 0),
     pendingCount: pendingApproval.length,
@@ -210,6 +255,11 @@ export default function PaymentsDashboardPage() {
         <p className="text-sm text-slate-500 dark:text-slate-400">Approval → to-pay → sent → paid, in one queue</p>
       </div>
 
+      {/* This is the landing page for finance, and a finance user can
+          also be the named PM on projects. Renders nothing for anyone
+          without an assignment. */}
+      <RoleViewSwitcher mode="assigned-pm" role={role} />
+
       {/* KPI summary */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="To-Pay Queue" value={formatCurrency(kpis.toPayTotal)} sub={`${toPayQueue.length} approved, awaiting payment`} icon={Send} color="bg-amber-50 text-amber-500" />
@@ -220,9 +270,11 @@ export default function PaymentsDashboardPage() {
 
       {/* ── 1. To-Pay Queue (headline) ───────────────────────────────── */}
       <Section title="To-Pay Queue" sub="Finance-approved, awaiting payment — the headline queue">
-        {canAct && selectedQueue.size > 0 && (
+        {canAct && toPayQueue.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-b bg-brand/5 dark:bg-brand/10 dark:border-slate-700 px-4 py-3">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{selectedQueue.size} selected</span>
+            {selectedQueue.size > 0 && (
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{selectedQueue.size} selected</span>
+            )}
             <div className="w-56">
               <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Who is paying?" />
             </div>
@@ -233,29 +285,36 @@ export default function PaymentsDashboardPage() {
             >
               {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
-            <button
-              onClick={handleMarkSent}
-              disabled={sendingBulk}
-              className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              <Send className="h-3.5 w-3.5" /> Mark as Sent
-            </button>
-            <button
-              onClick={() => setBatchModalOpen(true)}
-              disabled={!payerId}
-              className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
-              title={!payerId ? 'Select a payer first' : undefined}
-            >
-              <Layers className="h-3.5 w-3.5" /> Create Batch Payment
-            </button>
-            {selfApprovedConflict.length > 0 && (
-              <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
-                <AlertTriangle className="h-3.5 w-3.5" /> Payer approved {selfApprovedConflict.length} of these
-              </span>
+            {selectedQueue.size > 0 && (
+              <>
+                <button
+                  onClick={handleMarkSent}
+                  disabled={sendingBulk}
+                  className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  <Send className="h-3.5 w-3.5" /> Mark as Sent
+                </button>
+                <button
+                  onClick={() => setBatchModalOpen(true)}
+                  disabled={!payerId}
+                  className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                  title={!payerId ? 'Select a payer first' : undefined}
+                >
+                  <Layers className="h-3.5 w-3.5" /> Create Batch Payment
+                </button>
+                {selfApprovedConflict.length > 0 && (
+                  <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Payer approved {selfApprovedConflict.length} of these
+                  </span>
+                )}
+                <button onClick={() => setSelectedQueue(new Set())} className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                  Clear selection
+                </button>
+              </>
             )}
-            <button onClick={() => setSelectedQueue(new Set())} className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-              Clear selection
-            </button>
+            {selectedQueue.size === 0 && bulkSelectableQueue.length === 0 && (
+              <span className="text-xs text-slate-400">Set the payer above, then use Record Advance on any row below.</span>
+            )}
           </div>
         )}
         {loadingQueue ? (
@@ -271,7 +330,7 @@ export default function PaymentsDashboardPage() {
                   <tr>
                     {canAct && (
                       <th className="px-4 py-2 w-8">
-                        <input type="checkbox" checked={toPayQueue.length > 0 && selectedQueue.size === toPayQueue.length} onChange={toggleQueueAll} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                        <input type="checkbox" checked={bulkSelectableQueue.length > 0 && selectedQueue.size === bulkSelectableQueue.length} onChange={toggleQueueAll} className="rounded border-slate-300 text-brand focus:ring-brand" />
                       </th>
                     )}
                     <th className="px-4 py-2">Vendor</th>
@@ -279,20 +338,28 @@ export default function PaymentsDashboardPage() {
                     <th className="px-4 py-2 text-right">Amount</th>
                     <th className="px-4 py-2 text-center">WHT</th>
                     <th className="px-4 py-2 text-right">Age</th>
+                    <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-slate-700">
-                  {toPayQueue.map(r => (
+                  {toPayQueue.map(r => {
+                    const isAdvance = r.payment_pattern === 'pay_in_advance'
+                    return (
                     <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
                       {canAct && (
                         <td className="px-4 py-2.5">
-                          <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                          {!isAdvance && (
+                            <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                          )}
                         </td>
                       )}
                       <td className="px-4 py-2.5">
                         <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
                           {r.vendor_name ?? r.item_service_description ?? r.expense_code}
                         </Link>
+                        {isAdvance && (
+                          <span className="ml-1.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Advance</span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
                         {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
@@ -311,8 +378,21 @@ export default function PaymentsDashboardPage() {
                       <td className="px-4 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                         {r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}
                       </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {canAct && isAdvance && (
+                          <button
+                            onClick={() => handleRecordAdvance(r.id)}
+                            disabled={recordingAdvanceId === r.id}
+                            title={!payerId ? 'Select a payer above first' : undefined}
+                            className="flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                          >
+                            <HandCoins className="h-3 w-3" /> {recordingAdvanceId === r.id ? 'Recording…' : 'Record Advance'}
+                          </button>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -324,16 +404,20 @@ export default function PaymentsDashboardPage() {
               {canAct && (
                 <label className="flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60">
                   <span className="flex h-11 w-11 -my-3 flex-shrink-0 items-center justify-center">
-                    <input type="checkbox" checked={toPayQueue.length > 0 && selectedQueue.size === toPayQueue.length} onChange={toggleQueueAll} className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand" />
+                    <input type="checkbox" checked={bulkSelectableQueue.length > 0 && selectedQueue.size === bulkSelectableQueue.length} onChange={toggleQueueAll} className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand" />
                   </span>
                   Select all
                 </label>
               )}
-              {toPayQueue.map(r => (
+              {toPayQueue.map(r => {
+                const isAdvance = r.payment_pattern === 'pay_in_advance'
+                return (
                 <div key={r.id} className="flex items-start gap-1 px-2 py-2">
                   {canAct && (
                     <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
-                      <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand" />
+                      {!isAdvance && (
+                        <input type="checkbox" checked={selectedQueue.has(r.id)} onChange={() => toggleQueueRow(r.id)} className="h-5 w-5 rounded border-slate-300 text-brand focus:ring-brand" />
+                      )}
                     </span>
                   )}
                   <Link to={`/expenses/${r.id}`} className="min-w-0 flex-1 py-2 pr-2">
@@ -346,13 +430,67 @@ export default function PaymentsDashboardPage() {
                       {r.verify_wht && <span className="flex-shrink-0 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
                       <span className="ml-auto flex-shrink-0 tabular-nums">{r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}</span>
                     </div>
+                    {isAdvance && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Advance</span>
+                        {canAct && (
+                          <button
+                            onClick={e => { e.preventDefault(); handleRecordAdvance(r.id) }}
+                            disabled={recordingAdvanceId === r.id}
+                            className="flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                          >
+                            <HandCoins className="h-2.5 w-2.5" /> {recordingAdvanceId === r.id ? 'Recording…' : 'Record Advance'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </Link>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}
       </Section>
+
+      {/* ── 1b. Open Vendor Advances — money already sent, goods not yet
+          received. Not a silent gap; the exposure finance needs to chase. ── */}
+      {openAdvances.length > 0 && (
+        <Section title="Open Vendor Advances" sub="Paid before delivery — close once a GRN confirms the goods arrived">
+          <div className="divide-y dark:divide-slate-700">
+            {openAdvances.map(a => {
+              const aging = a.days_open != null && a.days_open >= 14
+              return (
+                <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <Link to={`/expenses/${a.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                      {a.vendor_name ?? a.item_service_description ?? a.expense_code}
+                    </Link>
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{a.bundle_code ?? '—'}</span>
+                      <span className={aging ? 'font-medium text-red-600 dark:text-red-400' : ''}>
+                        {a.days_open != null ? `${Math.floor(a.days_open)}d open` : '—'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(a.amount_etb ?? 0)}</span>
+                    {canAct && (
+                      <button
+                        onClick={() => handleCloseAdvance(a.id)}
+                        disabled={closingAdvanceId === a.id}
+                        className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="h-3 w-3" /> {closingAdvanceId === a.id ? 'Closing…' : 'Close'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+      )}
 
       {/* ── 2. Pending Approval ─────────────────────────────────────── */}
       <Section title="Pending Approval" sub="Awaiting a finance sign-off before it can join the to-pay queue">

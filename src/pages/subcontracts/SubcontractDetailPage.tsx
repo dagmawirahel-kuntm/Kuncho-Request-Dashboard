@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { SubcontractorEngagement, SubcontractorCompletionCertificate, SubcontractorCompletionCertificateInsert } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Trash2, X, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus, Trash2, X, AlertTriangle, Receipt } from 'lucide-react'
 
 type SubcontractDetail = SubcontractorEngagement & {
   vendors: { vendor_name: string } | null
@@ -212,9 +212,16 @@ function CompletionCertificates({ engagementId, agreedAmount, canWrite }: { enga
       {!isLoading && data.length > 0 && (
         <div className="flex items-center justify-between rounded-md bg-slate-50 dark:bg-slate-900/40 border dark:border-slate-700 px-3 py-2 text-xs">
           <span className="text-slate-500 dark:text-slate-400">Certified to date</span>
-          <span className="font-medium text-slate-800 dark:text-slate-100">
-            {formatCurrency(totalCertified)} <span className="text-slate-400 dark:text-slate-500 font-normal">/ {formatCurrency(agreedAmount)} agreed</span>
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="font-medium text-slate-800 dark:text-slate-100">
+              {formatCurrency(totalCertified)} <span className="text-slate-400 dark:text-slate-500 font-normal">/ {formatCurrency(agreedAmount)} agreed</span>
+            </span>
+            {canWrite && (
+              <Link to={`/expenses/new?engagement_id=${engagementId}`} className="flex items-center gap-1 text-brand hover:underline">
+                <Receipt className="h-3 w-3" /> Create Expense
+              </Link>
+            )}
+          </div>
         </div>
       )}
 

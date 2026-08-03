@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { dropRecordCache } from '@/lib/queryCache'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -72,6 +73,8 @@ export default function PayrollFormPage() {
 function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?: Payroll; linkedRows: PayrollStaff[] }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillStaffId = searchParams.get('staff_id')
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
@@ -140,6 +143,17 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
     setLines(prev => prev.map(l => (l.staff_id === staffId ? { ...l, [key]: value } : l)))
   }
 
+  // Arriving from a staff member's detail page with ?staff_id= — add them
+  // as the first pay line once the staff list has actually loaded (it's
+  // fetched async, so this can't be done in the lines useState initializer).
+  const [staffPrefilled, setStaffPrefilled] = useState(false)
+  useEffect(() => {
+    if (isEdit || !prefillStaffId || staffPrefilled || staff.length === 0) return
+    handleStaffSelection([prefillStaffId])
+    setStaffPrefilled(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, prefillStaffId, staffPrefilled, staff])
+
   const totals = useMemo(() => {
     const gross = lines.reduce((s, l) => s + l.gross, 0)
     const deductions = lines.reduce((s, l) => s + l.deductions, 0)
@@ -158,6 +172,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
       .update({ approval_status: next, ...extra })
       .eq('id', id!)
     if (err) { toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'payroll-entry', 'payroll-staff')
     qc.invalidateQueries({ queryKey: ['payroll'] })
     qc.invalidateQueries({ queryKey: ['payroll-entry', id] })
     toast('Approval status updated', 'success')
@@ -189,6 +204,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
     }
 
     setSaving(false)
+    dropRecordCache(qc, 'payroll-entry', 'payroll-staff')
     qc.invalidateQueries({ queryKey: ['payroll'] })
     qc.invalidateQueries({ queryKey: ['payroll-lookup'] })
     qc.invalidateQueries({ queryKey: ['payroll-staff', payrollId] })

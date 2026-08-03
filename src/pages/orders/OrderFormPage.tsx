@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -12,7 +13,7 @@ import {
 } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
+import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import {
@@ -497,7 +498,24 @@ function PurchaseRequestFormBody({
   const { data: recentItems = [] }  = useRecentOrderItems()
   const { data: stockItems = [] }   = useStockItems()
 
-  const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+  // A purchase request must be raised against a project the requester is
+  // actually responsible for. Roles with company-wide remit keep the
+  // full list; for everyone else, if they're a named project manager the
+  // picker is narrowed to their own projects — otherwise a PM could pick
+  // any of the ~89 projects from the dropdown, which is what was
+  // happening. The database enforces the same rule independently
+  // (raa_orders_insert, migration 155), so this is the honest UI for a
+  // restriction that already holds server-side, not the restriction
+  // itself.
+  const { projects: managedProjects, managesAny } = useMyManagedProjects()
+  const hasCompanyWideProjectAccess = !!role && ['admin', 'executive', 'finance', 'procurement_officer'].includes(role)
+  const scopeToManaged = !hasCompanyWideProjectAccess && managesAny
+
+  const projectOptions = useMemo(() => {
+    const source: { id: string; project_name: string }[] =
+      scopeToManaged ? managedProjects : (projects as { id: string; project_name: string }[])
+    return source.map(p => ({ id: p.id, label: p.project_name }))
+  }, [projects, managedProjects, scopeToManaged])
   const staffOptions   = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
   const vendorOptions  = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
 
@@ -549,8 +567,6 @@ function PurchaseRequestFormBody({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [rejecting, setRejecting] = useState(false)
-  const [rejectionReason, setRejectionReason] = useState('')
 
   function setHdr(key: keyof OrderInsert, value: unknown) { setHeader(h => ({ ...h, [key]: value })) }
 
@@ -598,8 +614,11 @@ function PurchaseRequestFormBody({
   const flaggedChecks = Object.values(budgetChecks).filter(r => r.outcome === 'warn' || r.outcome === 'block')
 
   const approvalStatus = record?.approval_status ?? 'pending'
-  const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
-  const showFinanceActions = isEdit && approvalStatus === 'manager_approved' && canApproveAsFinance(role)
+  // Migration 163 retired the purchase request as an approval step
+  // entirely — the Materials chain has no PR gate. Authority is
+  // exercised downstream at pre-sourcing finance review and at bundle
+  // approval by amount. The status is still displayed because historical
+  // rows carry real values, but nothing here approves any more.
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive')
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
@@ -609,7 +628,6 @@ function PurchaseRequestFormBody({
     qc.invalidateQueries({ queryKey: ['order', id] })
     qc.invalidateQueries({ queryKey: ['orders'] })
     toast('Approval updated', 'success')
-    setRejecting(false); setRejectionReason('')
   }
 
   async function handleSave() {
@@ -688,6 +706,7 @@ function PurchaseRequestFormBody({
     }
 
     setSaving(false)
+    dropRecordCache(qc, 'order', 'order-items')
     qc.invalidateQueries({ queryKey: ['orders'] })
     qc.invalidateQueries({ queryKey: ['order-items', orderId] })
     qc.invalidateQueries({ queryKey: ['order-item-counts'] })
@@ -750,28 +769,6 @@ function PurchaseRequestFormBody({
           {approvalStatus === 'rejected' && record?.rejection_reason && (
             <p className="text-xs text-red-600 dark:text-red-400">Rejected: {record.rejection_reason}</p>
           )}
-          {(showManagerActions || showFinanceActions) && !rejecting && (
-            <div className="flex gap-2">
-              <button type="button" onClick={() => handleApprovalTransition(showFinanceActions ? 'finance_approved' : 'manager_approved')}
-                className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700">
-                {showFinanceActions ? 'Final Approval' : 'Approve'}
-              </button>
-              <button type="button" onClick={() => setRejecting(true)}
-                className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">Reject</button>
-            </div>
-          )}
-          {(showManagerActions || showFinanceActions) && rejecting && (
-            <div className="space-y-2">
-              <textarea rows={2} className={inputCls} placeholder="Reason for rejection…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
-              <div className="flex gap-2">
-                <button type="button" disabled={!rejectionReason.trim()}
-                  onClick={() => handleApprovalTransition('rejected', { rejection_reason: rejectionReason })}
-                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">Confirm Reject</button>
-                <button type="button" onClick={() => { setRejecting(false); setRejectionReason('') }}
-                  className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
-              </div>
-            </div>
-          )}
           {canResubmit && (
             <button type="button" onClick={() => handleApprovalTransition('pending')}
               className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">Resubmit</button>
@@ -785,6 +782,11 @@ function PurchaseRequestFormBody({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Project">
             <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Select project…" />
+            {scopeToManaged && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Limited to the {managedProjects.length} project{managedProjects.length === 1 ? '' : 's'} you manage.
+              </p>
+            )}
           </Field>
           <Field label="Requested By">
             <div className={`${inputCls} bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 cursor-default select-none`}>

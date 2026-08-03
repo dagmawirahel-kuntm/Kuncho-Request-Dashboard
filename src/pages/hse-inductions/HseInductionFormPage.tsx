@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -81,6 +82,7 @@ function HseInductionFormPageBody({ id, record }: { id?: string; record?: HseInd
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'hse-induction')
     qc.invalidateQueries({ queryKey: ['hse-inductions'] })
     toast(isEdit ? 'Induction updated' : 'Induction recorded', 'success')
     navigate('/hse-inductions')

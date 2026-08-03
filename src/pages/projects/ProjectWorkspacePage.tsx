@@ -10,7 +10,7 @@ import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { useStaff, useStockItems } from '@/hooks/useLookups'
+import { useStaff } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
 import type {
   Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
@@ -128,7 +128,7 @@ function LaborAllocationsSection({ projectId, canManage }: { projectId: string; 
         </h3>
         <div className="flex items-center gap-2">
           {canManage && (
-            <Link to="/labor-requisitions/new"
+            <Link to={`/labor-requisitions/new?project_id=${projectId}`}
               className="text-xs text-slate-400 hover:text-brand transition-colors">
               Need new/casual labor? Request it →
             </Link>
@@ -229,17 +229,54 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
   const { role } = useAuth()
   const { data: myStaff } = useMyStaffId()
   const qc = useQueryClient()
-  const { data: stockItems = [] } = useStockItems()
   const [showAdd, setShowAdd] = useState(false)
   const [saving, setSaving] = useState(false)
   const [stockItemId, setStockItemId] = useState<string | null>(null)
   const [quantity, setQuantity] = useState('')
   const [notes, setNotes] = useState('')
+  const [destinationProjectId, setDestinationProjectId] = useState<string | null>(null)
 
   const canRequest = role === 'admin' || role === 'executive' || role === 'operations_manager'
     || (role === 'project_manager' && !!myStaff?.id && myStaff.id === projectManagerId)
 
-  const stockItemOptions = stockItems.map((s: any) => ({ id: s.id, label: s.item_name }))
+  // Only material this project was actually issued, less whatever has
+  // already gone back or is awaiting confirmation. Offering the whole
+  // catalogue let a project "return" things it was never sent, which the
+  // database now refuses outright (migration 159) — this is the picker
+  // telling the same truth rather than letting someone hit the error.
+  const { data: onSite = [] } = useQuery({
+    queryKey: ['project-material-balance', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_project_material_balance')
+        .select('stock_item_id, item_name, unit, qty_available_to_return')
+        .eq('project_id', projectId)
+        .gt('qty_available_to_return', 0)
+        .order('item_name')
+      if (error) throw error
+      return data as { stock_item_id: string; item_name: string; unit: string | null; qty_available_to_return: number }[]
+    },
+  })
+
+  // Transfer target: any other project. Sending surplus straight to the
+  // site that needs it skips a pointless warehouse round trip.
+  const { data: otherProjects = [] } = useQuery({
+    queryKey: ['transfer-target-projects', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('projects').select('id, project_name').neq('id', projectId).order('project_name')
+      if (error) throw error
+      return data as { id: string; project_name: string }[]
+    },
+  })
+
+  const stockItemOptions = onSite.map(s => ({
+    id: s.stock_item_id,
+    label: s.item_name,
+    sub: `${s.qty_available_to_return}${s.unit ? ' ' + s.unit : ''} on site`,
+  }))
+  const projectOptions = otherProjects.map(p => ({ id: p.id, label: p.project_name }))
+  const selected = onSite.find(s => s.stock_item_id === stockItemId)
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['project-stock-returns', projectId],
@@ -254,19 +291,30 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
     },
   })
 
-  function resetForm() { setStockItemId(null); setQuantity(''); setNotes('') }
+  function resetForm() { setStockItemId(null); setQuantity(''); setNotes(''); setDestinationProjectId(null) }
 
   async function handleAdd() {
     const qty = parseFloat(quantity)
     if (!stockItemId || isNaN(qty) || qty <= 0) { toast('Select an item and a valid quantity', 'error'); return }
+    if (selected && qty > selected.qty_available_to_return) {
+      toast(`Only ${selected.qty_available_to_return} on site — pending requests already count against that`, 'error')
+      return
+    }
     setSaving(true)
     const { error } = await supabase.from('stock_return_requests').insert([{
       stock_item_id: stockItemId, project_id: projectId, quantity_requested: qty, notes: notes || null,
+      destination_project_id: destinationProjectId,
     }])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['project-stock-returns', projectId] })
-    toast('Return request recorded — awaiting stock manager confirmation', 'success')
+    qc.invalidateQueries({ queryKey: ['project-material-balance', projectId] })
+    toast(
+      destinationProjectId
+        ? 'Transfer requested — awaiting stock manager confirmation'
+        : 'Return request recorded — awaiting stock manager confirmation',
+      'success'
+    )
     resetForm()
     setShowAdd(false)
   }
@@ -275,41 +323,67 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
     <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-          <PackageOpen className="h-4 w-4" /> Return to Stock
+          <PackageOpen className="h-4 w-4" /> Return &amp; Transfer
         </h3>
         {canRequest && (
           <button
             onClick={() => setShowAdd(s => !s)}
             className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
-            {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Request Return'}
+            {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Send Material'}
           </button>
         )}
       </div>
 
       {showAdd && (
         <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Item *</label>
-              <SearchableSelect value={stockItemId} onChange={setStockItemId} options={stockItemOptions} placeholder="Select stock item…" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Quantity *</label>
-              <input type="number" min={0} step="any" className={inputCls} value={quantity} onChange={e => setQuantity(e.target.value)} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes</label>
-              <input type="text" className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
-            </div>
-          </div>
-          <p className="text-[11px] text-slate-400">
-            This records what's coming back — stock only updates once a stock manager confirms it actually arrived at the warehouse.
-          </p>
+          {stockItemOptions.length === 0 ? (
+            <p className="py-2 text-xs text-slate-500 dark:text-slate-400">
+              Nothing to send back — no material has been issued to this project yet, or all of it is already accounted for.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Item *</label>
+                  <SearchableSelect value={stockItemId} onChange={setStockItemId} options={stockItemOptions} placeholder="Select from what's on site…" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Quantity *</label>
+                  <input type="number" min={0} step="any" className={inputCls} value={quantity} onChange={e => setQuantity(e.target.value)} />
+                  {selected && (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {selected.qty_available_to_return}{selected.unit ? ` ${selected.unit}` : ''} available
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes</label>
+                  <input type="text" className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Send to</label>
+                <SearchableSelect
+                  value={destinationProjectId}
+                  onChange={setDestinationProjectId}
+                  options={projectOptions}
+                  placeholder="Back to warehouse (default) — or pick another project…"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Leave empty to return it to the warehouse. Pick a project to move it straight there instead, with no warehouse leg.
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                This records what's leaving — stock only updates once a stock manager confirms it actually arrived
+                {destinationProjectId ? ' at the receiving project.' : ' at the warehouse.'}
+              </p>
+            </>
+          )}
           <div className="flex items-center justify-end gap-2">
             <button onClick={() => { setShowAdd(false); resetForm() }} className="rounded-md px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
             <button onClick={handleAdd} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">
-              {saving ? 'Saving…' : 'Submit Return'}
+              {saving ? 'Saving…' : destinationProjectId ? 'Submit Transfer' : 'Submit Return'}
             </button>
           </div>
         </div>
@@ -980,6 +1054,18 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       )}
+
+      {/* Workshop/production work for this project — no listing here yet,
+          just a fast, pre-linked entry point rather than a blank form. */}
+      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4" /> Work Orders
+        </h3>
+        <Link to={`/work-orders/new?project_id=${id}`}
+          className="text-xs text-slate-400 hover:text-brand transition-colors">
+          Need workshop or site work done? Create a work order →
+        </Link>
+      </div>
 
       {/* Labor Tier 1: routine assignment, no approval */}
       <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />

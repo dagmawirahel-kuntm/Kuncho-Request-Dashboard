@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useDepartments } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import type { FfeJobDescription, FfeKeyResponsibility, FfeResponsibilityTier } from '@/types/database'
 import { ChevronDown, ChevronRight, Pencil, Plus, X, EyeOff } from 'lucide-react'
@@ -14,14 +15,18 @@ export default function FfeJobDescriptionsPage() {
   const qc = useQueryClient()
   const canManage = role === 'admin' || role === 'operations_manager'
 
-  const [showInactive, setShowInactive] = useState(false)
+  // Drafts are visible by default. A framework seeded for review is
+  // useless if it hides behind a checkbox nobody thinks to tick — the
+  // point is that a department head finds theirs and confirms it.
+  const [showInactive, setShowInactive] = useState(true)
+  const [deptFilter, setDeptFilter] = useState<string>('All')
   const [editingRole, setEditingRole] = useState<FfeJobDescription | 'new' | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ['ffe-job-descriptions', showInactive],
     queryFn: async () => {
-      let q = supabase.from('ffe_job_descriptions').select('*').order('sort_order')
+      let q = supabase.from('job_descriptions').select('*').order('sort_order')
       if (!showInactive) q = q.eq('active', true)
       const { data, error } = await q
       if (error) throw error
@@ -32,13 +37,45 @@ export default function FfeJobDescriptionsPage() {
   const { data: responsibilities = [] } = useQuery({
     queryKey: ['ffe-key-responsibilities-all', showInactive],
     queryFn: async () => {
-      let q = supabase.from('ffe_key_responsibilities').select('*').order('sort_order')
+      let q = supabase.from('key_responsibilities').select('*').order('sort_order')
       if (!showInactive) q = q.eq('active', true)
       const { data, error } = await q
       if (error) throw error
       return data as FfeKeyResponsibility[]
     },
   })
+
+  const { data: departments = [] } = useDepartments()
+  const deptName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of departments as { id: string; name: string }[]) m.set(d.id, d.name)
+    return m
+  }, [departments])
+
+  // Grouped by department rather than one flat list: with every
+  // department's roles in the same table, a Finance responsibility sat
+  // next to a Carpenter's with nothing to say which was which.
+  const grouped = useMemo(() => {
+    const visible = deptFilter === 'All'
+      ? roles
+      : roles.filter(r => (r.department_id ? deptName.get(r.department_id) : '(no department)') === deptFilter)
+    const m = new Map<string, FfeJobDescription[]>()
+    for (const r of visible) {
+      const key = r.department_id ? (deptName.get(r.department_id) ?? 'Unknown') : '(no department)'
+      const list = m.get(key) ?? []
+      list.push(r)
+      m.set(key, list)
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [roles, deptFilter, deptName])
+
+  const deptTabs = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of roles) set.add(r.department_id ? (deptName.get(r.department_id) ?? 'Unknown') : '(no department)')
+    return ['All', ...[...set].sort()]
+  }, [roles, deptName])
+
+  const draftCount = roles.filter(r => !r.active).length
 
   const responsibilitiesByRole = useMemo(() => {
     const map = new Map<string, FfeKeyResponsibility[]>()
@@ -60,14 +97,16 @@ export default function FfeJobDescriptionsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">FF&E Job Descriptions</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Workshop competency framework — skill levels are computed from these responsibilities, never set directly</p>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Job Descriptions</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Competency framework by department — skill levels are computed from these responsibilities, never set directly
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
             <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
               <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-              Show retired
+              Show drafts &amp; retired
             </label>
           )}
           {canManage && (
@@ -78,21 +117,61 @@ export default function FfeJobDescriptionsPage() {
         </div>
       </div>
 
+      {draftCount > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-900/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          {draftCount} role{draftCount === 1 ? '' : 's'} {draftCount === 1 ? 'is' : 'are'} a <strong>draft</strong> — seeded for review, not yet
+          usable for assessment. Each department head should confirm their own, then activate it from the role's edit form.
+        </div>
+      )}
+
+      {/* Department filter */}
+      <div className="flex flex-wrap gap-1.5">
+        {deptTabs.map(tab => {
+          const active = deptFilter === tab
+          return (
+            <button
+              key={tab}
+              onClick={() => setDeptFilter(tab)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                active
+                  ? 'bg-brand text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+              }`}
+            >
+              {tab}
+            </button>
+          )
+        })}
+      </div>
+
       {isLoading ? (
         <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
+      ) : grouped.length === 0 ? (
+        <div className="py-12 text-center text-sm text-slate-400">No roles defined yet.</div>
       ) : (
-        <div className="space-y-3">
-          {roles.map(role_ => (
-            <RoleCard
-              key={role_.id}
-              role={role_}
-              responsibilities={responsibilitiesByRole.get(role_.id) ?? []}
-              expanded={expandedId === role_.id}
-              onToggle={() => setExpandedId(expandedId === role_.id ? null : role_.id)}
-              canManage={canManage}
-              onEditRole={() => setEditingRole(role_)}
-              onChanged={refresh}
-            />
+        <div className="space-y-6">
+          {grouped.map(([dept, deptRoles]) => (
+            <div key={dept} className="space-y-3">
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{dept}</h2>
+                <span className="text-xs text-slate-400">
+                  {deptRoles.length} role{deptRoles.length === 1 ? '' : 's'}
+                  {deptRoles.every(r => !r.active) && ' · all draft'}
+                </span>
+              </div>
+              {deptRoles.map(role_ => (
+                <RoleCard
+                  key={role_.id}
+                  role={role_}
+                  responsibilities={responsibilitiesByRole.get(role_.id) ?? []}
+                  expanded={expandedId === role_.id}
+                  onToggle={() => setExpandedId(expandedId === role_.id ? null : role_.id)}
+                  canManage={canManage}
+                  onEditRole={() => setEditingRole(role_)}
+                  onChanged={refresh}
+                />
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -121,13 +200,13 @@ function RoleCard({ role, responsibilities, expanded, onToggle, canManage, onEdi
   const [editingResp, setEditingResp] = useState<FfeKeyResponsibility | 'new' | null>(null)
 
   async function toggleRoleActive() {
-    const { error } = await supabase.from('ffe_job_descriptions').update({ active: !role.active }).eq('id', role.id)
+    const { error } = await supabase.from('job_descriptions').update({ active: !role.active }).eq('id', role.id)
     if (error) { toast(error.message, 'error'); return }
     onChanged()
   }
 
   async function toggleRespActive(r: FfeKeyResponsibility) {
-    const { error } = await supabase.from('ffe_key_responsibilities').update({ active: !r.active }).eq('id', r.id)
+    const { error } = await supabase.from('key_responsibilities').update({ active: !r.active }).eq('id', r.id)
     if (error) { toast(error.message, 'error'); return }
     onChanged()
   }
@@ -139,7 +218,7 @@ function RoleCard({ role, responsibilities, expanded, onToggle, canManage, onEdi
           {expanded ? <ChevronDown className="h-4 w-4 text-slate-400 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 flex-shrink-0" />}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
-              {role.role_name} {!role.active && <span className="text-xs font-normal text-slate-400">(retired)</span>}
+              {role.role_name} {!role.active && <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">inactive</span>}
             </p>
             {role.role_overview && <p className="text-xs text-slate-400 truncate">{role.role_overview}</p>}
           </div>
@@ -147,7 +226,7 @@ function RoleCard({ role, responsibilities, expanded, onToggle, canManage, onEdi
         {canManage && (
           <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={onEditRole} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
-            <button onClick={toggleRoleActive} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title={role.active ? 'Retire' : 'Reactivate'}><EyeOff className="h-3.5 w-3.5" /></button>
+            <button onClick={toggleRoleActive} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title={role.active ? 'Deactivate' : 'Activate'}><EyeOff className="h-3.5 w-3.5" /></button>
           </div>
         )}
       </button>
@@ -167,7 +246,7 @@ function RoleCard({ role, responsibilities, expanded, onToggle, canManage, onEdi
               {canManage && (
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button onClick={() => setEditingResp(r)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit"><Pencil className="h-3 w-3" /></button>
-                  <button onClick={() => toggleRespActive(r)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title={r.active ? 'Retire' : 'Reactivate'}><EyeOff className="h-3 w-3" /></button>
+                  <button onClick={() => toggleRespActive(r)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" title={r.active ? 'Deactivate' : 'Activate'}><EyeOff className="h-3 w-3" /></button>
                 </div>
               )}
             </div>
@@ -199,15 +278,27 @@ function RoleModal({ role, onClose, onSaved }: { role: FfeJobDescription | null;
   const [roleName, setRoleName] = useState(role?.role_name ?? '')
   const [overview, setOverview] = useState(role?.role_overview ?? '')
   const [sortOrder, setSortOrder] = useState(role?.sort_order ?? 0)
+  const [departmentId, setDepartmentId] = useState<string>(role?.department_id ?? '')
+  // A draft is confirmed by ticking this. New roles default to active —
+  // someone typing one in has already decided; only the seeded drafts
+  // start inactive, because nobody has reviewed those yet.
+  const [active, setActive] = useState(role ? role.active : true)
   const [saving, setSaving] = useState(false)
+  const { data: departments = [] } = useDepartments()
 
   async function handleSave() {
     if (!roleName.trim()) { toast('Role name is required', 'error'); return }
     setSaving(true)
-    const payload = { role_name: roleName.trim(), role_overview: overview.trim() || null, sort_order: sortOrder }
+    const payload = {
+      role_name: roleName.trim(),
+      role_overview: overview.trim() || null,
+      sort_order: sortOrder,
+      department_id: departmentId || null,
+      active,
+    }
     const { error } = role
-      ? await supabase.from('ffe_job_descriptions').update(payload).eq('id', role.id)
-      : await supabase.from('ffe_job_descriptions').insert([payload])
+      ? await supabase.from('job_descriptions').update(payload).eq('id', role.id)
+      : await supabase.from('job_descriptions').insert([payload])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     onSaved()
@@ -230,9 +321,27 @@ function RoleModal({ role, onClose, onSaved }: { role: FfeJobDescription | null;
             <textarea rows={3} className={inputCls} value={overview} onChange={e => setOverview(e.target.value)} />
           </div>
           <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Department</label>
+            <select className={inputCls} value={departmentId} onChange={e => setDepartmentId(e.target.value)}>
+              <option value="">— No department —</option>
+              {(departments as { id: string; name: string }[]).map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Sort Order</label>
             <input type="number" className={inputCls} value={sortOrder} onChange={e => setSortOrder(parseInt(e.target.value, 10) || 0)} />
           </div>
+          <label className="flex items-start gap-2 rounded-lg border dark:border-slate-600 p-3 cursor-pointer">
+            <input type="checkbox" className="mt-0.5" checked={active} onChange={e => setActive(e.target.checked)} />
+            <span className="text-xs">
+              <span className="font-medium text-slate-700 dark:text-slate-200">Active — usable for assessment</span>
+              <span className="block text-slate-400">
+                Leave unticked while this is still a draft awaiting the department head's confirmation.
+              </span>
+            </span>
+          </label>
         </div>
         <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
@@ -263,8 +372,8 @@ function ResponsibilityModal({ responsibility, jobDescriptionId, onClose, onSave
     setSaving(true)
     const payload = { job_description_id: jobDescriptionId, responsibility_title: title.trim(), responsibility_detail: detail.trim() || null, tier, sort_order: sortOrder }
     const { error } = responsibility
-      ? await supabase.from('ffe_key_responsibilities').update(payload).eq('id', responsibility.id)
-      : await supabase.from('ffe_key_responsibilities').insert([payload])
+      ? await supabase.from('key_responsibilities').update(payload).eq('id', responsibility.id)
+      : await supabase.from('key_responsibilities').insert([payload])
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     onSaved()

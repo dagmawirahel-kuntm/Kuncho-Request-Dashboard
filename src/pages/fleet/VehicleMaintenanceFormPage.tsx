@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { dropRecordCache } from '@/lib/queryCache'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -46,6 +47,8 @@ export default function VehicleMaintenanceFormPage() {
 function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: VehicleMaintenanceRequest }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillVehicleId = searchParams.get('vehicle_id')
   const { toast } = useToast()
   const { user, role, profile } = useAuth()
   const qc = useQueryClient()
@@ -63,7 +66,7 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
         actual_cost: record.actual_cost,
         completed_at: record.completed_at,
       }
-      : { status: 'pending', requested_by: user?.id }
+      : { status: 'pending', requested_by: user?.id, vehicle_id: prefillVehicleId ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -93,6 +96,7 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'vehicle-maintenance-request')
     qc.invalidateQueries({ queryKey: ['vehicle-maintenance-requests'] })
     toast(isEdit ? 'Maintenance request updated' : 'Issue reported', 'success')
     navigate('/fleet/maintenance')

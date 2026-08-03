@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { TransportationRequest, TransportJobStatus, TransportJobType, TransportMode, TransportVehicleQueueRow } from '@/types/database'
+import type { TransportationRequest, TransportJobStatus, TransportJobType, TransportMode, TransportationPickupStatus, TransportVehicleQueueRow } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
@@ -157,6 +157,22 @@ export default function TransportationPage() {
     },
   })
 
+  // Same overdue derivation used for lease renewals and tax obligations:
+  // a target date/duration compared against now, surfaced as a banner
+  // rather than discovered late.
+  const { data: overdue = [] } = useQuery({
+    queryKey: ['transportation-overdue'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_transportation_pickup_status')
+        .select('*')
+        .eq('is_overdue', true)
+        .order('created_at')
+      if (error) throw error
+      return data as TransportationPickupStatus[]
+    },
+  })
+
   // "My Jobs": jobs whose assigned staff record belongs to the current user
   const filtered = useMemo(() => {
     if (!myJobsOnly) return data
@@ -281,6 +297,23 @@ export default function TransportationPage() {
       </div>
       {role === 'staff' && <OwnRecordsBanner />}
       <VehicleQueuePanel />
+
+      {overdue.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/40 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            {overdue.length} pickup{overdue.length > 1 ? 's' : ''} sitting past their expected duration:{' '}
+            {overdue.slice(0, 3).map((j, i) => (
+              <span key={j.id}>
+                {i > 0 && ', '}
+                <Link to={`/transportation/${j.id}/edit`} className="underline hover:no-underline">{j.request_name ?? 'Untitled job'}</Link>
+              </span>
+            ))}
+            {overdue.length > 3 ? ` and ${overdue.length - 3} more` : ''}
+          </span>
+        </div>
+      )}
+
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={filtered} searchPlaceholder="Search jobs…" persistKey="transportation" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="transportation_requests" queryKeys={['transportation']} quickFilters={transportQuickFilters} />}
     </div>
   )

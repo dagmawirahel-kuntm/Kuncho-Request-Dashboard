@@ -7,7 +7,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatDateGC } from '@/lib/utils'
 import type { LeaveRequest, LeaveType, Staff } from '@/types/database'
-import { CalendarClock, Plus, X } from 'lucide-react'
+import { CalendarClock, Plus, X, UserCheck } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
@@ -23,6 +23,16 @@ const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
 function daysBetween(start: string, end: string) {
   const ms = new Date(end).getTime() - new Date(start).getTime()
   return ms >= 0 ? Math.round(ms / 86400000) + 1 : null
+}
+
+// How a request found its approver — shown to the submitter so a
+// fallback routing is visible rather than looking like a normal one.
+const ROUTING_LABEL: Record<string, string> = {
+  line_manager:    'your line manager',
+  department_head: 'your department head',
+  hr_officer:      'HR',
+  admin:           'an administrator',
+  unresolved:      'nobody yet — ask HR',
 }
 
 export default function MyLeavePage() {
@@ -99,6 +109,35 @@ export default function MyLeavePage() {
     toast('Leave request submitted', 'success')
   }
 
+  // Leave routed to ME to decide. Every staff member is potentially
+  // someone's manager, so this belongs on the page they already land on
+  // rather than behind a separate HR-only route — LeaveRequestsPage is
+  // gated to hr_officer/admin and a line manager is usually neither.
+  const { data: awaitingMe = [] } = useQuery({
+    queryKey: ['leave-awaiting-my-decision', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select('*, staff(employee_name)')
+        .eq('assigned_approver_id', user!.id)
+        .eq('status', 'pending')
+        .order('start_date')
+      if (error) throw error
+      return data as unknown as (LeaveRequest & { staff: { employee_name: string } | null })[]
+    },
+    enabled: !!user,
+  })
+
+  async function handleDecide(id: string, status: 'approved' | 'rejected') {
+    // approved_by / approved_at are stamped server-side (migration 161),
+    // so they are deliberately not sent from here.
+    const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['leave-awaiting-my-decision', user?.id] })
+    qc.invalidateQueries({ queryKey: ['leave-requests'] })
+    toast(status === 'approved' ? 'Leave approved' : 'Leave rejected', 'success')
+  }
+
   async function handleCancel(id: string) {
     if (!window.confirm('Withdraw this leave request?')) return
     const { error } = await supabase.from('leave_requests').update({ status: 'cancelled' }).eq('id', id)
@@ -136,6 +175,48 @@ export default function MyLeavePage() {
             <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{daysUsedThisYear}</p>
           </div>
           <span className="rounded-lg p-2 bg-blue-50 text-blue-500 dark:bg-blue-900/20"><CalendarClock className="h-5 w-5" /></span>
+        </div>
+      )}
+
+      {awaitingMe.length > 0 && (
+        <div className="rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 p-4 space-y-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <UserCheck className="h-4 w-4 text-brand" /> Awaiting your decision
+            <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10px] font-semibold text-brand">{awaitingMe.length}</span>
+          </h2>
+          <div className="divide-y dark:divide-slate-700">
+            {awaitingMe.map(r => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                    {r.staff?.employee_name ?? 'Staff member'} — {r.leave_type}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {formatDateGC(r.start_date)} → {formatDateGC(r.end_date)}
+                    {r.days != null && ` · ${r.days} day${r.days === 1 ? '' : 's'}`}
+                    {r.reason && ` · ${r.reason}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDecide(r.id, 'approved')}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleDecide(r.id, 'rejected')}
+                    className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400">
+            These reached you because you're the submitter's line manager, or the fallback when their line is incomplete.
+          </p>
         </div>
       )}
 
@@ -199,6 +280,14 @@ export default function MyLeavePage() {
                     {formatDateGC(r.start_date)} – {formatDateGC(r.end_date)}{r.days != null ? ` · ${r.days} day${r.days !== 1 ? 's' : ''}` : ''}
                   </p>
                   {r.reason && <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 truncate">{r.reason}</p>}
+                  {/* Who it went to, and why. Without this the routing is
+                      invisible and a request that landed on the fallback
+                      looks identical to one that reached your manager. */}
+                  {r.status === 'pending' && r.routing_basis && (
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      With {ROUTING_LABEL[r.routing_basis] ?? r.routing_basis} for a decision
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <StatusBadge status={r.status} />

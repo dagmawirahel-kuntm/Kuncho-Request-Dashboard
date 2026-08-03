@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -93,6 +94,7 @@ function AllocationFormPageBody({ id, record }: { id?: string; record?: Purchase
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'allocation')
     qc.invalidateQueries({ queryKey: ['purchase-allocation'] })
     toast(isEdit ? 'Allocation updated' : 'Allocation created', 'success')
     navigate('/purchase-allocation')

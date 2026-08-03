@@ -102,6 +102,7 @@ import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
 import GoodsReceivedNoteFormPage from '@/pages/sourcing/GoodsReceivedNoteFormPage'
+import GrnRegisterPage from '@/pages/sourcing/GrnRegisterPage'
 import DepartmentsPage from '@/pages/departments/DepartmentsPage'
 import DepartmentOrgChartPage from '@/pages/departments/DepartmentOrgChartPage'
 import DesignPackagesPage from '@/pages/design/DesignPackagesPage'
@@ -266,6 +267,10 @@ export const router = createBrowserRouter([
             children: [
               { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
               { path: 'sourcing/:id/grn/new', element: <GoodsReceivedNoteFormPage /> },
+              // The GRN register — read-only. Route reach is this block's
+              // (slightly wider) list; grn_read (063) is what actually
+              // decides which rows come back, same split as everywhere else.
+              { path: 'goods-received', element: <GrnRegisterPage /> },
             ],
           },
           {
@@ -376,7 +381,7 @@ export const router = createBrowserRouter([
           {
             // Workspace is also read by procurement (point-of-spend checks
             // reference it) — one step wider than the management CRUD above
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer']} allowAssignedProjectManager />,
             children: [
               { path: 'projects/:id', element: <ProjectWorkspacePage /> },
             ],
@@ -530,7 +535,7 @@ export const router = createBrowserRouter([
           // ── FF&E job descriptions & staff skill checklists: read for
           // everyone; write (roles/responsibilities and checklist toggles)
           // gated in-page to admin/operations_manager, matching
-          // ffe_job_descriptions/ffe_key_responsibilities/staff_ffe_checklist RLS (128).
+          // job_descriptions/key_responsibilities/staff_competency_checklist RLS (128).
           { path: 'ffe-job-descriptions', element: <FfeJobDescriptionsPage /> },
           { path: 'staff/:id/ffe-skills', element: <StaffFfeSkillsPage /> },
           // ── Role-based Operations & Construction views: each role lands
@@ -539,7 +544,12 @@ export const router = createBrowserRouter([
           // admin/manager included for cross-departmental oversight,
           // matching the pattern used everywhere else in this router.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            // allowAssignedProjectManager: PM access follows the
+            // assignment, not only the role — a finance/design/whatever
+            // user named on projects.project_manager_id reaches their
+            // own My Projects view, which the role list alone would
+            // never let them do (migration 155).
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} allowAssignedProjectManager />,
             children: [{ path: 'pm-view', element: <ProjectManagerViewPage /> }],
           },
           {

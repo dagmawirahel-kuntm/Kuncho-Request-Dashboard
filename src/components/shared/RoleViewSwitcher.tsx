@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { Hammer, ArrowLeft } from 'lucide-react'
-import { useIsWorkshopLead } from '@/hooks/useMyStaff'
+import { Hammer, ArrowLeft, FolderKanban } from 'lucide-react'
+import { useIsWorkshopLead, useMyManagedProjects } from '@/hooks/useMyStaff'
 import type { UserRole } from '@/types/database'
 
 // Per confirmed decision: a base-role holder who is also a live
@@ -16,8 +16,9 @@ const BASE_VIEW_LABEL: Partial<Record<UserRole, [string, string]>> = {
   logistics_officer: ['/logistics-view', 'Logistics view'],
 }
 
-export function RoleViewSwitcher({ mode, role }: { mode: 'base' | 'workshop'; role: UserRole | null }) {
+export function RoleViewSwitcher({ mode, role }: { mode: 'base' | 'workshop' | 'assigned-pm'; role: UserRole | null }) {
   const isWorkshopLead = useIsWorkshopLead()
+  const { projects: managedProjects, managesAny } = useMyManagedProjects()
 
   if (mode === 'base') {
     if (!isWorkshopLead) return null
@@ -28,6 +29,24 @@ export function RoleViewSwitcher({ mode, role }: { mode: 'base' | 'workshop'; ro
       >
         <Hammer className="h-4 w-4 shrink-0" />
         You're currently leading an open workshop job — <span className="font-semibold">switch to Workshop View →</span>
+      </Link>
+    )
+  }
+
+  if (mode === 'assigned-pm') {
+    // Same idea as the workshop-lead banner, for project assignment.
+    // Someone whose role landing is elsewhere (finance, design, …) has
+    // no other cue that they've been made PM of anything — this is what
+    // makes the assignment visible on the page they actually land on.
+    if (!managesAny) return null
+    return (
+      <Link
+        to="/pm-view"
+        className="flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand/10 transition-colors w-fit"
+      >
+        <FolderKanban className="h-4 w-4 shrink-0 text-brand" />
+        You're the named project manager on {managedProjects.length} project{managedProjects.length === 1 ? '' : 's'} —{' '}
+        <span className="font-semibold text-brand">open My Projects →</span>
       </Link>
     )
   }

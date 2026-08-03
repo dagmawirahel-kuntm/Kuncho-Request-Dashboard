@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -131,6 +132,7 @@ export default function FuelRequestFormPage() {
     }])
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
+    dropRecordCache(qc, 'vehicle-for-fuel-request', 'vehicle-last-fuel-vendor')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['vehicle-fuel-expenses', vehicleId] })
     qc.invalidateQueries({ queryKey: ['logistics-dashboard-fuel'] })
