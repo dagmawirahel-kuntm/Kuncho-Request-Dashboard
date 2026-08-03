@@ -132,6 +132,7 @@ import VehicleMaintenancePage from '@/pages/fleet/VehicleMaintenancePage'
 import VehicleMaintenanceFormPage from '@/pages/fleet/VehicleMaintenanceFormPage'
 import VehiclePenaltiesPage from '@/pages/fleet/VehiclePenaltiesPage'
 import VehiclePenaltyFormPage from '@/pages/fleet/VehiclePenaltyFormPage'
+import ReceiptPickupQueuePage from '@/pages/logistics/ReceiptPickupQueuePage'
 import LaborRequisitionFormPage from '@/pages/labor-requisitions/LaborRequisitionFormPage'
 import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
@@ -218,6 +219,7 @@ export const router = createBrowserRouter([
           { path: 'fleet/penalties', element: <VehiclePenaltiesPage /> },
           { path: 'fleet/penalties/new', element: <VehiclePenaltyFormPage /> },
           { path: 'fleet/penalties/:id/edit', element: <VehiclePenaltyFormPage /> },
+          { path: 'receipt-pickups', element: <ReceiptPickupQueuePage /> },
           { path: 'locations/map', element: <LocationsMapPage /> },
           { path: 'purchase-allocation', element: <PurchaseAllocationPage /> },
           { path: 'purchase-allocation/new', element: <AllocationFormPage /> },
