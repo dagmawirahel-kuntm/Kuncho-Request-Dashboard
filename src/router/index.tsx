@@ -50,6 +50,7 @@ import BankStatementImportPage from '@/pages/transfers/BankStatementImportPage'
 import PLReportPage from '@/pages/reports/PLReportPage'
 import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
 import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
+import GovernmentStatementPage from '@/pages/reports/GovernmentStatementPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
 import SaleDetailPage from '@/pages/sales/SaleDetailPage'
@@ -302,6 +303,7 @@ export const router = createBrowserRouter([
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
               { path: 'reports/archive', element: <HistoricalArchivePage /> },
+              { path: 'reports/government-statement', element: <GovernmentStatementPage /> },
             ],
           },
           {

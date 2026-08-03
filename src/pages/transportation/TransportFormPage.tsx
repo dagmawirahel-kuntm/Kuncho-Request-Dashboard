@@ -14,7 +14,7 @@ import type {
 import { useProjects, useLocations, useVendors, useStaff } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { Receipt, ExternalLink } from 'lucide-react'
+import { Receipt, ExternalLink, CheckCircle2 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -257,7 +257,12 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
   async function transition(next: TransportJobStatus) {
     const patch: Record<string, unknown> = { job_status: next }
-    if (next === 'completed') patch.actual_delivery_date = new Date().toISOString().slice(0, 10)
+    if (next === 'completed') {
+      patch.actual_delivery_date = new Date().toISOString().slice(0, 10)
+      // Capture the actual finish time, not just the date — dispatchers want to
+      // see when a job really closed against its expected duration.
+      patch.completed_at = new Date().toISOString()
+    }
     const { error: err } = await supabase.from('transportation_requests').update(patch).eq('id', id!)
     if (err) { toast(err.message, 'error'); return }
     await syncVehicle(record?.vehicle_id, next)
@@ -406,11 +411,11 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </Field>
       </div>
 
-      <Field label="Expected Duration, queue → delivered (hours, optional)">
+      <Field label="Job Duration (hours)" hint="How long this ties up the vehicle. Set it here and the job joins the fleet queue with an ETA immediately — used for own-fleet jobs.">
         <input
-          type="number" step="0.5" min="0.1" className={inputCls}
-          value={form.expected_duration_hours ?? ''}
-          onChange={e => set('expected_duration_hours', e.target.value ? parseFloat(e.target.value) : null)}
+          type="number" step="0.25" min="0" className={inputCls}
+          value={form.expected_duration_minutes != null ? form.expected_duration_minutes / 60 : ''}
+          onChange={e => set('expected_duration_minutes', e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null)}
           placeholder="e.g. 4"
         />
       </Field>
@@ -440,15 +445,17 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         <Field label="Expected">
           <input type="date" className={inputCls} value={form.expected_delivery_date ?? ''} onChange={e => set('expected_delivery_date', e.target.value)} />
         </Field>
-        <Field label="Job Duration (hours)" hint="How long this ties up the vehicle — feeds the fleet queue ETA below, not the date above">
-          <input type="number" step="0.25" min="0" className={inputCls}
-            value={form.expected_duration_minutes != null ? form.expected_duration_minutes / 60 : ''}
-            onChange={e => set('expected_duration_minutes', e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null)} />
-        </Field>
-        <Field label="Actual">
+        <Field label="Actual Delivery Date">
           <input type="date" className={inputCls} value={form.actual_delivery_date ?? ''} onChange={e => set('actual_delivery_date', e.target.value)} />
         </Field>
       </div>
+
+      {isEdit && record?.completed_at && (
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-900/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+          Job completed {new Date(record.completed_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Project">
