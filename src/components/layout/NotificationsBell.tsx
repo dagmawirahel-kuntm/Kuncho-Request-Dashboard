@@ -46,7 +46,7 @@ export function NotificationsBell() {
   const { data } = useQuery({
     queryKey: ['notifications', myStaffId],
     queryFn: async () => {
-      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents] = await Promise.all([
+      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents, vrfToConfirm] = await Promise.all([
         supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('transportation_requests').select('*', { count: 'exact', head: true }).eq('payment_status', false),
@@ -56,6 +56,9 @@ export function NotificationsBell() {
         myStaffId
           ? supabase.from('company_events').select('*', { count: 'exact', head: true }).eq('recipient_staff_id', myStaffId).gte('event_date', new Date().toISOString().slice(0, 10))
           : Promise.resolve({ count: 0 }),
+        // VRF payments sent and awaiting confirmation — relevant to the
+        // badge holder, but a harmless global count for everyone else.
+        supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_state', 'sent').eq('payment_method', 'vrf'),
       ])
       // "Flagged for review" — this is a passive, global badge anyone can
       // see, not a targeted alert to finance. Never describe it as
@@ -69,6 +72,7 @@ export function NotificationsBell() {
         { label: 'Pending payroll', count: payroll.count ?? 0, to: '/payroll' },
         { label: 'Pending emergency payroll', count: emergency.count ?? 0, to: '/emergency-payroll' },
         { label: 'Cost groups flagged for review (over budget)', count: overBudget.count ?? 0, to: '/projects' },
+        { label: 'VRF payments awaiting confirmation', count: vrfToConfirm.count ?? 0, to: '/finance/payments' },
       ]
       return items.filter(i => i.count > 0)
     },

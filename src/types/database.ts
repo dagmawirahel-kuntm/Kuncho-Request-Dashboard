@@ -283,6 +283,8 @@ export interface Vendor {
   email: string | null
   category: string | null
   wth_eligible: boolean
+  /** Vendor releases goods only against proof of payment — bank payments should carry a certificate. */
+  requires_payment_confirmation: boolean
   active: boolean
   location: string | null
   address: string | null
