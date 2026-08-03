@@ -61,6 +61,8 @@ function PropertyFormPageBody({ id, record }: { id?: string; record?: Property }
         deposit_amount: record.deposit_amount ?? undefined,
         renewal_notice_days: record.renewal_notice_days ?? undefined,
         payment_interval_months: record.payment_interval_months,
+        latitude: record.latitude ?? undefined,
+        longitude: record.longitude ?? undefined,
         status: record.status,
         notes: record.notes,
       }
@@ -103,6 +105,18 @@ function PropertyFormPageBody({ id, record }: { id?: string; record?: Property }
       <Field label="Address">
         <input type="text" className={inputCls} value={form.address ?? ''} onChange={e => set('address', e.target.value)} />
       </Field>
+      {/* Map pin — puts this workshop on the Locations Map. Optional; paste
+          coordinates from Google Maps (right-click → the lat,lng at top). */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Latitude (map pin)">
+          <input type="number" step="any" className={inputCls} placeholder="e.g. 9.0108"
+            value={form.latitude ?? ''} onChange={e => set('latitude', e.target.value ? parseFloat(e.target.value) : null)} />
+        </Field>
+        <Field label="Longitude (map pin)">
+          <input type="number" step="any" className={inputCls} placeholder="e.g. 38.7613"
+            value={form.longitude ?? ''} onChange={e => set('longitude', e.target.value ? parseFloat(e.target.value) : null)} />
+        </Field>
+      </div>
       <Field label="Landlord">
         <SearchableSelect value={form.landlord_vendor_id ?? null} onChange={id => set('landlord_vendor_id', id)} options={vendorOptions} placeholder="Select landlord vendor…" />
       </Field>
