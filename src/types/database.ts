@@ -2,7 +2,9 @@ export type UserRole = 'admin' | 'executive' | 'finance' | 'staff' | 'procuremen
 export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled' | 'stock_fulfilled' | 'stock_pending_dispatch'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
-export type WarehouseZone = 'Zone A' | 'Zone B' | 'Zone C'
+// Warehouse location is a real property/workshop name (sourced from the
+// rent table), stored as free text — no longer a fixed Zone A–C enum.
+export type WarehouseZone = string
 export type ToolCondition = 'good' | 'fair' | 'damaged' | 'retired'
 export type StockReceiptType = 'purchase' | 'opening_balance' | 'site_return' | 'adjustment'
 export type StockIssueType = 'project_use' | 'tool_checkout' | 'damaged' | 'vendor_return' | 'adjustment'
@@ -608,11 +610,43 @@ export interface Vehicle {
   purpose_notes: string | null
   image_url: string | null
   fuel_tank_liters: number | null
+  energy_type: 'fuel' | 'electric'
+  assigned_driver_id: string | null
   active: boolean
   created_at: string
   updated_at: string
 }
 export type VehicleInsert = Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>
+
+export interface VehicleEnergyLog {
+  id: string
+  vehicle_id: string
+  logged_by: string | null
+  reading_at: string
+  energy_type: 'fuel' | 'electric'
+  fuel_liters: number | null
+  charge_percent: number | null
+  transportation_request_id: string | null
+  note: string | null
+  created_at: string
+}
+export type VehicleEnergyLogInsert = Pick<VehicleEnergyLog, 'vehicle_id' | 'energy_type'>
+  & Partial<Pick<VehicleEnergyLog, 'fuel_liters' | 'charge_percent' | 'transportation_request_id' | 'note' | 'reading_at'>>
+
+/** v_vehicle_energy_current — latest reading + depletion per vehicle. */
+export interface VehicleEnergyCurrent {
+  vehicle_id: string
+  vehicle_name: string
+  energy_type: 'fuel' | 'electric'
+  fuel_tank_liters: number | null
+  reading_at: string | null
+  fuel_liters: number | null
+  charge_percent: number | null
+  logged_by: string | null
+  note: string | null
+  percent_remaining: number | null
+  depleted: number | null
+}
 
 // ── Accounts ─────────────────────────────────────────────────────
 export interface Account {

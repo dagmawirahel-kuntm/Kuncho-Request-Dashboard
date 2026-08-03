@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { StockItem, StockMainCategory, WarehouseZone, BoothStructureType } from '@/types/database'
+import type { StockItem, StockMainCategory, BoothStructureType } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2, Search, Warehouse, Wrench, Package, Flame, ChevronRight, AlertTriangle } from 'lucide-react'
 
@@ -50,15 +50,26 @@ const ITEM_TYPE_STYLES = {
   consumable:   { label: 'Consumable',   cls: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
 }
 
-const ZONE_CLS: Record<WarehouseZone, string> = {
-  'Zone A': 'bg-amber-50 text-amber-700 dark:bg-amber-900/30',
-  'Zone B': 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30',
-  'Zone C': 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+// Warehouse locations are now real property names (migration/#10), an
+// open set rather than the fixed Zone A–C, so the badge derives a stable
+// colour from the string instead of a hard-coded map that would miss any
+// name not in it.
+const ZONE_PALETTE = [
+  'bg-amber-50 text-amber-700 dark:bg-amber-900/30',
+  'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30',
+  'bg-violet-50 text-violet-700 dark:bg-violet-900/30',
+  'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30',
+  'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+]
+function zoneClass(zone: string): string {
+  let h = 0
+  for (let i = 0; i < zone.length; i++) h = (h * 31 + zone.charCodeAt(i)) >>> 0
+  return ZONE_PALETTE[h % ZONE_PALETTE.length]
 }
 
-function ZoneBadge({ zone }: { zone: WarehouseZone | null }) {
+function ZoneBadge({ zone }: { zone: string | null }) {
   if (!zone) return <span className="text-xs text-slate-400">—</span>
-  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${ZONE_CLS[zone]}`}>{zone}</span>
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${zoneClass(zone)}`}>{zone}</span>
 }
 
 export default function StockItemsPage() {
@@ -285,7 +296,7 @@ export default function StockItemsPage() {
                       </div>
                     </div>
                     <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
-                      <ZoneBadge zone={item.warehouse_zone as WarehouseZone | null} />
+                      <ZoneBadge zone={item.warehouse_zone ?? null} />
                     </div>
                     <div className="flex items-center gap-0.5 flex-shrink-0">
                       <button onClick={e => { e.stopPropagation(); navigate(`/stock/${item.id}/edit`) }}
