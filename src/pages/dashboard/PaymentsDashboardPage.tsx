@@ -48,10 +48,32 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 export default function PaymentsDashboardPage() {
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const canAct = role === 'admin' || role === 'finance'
+
+  // VRF payments are confirmed by the VRF-manager badge holder (or admin).
+  const { data: me } = useQuery({
+    queryKey: ['my-profile-vrf', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('user_profiles').select('is_vrf_manager').eq('id', user!.id).maybeSingle()
+      return data as { is_vrf_manager: boolean } | null
+    },
+    enabled: !!user?.id,
+  })
+  const isVrfManager = !!me?.is_vrf_manager || role === 'admin'
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [splitting, setSplitting] = useState<any | null>(null)
+
+  async function confirmVrf(expenseId: string) {
+    const { error } = await supabase.rpc('confirm_vrf_payment', { p_expense_id: expenseId, p_vrf_id: null })
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['v-recent-payments'] })
+    qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
+    toast('VRF payment confirmed — marked paid', 'success')
+  }
 
   const { data: toPayQueue = [], isLoading: loadingQueue } = useQuery({
     queryKey: ['v-to-pay-queue'],
@@ -342,7 +364,14 @@ export default function PaymentsDashboardPage() {
                       <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
                         {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                        {formatCurrency(r.amount_etb ?? 0)}
+                        {canAct && (
+                          <button onClick={() => setSplitting(r)} className="block ml-auto text-[10px] font-medium text-brand hover:underline">
+                            pay part
+                          </button>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-center">
                         {r.verify_wht && <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
                       </td>
@@ -627,6 +656,20 @@ export default function PaymentsDashboardPage() {
                           Link to VRF
                         </button>
                       )}
+                      {/* #7: a sent VRF payment is only marked paid once the VRF-manager
+                          badge holder confirms the facilitator processed it. */}
+                      {r.payment_state === 'sent' && r.payment_method === 'vrf' && (
+                        isVrfManager ? (
+                          <button
+                            onClick={() => confirmVrf(r.id)}
+                            className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+                          >
+                            Confirm VRF Payment
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400" title="Waiting for the VRF Manager to confirm">awaiting VRF Manager</span>
+                        )
+                      )}
                       {canAct && r.payment_state === 'sent' && r.payment_method === 'cash' && (
                         <button
                           onClick={() => handleConfirmCash(r.id)}
@@ -644,6 +687,19 @@ export default function PaymentsDashboardPage() {
           )}
         </Section>
       </div>
+
+      {splitting && (
+        <PartialSplitModal
+          row={splitting}
+          onClose={() => setSplitting(null)}
+          onDone={() => {
+            setSplitting(null)
+            qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
+            qc.invalidateQueries({ queryKey: ['expenses'] })
+            toast('Partial payment split — paid portion retired, remainder re-queued', 'success')
+          }}
+        />
+      )}
 
       {batchModalOpen && payerId && (
         <CreateBatchModal
@@ -685,6 +741,60 @@ export default function PaymentsDashboardPage() {
           onError={msg => toast(msg, 'error')}
         />
       )}
+    </div>
+  )
+}
+
+// #5: pay part of an expense. The paid portion is retired (the original
+// becomes a paid expense at that amount) and the unpaid remainder becomes
+// a new expense back in the queue — all in one RPC so the two rows always
+// sum to the original.
+function PartialSplitModal({
+  row, onClose, onDone,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+}: { row: any; onClose: () => void; onDone: () => void }) {
+  const { toast } = useToast()
+  const full = Number(row.amount_etb ?? 0)
+  const [paid, setPaid] = useState('')
+  const [saving, setSaving] = useState(false)
+  const paidNum = parseFloat(paid)
+  const valid = !isNaN(paidNum) && paidNum > 0 && paidNum < full
+  const remainder = valid ? full - paidNum : null
+
+  async function submit() {
+    if (!valid) { toast('Enter a paid amount between 0 and the full amount', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('split_expense_partial_payment', { p_expense_id: row.id, p_paid_amount: paidNum })
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3" onClick={e => e.stopPropagation()}>
+        <h2 className="font-bold text-slate-800 dark:text-slate-100">Pay Part of This Expense</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {row.vendor_name ?? row.item_service_description ?? row.expense_code} · full {formatCurrency(full)}
+        </p>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Amount paid now (ETB)</label>
+          <input type="number" min="0" step="0.01" autoFocus value={paid} onChange={e => setPaid(e.target.value)}
+            className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+        </div>
+        {remainder != null && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Paid <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(paidNum)}</span> is retired ·
+            remainder <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(remainder)}</span> becomes a new expense back in the queue.
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-sm text-slate-600 dark:border-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
+          <button onClick={submit} disabled={!valid || saving} className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+            {saving ? 'Splitting…' : 'Split & Retire Paid Part'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

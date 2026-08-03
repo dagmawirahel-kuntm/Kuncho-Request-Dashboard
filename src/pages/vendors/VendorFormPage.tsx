@@ -54,7 +54,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
       ? {
           vendor_name: record.vendor_name, vendor_type: record.vendor_type, tin: record.tin,
           bank_account: record.bank_account, phone_contact: record.phone_contact, category: record.category,
-          wth_eligible: record.wth_eligible, active: record.active, location: record.location,
+          wth_eligible: record.wth_eligible, requires_payment_confirmation: record.requires_payment_confirmation, active: record.active, location: record.location,
           email: record.email, address: record.address, contact_person: record.contact_person,
           payment_terms: record.payment_terms, website: record.website, notes: record.notes,
         }
@@ -138,6 +138,10 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={!!form.wth_eligible} onChange={e => set('wth_eligible', e.target.checked)} />
           WHT Eligible
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer" title="This vendor releases goods only against proof of payment — bank payments to them should carry a payment certificate.">
+          <input type="checkbox" checked={!!form.requires_payment_confirmation} onChange={e => set('requires_payment_confirmation', e.target.checked)} />
+          Requires payment confirmation
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={!!form.active} onChange={e => set('active', e.target.checked)} />

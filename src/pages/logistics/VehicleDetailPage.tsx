@@ -21,6 +21,8 @@ const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
 type JobRow = Pick<TransportationRequest,
   'id' | 'request_name' | 'job_status' | 'job_type' | 'dropoff_location_text' | 'pickup_location_text' | 'created_at' | 'priority'>
 
+import { VehicleEnergyGauge } from '@/components/fleet/VehicleEnergyGauge'
+
 type FuelExpenseRow = Pick<Expense, 'id' | 'expense_code' | 'amount_etb' | 'fuel_liters' | 'date' | 'approval_status'>
 
 function vehicleIcon(type: Vehicle['vehicle_type']) {
@@ -223,6 +225,14 @@ export default function VehicleDetailPage() {
             </div>
           )}
 
+          {/* Fuel / charge gauge — driver-logged readings */}
+          <VehicleEnergyGauge
+            vehicleId={vehicle.id}
+            energyType={vehicle.energy_type}
+            fuelTankLiters={vehicle.fuel_tank_liters}
+            canLog={canManage}
+          />
+
           {/* Dedicated driver — how the fleet actually operates, not a
               per-job assignment (that's the transport request form) */}
           <div>
@@ -245,7 +255,8 @@ export default function VehicleDetailPage() {
             )}
           </div>
 
-          {/* Fuel tank capacity */}
+          {/* Fuel tank capacity — fuel vehicles only (electric has no tank) */}
+          {vehicle.energy_type === 'fuel' && (
           <div>
             <p className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               Fuel Tank Capacity
@@ -275,9 +286,10 @@ export default function VehicleDetailPage() {
               </p>
             )}
           </div>
+          )}
 
-          {/* Fuel request — fleet managers only */}
-          {canManage && (
+          {/* Fuel request — fleet managers only, fuel vehicles only */}
+          {canManage && vehicle.energy_type === 'fuel' && (
             <div className="border-t dark:border-slate-700 pt-4">
               {!showFuelPanel ? (
                 <>

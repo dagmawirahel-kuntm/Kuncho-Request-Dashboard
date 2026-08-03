@@ -6,7 +6,7 @@ import {
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, PackageCheck, Landmark, Camera
+  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -63,6 +63,7 @@ const navGroups: NavGroup[] = [
       { label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
       { label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },
+      { label: 'Receipt Pickups', to: '/receipt-pickups', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'logistics_officer', 'operations_manager'] },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'executive', 'finance'] },
       { label: 'My Leave', to: '/my-leave', icon: CalendarClock },

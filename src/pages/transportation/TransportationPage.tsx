@@ -5,11 +5,76 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { TransportationRequest, TransportJobStatus, TransportJobType, TransportMode, TransportationPickupStatus } from '@/types/database'
+import type { TransportationRequest, TransportJobStatus, TransportJobType, TransportMode, TransportationPickupStatus, TransportVehicleQueueRow } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
-import { Plus, Pencil, Trash2, Truck, User, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle } from 'lucide-react'
+
+// Chained ETA per vehicle — own_fleet jobs only, since hired/ride-hailing
+// don't compete for a resource of ours. See v_transport_vehicle_queue
+// (migration 162): a job with no duration set breaks the chain rather
+// than being treated as instant, so estimated_start/finish come back
+// null for it and everything queued behind it on that vehicle.
+function VehicleQueuePanel() {
+  const { data: rows = [] } = useQuery({
+    queryKey: ['transport-vehicle-queue'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_transport_vehicle_queue').select('*')
+      if (error) throw error
+      return data as TransportVehicleQueueRow[]
+    },
+    refetchInterval: 60_000, // estimates drift from "now" as time passes
+  })
+
+  if (rows.length === 0) return null
+
+  const byVehicle = new Map<string, TransportVehicleQueueRow[]>()
+  for (const r of rows) {
+    const list = byVehicle.get(r.vehicle_id) ?? []
+    list.push(r)
+    byVehicle.set(r.vehicle_id, list)
+  }
+
+  return (
+    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="px-4 py-2.5 border-b dark:border-slate-700 flex items-center gap-1.5">
+        <Clock className="h-3.5 w-3.5 text-brand" />
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Fleet Queue</p>
+        <p className="text-xs text-slate-400">— when each vehicle picks up its next job</p>
+      </div>
+      <div className="divide-y dark:divide-slate-700">
+        {Array.from(byVehicle.entries()).map(([vehicleId, jobs]) => (
+          <div key={vehicleId} className="px-4 py-2.5">
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">{jobs[0].vehicle_name}</p>
+            <div className="space-y-1">
+              {jobs.map(j => (
+                <div key={j.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 truncate">
+                    <span className="text-slate-300 dark:text-slate-600 tabular-nums">#{j.queue_position}</span>
+                    {j.request_name ?? JOB_TYPE_LABEL[j.job_type]}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold capitalize ${JOB_STATUS_CLS[j.job_status] ?? ''}`}>
+                      {j.job_status.replace('_', ' ')}
+                    </span>
+                  </span>
+                  {j.chain_intact ? (
+                    <span className="text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
+                      picked up ~{new Date(j.estimated_start!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 shrink-0" title="A job ahead of this one has no duration set — the estimate can't be computed">
+                      <AlertTriangle className="h-3 w-3" /> no ETA — duration missing ahead
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 type JobRow = TransportationRequest & {
   projects: { project_name: string } | null
@@ -231,6 +296,7 @@ export default function TransportationPage() {
         </div>
       </div>
       {role === 'staff' && <OwnRecordsBanner />}
+      <VehicleQueuePanel />
 
       {overdue.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/40 px-3 py-2 text-xs text-red-700 dark:text-red-400">

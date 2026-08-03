@@ -5,7 +5,7 @@ import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { StockItem, StockItemInsert, StockMainCategory, WarehouseZone, BoothStructureType, StockCatalogStatus } from '@/types/database'
+import type { StockItem, StockItemInsert, StockMainCategory, BoothStructureType, StockCatalogStatus } from '@/types/database'
 import { useSubCategories } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -56,7 +56,6 @@ const BOOTH_STRUCTURE_TYPES: { value: BoothStructureType; label: string; desc: s
 ]
 
 const COMMON_UNITS = ['pcs', 'kg', 'liters', 'meters', 'sheets', 'bags', 'boxes', 'sets', 'pairs', 'rolls', 'lengths']
-const ZONES: WarehouseZone[] = ['Zone A', 'Zone B', 'Zone C']
 
 const CATALOG_STATUSES: { value: StockCatalogStatus; label: string }[] = [
   { value: 'pending_setup', label: 'Pending Setup' },
@@ -120,6 +119,19 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
       return (data ?? []) as { id: string; project_name: string }[]
     },
   })
+
+  // Warehouse/workshop options come from the rent table (properties),
+  // not a fixed Zone A–C list, so storage locations track the real
+  // leased workshops. warehouse_zone is free text in the DB, so the
+  // property name is stored directly.
+  const { data: properties = [] } = useQuery({
+    queryKey: ['properties-for-warehouse'],
+    queryFn: async () => {
+      const { data } = await supabase.from('properties').select('property_name').order('property_name')
+      return (data ?? []) as { property_name: string }[]
+    },
+  })
+  const warehouseOptions = useMemo(() => properties.map(p => p.property_name), [properties])
 
   const isBoothReturn = form.main_category === 'booth_return'
 
@@ -271,11 +283,16 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
               </input>
               <datalist id="unit-list">{COMMON_UNITS.map(u => <option key={u} value={u} />)}</datalist>
             </Field>
-            <Field label="Warehouse Zone">
+            <Field label="Warehouse / Workshop">
               <select className={inputCls} value={form.warehouse_zone ?? ''}
                 onChange={e => set('warehouse_zone', e.target.value || null)}>
-                <option value="">Select zone…</option>
-                {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                <option value="">Select location…</option>
+                {warehouseOptions.map(z => <option key={z} value={z}>{z}</option>)}
+                {/* Preserve a legacy value that isn't one of the current
+                    properties, so editing an old item doesn't silently blank it. */}
+                {form.warehouse_zone && !warehouseOptions.includes(form.warehouse_zone) && (
+                  <option value={form.warehouse_zone}>{form.warehouse_zone} (legacy)</option>
+                )}
               </select>
             </Field>
             <Field label="Reorder Level">
