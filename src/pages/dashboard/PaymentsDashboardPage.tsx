@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { useToast } from '@/contexts/ToastContext'
-import { useUserProfiles, useVendorReceiptFacilitations } from '@/hooks/useLookups'
+import { useUserProfiles, useVendorReceiptFacilitations, useAccounts } from '@/hooks/useLookups'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { KpiCard } from '@/components/shared/KpiCard'
@@ -128,6 +128,13 @@ export default function PaymentsDashboardPage() {
     [userProfiles]
   )
 
+  const { data: accounts = [] } = useAccounts()
+  const accountOptions = useMemo(
+    () => (accounts as { id: string; account_name: string; account_number: string | null }[])
+      .map(a => ({ id: a.id, label: a.account_name, sub: a.account_number ?? undefined })),
+    [accounts]
+  )
+
   function invalidateAll() {
     qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
     qc.invalidateQueries({ queryKey: ['v-finance-pending-approval'] })
@@ -143,7 +150,7 @@ export default function PaymentsDashboardPage() {
   const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('transfer')
   const [sendingBulk, setSendingBulk] = useState(false)
   const [batchModalOpen, setBatchModalOpen] = useState(false)
-  const [recordingAdvanceId, setRecordingAdvanceId] = useState<string | null>(null)
+  const [advancingRow, setAdvancingRow] = useState<ToPayQueueRow | null>(null)
 
   // Pay-in-advance rows need a different action (payment_state = 'advance',
   // not 'sent') — bulk "Mark as Sent" would leave them stranded, since the
@@ -161,19 +168,6 @@ export default function PaymentsDashboardPage() {
   }
   function toggleQueueAll() {
     setSelectedQueue(prev => (prev.size === bulkSelectableQueue.length ? new Set() : new Set(bulkSelectableQueue.map(r => r.id))))
-  }
-
-  async function handleRecordAdvance(id: string) {
-    if (!payerId) { toast('Select who is sending this payment first', 'error'); return }
-    setRecordingAdvanceId(id)
-    const { error } = await supabase
-      .from('expenses')
-      .update({ payment_state: 'advance', disbursed_by: payerId, payment_method: paymentMethod })
-      .eq('id', id)
-    setRecordingAdvanceId(null)
-    if (error) { toast(error.message, 'error'); return }
-    toast('Advance payment recorded', 'success')
-    invalidateAll()
   }
 
   const selfApprovedConflict = useMemo(() => {
@@ -381,12 +375,10 @@ export default function PaymentsDashboardPage() {
                       <td className="px-4 py-2.5 text-right">
                         {canAct && isAdvance && (
                           <button
-                            onClick={() => handleRecordAdvance(r.id)}
-                            disabled={recordingAdvanceId === r.id}
-                            title={!payerId ? 'Select a payer above first' : undefined}
-                            className="flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                            onClick={() => setAdvancingRow(r)}
+                            className="flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700"
                           >
-                            <HandCoins className="h-3 w-3" /> {recordingAdvanceId === r.id ? 'Recording…' : 'Record Advance'}
+                            <HandCoins className="h-3 w-3" /> Record Advance
                           </button>
                         )}
                       </td>
@@ -435,11 +427,10 @@ export default function PaymentsDashboardPage() {
                         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Advance</span>
                         {canAct && (
                           <button
-                            onClick={e => { e.preventDefault(); handleRecordAdvance(r.id) }}
-                            disabled={recordingAdvanceId === r.id}
-                            className="flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                            onClick={e => { e.preventDefault(); setAdvancingRow(r) }}
+                            className="flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-amber-700"
                           >
-                            <HandCoins className="h-2.5 w-2.5" /> {recordingAdvanceId === r.id ? 'Recording…' : 'Record Advance'}
+                            <HandCoins className="h-2.5 w-2.5" /> Record Advance
                           </button>
                         )}
                       </div>
@@ -741,6 +732,135 @@ export default function PaymentsDashboardPage() {
           onError={msg => toast(msg, 'error')}
         />
       )}
+
+      {advancingRow && (
+        <RecordAdvanceModal
+          row={advancingRow}
+          defaultPayerId={payerId}
+          defaultMethod={paymentMethod}
+          payerOptions={payerOptions}
+          accountOptions={accountOptions}
+          onClose={() => setAdvancingRow(null)}
+          onDone={() => {
+            setAdvancingRow(null)
+            toast('Advance payment recorded', 'success')
+            invalidateAll()
+          }}
+          onError={msg => toast(msg, 'error')}
+        />
+      )}
+    </div>
+  )
+}
+
+// #5: record a vendor advance (pay-in-advance PO). The old flow was a blind
+// one-click that reused the queue's shared payer/method and silently dropped
+// the expense's own account. This opens a small form pre-populated from the
+// approved expense — payer, paying account, method, and the amount — so Finance
+// confirms real figures instead of retyping or losing the account.
+function RecordAdvanceModal({
+  row, defaultPayerId, defaultMethod, payerOptions, accountOptions, onClose, onDone, onError,
+}: {
+  row: ToPayQueueRow
+  defaultPayerId: string | null
+  defaultMethod: ExpensePaymentMethod
+  payerOptions: { id: string; label: string }[]
+  accountOptions: { id: string; label: string; sub?: string }[]
+  onClose: () => void
+  onDone: () => void
+  onError: (msg: string) => void
+}) {
+  const [payerId, setPayerId] = useState<string | null>(defaultPayerId)
+  const [accountId, setAccountId] = useState<string | null>(null)
+  const [method, setMethod] = useState<ExpensePaymentMethod>(defaultMethod)
+  const [saving, setSaving] = useState(false)
+
+  // The approved expense already carries the paying account, method, and amount
+  // — pull them so the form opens filled in rather than blank.
+  const { data: exp } = useQuery({
+    queryKey: ['advance-expense-prefill', row.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('account_id, payment_method, amount_etb')
+        .eq('id', row.id)
+        .single()
+      if (error) throw error
+      return data as { account_id: string | null; payment_method: ExpensePaymentMethod | null; amount_etb: number | null }
+    },
+  })
+
+  useEffect(() => {
+    if (!exp) return
+    setAccountId(prev => prev ?? exp.account_id)
+    if (exp.payment_method) setMethod(prev => (prev === defaultMethod ? exp.payment_method! : prev))
+    // defaultMethod intentionally excluded — only seed from the expense once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exp])
+
+  const amount = exp?.amount_etb ?? row.amount_etb ?? 0
+
+  async function confirm() {
+    if (!payerId) { onError('Select who is sending this advance'); return }
+    if (!accountId) { onError('Select the account the advance is paid from'); return }
+    setSaving(true)
+    const { error } = await supabase
+      .from('expenses')
+      .update({ payment_state: 'advance', disbursed_by: payerId, payment_method: method, account_id: accountId })
+      .eq('id', row.id)
+    setSaving(false)
+    if (error) { onError(error.message); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="mb-1 flex items-center gap-2">
+          <HandCoins className="h-4 w-4 text-amber-600" />
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Record Advance Payment</h3>
+        </div>
+        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+          {row.vendor_name ?? row.item_service_description ?? row.expense_code} · money sent before goods arrive.
+          It moves to Open Vendor Advances until a GRN closes it.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Who is sending it</label>
+            <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Select payer…" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Paid from account</label>
+            <SearchableSelect value={accountId} onChange={setAccountId} options={accountOptions} placeholder="Select account…" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Method</label>
+            <select
+              value={method}
+              onChange={e => setMethod(e.target.value as ExpensePaymentMethod)}
+              className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            >
+              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">Advance amount (full approved)</p>
+            <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(amount)}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-3 py-2 text-sm text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
+          <button
+            onClick={confirm}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            <HandCoins className="h-3.5 w-3.5" /> {saving ? 'Recording…' : 'Record Advance'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

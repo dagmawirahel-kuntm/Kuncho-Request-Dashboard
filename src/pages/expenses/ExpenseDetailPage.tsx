@@ -293,6 +293,15 @@ export default function ExpenseDetailPage() {
       date: expense.finance_approved_at,
       by: (expense as any).finance_profile?.full_name ?? null,
     },
+    // Payment is the final rung. It was missing from the timeline, so a paid
+    // expense still looked like it stopped at Finance Approved. Show it on every
+    // record (grey until settled) the same way Finance Approved shows.
+    {
+      label: 'Paid',
+      done: expense.payment_state === 'paid' || expense.payment_status === true,
+      date: expense.paid_date ?? (expense as any).total_payment_date ?? expense.payment_state_changed_at ?? null,
+      by: null,
+    },
   ]
 
   return (
