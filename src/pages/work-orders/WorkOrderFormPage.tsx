@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -48,6 +48,8 @@ export default function WorkOrderFormPage() {
 function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillProjectId = searchParams.get('project_id')
   const { toast } = useToast()
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -67,7 +69,7 @@ function WorkOrderFormPageBody({ id, record }: { id?: string; record?: WorkOrder
         status: record.status,
         target_completion_date: record.target_completion_date,
       }
-      : { work_type: 'workshop', status: 'requested' }
+      : { work_type: 'workshop', status: 'requested', project_id: prefillProjectId ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')

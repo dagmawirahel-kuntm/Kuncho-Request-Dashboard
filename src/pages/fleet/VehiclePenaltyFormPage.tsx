@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -46,6 +46,8 @@ export default function VehiclePenaltyFormPage() {
 function VehiclePenaltyFormPageBody({ id, record }: { id?: string; record?: VehiclePenalty }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillVehicleId = searchParams.get('vehicle_id')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: vehicles = [] } = useVehicles()
@@ -64,7 +66,7 @@ function VehiclePenaltyFormPageBody({ id, record }: { id?: string; record?: Vehi
         paid: record.paid,
         notes: record.notes,
       }
-      : { paid: false, penalty_date: new Date().toISOString().slice(0, 10) }
+      : { paid: false, penalty_date: new Date().toISOString().slice(0, 10), vehicle_id: prefillVehicleId ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')

@@ -128,7 +128,7 @@ function LaborAllocationsSection({ projectId, canManage }: { projectId: string; 
         </h3>
         <div className="flex items-center gap-2">
           {canManage && (
-            <Link to="/labor-requisitions/new"
+            <Link to={`/labor-requisitions/new?project_id=${projectId}`}
               className="text-xs text-slate-400 hover:text-brand transition-colors">
               Need new/casual labor? Request it →
             </Link>
@@ -1054,6 +1054,18 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       )}
+
+      {/* Workshop/production work for this project — no listing here yet,
+          just a fast, pre-linked entry point rather than a blank form. */}
+      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4" /> Work Orders
+        </h3>
+        <Link to={`/work-orders/new?project_id=${id}`}
+          className="text-xs text-slate-400 hover:text-brand transition-colors">
+          Need workshop or site work done? Create a work order →
+        </Link>
+      </div>
 
       {/* Labor Tier 1: routine assignment, no approval */}
       <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />

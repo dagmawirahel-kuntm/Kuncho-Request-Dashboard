@@ -336,6 +336,25 @@ export default function VehicleDetailPage() {
               )}
             </div>
           )}
+
+          {/* Maintenance / penalty — pre-linked to this vehicle rather
+              than the blank forms under Fleet & Logistics */}
+          {canManage && (
+            <div className="border-t dark:border-slate-700 pt-4 flex gap-2">
+              <Link
+                to={`/fleet/maintenance/new?vehicle_id=${id}`}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+              >
+                Report Issue
+              </Link>
+              <Link
+                to={`/fleet/penalties/new?vehicle_id=${id}`}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+              >
+                Record Penalty
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
