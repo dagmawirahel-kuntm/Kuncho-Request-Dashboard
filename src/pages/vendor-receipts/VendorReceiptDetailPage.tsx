@@ -1,16 +1,171 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, ReceiptText, AlertCircle,
-  ArrowRightLeft, User, Plus,
+  ArrowRightLeft, User, Plus, Trash2,
 } from 'lucide-react'
 import type { VendorReceiptFacilitation, Expense } from '@/types/database'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
+import { useCategories } from '@/hooks/useLookups'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 
-type Tab = 'expenses' | 'summary'
+interface VrfReceiptItem {
+  id: string
+  vrf_id: string
+  item_description: string | null
+  category_id: string | null
+  quantity: number | null
+  uom: string | null
+  amount: number | null
+  wht_amount: number | null
+  categories?: { category_name: string; nature: string | null } | null
+}
+
+// The VAT receipt's line items — each a good or service (category → nature),
+// its amount, and any withholding. Total should track the amount transferred.
+function ReceiptItemsTab({ vrfId, transferred, canEdit }: { vrfId: string; transferred: number; canEdit: boolean }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { data: categories = [] } = useCategories()
+  const categoryOptions = useMemo(
+    () => (categories as { id: string; category_name: string; nature?: string | null }[])
+      .map(c => ({ id: c.id, label: c.category_name, sub: c.nature ?? undefined })),
+    [categories]
+  )
+
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ['vrf-items', vrfId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vrf_receipt_items')
+        .select('*, categories:category_id(category_name, nature)')
+        .eq('vrf_id', vrfId)
+        .order('created_at')
+      if (error) throw error
+      return (data ?? []) as unknown as VrfReceiptItem[]
+    },
+  })
+
+  const [desc, setDesc] = useState('')
+  const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [qty, setQty] = useState('')
+  const [uom, setUom] = useState('')
+  const [amount, setAmount] = useState('')
+  const [wht, setWht] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const itemsTotal = items.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+  const gap = transferred - itemsTotal
+
+  async function addItem() {
+    const amt = parseFloat(amount)
+    if (isNaN(amt) || amt <= 0) { toast('Enter the item amount', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('vrf_receipt_items').insert([{
+      vrf_id: vrfId,
+      item_description: desc.trim() || null,
+      category_id: categoryId,
+      quantity: qty ? parseFloat(qty) : null,
+      uom: uom.trim() || null,
+      amount: amt,
+      wht_amount: wht ? parseFloat(wht) : null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    setDesc(''); setCategoryId(null); setQty(''); setUom(''); setAmount(''); setWht('')
+    qc.invalidateQueries({ queryKey: ['vrf-items', vrfId] })
+    qc.invalidateQueries({ queryKey: ['vrf-item-accumulation'] })
+    toast('Receipt item added', 'success')
+  }
+
+  async function removeItem(itemId: string) {
+    const { error } = await supabase.from('vrf_receipt_items').delete().eq('id', itemId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vrf-items', vrfId] })
+    qc.invalidateQueries({ queryKey: ['vrf-item-accumulation'] })
+    toast('Item removed', 'success')
+  }
+
+  const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex items-center justify-between">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">VAT Receipt Items</p>
+          <span className="text-xs text-slate-400">{items.length} line{items.length === 1 ? '' : 's'}</span>
+        </div>
+        {isLoading ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-400">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-400">No receipt items yet — add what the VAT receipt lists below.</p>
+        ) : (
+          <div className="divide-y dark:divide-slate-700">
+            {items.map(i => (
+              <div key={i.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{i.item_description ?? i.categories?.category_name ?? 'Item'}</p>
+                  <p className="text-xs text-slate-400">
+                    {i.categories?.category_name ?? 'Uncategorized'}{i.categories?.nature ? ` · ${i.categories.nature}` : ''}
+                    {i.quantity != null ? ` · ${i.quantity}${i.uom ? ` ${i.uom}` : ''}` : ''}
+                    {i.wht_amount != null ? ` · WHT ${formatCurrency(Number(i.wht_amount))}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(Number(i.amount ?? 0))}</span>
+                  {canEdit && (
+                    <button onClick={() => removeItem(i.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {items.length > 0 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Items total vs transferred {formatCurrency(transferred)}
+              {Math.abs(gap) >= 0.01 && <span className="text-amber-600 dark:text-amber-400"> · {gap > 0 ? `${formatCurrency(gap)} unlisted` : `${formatCurrency(Math.abs(gap))} over`}</span>}
+            </span>
+            <span className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(itemsTotal)}</span>
+          </div>
+        )}
+      </div>
+
+      {canEdit && (
+        <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm p-5 space-y-3">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Add Receipt Item</p>
+          <input className={inputCls} placeholder="Item / material / service description" value={desc} onChange={e => setDesc(e.target.value)} />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Good / Service (nature)</label>
+            <SearchableSelect value={categoryId} onChange={setCategoryId} options={categoryOptions} placeholder="Select category…" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Qty</label>
+              <input type="number" step="any" className={inputCls} value={qty} onChange={e => setQty(e.target.value)} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">UoM</label>
+              <input className={inputCls} value={uom} onChange={e => setUom(e.target.value)} placeholder="Pcs, m²…" /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Amount *</label>
+              <input type="number" step="0.01" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">WHT</label>
+              <input type="number" step="0.01" className={inputCls} value={wht} onChange={e => setWht(e.target.value)} /></div>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={addItem} disabled={saving} className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+              <Plus className="h-3.5 w-3.5" /> {saving ? 'Adding…' : 'Add Item'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type Tab = 'expenses' | 'items' | 'summary'
 
 const STATUS_CLS: Record<string, string> = {
   open:     'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -260,17 +415,21 @@ export default function VendorReceiptDetailPage() {
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <div className="flex gap-0 border-b dark:border-slate-700">
-        {(['expenses', 'summary'] as Tab[]).map(t => (
+        {(['expenses', 'items', 'summary'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px capitalize transition-colors ${
               tab === t
                 ? 'border-brand text-brand'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
             }`}>
-            {t === 'expenses' ? `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}` : 'Financial Summary'}
+            {t === 'expenses'
+              ? `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}`
+              : t === 'items' ? 'Receipt Items' : 'Financial Summary'}
           </button>
         ))}
       </div>
+
+      {tab === 'items' && <ReceiptItemsTab vrfId={id!} transferred={transferred} canEdit={canAddExpense} />}
 
       {/* ── Expenses tab ────────────────────────────────────────── */}
       {tab === 'expenses' && (
