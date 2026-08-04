@@ -682,6 +682,8 @@ export default function PaymentsDashboardPage() {
       {splitting && (
         <PartialSplitModal
           row={splitting}
+          defaultPayerId={payerId}
+          payerOptions={payerOptions}
           onClose={() => setSplitting(null)}
           onDone={() => {
             setSplitting(null)
@@ -870,12 +872,13 @@ function RecordAdvanceModal({
 // a new expense back in the queue — all in one RPC so the two rows always
 // sum to the original.
 function PartialSplitModal({
-  row, onClose, onDone,
+  row, defaultPayerId, payerOptions, onClose, onDone,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}: { row: any; onClose: () => void; onDone: () => void }) {
+}: { row: any; defaultPayerId: string | null; payerOptions: { id: string; label: string }[]; onClose: () => void; onDone: () => void }) {
   const { toast } = useToast()
   const full = Number(row.amount_etb ?? 0)
   const [paid, setPaid] = useState('')
+  const [payerId, setPayerId] = useState<string | null>(defaultPayerId)
   const [saving, setSaving] = useState(false)
   const paidNum = parseFloat(paid)
   const valid = !isNaN(paidNum) && paidNum > 0 && paidNum < full
@@ -883,8 +886,11 @@ function PartialSplitModal({
 
   async function submit() {
     if (!valid) { toast('Enter a paid amount between 0 and the full amount', 'error'); return }
+    if (!payerId) { toast('Select who is paying this portion', 'error'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('split_expense_partial_payment', { p_expense_id: row.id, p_paid_amount: paidNum })
+    // The paid portion settles now, so it needs a payer (disbursed_by) — must be
+    // an admin/finance user other than the one who finance-approved the expense.
+    const { error } = await supabase.rpc('split_expense_partial_payment', { p_expense_id: row.id, p_paid_amount: paidNum, p_disbursed_by: payerId })
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     onDone()
@@ -901,6 +907,11 @@ function PartialSplitModal({
           <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Amount paid now (ETB)</label>
           <input type="number" min="0" step="0.01" autoFocus value={paid} onChange={e => setPaid(e.target.value)}
             className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Who is paying this portion</label>
+          <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Select payer…" />
+          <p className="mt-1 text-[11px] text-slate-400">Must be an admin/finance user, and not the person who approved this expense.</p>
         </div>
         {remainder != null && (
           <p className="text-xs text-slate-500 dark:text-slate-400">
