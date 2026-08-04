@@ -163,7 +163,11 @@ export default function BankStatementImportPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Bank Statement Import</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Upload a CSV export, match it against expenses awaiting reconciliation, and commit real transfer records. Anything that doesn't match either direction stays visibly flagged.
+          Upload a CSV export, match each line against expenses, transfers, and payroll, and commit real transfer records. Anything that doesn't match stays visibly flagged.
+        </p>
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+          This matches <span className="font-medium">individual transactions</span>. To confirm an account's <span className="font-medium">total balance</span> against the statement's closing figure, reconcile it on the{' '}
+          <Link to="/accounts" className="text-brand hover:underline">account's page</Link>.
         </p>
       </div>
 

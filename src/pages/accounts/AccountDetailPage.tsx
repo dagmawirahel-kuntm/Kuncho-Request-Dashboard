@@ -120,6 +120,12 @@ function ReconciliationPanel({ accountId, accountName }: { accountId: string; ac
         )}
       </div>
 
+      <p className="text-xs text-slate-400 dark:text-slate-500">
+        Confirms this account's <span className="font-medium">total balance</span> against a bank statement.
+        To match <span className="font-medium">individual transactions</span> (including payroll), use{' '}
+        <Link to="/bank-statement-import" className="text-brand hover:underline">Bank Statement Import</Link>.
+      </p>
+
       {canReconcile && importAhead && !open && (
         <button
           onClick={loadFromImport}
