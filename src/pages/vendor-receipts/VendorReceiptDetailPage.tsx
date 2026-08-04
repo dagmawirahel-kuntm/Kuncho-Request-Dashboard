@@ -100,12 +100,17 @@ export default function VendorReceiptDetailPage() {
     )
   }
 
-  const totalSpent   = expenses.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
+  const documentedTotal = expenses.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
   const transferred  = Number(vrf.amount_transferred ?? 0)
   const returned     = Number(vrf.money_returned ?? 0)
   const commission   = Number(vrf.commission_amount ?? 0)
   const netCost      = Number(vrf.net_facilitation_cost ?? 0)
-  const balance      = transferred - totalSpent - returned
+  // The facilitator takes a cut and returns the rest — it does NOT pay the
+  // vendors. So the settlement reconciles the money that left against the money
+  // that came back plus the agreed commission; it should net to zero. Vendor
+  // expenses are paid separately from the returned funds and only *documented*
+  // here, so they are not part of this balance.
+  const settlementGap = transferred - returned - commission
   const groups       = groupByMonth(expenses)
 
   const HERO_BG = '#1E3A5F'
@@ -198,24 +203,34 @@ export default function VendorReceiptDetailPage() {
         {/* Stat strip */}
         <div className="grid grid-cols-4 text-center divide-x divide-white/10" style={{ background: 'rgba(0,0,0,0.25)' }}>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Expenses</p>
-            <p className="text-white font-bold text-xl">{expenses.length}</p>
-          </div>
-          <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Total Spent</p>
-            <p className="text-white font-bold text-base tabular-nums">{formatCurrency(totalSpent)}</p>
-          </div>
-          <div className="py-3">
             <p className="text-white/50 text-xs uppercase tracking-wide">Returned</p>
             <p className="text-white font-bold text-base tabular-nums">{returned > 0 ? formatCurrency(returned) : '—'}</p>
           </div>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Balance</p>
-            <p className={`font-bold text-base tabular-nums ${balance < 0 ? 'text-red-300' : balance > 0 ? 'text-amber-300' : 'text-green-300'}`}>
-              {transferred > 0 ? formatCurrency(Math.abs(balance)) : '—'}
+            <p className="text-white/50 text-xs uppercase tracking-wide">Commission</p>
+            <p className="text-white font-bold text-base tabular-nums">{commission > 0 ? formatCurrency(commission) : '—'}</p>
+          </div>
+          <div className="py-3">
+            <p className="text-white/50 text-xs uppercase tracking-wide">Gap</p>
+            <p className={`font-bold text-base tabular-nums ${Math.abs(settlementGap) < 0.01 ? 'text-green-300' : 'text-amber-300'}`}>
+              {transferred > 0 ? formatCurrency(Math.abs(settlementGap)) : '—'}
             </p>
           </div>
+          <div className="py-3">
+            <p className="text-white/50 text-xs uppercase tracking-wide">Documented</p>
+            <p className="text-white font-bold text-base tabular-nums">{documentedTotal > 0 ? formatCurrency(documentedTotal) : '—'}</p>
+          </div>
         </div>
+      </div>
+
+      {/* How VRF works — one line, so the numbers above read right */}
+      <div className="flex items-start gap-2 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <span>
+          The facilitator takes the transfer, keeps a <span className="font-medium">commission</span>, issues a legal invoice, and
+          <span className="font-medium"> returns the rest</span> — it doesn't pay the vendors. You pay them from the returned funds.
+          So the <span className="font-medium">settlement</span> just checks transferred = returned + commission; the linked expenses are the purchases this invoice documents.
+        </span>
       </div>
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
@@ -240,9 +255,9 @@ export default function VendorReceiptDetailPage() {
           {!loadingExp && expenses.length === 0 && (
             <div className="rounded-2xl border-2 border-dashed dark:border-slate-700 py-14 text-center space-y-2 px-6">
               <ReceiptText className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" />
-              <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses linked to this VRF record</p>
+              <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses documented under this VRF invoice</p>
               <p className="text-xs text-slate-400 dark:text-slate-500 max-w-xs mx-auto leading-relaxed">
-                Expenses added here will be deducted from the debited account and tracked against this VRF balance.
+                Link the vendor expenses this facilitation's invoice covers. They're paid normally from the company account — linking them here is for the VAT/receipt record, and does not change the settlement balance.
               </p>
               {canAddExpense && (
                 <Link
@@ -314,8 +329,8 @@ export default function VendorReceiptDetailPage() {
                 )
               })}
               <div className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-800 border dark:border-slate-700 px-5 py-4 shadow-sm">
-                <span className="text-sm text-slate-500 dark:text-slate-400">Total across {expenses.length} expenses</span>
-                <span className="text-lg font-black tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalSpent)}</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">Documented across {expenses.length} expenses · paid from the company account</span>
+                <span className="text-lg font-black tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(documentedTotal)}</span>
               </div>
             </>
           )}
@@ -332,38 +347,38 @@ export default function VendorReceiptDetailPage() {
             <div className="px-5">
               <SummaryRow
                 label="Amount Transferred Out"
-                sub="Funds sent from business account to facilitator"
+                sub="Funds sent from the company account to the facilitator"
                 value={transferred > 0 ? formatCurrency(transferred) : '—'}
                 accent="text-red-600 dark:text-red-400"
               />
               <SummaryRow
-                label="Total Expenses Covered"
-                sub={`${expenses.length} linked expense${expenses.length !== 1 ? 's' : ''}`}
-                value={formatCurrency(totalSpent)}
-                accent="text-red-500 dark:text-red-400"
-              />
-              <SummaryRow
-                label="Money Returned to Business"
+                label="Money Returned to Company"
                 sub={vrf.return_account_id ? `Returned to: ${(vrf as any).returned?.account_name ?? '—'}` : 'Return account not set'}
                 value={returned > 0 ? formatCurrency(returned) : '—'}
                 accent="text-green-600 dark:text-green-400"
               />
               {(commission > 0 || netCost > 0) && (
                 <SummaryRow
-                  label="Commission / Facilitation Cost"
-                  sub={vrf.commission_rate ? `${vrf.commission_rate}% commission rate` : undefined}
+                  label="Commission (facilitator's cut)"
+                  sub={vrf.commission_rate ? `${vrf.commission_rate}% — the only real cost of the facilitation` : 'The only real cost of the facilitation'}
                   value={formatCurrency(commission > 0 ? commission : netCost)}
                   accent="text-amber-600 dark:text-amber-400"
                 />
               )}
               {transferred > 0 && (
                 <SummaryRow
-                  label="Balance Remaining"
-                  sub="Should be 0 when fully settled"
-                  value={`${balance < 0 ? '−' : balance > 0 ? '+' : ''}${formatCurrency(Math.abs(balance))}`}
-                  accent={balance === 0 ? 'text-green-600 dark:text-green-400' : balance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}
+                  label="Settlement Gap"
+                  sub="Transferred − returned − commission · should be 0 when the facilitator has settled"
+                  value={`${settlementGap < 0 ? '−' : settlementGap > 0 ? '+' : ''}${formatCurrency(Math.abs(settlementGap))}`}
+                  accent={Math.abs(settlementGap) < 0.01 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}
                 />
               )}
+              <SummaryRow
+                label="Expenses Documented"
+                sub={`${expenses.length} vendor expense${expenses.length !== 1 ? 's' : ''} this invoice covers · paid separately from the company account`}
+                value={documentedTotal > 0 ? formatCurrency(documentedTotal) : '—'}
+                accent="text-slate-600 dark:text-slate-300"
+              />
             </div>
           </div>
 
@@ -374,22 +389,20 @@ export default function VendorReceiptDetailPage() {
             </div>
           )}
 
-          {/* Balance alert */}
-          {transferred > 0 && balance !== 0 && (
-            <div className={`flex items-start gap-3 rounded-xl border p-4 ${
-              balance > 0
-                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40'
-                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
-            }`}>
-              <AlertCircle className={`h-4 w-4 flex-shrink-0 mt-0.5 ${balance > 0 ? 'text-amber-500' : 'text-red-500'}`} />
+          {/* Settlement-gap alert */}
+          {transferred > 0 && Math.abs(settlementGap) >= 0.01 && (
+            <div className="flex items-start gap-3 rounded-xl border p-4 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-500" />
               <div>
-                <p className={`text-xs font-semibold ${balance > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-red-700 dark:text-red-300'}`}>
-                  {balance > 0 ? `${formatCurrency(balance)} unaccounted` : `${formatCurrency(Math.abs(balance))} over-spent`}
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  {settlementGap > 0
+                    ? `${formatCurrency(settlementGap)} not yet returned`
+                    : `${formatCurrency(Math.abs(settlementGap))} returned above expectation`}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {balance > 0
-                    ? 'Funds transferred exceed recorded expenses + money returned. Record the remaining return or add missing expenses.'
-                    : 'Expenses exceed the amount transferred. Verify the transferred amount is correct.'}
+                  {settlementGap > 0
+                    ? 'The facilitator has kept more than the agreed commission — either more is still to come back, or the commission on record is understated. Record the remaining return, or correct the commission.'
+                    : 'More came back than transferred minus commission — check the returned amount and commission are right.'}
                 </p>
               </div>
             </div>

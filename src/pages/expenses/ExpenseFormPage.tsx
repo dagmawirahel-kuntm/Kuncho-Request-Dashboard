@@ -428,16 +428,13 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         sourcing_bundle_id: linkedBundle.id,
       }
     })() : {}),
-    // pre-fill from a linked VRF record — the real amount/date/facilitator,
-    // not just the reference id
+    // Link an expense to a VRF for documentation only. The facilitator doesn't
+    // pay the vendors — you do, from the returned funds — so this is a real
+    // vendor purchase, NOT a copy of the transfer. Default the paying account to
+    // where the returned money sits; leave vendor/amount for the real purchase.
     ...(linkedVrf ? {
       vendor_receipt_facilitation_id: linkedVrf.id,
-      account_id: linkedVrf.initial_account_id ?? undefined,
-      expense_type: 'vrf' as const,
-      item_service_description: linkedVrf.record_name ?? undefined,
-      amount_etb: linkedVrf.amount_transferred ?? undefined,
-      vendors_name: linkedVrf.facilitator_name ?? undefined,
-      ...(linkedVrf.trxn_date ? { date: linkedVrf.trxn_date } : {}),
+      account_id: linkedVrf.return_account_id ?? linkedVrf.initial_account_id ?? undefined,
     } : {}),
     // pre-fill from a linked property — used by the Rent page's "Record
     // Rent Payment" link, same ?xxx_id= gateway pattern as PO/VRF above
