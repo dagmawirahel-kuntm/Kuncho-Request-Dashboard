@@ -87,6 +87,31 @@ export default function VendorReceiptDetailPage() {
     enabled: !!id,
   })
 
+  // Fund view: the returned money is a spendable pool; payments made via VRF
+  // (expenses.vrf_id) draw it down. available = returned − drawn.
+  const { data: fund } = useQuery({
+    queryKey: ['vrf-fund', id],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_vrf_fund_status').select('*').eq('vrf_id', id!).maybeSingle()
+      return data as { money_returned: number; fund_drawn: number; fund_available: number; payments_count: number } | null
+    },
+    enabled: !!id,
+  })
+
+  const { data: drawnPayments = [] } = useQuery({
+    queryKey: ['vrf-drawn-payments', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('id, item_service_description, amount_etb, paid_date, vendors:vendor_id(vendor_name)')
+        .eq('vrf_id', id!).eq('payment_state', 'paid')
+        .order('paid_date', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as unknown as { id: string; item_service_description: string | null; amount_etb: number | null; paid_date: string | null; vendors: { vendor_name: string } | null }[]
+    },
+    enabled: !!id,
+  })
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-[60vh]"><p className="text-slate-400 text-sm">Loading…</p></div>
   }
@@ -217,8 +242,8 @@ export default function VendorReceiptDetailPage() {
             </p>
           </div>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Documented</p>
-            <p className="text-white font-bold text-base tabular-nums">{documentedTotal > 0 ? formatCurrency(documentedTotal) : '—'}</p>
+            <p className="text-white/50 text-xs uppercase tracking-wide">Fund Available</p>
+            <p className="text-white font-bold text-base tabular-nums">{fund ? formatCurrency(Number(fund.fund_available)) : (returned > 0 ? formatCurrency(returned) : '—')}</p>
           </div>
         </div>
       </div>
@@ -381,6 +406,43 @@ export default function VendorReceiptDetailPage() {
               />
             </div>
           </div>
+
+          {/* Fund — the returned money as a spendable pool, drawn down by payments made via VRF */}
+          {vrf.status === 'settled' && (
+            <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Fund — Payments Drawn From This VRF</p>
+                <span className="text-xs text-slate-400">{fund?.payments_count ?? 0} payment{(fund?.payments_count ?? 0) === 1 ? '' : 's'}</span>
+              </div>
+              <div className="grid grid-cols-3 divide-x dark:divide-slate-700 text-center">
+                <div className="py-3">
+                  <p className="text-[11px] text-slate-400">Returned (fund)</p>
+                  <p className="text-sm font-bold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(Number(fund?.money_returned ?? returned))}</p>
+                </div>
+                <div className="py-3">
+                  <p className="text-[11px] text-slate-400">Drawn</p>
+                  <p className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(Number(fund?.fund_drawn ?? 0))}</p>
+                </div>
+                <div className="py-3">
+                  <p className="text-[11px] text-slate-400">Available</p>
+                  <p className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(Number(fund?.fund_available ?? returned))}</p>
+                </div>
+              </div>
+              {drawnPayments.length > 0 && (
+                <div className="divide-y dark:divide-slate-700 border-t dark:border-slate-700">
+                  {drawnPayments.map(p => (
+                    <Link key={p.id} to={`/expenses/${p.id}`} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-700 dark:text-slate-200">{p.item_service_description ?? p.vendors?.vendor_name ?? 'Payment'}</p>
+                        <p className="text-xs text-slate-400">{p.vendors?.vendor_name ?? ''}{p.paid_date ? ` · ${formatDate(p.paid_date)}` : ''}</p>
+                      </div>
+                      <span className="shrink-0 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(Number(p.amount_etb ?? 0))}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {vrf.notes && (
             <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm p-5">

@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { useToast } from '@/contexts/ToastContext'
-import { useUserProfiles, useVendorReceiptFacilitations, useAccounts } from '@/hooks/useLookups'
+import { useUserProfiles, useAccounts } from '@/hooks/useLookups'
+import { FileUpload } from '@/components/shared/FileUpload'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { KpiCard } from '@/components/shared/KpiCard'
@@ -66,14 +67,6 @@ export default function PaymentsDashboardPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [splitting, setSplitting] = useState<any | null>(null)
-
-  async function confirmVrf(expenseId: string) {
-    const { error } = await supabase.rpc('confirm_vrf_payment', { p_expense_id: expenseId, p_vrf_id: null })
-    if (error) { toast(error.message, 'error'); return }
-    qc.invalidateQueries({ queryKey: ['v-recent-payments'] })
-    qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
-    toast('VRF payment confirmed — marked paid', 'success')
-  }
 
   const { data: toPayQueue = [], isLoading: loadingQueue } = useQuery({
     queryKey: ['v-to-pay-queue'],
@@ -639,23 +632,15 @@ export default function PaymentsDashboardPage() {
                           Match to Bank Line
                         </button>
                       )}
-                      {canAct && r.payment_state === 'sent' && r.payment_method === 'vrf' && !r.vrf_id && (
-                        <button
-                          onClick={() => setLinkingVrf(r)}
-                          className="rounded-md border px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
-                        >
-                          Link to VRF
-                        </button>
-                      )}
-                      {/* #7: a sent VRF payment is only marked paid once the VRF-manager
-                          badge holder confirms the facilitator processed it. */}
+                      {/* A sent VRF payment is paid by the VRF Manager, who draws it from
+                          a settled VRF fund and attaches a payment certificate. */}
                       {r.payment_state === 'sent' && r.payment_method === 'vrf' && (
                         isVrfManager ? (
                           <button
-                            onClick={() => confirmVrf(r.id)}
+                            onClick={() => setLinkingVrf(r)}
                             className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
                           >
-                            Confirm VRF Payment
+                            Pay via VRF
                           </button>
                         ) : (
                           <span className="text-[10px] text-amber-600 dark:text-amber-400" title="Waiting for the VRF Manager to confirm">awaiting VRF Manager</span>
@@ -723,12 +708,12 @@ export default function PaymentsDashboardPage() {
       )}
 
       {linkingVrf && (
-        <VrfLinkModal
+        <VrfPayModal
           row={linkingVrf}
           onClose={() => setLinkingVrf(null)}
           onLinked={() => {
             setLinkingVrf(null)
-            toast('Linked to VRF settlement', 'success')
+            toast('Paid via VRF — fund drawn down', 'success')
             invalidateAll()
           }}
           onError={msg => toast(msg, 'error')}
@@ -1036,7 +1021,10 @@ function MatchTransferModal({
   )
 }
 
-function VrfLinkModal({
+// The VRF Manager pays an approved VRF-method expense from a settled VRF's
+// returned fund. Only settled VRFs with enough available balance are offered,
+// and a payment confirmation certificate is required before it can be paid.
+function VrfPayModal({
   row, onClose, onLinked, onError,
 }: {
   row: RecentPaymentRow
@@ -1044,19 +1032,41 @@ function VrfLinkModal({
   onLinked: () => void
   onError: (msg: string) => void
 }) {
-  const { data: vrfs = [] } = useVendorReceiptFacilitations()
+  const amount = Number(row.amount_etb ?? 0)
   const [vrfId, setVrfId] = useState<string | null>(null)
+  const [certUrl, setCertUrl] = useState<string | null>(null)
+  const [certName, setCertName] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const vrfOptions = (vrfs as { id: string; record_name: string | null; amount_transferred: number | null; status: string }[]).map(v => ({
-    id: v.id,
-    label: `${v.record_name ?? v.id.slice(0, 8)} — ${formatCurrency(v.amount_transferred ?? 0)} (${v.status})`,
-  }))
+  const { data: funds = [] } = useQuery({
+    queryKey: ['vrf-funds-settled'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_vrf_fund_status')
+        .select('vrf_id, record_name, facilitator_name, fund_available')
+        .eq('status', 'settled')
+        .order('fund_available', { ascending: false })
+      if (error) throw error
+      return data as { vrf_id: string; record_name: string | null; facilitator_name: string | null; fund_available: number }[]
+    },
+  })
 
-  async function handleLink() {
-    if (!vrfId) { onError('Select a VRF settlement'); return }
+  const options = funds.map(f => ({
+    id: f.vrf_id,
+    label: `${f.record_name ?? f.facilitator_name ?? f.vrf_id.slice(0, 8)} — ${formatCurrency(Number(f.fund_available))} available`,
+    disabled: Number(f.fund_available) < amount,
+  }))
+  const selected = funds.find(f => f.vrf_id === vrfId)
+  const insufficient = selected != null && Number(selected.fund_available) < amount
+
+  async function handlePay() {
+    if (!vrfId) { onError('Select the settled VRF to pay from'); return }
+    if (insufficient) { onError('That VRF fund does not have enough available'); return }
+    if (!certUrl) { onError('Attach a payment confirmation certificate'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('link_expense_vrf', { p_expense_id: row.id, p_vrf_id: vrfId })
+    const { error } = await supabase.rpc('confirm_vrf_payment', {
+      p_expense_id: row.id, p_vrf_id: vrfId, p_certificate_url: certUrl, p_certificate_name: certName,
+    })
     setSaving(false)
     if (error) { onError(error.message); return }
     onLinked()
@@ -1066,20 +1076,34 @@ function VrfLinkModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between">
-          <h2 className="font-bold text-slate-800 dark:text-slate-100">Link to VRF Settlement</h2>
+          <h2 className="font-bold text-slate-800 dark:text-slate-100">Pay via VRF</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
         </div>
         <div className="px-5 py-4 space-y-4">
-          <p className="text-sm text-slate-500 dark:text-slate-400">Linking {formatCurrency(row.amount_etb ?? 0)} to the vendor receipt facilitation that funded it.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Paying <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(amount)}</span> from a settled VRF's returned fund. This marks it paid and draws the fund down.
+          </p>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">VRF Settlement</label>
-            <SearchableSelect value={vrfId} onChange={setVrfId} options={vrfOptions} placeholder="Select a VRF record…" />
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Settled VRF (fund)</label>
+            <SearchableSelect value={vrfId} onChange={setVrfId} options={options} placeholder="Select a settled VRF…" />
+            {insufficient && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">Not enough available in this fund.</p>}
+            {funds.length === 0 && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">No settled VRF funds available.</p>}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Payment Confirmation Certificate *</label>
+            <FileUpload
+              bucket="documents" folder="vrf-certificates" privateBucket
+              fileUrl={certUrl} fileName={certName}
+              onUpload={(url, name) => { setCertUrl(url); setCertName(name) }}
+              onClear={() => { setCertUrl(null); setCertName(null) }}
+              label="Upload certificate"
+            />
           </div>
         </div>
         <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
-          <button onClick={handleLink} disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
-            {saving ? 'Linking…' : 'Link'}
+          <button onClick={handlePay} disabled={saving || !vrfId || !certUrl || insufficient} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+            {saving ? 'Paying…' : 'Mark Paid via VRF'}
           </button>
         </div>
       </div>

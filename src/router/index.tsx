@@ -298,8 +298,6 @@ export const router = createBrowserRouter([
               { path: 'tax-management', element: <TaxManagementPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
-              { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
-              { path: 'vendor-receipts/:id', element: <VendorReceiptDetailPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
               { path: 'reports/archive', element: <HistoricalArchivePage /> },
@@ -337,6 +335,15 @@ export const router = createBrowserRouter([
               { path: 'tax-management/log', element: <TaxEngagementFormPage /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
+            ],
+          },
+          {
+            // VRF is restricted: admin and executive always; finance only with
+            // the VRF-manager badge; every other role blocked entirely.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive']} allowVrfManager />,
+            children: [
+              { path: 'vendor-receipts', element: <VendorReceiptsPage /> },
+              { path: 'vendor-receipts/:id', element: <VendorReceiptDetailPage /> },
               { path: 'vendor-receipts/new', element: <VendorReceiptFormPage /> },
               { path: 'vendor-receipts/:id/edit', element: <VendorReceiptFormPage /> },
             ],
