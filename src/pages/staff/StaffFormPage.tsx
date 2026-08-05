@@ -9,6 +9,8 @@ import type { Staff, StaffInsert, UserProfile } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useDepartments } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { AlertTriangle } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -44,7 +46,7 @@ export default function StaffFormPage() {
   return <StaffFormPageBody id={id} record={record} />
 }
 
-type UserProfileRow = Pick<UserProfile, 'id' | 'full_name' | 'role'>
+type UserProfileRow = Pick<UserProfile, 'id' | 'full_name' | 'role' | 'email'>
 
 function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const isEdit = !!id
@@ -60,10 +62,11 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const { data: userProfiles = [] } = useQuery({
     queryKey: ['user-profiles-lookup'],
     queryFn: async () => {
-      const { data } = await supabase.from('user_profiles').select('id, full_name, role').order('full_name')
+      const { data } = await supabase.from('user_profiles').select('id, full_name, role, email').order('full_name')
       return (data ?? []) as UserProfileRow[]
     },
   })
+
 
   const [form, setForm] = useState<Partial<StaffInsert>>(
     record
@@ -97,6 +100,30 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const [error, setError] = useState('')
 
   function set(key: keyof StaffInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  const userProfileOptions = useMemo(
+    () => userProfiles.map(u => ({ id: u.id, label: u.full_name, sub: u.email ? `${u.email} · ${u.role}` : u.role })),
+    [userProfiles]
+  )
+  const selectedLogin = userProfiles.find(u => u.id === form.user_id)
+  const emailMismatch = !!selectedLogin && !!form.email && !!selectedLogin.email
+    && form.email.trim().toLowerCase() !== selectedLogin.email.trim().toLowerCase()
+
+  // "user_profiles is the person, staff is a branch" — other staff rows already
+  // linked to whichever login is currently selected, so linking here doesn't
+  // silently create a wrong pairing (that's exactly how a login once ended up
+  // attached to the wrong staff record: matched by name alone, never checked
+  // against email).
+  const { data: otherBranches = [] } = useQuery({
+    queryKey: ['staff-other-branches', form.user_id, id],
+    queryFn: async () => {
+      const q = supabase.from('staff').select('id, employee_name, role').eq('user_id', form.user_id!)
+      const { data, error } = await (id ? q.neq('id', id) : q)
+      if (error) throw error
+      return data as { id: string; employee_name: string; role: string | null }[]
+    },
+    enabled: !!form.user_id,
+  })
 
   async function handleSave() {
     if (!form.employee_name?.trim()) { setError('Employee name is required'); return }
@@ -284,13 +311,22 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         </Field>
       </div>
 
-      <Field label="Linked User Account">
-        <select className={inputCls} value={form.user_id ?? ''} onChange={e => set('user_id', e.target.value || null)}>
-          <option value="">— Not linked —</option>
-          {userProfiles.map(u => (
-            <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
-          ))}
-        </select>
+      <Field label="Linked Login (person)">
+        <SearchableSelect value={form.user_id ?? null} onChange={v => set('user_id', v)} options={userProfileOptions} placeholder="— Not linked —" />
+        <p className="mt-1 text-xs text-slate-400">
+          user_profiles is the person's real identity; this staff record is one branch/role under it. Match by email, not name — always verify before linking.
+        </p>
+        {emailMismatch && (
+          <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            This staff record's email ({form.email}) doesn't match the selected login's email ({selectedLogin!.email}). Double-check this is the right person before saving.
+          </p>
+        )}
+        {otherBranches.length > 0 && (
+          <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+            This login already has {otherBranches.length} other branch{otherBranches.length > 1 ? 'es' : ''}: {otherBranches.map(b => `${b.employee_name} (${b.role ?? 'no role'})`).join(', ')}.
+          </p>
+        )}
       </Field>
 
       <Field label="Experience / Notes">

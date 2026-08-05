@@ -5,12 +5,12 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useDepartments } from '@/hooks/useLookups'
+import { useDepartments, useProjects } from '@/hooks/useLookups'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
   Building2, Clock, DollarSign, Briefcase, Hash, User,
-  CheckCircle2, Wallet, Shield, Network, Users,
+  CheckCircle2, Wallet, Shield, Network, Users, KeyRound,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -210,6 +210,219 @@ function OrgPlacementSection({ staff }: { staff: Staff }) {
   )
 }
 
+interface StaffLoginRow {
+  user_id: string | null
+  login_name: string | null
+  login_email: string | null
+  system_role: string | null
+  login_status: string | null
+  is_vrf_manager: boolean
+  is_tax_officer: boolean
+  is_logistics_officer: boolean
+  is_ride_hailing_authorized: boolean
+}
+
+// user_profiles is the person; this staff record is one branch under it —
+// shows the linked login's real system identity, and any sibling branches
+// (other roles) the same person holds.
+function SystemAccessPanel({ staff }: { staff: Staff }) {
+  const { data: login } = useQuery({
+    queryKey: ['staff-with-login', staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_staff_with_login').select('*').eq('staff_id', staff.id).maybeSingle()
+      if (error) throw error
+      return data as StaffLoginRow | null
+    },
+    enabled: !!staff.user_id,
+  })
+
+  const { data: siblings = [] } = useQuery({
+    queryKey: ['staff-siblings', staff.user_id, staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('id, employee_name, role').eq('user_id', staff.user_id!).neq('id', staff.id)
+      if (error) throw error
+      return data as { id: string; employee_name: string; role: string | null }[]
+    },
+    enabled: !!staff.user_id,
+  })
+
+  if (!staff.user_id) {
+    return (
+      <div>
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">System Access</h3>
+        <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 px-4 py-3 text-xs text-slate-400">
+          No app login linked — this person doesn't have system access.
+        </div>
+      </div>
+    )
+  }
+
+  const badges = [
+    login?.is_vrf_manager && 'VRF Manager',
+    login?.is_tax_officer && 'Tax Officer',
+    login?.is_logistics_officer && 'Logistics Officer',
+    login?.is_ride_hailing_authorized && 'Ride-hailing Authorized',
+  ].filter(Boolean) as string[]
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">System Access</h3>
+      <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 px-4">
+        <DetailRow label="Login" icon={<KeyRound className="h-3.5 w-3.5" />} value={login?.login_name ?? null} />
+        <DetailRow label="System Role" icon={<Shield className="h-3.5 w-3.5" />}
+          value={login?.system_role
+            ? <span className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 capitalize">{login.system_role.replace(/_/g, ' ')}</span>
+            : null} />
+        {badges.length > 0 && (
+          <DetailRow label="Badges" icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+            value={<div className="flex flex-wrap gap-1">{badges.map(b => <span key={b} className="rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs font-medium">{b}</span>)}</div>} />
+        )}
+        {siblings.length > 0 && (
+          <DetailRow label="Other Branches" icon={<Network className="h-3.5 w-3.5" />}
+            value={siblings.map(s => `${s.employee_name} (${s.role ?? 'no role'})`).join(', ')} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface AssignmentRow {
+  assignment_id: string
+  role: string
+  is_primary: boolean
+  active: boolean
+  department_id: string | null
+  department_name: string | null
+  project_id: string | null
+  project_name: string | null
+}
+
+// A person's roles. staff stays their single HR record; each assignment is one
+// "part of the work" under a department, optionally scoped to a project — so
+// someone can be both a Driver and a Procurement Officer, or a Designer acting
+// as ops manager on one job, without duplicating salary/bank details.
+function RoleAssignmentsPanel({ staff }: { staff: Staff }) {
+  const { role } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const canEdit = ['admin', 'hr_officer', 'executive', 'finance'].includes(role ?? '')
+  const [adding, setAdding] = useState(false)
+  const [newRole, setNewRole] = useState('')
+  const [newDept, setNewDept] = useState('')
+  const [newProject, setNewProject] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const { data: departments = [] } = useDepartments()
+  const { data: projects = [] } = useProjects()
+
+  const { data: assignments = [], isLoading } = useQuery({
+    queryKey: ['staff-assignments', staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_staff_assignments')
+        .select('assignment_id, role, is_primary, active, department_id, department_name, project_id, project_name')
+        .eq('staff_id', staff.id)
+        .order('is_primary', { ascending: false })
+      if (error) throw error
+      return data as AssignmentRow[]
+    },
+  })
+
+  async function addAssignment() {
+    if (!newRole.trim()) { toast('Enter the role for this assignment', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('staff_assignments').insert([{
+      staff_id: staff.id,
+      role: newRole.trim(),
+      department_id: newDept || null,
+      project_id: newProject || null,
+      is_primary: false,
+      active: true,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    setNewRole(''); setNewDept(''); setNewProject(''); setAdding(false)
+    qc.invalidateQueries({ queryKey: ['staff-assignments', staff.id] })
+    toast('Role assignment added', 'success')
+  }
+
+  async function removeAssignment(assignmentId: string, isPrimary: boolean) {
+    if (isPrimary) { toast('The primary role comes from the staff record — edit it there instead', 'error'); return }
+    const { error } = await supabase.from('staff_assignments').delete().eq('id', assignmentId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['staff-assignments', staff.id] })
+    toast('Assignment removed', 'success')
+  }
+
+  const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Role Assignments</h3>
+        {canEdit && !adding && (
+          <button onClick={() => setAdding(true)} className="text-xs font-medium text-brand hover:underline">+ Add role</button>
+        )}
+      </div>
+      <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 px-4">
+        {isLoading ? (
+          <p className="py-3 text-xs text-slate-400">Loading…</p>
+        ) : assignments.length === 0 ? (
+          <p className="py-3 text-xs text-slate-400">No role assignment yet — set the Workplace/Department on the staff record.</p>
+        ) : (
+          assignments.map(a => (
+            <DetailRow
+              key={a.assignment_id}
+              label={a.department_name ?? 'No department'}
+              icon={<Briefcase className="h-3.5 w-3.5" />}
+              value={
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className={!a.active ? 'line-through text-slate-400' : ''}>{a.role}</span>
+                    {a.is_primary && <span className="ml-2 rounded-full bg-brand/10 text-brand px-2 py-0.5 text-[10px] font-semibold">primary</span>}
+                    {a.project_name && <span className="ml-2 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-[10px] font-medium">{a.project_name}</span>}
+                  </span>
+                  {canEdit && !a.is_primary && (
+                    <button onClick={() => removeAssignment(a.assignment_id, a.is_primary)}
+                      className="shrink-0 text-[11px] text-red-500 hover:underline">Remove</button>
+                  )}
+                </div>
+              }
+            />
+          ))
+        )}
+
+        {adding && canEdit && (
+          <div className="py-3 space-y-2 border-t dark:border-slate-700/60">
+            <p className="text-[11px] text-slate-400">
+              An additional responsibility — another department, another role in the same one, or a role on a specific project.
+            </p>
+            <input className={inputCls} placeholder="Role (e.g. Procurement Officer)" value={newRole} onChange={e => setNewRole(e.target.value)} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <select className={inputCls} value={newDept} onChange={e => setNewDept(e.target.value)}>
+                <option value="">— Department —</option>
+                {departments.map((d: { id: string; name: string }) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <select className={inputCls} value={newProject} onChange={e => setNewProject(e.target.value)}>
+                <option value="">— Whole department (no project) —</option>
+                {(projects as { id: string; project_name: string }[]).map(p => <option key={p.id} value={p.id}>{p.project_name}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setAdding(false); setNewRole(''); setNewDept(''); setNewProject('') }}
+                className="rounded-md border px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
+              <button onClick={addAssignment} disabled={saving}
+                className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+                {saving ? 'Adding…' : 'Add Assignment'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function OverviewTab({ staff }: { staff: Staff }) {
   const managementMeta = getManagementLevelMeta(staff.management_level)
   return (
@@ -266,6 +479,10 @@ function OverviewTab({ staff }: { staff: Staff }) {
               value={staff.bank_account ? `•••• ${staff.bank_account.slice(-4)}` : null} />
           </div>
         </div>
+
+        <RoleAssignmentsPanel staff={staff} />
+
+        <SystemAccessPanel staff={staff} />
 
         {staff.experience && (
           <div>

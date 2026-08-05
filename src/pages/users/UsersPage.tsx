@@ -107,6 +107,23 @@ export default function UsersPage() {
   const { data: departments = [] } = useDepartments()
   const departmentNameById = useMemo(() => new Map(departments.map((d: any) => [d.id, d.name])), [departments])
 
+  // user_profiles is the person (this page); staff rows are branches — one or
+  // more role assignments — under it. Surfaced here as the reverse of the
+  // Staff form's "Linked Login" picker.
+  const { data: branchesByLogin = {} } = useQuery({
+    queryKey: ['staff-branches-by-login'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('user_id, employee_name, role').not('user_id', 'is', null)
+      if (error) throw error
+      const map: Record<string, { employee_name: string; role: string | null }[]> = {}
+      for (const row of data ?? []) {
+        if (!row.user_id) continue
+        ;(map[row.user_id] ??= []).push({ employee_name: row.employee_name, role: row.role })
+      }
+      return map
+    },
+  })
+
   function departmentForPending(p: UserProfile): string | null {
     const deptId = staffByEmail[p.email?.toLowerCase?.() ?? ''] ?? null
     if (!deptId) return null
@@ -343,6 +360,11 @@ export default function UsersPage() {
                       {isSelf && <span className="ml-2 text-[10px] font-semibold text-slate-400">(you)</span>}
                     </p>
                     {p.department && <p className="text-xs text-slate-400 truncate">{p.department}</p>}
+                    {(branchesByLogin[p.id]?.length ?? 0) > 0 && (
+                      <p className="text-xs text-slate-400 truncate" title="Staff branches linked to this login">
+                        {branchesByLogin[p.id].map(b => b.role ?? b.employee_name).join(', ')}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-1">
