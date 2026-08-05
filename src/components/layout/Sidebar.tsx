@@ -21,6 +21,9 @@ interface NavItem {
   // Shown to anyone named on projects.project_manager_id, in addition
   // to `roles` — project management is an assignment, not only a role.
   showIfAssignedProjectManager?: boolean
+  // Shown to a finance user holding the is_vrf_manager badge, in addition to
+  // `roles` (admin/executive) — VRF access is a badge, not a plain role.
+  showIfVrfManager?: boolean
   animateIcon?: string
 }
 
@@ -107,7 +110,7 @@ const navGroups: NavGroup[] = [
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
-      { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'executive', 'finance'] },
       { label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
       { label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
@@ -183,7 +186,7 @@ const navGroups: NavGroup[] = [
 ]
 
 function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
-  const { role } = useAuth()
+  const { role, profile } = useAuth()
   const { managesAny } = useMyManagedProjects()
   const [open, setOpen] = useState(true)
 
@@ -195,6 +198,8 @@ function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean })
     // this the assignment is invisible to the person who holds it —
     // they'd have to be told the URL.
     || (item.showIfAssignedProjectManager && managesAny)
+    // VRF badge: a finance user with is_vrf_manager sees the VRF entry.
+    || (item.showIfVrfManager && profile?.is_vrf_manager)
   )
   if (visibleItems.length === 0) return null
 

@@ -1,12 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { VendorReceiptFacilitation, VrfStatus } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle, BarChart3 } from 'lucide-react'
 
 type VrfRow = VendorReceiptFacilitation & {
   initial: { account_name: string } | null
@@ -91,6 +91,9 @@ export default function VendorReceiptsPage() {
         <StatCard label="Total Transferred" value={formatCurrency(stats.totalOut)} icon={<ArrowRightLeft className="h-4 w-4" />} colorCls="bg-slate-100 text-slate-500 dark:bg-slate-700" />
       </div>
 
+      {/* Accumulation by good/service across all VRFs */}
+      <VrfAccumulationPanel />
+
       {/* List */}
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
@@ -163,6 +166,84 @@ export default function VendorReceiptsPage() {
                   </button>
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface AccumulationRow {
+  period_month: string
+  category_id: string | null
+  category_name: string
+  nature: string | null
+  line_count: number
+  vrf_count: number
+  total_amount: number
+  total_wht: number
+}
+
+// How much VRF has piled up per good/service — the accumulation Part 1 asks for.
+// Grouped by category, with a per-period breakdown, so repeated facilitation of
+// the same item over time is visible at a glance.
+function VrfAccumulationPanel() {
+  const [open, setOpen] = useState(false)
+  const { data: rows = [] } = useQuery({
+    queryKey: ['vrf-item-accumulation'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_vrf_item_accumulation')
+        .select('*')
+        .order('period_month', { ascending: false })
+      if (error) throw error
+      return data as AccumulationRow[]
+    },
+  })
+
+  const byCategory = useMemo(() => {
+    const m = new Map<string, { name: string; nature: string | null; total: number; wht: number; periods: AccumulationRow[] }>()
+    for (const r of rows) {
+      const key = r.category_id ?? 'none'
+      const g = m.get(key) ?? { name: r.category_name, nature: r.nature, total: 0, wht: 0, periods: [] }
+      g.total += Number(r.total_amount ?? 0)
+      g.wht += Number(r.total_wht ?? 0)
+      g.periods.push(r)
+      m.set(key, g)
+    }
+    return Array.from(m.values()).sort((a, b) => b.total - a.total)
+  }, [rows])
+
+  if (rows.length === 0) return null
+  const grand = byCategory.reduce((s, g) => s + g.total, 0)
+
+  return (
+    <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-2 px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-brand" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Accumulation by Good / Service</span>
+          <span className="text-xs text-slate-400">{byCategory.length} categories · {formatCurrency(grand)}</span>
+        </div>
+        <span className="text-xs text-brand">{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && (
+        <div className="divide-y dark:divide-slate-700">
+          {byCategory.map((g, i) => (
+            <div key={i} className="px-5 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                    {g.name}{g.nature ? <span className="ml-1.5 text-[10px] font-normal text-slate-400 uppercase">{g.nature}</span> : ''}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {g.periods.map(p => `${formatDate(p.period_month)}: ${formatCurrency(Number(p.total_amount))}`).join('  ·  ')}
+                    {g.wht > 0 ? `  ·  WHT ${formatCurrency(g.wht)}` : ''}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(g.total)}</span>
+              </div>
             </div>
           ))}
         </div>

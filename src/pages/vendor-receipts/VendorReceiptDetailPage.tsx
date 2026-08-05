@@ -1,16 +1,171 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, ReceiptText, AlertCircle,
-  ArrowRightLeft, User, Plus,
+  ArrowRightLeft, User, Plus, Trash2,
 } from 'lucide-react'
 import type { VendorReceiptFacilitation, Expense } from '@/types/database'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
+import { useCategories } from '@/hooks/useLookups'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 
-type Tab = 'expenses' | 'summary'
+interface VrfReceiptItem {
+  id: string
+  vrf_id: string
+  item_description: string | null
+  category_id: string | null
+  quantity: number | null
+  uom: string | null
+  amount: number | null
+  wht_amount: number | null
+  categories?: { category_name: string; nature: string | null } | null
+}
+
+// The VAT receipt's line items — each a good or service (category → nature),
+// its amount, and any withholding. Total should track the amount transferred.
+function ReceiptItemsTab({ vrfId, transferred, canEdit }: { vrfId: string; transferred: number; canEdit: boolean }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { data: categories = [] } = useCategories()
+  const categoryOptions = useMemo(
+    () => (categories as { id: string; category_name: string; nature?: string | null }[])
+      .map(c => ({ id: c.id, label: c.category_name, sub: c.nature ?? undefined })),
+    [categories]
+  )
+
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ['vrf-items', vrfId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vrf_receipt_items')
+        .select('*, categories:category_id(category_name, nature)')
+        .eq('vrf_id', vrfId)
+        .order('created_at')
+      if (error) throw error
+      return (data ?? []) as unknown as VrfReceiptItem[]
+    },
+  })
+
+  const [desc, setDesc] = useState('')
+  const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [qty, setQty] = useState('')
+  const [uom, setUom] = useState('')
+  const [amount, setAmount] = useState('')
+  const [wht, setWht] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const itemsTotal = items.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+  const gap = transferred - itemsTotal
+
+  async function addItem() {
+    const amt = parseFloat(amount)
+    if (isNaN(amt) || amt <= 0) { toast('Enter the item amount', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('vrf_receipt_items').insert([{
+      vrf_id: vrfId,
+      item_description: desc.trim() || null,
+      category_id: categoryId,
+      quantity: qty ? parseFloat(qty) : null,
+      uom: uom.trim() || null,
+      amount: amt,
+      wht_amount: wht ? parseFloat(wht) : null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    setDesc(''); setCategoryId(null); setQty(''); setUom(''); setAmount(''); setWht('')
+    qc.invalidateQueries({ queryKey: ['vrf-items', vrfId] })
+    qc.invalidateQueries({ queryKey: ['vrf-item-accumulation'] })
+    toast('Receipt item added', 'success')
+  }
+
+  async function removeItem(itemId: string) {
+    const { error } = await supabase.from('vrf_receipt_items').delete().eq('id', itemId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['vrf-items', vrfId] })
+    qc.invalidateQueries({ queryKey: ['vrf-item-accumulation'] })
+    toast('Item removed', 'success')
+  }
+
+  const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex items-center justify-between">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">VAT Receipt Items</p>
+          <span className="text-xs text-slate-400">{items.length} line{items.length === 1 ? '' : 's'}</span>
+        </div>
+        {isLoading ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-400">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-400">No receipt items yet — add what the VAT receipt lists below.</p>
+        ) : (
+          <div className="divide-y dark:divide-slate-700">
+            {items.map(i => (
+              <div key={i.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{i.item_description ?? i.categories?.category_name ?? 'Item'}</p>
+                  <p className="text-xs text-slate-400">
+                    {i.categories?.category_name ?? 'Uncategorized'}{i.categories?.nature ? ` · ${i.categories.nature}` : ''}
+                    {i.quantity != null ? ` · ${i.quantity}${i.uom ? ` ${i.uom}` : ''}` : ''}
+                    {i.wht_amount != null ? ` · WHT ${formatCurrency(Number(i.wht_amount))}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(Number(i.amount ?? 0))}</span>
+                  {canEdit && (
+                    <button onClick={() => removeItem(i.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {items.length > 0 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Items total vs transferred {formatCurrency(transferred)}
+              {Math.abs(gap) >= 0.01 && <span className="text-amber-600 dark:text-amber-400"> · {gap > 0 ? `${formatCurrency(gap)} unlisted` : `${formatCurrency(Math.abs(gap))} over`}</span>}
+            </span>
+            <span className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(itemsTotal)}</span>
+          </div>
+        )}
+      </div>
+
+      {canEdit && (
+        <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm p-5 space-y-3">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Add Receipt Item</p>
+          <input className={inputCls} placeholder="Item / material / service description" value={desc} onChange={e => setDesc(e.target.value)} />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Good / Service (nature)</label>
+            <SearchableSelect value={categoryId} onChange={setCategoryId} options={categoryOptions} placeholder="Select category…" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Qty</label>
+              <input type="number" step="any" className={inputCls} value={qty} onChange={e => setQty(e.target.value)} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">UoM</label>
+              <input className={inputCls} value={uom} onChange={e => setUom(e.target.value)} placeholder="Pcs, m²…" /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Amount *</label>
+              <input type="number" step="0.01" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">WHT</label>
+              <input type="number" step="0.01" className={inputCls} value={wht} onChange={e => setWht(e.target.value)} /></div>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={addItem} disabled={saving} className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+              <Plus className="h-3.5 w-3.5" /> {saving ? 'Adding…' : 'Add Item'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type Tab = 'expenses' | 'items' | 'summary'
 
 const STATUS_CLS: Record<string, string> = {
   open:     'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -87,6 +242,31 @@ export default function VendorReceiptDetailPage() {
     enabled: !!id,
   })
 
+  // Fund view: the returned money is a spendable pool; payments made via VRF
+  // (expenses.vrf_id) draw it down. available = returned − drawn.
+  const { data: fund } = useQuery({
+    queryKey: ['vrf-fund', id],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_vrf_fund_status').select('*').eq('vrf_id', id!).maybeSingle()
+      return data as { money_returned: number; fund_drawn: number; fund_available: number; payments_count: number } | null
+    },
+    enabled: !!id,
+  })
+
+  const { data: drawnPayments = [] } = useQuery({
+    queryKey: ['vrf-drawn-payments', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('id, item_service_description, amount_etb, paid_date, vendors:vendor_id(vendor_name)')
+        .eq('vrf_id', id!).eq('payment_state', 'paid')
+        .order('paid_date', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as unknown as { id: string; item_service_description: string | null; amount_etb: number | null; paid_date: string | null; vendors: { vendor_name: string } | null }[]
+    },
+    enabled: !!id,
+  })
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-[60vh]"><p className="text-slate-400 text-sm">Loading…</p></div>
   }
@@ -100,12 +280,17 @@ export default function VendorReceiptDetailPage() {
     )
   }
 
-  const totalSpent   = expenses.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
+  const documentedTotal = expenses.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
   const transferred  = Number(vrf.amount_transferred ?? 0)
   const returned     = Number(vrf.money_returned ?? 0)
   const commission   = Number(vrf.commission_amount ?? 0)
   const netCost      = Number(vrf.net_facilitation_cost ?? 0)
-  const balance      = transferred - totalSpent - returned
+  // The facilitator takes a cut and returns the rest — it does NOT pay the
+  // vendors. So the settlement reconciles the money that left against the money
+  // that came back plus the agreed commission; it should net to zero. Vendor
+  // expenses are paid separately from the returned funds and only *documented*
+  // here, so they are not part of this balance.
+  const settlementGap = transferred - returned - commission
   const groups       = groupByMonth(expenses)
 
   const HERO_BG = '#1E3A5F'
@@ -198,39 +383,53 @@ export default function VendorReceiptDetailPage() {
         {/* Stat strip */}
         <div className="grid grid-cols-4 text-center divide-x divide-white/10" style={{ background: 'rgba(0,0,0,0.25)' }}>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Expenses</p>
-            <p className="text-white font-bold text-xl">{expenses.length}</p>
-          </div>
-          <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Total Spent</p>
-            <p className="text-white font-bold text-base tabular-nums">{formatCurrency(totalSpent)}</p>
-          </div>
-          <div className="py-3">
             <p className="text-white/50 text-xs uppercase tracking-wide">Returned</p>
             <p className="text-white font-bold text-base tabular-nums">{returned > 0 ? formatCurrency(returned) : '—'}</p>
           </div>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Balance</p>
-            <p className={`font-bold text-base tabular-nums ${balance < 0 ? 'text-red-300' : balance > 0 ? 'text-amber-300' : 'text-green-300'}`}>
-              {transferred > 0 ? formatCurrency(Math.abs(balance)) : '—'}
+            <p className="text-white/50 text-xs uppercase tracking-wide">Commission</p>
+            <p className="text-white font-bold text-base tabular-nums">{commission > 0 ? formatCurrency(commission) : '—'}</p>
+          </div>
+          <div className="py-3">
+            <p className="text-white/50 text-xs uppercase tracking-wide">Gap</p>
+            <p className={`font-bold text-base tabular-nums ${Math.abs(settlementGap) < 0.01 ? 'text-green-300' : 'text-amber-300'}`}>
+              {transferred > 0 ? formatCurrency(Math.abs(settlementGap)) : '—'}
             </p>
+          </div>
+          <div className="py-3">
+            <p className="text-white/50 text-xs uppercase tracking-wide">Fund Available</p>
+            <p className="text-white font-bold text-base tabular-nums">{fund ? formatCurrency(Number(fund.fund_available)) : (returned > 0 ? formatCurrency(returned) : '—')}</p>
           </div>
         </div>
       </div>
 
+      {/* How VRF works — one line, so the numbers above read right */}
+      <div className="flex items-start gap-2 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <span>
+          The facilitator takes the transfer, keeps a <span className="font-medium">commission</span>, issues a legal invoice, and
+          <span className="font-medium"> returns the rest</span> — it doesn't pay the vendors. You pay them from the returned funds.
+          So the <span className="font-medium">settlement</span> just checks transferred = returned + commission; the linked expenses are the purchases this invoice documents.
+        </span>
+      </div>
+
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <div className="flex gap-0 border-b dark:border-slate-700">
-        {(['expenses', 'summary'] as Tab[]).map(t => (
+        {(['expenses', 'items', 'summary'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px capitalize transition-colors ${
               tab === t
                 ? 'border-brand text-brand'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
             }`}>
-            {t === 'expenses' ? `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}` : 'Financial Summary'}
+            {t === 'expenses'
+              ? `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}`
+              : t === 'items' ? 'Receipt Items' : 'Financial Summary'}
           </button>
         ))}
       </div>
+
+      {tab === 'items' && <ReceiptItemsTab vrfId={id!} transferred={transferred} canEdit={canAddExpense} />}
 
       {/* ── Expenses tab ────────────────────────────────────────── */}
       {tab === 'expenses' && (
@@ -240,9 +439,9 @@ export default function VendorReceiptDetailPage() {
           {!loadingExp && expenses.length === 0 && (
             <div className="rounded-2xl border-2 border-dashed dark:border-slate-700 py-14 text-center space-y-2 px-6">
               <ReceiptText className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" />
-              <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses linked to this VRF record</p>
+              <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses documented under this VRF invoice</p>
               <p className="text-xs text-slate-400 dark:text-slate-500 max-w-xs mx-auto leading-relaxed">
-                Expenses added here will be deducted from the debited account and tracked against this VRF balance.
+                Link the vendor expenses this facilitation's invoice covers. They're paid normally from the company account — linking them here is for the VAT/receipt record, and does not change the settlement balance.
               </p>
               {canAddExpense && (
                 <Link
@@ -314,8 +513,8 @@ export default function VendorReceiptDetailPage() {
                 )
               })}
               <div className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-800 border dark:border-slate-700 px-5 py-4 shadow-sm">
-                <span className="text-sm text-slate-500 dark:text-slate-400">Total across {expenses.length} expenses</span>
-                <span className="text-lg font-black tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalSpent)}</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">Documented across {expenses.length} expenses · paid from the company account</span>
+                <span className="text-lg font-black tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(documentedTotal)}</span>
               </div>
             </>
           )}
@@ -332,40 +531,77 @@ export default function VendorReceiptDetailPage() {
             <div className="px-5">
               <SummaryRow
                 label="Amount Transferred Out"
-                sub="Funds sent from business account to facilitator"
+                sub="Funds sent from the company account to the facilitator"
                 value={transferred > 0 ? formatCurrency(transferred) : '—'}
                 accent="text-red-600 dark:text-red-400"
               />
               <SummaryRow
-                label="Total Expenses Covered"
-                sub={`${expenses.length} linked expense${expenses.length !== 1 ? 's' : ''}`}
-                value={formatCurrency(totalSpent)}
-                accent="text-red-500 dark:text-red-400"
-              />
-              <SummaryRow
-                label="Money Returned to Business"
+                label="Money Returned to Company"
                 sub={vrf.return_account_id ? `Returned to: ${(vrf as any).returned?.account_name ?? '—'}` : 'Return account not set'}
                 value={returned > 0 ? formatCurrency(returned) : '—'}
                 accent="text-green-600 dark:text-green-400"
               />
               {(commission > 0 || netCost > 0) && (
                 <SummaryRow
-                  label="Commission / Facilitation Cost"
-                  sub={vrf.commission_rate ? `${vrf.commission_rate}% commission rate` : undefined}
+                  label="Commission (facilitator's cut)"
+                  sub={vrf.commission_rate ? `${vrf.commission_rate}% — the only real cost of the facilitation` : 'The only real cost of the facilitation'}
                   value={formatCurrency(commission > 0 ? commission : netCost)}
                   accent="text-amber-600 dark:text-amber-400"
                 />
               )}
               {transferred > 0 && (
                 <SummaryRow
-                  label="Balance Remaining"
-                  sub="Should be 0 when fully settled"
-                  value={`${balance < 0 ? '−' : balance > 0 ? '+' : ''}${formatCurrency(Math.abs(balance))}`}
-                  accent={balance === 0 ? 'text-green-600 dark:text-green-400' : balance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}
+                  label="Settlement Gap"
+                  sub="Transferred − returned − commission · should be 0 when the facilitator has settled"
+                  value={`${settlementGap < 0 ? '−' : settlementGap > 0 ? '+' : ''}${formatCurrency(Math.abs(settlementGap))}`}
+                  accent={Math.abs(settlementGap) < 0.01 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}
                 />
               )}
+              <SummaryRow
+                label="Expenses Documented"
+                sub={`${expenses.length} vendor expense${expenses.length !== 1 ? 's' : ''} this invoice covers · paid separately from the company account`}
+                value={documentedTotal > 0 ? formatCurrency(documentedTotal) : '—'}
+                accent="text-slate-600 dark:text-slate-300"
+              />
             </div>
           </div>
+
+          {/* Fund — the returned money as a spendable pool, drawn down by payments made via VRF */}
+          {vrf.status === 'settled' && (
+            <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Fund — Payments Drawn From This VRF</p>
+                <span className="text-xs text-slate-400">{fund?.payments_count ?? 0} payment{(fund?.payments_count ?? 0) === 1 ? '' : 's'}</span>
+              </div>
+              <div className="grid grid-cols-3 divide-x dark:divide-slate-700 text-center">
+                <div className="py-3">
+                  <p className="text-[11px] text-slate-400">Returned (fund)</p>
+                  <p className="text-sm font-bold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(Number(fund?.money_returned ?? returned))}</p>
+                </div>
+                <div className="py-3">
+                  <p className="text-[11px] text-slate-400">Drawn</p>
+                  <p className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(Number(fund?.fund_drawn ?? 0))}</p>
+                </div>
+                <div className="py-3">
+                  <p className="text-[11px] text-slate-400">Available</p>
+                  <p className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(Number(fund?.fund_available ?? returned))}</p>
+                </div>
+              </div>
+              {drawnPayments.length > 0 && (
+                <div className="divide-y dark:divide-slate-700 border-t dark:border-slate-700">
+                  {drawnPayments.map(p => (
+                    <Link key={p.id} to={`/expenses/${p.id}`} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-700 dark:text-slate-200">{p.item_service_description ?? p.vendors?.vendor_name ?? 'Payment'}</p>
+                        <p className="text-xs text-slate-400">{p.vendors?.vendor_name ?? ''}{p.paid_date ? ` · ${formatDate(p.paid_date)}` : ''}</p>
+                      </div>
+                      <span className="shrink-0 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(Number(p.amount_etb ?? 0))}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {vrf.notes && (
             <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm p-5">
@@ -374,22 +610,20 @@ export default function VendorReceiptDetailPage() {
             </div>
           )}
 
-          {/* Balance alert */}
-          {transferred > 0 && balance !== 0 && (
-            <div className={`flex items-start gap-3 rounded-xl border p-4 ${
-              balance > 0
-                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40'
-                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
-            }`}>
-              <AlertCircle className={`h-4 w-4 flex-shrink-0 mt-0.5 ${balance > 0 ? 'text-amber-500' : 'text-red-500'}`} />
+          {/* Settlement-gap alert */}
+          {transferred > 0 && Math.abs(settlementGap) >= 0.01 && (
+            <div className="flex items-start gap-3 rounded-xl border p-4 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-500" />
               <div>
-                <p className={`text-xs font-semibold ${balance > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-red-700 dark:text-red-300'}`}>
-                  {balance > 0 ? `${formatCurrency(balance)} unaccounted` : `${formatCurrency(Math.abs(balance))} over-spent`}
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  {settlementGap > 0
+                    ? `${formatCurrency(settlementGap)} not yet returned`
+                    : `${formatCurrency(Math.abs(settlementGap))} returned above expectation`}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {balance > 0
-                    ? 'Funds transferred exceed recorded expenses + money returned. Record the remaining return or add missing expenses.'
-                    : 'Expenses exceed the amount transferred. Verify the transferred amount is correct.'}
+                  {settlementGap > 0
+                    ? 'The facilitator has kept more than the agreed commission — either more is still to come back, or the commission on record is understated. Record the remaining return, or correct the commission.'
+                    : 'More came back than transferred minus commission — check the returned amount and commission are right.'}
                 </p>
               </div>
             </div>

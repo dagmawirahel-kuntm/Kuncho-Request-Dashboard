@@ -14,9 +14,13 @@ interface ProtectedRouteProps {
   // real case here — a finance user managing 3 projects) can never
   // reach their own project surfaces.
   allowAssignedProjectManager?: boolean
+  // Widens the gate with the VRF-manager badge: a finance user who holds
+  // is_vrf_manager reaches VRF routes even though the role list is
+  // admin/executive only. Non-badge finance (and everyone else) stays out.
+  allowVrfManager?: boolean
 }
 
-export function ProtectedRoute({ allowedRoles, allowAssignedProjectManager }: ProtectedRouteProps) {
+export function ProtectedRoute({ allowedRoles, allowAssignedProjectManager, allowVrfManager }: ProtectedRouteProps) {
   const { user, profile, role, loading } = useAuth()
   const location = useLocation()
   // Called unconditionally — hooks can't sit behind the early returns
@@ -37,6 +41,8 @@ export function ProtectedRoute({ allowedRoles, allowAssignedProjectManager }: Pr
   if (profile?.account_status === 'disabled') return <AccountStatusPage status="disabled" />
 
   if (allowedRoles && role && !allowedRoles.includes(role)) {
+    // VRF badge grant is checked first: a badge-holding finance user is in.
+    if (allowVrfManager && profile?.is_vrf_manager) return <Outlet />
     if (!allowAssignedProjectManager) return <Navigate to="/" replace />
     // Don't bounce a genuine PM out while the assignment is still
     // resolving — "not loaded yet" is not "not permitted".
