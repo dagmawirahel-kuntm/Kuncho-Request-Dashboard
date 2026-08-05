@@ -113,6 +113,23 @@ export default function PaymentsDashboardPage() {
     },
   })
 
+  // Paid payments that levied WHT and still need a withholding receipt — a cue
+  // for the paying finance and the tax officer.
+  const { data: whtToPrepare = [] } = useQuery({
+    queryKey: ['v-wht-receipts-to-prepare'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_wht_receipts_to_prepare').select('*').order('paid_date', { ascending: false })
+      if (error) throw error
+      return data as { expense_id: string; expense_code: string | null; vendor_name: string | null; vendor_tin: string | null; amount_etb: number | null; wht_amount: number | null; net_payable: number | null; paid_date: string | null }[]
+    },
+  })
+  async function markWhtPrepared(expenseId: string) {
+    const { error } = await supabase.rpc('mark_wht_receipt_prepared', { p_expense_id: expenseId, p_receipt_url: null, p_receipt_name: null })
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['v-wht-receipts-to-prepare'] })
+    toast('Withholding receipt marked prepared', 'success')
+  }
+
   const { data: userProfiles = [] } = useUserProfiles()
   const payerOptions = useMemo(
     () => (userProfiles as { id: string; full_name: string; role: string }[])
@@ -256,7 +273,8 @@ export default function PaymentsDashboardPage() {
       </div>
 
       {/* ── 1. To-Pay Queue (headline) ───────────────────────────────── */}
-      <Section title="To-Pay Queue" sub="Finance-approved, awaiting payment — the headline queue">
+      <Section title="To-Pay Queue" sub="Finance-approved, awaiting payment. Pick the tunnel by method: a bank method (transfer/CPO/cheque/cash) settles by matching a bank line; choosing VRF hands it to the VRF badge holder to pay from a settled fund.">
+
         {canAct && toPayQueue.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-b bg-brand/5 dark:bg-brand/10 dark:border-slate-700 px-4 py-3">
             {selectedQueue.size > 0 && (
@@ -475,6 +493,65 @@ export default function PaymentsDashboardPage() {
           </div>
         </Section>
       )}
+
+      {/* ── 1c. Withholding receipts to prepare ────────────────────── */}
+      {whtToPrepare.length > 0 && (
+        <Section title="Withholding Receipts to Prepare" sub="Paid payments that levied WHT — finance and the tax officer should issue the withholding receipt">
+          <div className="divide-y dark:divide-slate-700">
+            {whtToPrepare.map(w => (
+              <div key={w.expense_id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div className="min-w-0">
+                  <Link to={`/expenses/${w.expense_id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                    {w.vendor_name ?? w.expense_code ?? 'Payment'}
+                  </Link>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    {w.vendor_tin ? `TIN ${w.vendor_tin} · ` : 'No TIN · '}
+                    WHT {formatCurrency(w.wht_amount ?? 0)} of {formatCurrency(w.amount_etb ?? 0)} · net {formatCurrency(w.net_payable ?? 0)}
+                    {w.paid_date ? ` · paid ${formatDate(w.paid_date)}` : ''}
+                  </p>
+                </div>
+                {canAct && (
+                  <button
+                    onClick={() => markWhtPrepared(w.expense_id)}
+                    className="flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand/90 shrink-0"
+                  >
+                    <Receipt className="h-3 w-3" /> Mark Prepared
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* ── 1d. VRF tunnel — sent as VRF, awaiting the badge holder ──── */}
+      {(() => {
+        const vrfAwaiting = recentPayments.filter(r => r.payment_state === 'sent' && r.payment_method === 'vrf')
+        if (vrfAwaiting.length === 0) return null
+        return (
+          <Section title="VRF Tunnel — Awaiting Badge Holder" sub="Sent via VRF — the VRF badge holder pays these from a settled VRF fund and attaches a certificate">
+            <div className="divide-y dark:divide-slate-700">
+              {vrfAwaiting.map(r => (
+                <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                      {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                    </Link>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{formatCurrency(r.amount_etb ?? 0)}</p>
+                  </div>
+                  {isVrfManager ? (
+                    <button onClick={() => setLinkingVrf(r)} className="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                      Pay via VRF
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">awaiting VRF Manager</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Section>
+        )
+      })()}
 
       {/* ── 2. Pending Approval ─────────────────────────────────────── */}
       <Section title="Pending Approval" sub="Awaiting a finance sign-off before it can join the to-pay queue">
