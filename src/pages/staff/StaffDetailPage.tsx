@@ -10,7 +10,7 @@ import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/t
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
   Building2, Clock, DollarSign, Briefcase, Hash, User,
-  CheckCircle2, Wallet, Shield, Network, Users,
+  CheckCircle2, Wallet, Shield, Network, Users, KeyRound,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -210,6 +210,82 @@ function OrgPlacementSection({ staff }: { staff: Staff }) {
   )
 }
 
+interface StaffLoginRow {
+  user_id: string | null
+  login_name: string | null
+  login_email: string | null
+  system_role: string | null
+  login_status: string | null
+  is_vrf_manager: boolean
+  is_tax_officer: boolean
+  is_logistics_officer: boolean
+  is_ride_hailing_authorized: boolean
+}
+
+// user_profiles is the person; this staff record is one branch under it —
+// shows the linked login's real system identity, and any sibling branches
+// (other roles) the same person holds.
+function SystemAccessPanel({ staff }: { staff: Staff }) {
+  const { data: login } = useQuery({
+    queryKey: ['staff-with-login', staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_staff_with_login').select('*').eq('staff_id', staff.id).maybeSingle()
+      if (error) throw error
+      return data as StaffLoginRow | null
+    },
+    enabled: !!staff.user_id,
+  })
+
+  const { data: siblings = [] } = useQuery({
+    queryKey: ['staff-siblings', staff.user_id, staff.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('id, employee_name, role').eq('user_id', staff.user_id!).neq('id', staff.id)
+      if (error) throw error
+      return data as { id: string; employee_name: string; role: string | null }[]
+    },
+    enabled: !!staff.user_id,
+  })
+
+  if (!staff.user_id) {
+    return (
+      <div>
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">System Access</h3>
+        <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 px-4 py-3 text-xs text-slate-400">
+          No app login linked — this person doesn't have system access.
+        </div>
+      </div>
+    )
+  }
+
+  const badges = [
+    login?.is_vrf_manager && 'VRF Manager',
+    login?.is_tax_officer && 'Tax Officer',
+    login?.is_logistics_officer && 'Logistics Officer',
+    login?.is_ride_hailing_authorized && 'Ride-hailing Authorized',
+  ].filter(Boolean) as string[]
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">System Access</h3>
+      <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 px-4">
+        <DetailRow label="Login" icon={<KeyRound className="h-3.5 w-3.5" />} value={login?.login_name ?? null} />
+        <DetailRow label="System Role" icon={<Shield className="h-3.5 w-3.5" />}
+          value={login?.system_role
+            ? <span className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 capitalize">{login.system_role.replace(/_/g, ' ')}</span>
+            : null} />
+        {badges.length > 0 && (
+          <DetailRow label="Badges" icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+            value={<div className="flex flex-wrap gap-1">{badges.map(b => <span key={b} className="rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs font-medium">{b}</span>)}</div>} />
+        )}
+        {siblings.length > 0 && (
+          <DetailRow label="Other Branches" icon={<Network className="h-3.5 w-3.5" />}
+            value={siblings.map(s => `${s.employee_name} (${s.role ?? 'no role'})`).join(', ')} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 function OverviewTab({ staff }: { staff: Staff }) {
   const managementMeta = getManagementLevelMeta(staff.management_level)
   return (
@@ -266,6 +342,8 @@ function OverviewTab({ staff }: { staff: Staff }) {
               value={staff.bank_account ? `•••• ${staff.bank_account.slice(-4)}` : null} />
           </div>
         </div>
+
+        <SystemAccessPanel staff={staff} />
 
         {staff.experience && (
           <div>
