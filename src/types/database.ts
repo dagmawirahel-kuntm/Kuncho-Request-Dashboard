@@ -383,6 +383,11 @@ export interface Expense {
   verify_wht: boolean
   wht_handling_method: string | null
   wht_fund: string | null
+  wht_amount: number | null
+  net_payable: number | null
+  wht_receipt_prepared: boolean
+  wht_receipt_url: string | null
+  wht_receipt_name: string | null
   is_new_item: boolean
   description_of_item: string | null
   is_allocated: boolean
@@ -431,7 +436,7 @@ export interface Expense {
   created_at: string
   updated_at: string
 }
-export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at' | 'payment_state_changed_at'>
+export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at' | 'payment_state_changed_at' | 'net_payable'>
 
 // ── Properties & Rent ────────────────────────────────────────────
 export interface Property {

@@ -794,7 +794,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         <textarea rows={2} className={inputCls} value={form.item_service_description ?? ''} onChange={e => set('item_service_description', e.target.value)} />
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Amount (ETB)">
+        <Field label="Total Amount (ETB, incl VAT + WHT)">
           <FormattedNumberInput className={inputCls} value={form.amount_etb ?? null} onChange={n => set('amount_etb', n ?? null)} />
         </Field>
         <Field label="Date">
@@ -1001,6 +1001,20 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           )}
         </select>
       </Field>
+      {/* The amount above is the total (incl VAT + WHT). The WHT levied is
+          withheld from it; net is what actually leaves to the payee. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="WHT Amount (levied)" locked={financeLocked}>
+          <FormattedNumberInput disabled={financeLocked} className={inputCls} value={form.wht_amount ?? null} onChange={n => set('wht_amount', n ?? null)} />
+        </Field>
+        <div>
+          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">Net Payable</label>
+          <div className="rounded-md border bg-slate-50 dark:bg-slate-900/40 dark:border-slate-600 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+            {form.amount_etb != null ? formatCurrency(Number(form.amount_etb) - Number(form.wht_amount ?? 0)) : '—'}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">Total {form.amount_etb != null ? formatCurrency(Number(form.amount_etb)) : '—'} − WHT = amount that leaves to the payee.</p>
+        </div>
+      </div>
 
       <SectionHeader title="Linked Records" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
