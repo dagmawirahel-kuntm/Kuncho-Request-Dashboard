@@ -1,4 +1,9 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
+import DailySiteReportPage from '@/pages/site-foreman/DailySiteReportPage'
+import LogSiteTimesheetPage from '@/pages/site-foreman/LogSiteTimesheetPage'
+import SiteFloatRequestPage from '@/pages/site-foreman/SiteFloatRequestPage'
+import { FinanceSitePettyCashQueuePage, PMSitePettyCashQueuePage } from '@/pages/site-foreman/SitePettyCashQueue'
+import { MaterialsRequestedPage, HseLogPage, WorkOrdersOnMySitesPage, MyProjectsPage } from '@/pages/site-foreman/ScopedListPages'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LandingRedirect } from './LandingRedirect'
 import { AppShell } from '@/components/layout/AppShell'
@@ -352,6 +357,34 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin']} />,
             children: [
               { path: 'users', element: <UsersPage /> },
+            ],
+          },
+          {
+            // Site Foreman pages: RLS on every underlying table gates by
+            // is_site_foreman_for_project, so route access can be as broad as
+            // "any logged-in user"; the queries return zero rows for anyone
+            // without a scoped assignment. The Finance/PM queues below are
+            // gated by role since they're written-to.
+            children: [
+              { path: 'site-foreman/daily-report', element: <DailySiteReportPage /> },
+              { path: 'site-foreman/timesheet', element: <LogSiteTimesheetPage /> },
+              { path: 'site-foreman/float-request', element: <SiteFloatRequestPage /> },
+              { path: 'site-foreman/materials', element: <MaterialsRequestedPage /> },
+              { path: 'site-foreman/hse', element: <HseLogPage /> },
+              { path: 'site-foreman/work-orders', element: <WorkOrdersOnMySitesPage /> },
+              { path: 'site-foreman/projects', element: <MyProjectsPage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'finance']} />,
+            children: [
+              { path: 'finance/site-petty-cash-requests', element: <FinanceSitePettyCashQueuePage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            children: [
+              { path: 'pm/site-petty-cash-requests', element: <PMSitePettyCashQueuePage /> },
             ],
           },
           {

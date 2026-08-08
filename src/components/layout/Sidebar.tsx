@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { useMyManagedProjects } from '@/hooks/useMyStaff'
+import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
 import { useState, useRef } from 'react'
 
 interface NavItem {
@@ -24,6 +24,11 @@ interface NavItem {
   // Shown to a finance user holding the is_vrf_manager badge, in addition to
   // `roles` (admin/executive) — VRF access is a badge, not a plain role.
   showIfVrfManager?: boolean
+  // Shown to a site foreman with at least one active project assignment. Site
+  // foreman lives on staff.role (a job title), not user_profiles.role (system
+  // access), so it uses the same "derived, not a stored permission" pattern as
+  // PM assignment above.
+  showIfSiteForeman?: boolean
   animateIcon?: string
 }
 
@@ -54,6 +59,20 @@ const navGroups: NavGroup[] = [
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2, roles: ['admin', 'operations_manager'] },
       { label: 'Departments', to: '/departments', icon: Network },
+    ],
+  },
+  {
+    // Site Ops: visible only to a site foreman with at least one active
+    // project assignment. Every item here derives its scope from that.
+    title: 'Site Ops',
+    items: [
+      { label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, showIfSiteForeman: true },
+      { label: 'Log Site Timesheet', to: '/site-foreman/timesheet', icon: Clock, showIfSiteForeman: true },
+      { label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, showIfSiteForeman: true },
+      { label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, showIfSiteForeman: true },
+      { label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, showIfSiteForeman: true },
+      { label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, showIfSiteForeman: true },
+      { label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, showIfSiteForeman: true },
     ],
   },
   {
@@ -188,6 +207,7 @@ const navGroups: NavGroup[] = [
 function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
   const { role, profile } = useAuth()
   const { managesAny } = useMyManagedProjects()
+  const { hasAny: isForemanWithProjects } = useMySiteForemanProjects()
   const [open, setOpen] = useState(true)
 
   const visibleItems = group.items.filter(item =>
@@ -200,6 +220,8 @@ function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean })
     || (item.showIfAssignedProjectManager && managesAny)
     // VRF badge: a finance user with is_vrf_manager sees the VRF entry.
     || (item.showIfVrfManager && profile?.is_vrf_manager)
+    // Site foreman with at least one scoped project.
+    || (item.showIfSiteForeman && isForemanWithProjects)
   )
   if (visibleItems.length === 0) return null
 

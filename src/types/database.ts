@@ -2332,3 +2332,63 @@ export interface StaffFfeRoleSummaryRow {
   rated_responsibility_count: number
   total_active_responsibilities: number
 }
+
+// ── Site Foreman: petty cash float requests + daily reports ──────
+export type SitePettyCashRequestStatus =
+  | 'pending_finance' | 'pending_pm' | 'approved' | 'rejected' | 'opened'
+
+export interface SitePettyCashFloatRequest {
+  id: string
+  project_id: string
+  requested_by_staff_id: string
+  requested_amount: number
+  purpose: string | null
+  status: SitePettyCashRequestStatus
+  finance_reviewed_by: string | null
+  finance_reviewed_at: string | null
+  pm_reviewed_by: string | null
+  pm_reviewed_at: string | null
+  rejection_reason: string | null
+  resulting_float_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SitePettyCashRequestContext {
+  request_id: string
+  project_id: string
+  requested_amount: number
+  status: SitePettyCashRequestStatus
+  requested_by_staff_id: string
+  purpose: string | null
+  created_at: string
+  project_name: string
+  requested_by_name: string | null
+  total_budget: number | null
+  total_actual_with_labor: number | null
+  total_committed_with_labor: number | null
+  budget_headroom: number | null
+  any_group_over_budget: boolean | null
+}
+
+export type SiteReportWeather = 'sunny' | 'cloudy' | 'rain' | 'heavy_rain'
+export type SiteAccessible = 'yes' | 'partial' | 'no'
+
+export interface SiteDailyReport {
+  id: string
+  project_id: string
+  foreman_staff_id: string
+  report_date: string
+  progress_percent_after: number | null
+  weather: SiteReportWeather | null
+  site_accessible: SiteAccessible | null
+  progress_notes: string | null
+  photos: { url: string; name?: string }[]
+  headcount_override: number | null
+  materials_notes: string | null
+  hse_near_miss_notes: string | null
+  tomorrow_plan: string | null
+  submitted_at: string | null
+  created_at: string
+  updated_at: string
+}
