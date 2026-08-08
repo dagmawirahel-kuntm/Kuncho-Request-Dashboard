@@ -397,7 +397,18 @@ function RoleAssignmentsPanel({ staff }: { staff: Staff }) {
             <p className="text-[11px] text-slate-400">
               An additional responsibility — another department, another role in the same one, or a role on a specific project.
             </p>
-            <input className={inputCls} placeholder="Role (e.g. Procurement Officer)" value={newRole} onChange={e => setNewRole(e.target.value)} />
+            <input list="assignment-role-suggestions" className={inputCls} placeholder="Role (e.g. Procurement Officer, Site Foreman)" value={newRole} onChange={e => setNewRole(e.target.value)} />
+            <datalist id="assignment-role-suggestions">
+              <option value="Site Foreman">Site Foreman — residential site day-to-day (unlocks Site Ops for this project)</option>
+              <option value="Project Manager" />
+              <option value="Procurement Officer" />
+              <option value="Finance" />
+              <option value="HR Manager" />
+              <option value="Designer" />
+              <option value="Ops Manager" />
+              <option value="Driver" />
+            </datalist>
+            <p className="mt-1 text-[11px] text-slate-400">Tip: adding a "Site Foreman" assignment on a project also grants that person site-foreman powers on it.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select className={inputCls} value={newDept} onChange={e => setNewDept(e.target.value)}>
                 <option value="">— Department —</option>

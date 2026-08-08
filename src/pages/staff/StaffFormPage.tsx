@@ -218,8 +218,36 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Workplace">
-          <input type="text" className={inputCls} value={form.role ?? ''} onChange={e => set('role', e.target.value)} placeholder="e.g. Front Desk, Site A, Carpentry Bench 3" />
+        <Field label="Workplace / Job Title">
+          <input
+            type="text" list="workplace-suggestions" className={inputCls}
+            value={form.role ?? ''} onChange={e => set('role', e.target.value)}
+            placeholder="e.g. site_foreman, Carpenter, Driver, Designer"
+          />
+          <datalist id="workplace-suggestions">
+            {/* system role — grants site-foreman powers when combined with an
+                active project assignment. Kept lowercase/underscored as-is so
+                the RLS helper matches; the datalist just makes it discoverable. */}
+            <option value="site_foreman">site_foreman — residential site day-to-day (unlocks Site Ops)</option>
+            <option value="Project Manager" />
+            <option value="Site Foreman" />
+            <option value="Foreman" />
+            <option value="Finance" />
+            <option value="Designer" />
+            <option value="Driver" />
+            <option value="Purchaser" />
+            <option value="Carpenter" />
+            <option value="Ass. Carpenter" />
+            <option value="Painter" />
+            <option value="Labor" />
+            <option value="CNC operator" />
+            <option value="Workshop Manager" />
+            <option value="Upper Level Managment" />
+          </datalist>
+          <p className="mt-1 text-xs text-slate-400">
+            Type <code className="rounded bg-slate-100 dark:bg-slate-700 px-1 text-[10px]">site_foreman</code> to give this person residential-site powers.
+            Then add an active <span className="font-medium">Role Assignment</span> for each project they run.
+          </p>
         </Field>
         <Field label="Management Level">
           <select className={inputCls} value={form.management_level ?? ''} onChange={e => set('management_level', e.target.value || null)}>
