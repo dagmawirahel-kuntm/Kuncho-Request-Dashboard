@@ -114,34 +114,46 @@ export function useIsWorkshopLead() {
   return query.data ?? false
 }
 
-// A site foreman is defined by staff.role = 'site_foreman' AND at least one
-// active staff_assignments row on a project — same "one login → one or more
-// project scopes" shape the DB helper uses. Returns the scoped projects so
-// callers (sidebar visibility, project pickers, banners) share one query.
+// A site foreman is defined per-assignment: an active staff_assignments row
+// with role='Site Foreman' on a project, OR a staff row whose primary role
+// is 'site_foreman' with any active project assignment. Mirrors the DB
+// helper is_site_foreman_for_project so the sidebar/pickers match RLS.
 export function useMySiteForemanProjects() {
   const { data: staff, isLoading: staffLoading } = useMyStaffId()
   const staffId = staff?.id
-  const isForeman = staff?.role === 'site_foreman'
+  const staffIsForeman = staff?.role?.toLowerCase() === 'site_foreman'
   const query = useQuery({
     queryKey: ['my-site-foreman-projects', staffId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('staff_assignments')
-        .select('project_id, projects(id, project_name)')
+        .select('role, project_id, projects(id, project_name)')
         .eq('staff_id', staffId!)
         .eq('active', true)
         .not('project_id', 'is', null)
       if (error) throw error
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (data ?? []).map((r: any) => r.projects).filter(Boolean) as { id: string; project_name: string }[]
+      // Keep an assignment either because the staff row identifies as
+      // site_foreman OR because THIS assignment's role does. Matches the
+      // widened DB helper.
+      return (data ?? [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((r: any) => {
+          if (staffIsForeman) return true
+          const role = (r.role ?? '').toLowerCase().replace(/\s+/g, '_')
+          return role === 'site_foreman'
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((r: any) => r.projects).filter(Boolean) as { id: string; project_name: string }[]
     },
-    enabled: !!staffId && isForeman,
+    // Fetch as soon as we have a staff row. Filtering happens client-side
+    // (matches the DB helper's OR condition without another round-trip).
+    enabled: !!staffId,
     staleTime: 300000,
   })
   return {
-    isForeman,
+    isForeman: staffIsForeman || (query.data?.length ?? 0) > 0,
     projects: query.data ?? [],
     hasAny: (query.data?.length ?? 0) > 0,
-    isLoading: staffLoading || (isForeman && query.isLoading),
+    isLoading: staffLoading || (!!staffId && query.isLoading),
   }
 }
