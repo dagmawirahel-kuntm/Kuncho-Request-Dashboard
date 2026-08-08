@@ -63,16 +63,18 @@ const navGroups: NavGroup[] = [
   },
   {
     // Site Ops: visible only to a site foreman with at least one active
-    // project assignment. Every item here derives its scope from that.
+    // project assignment. Every item is gated by showIfSiteForeman + an
+    // empty roles array so the "no roles = show to everyone" default in
+    // NavGroup doesn't fire — the derived flag must match.
     title: 'Site Ops',
     items: [
-      { label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, showIfSiteForeman: true },
-      { label: 'Log Site Timesheet', to: '/site-foreman/timesheet', icon: Clock, showIfSiteForeman: true },
-      { label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, showIfSiteForeman: true },
-      { label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, showIfSiteForeman: true },
-      { label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, showIfSiteForeman: true },
-      { label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, showIfSiteForeman: true },
-      { label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, showIfSiteForeman: true },
+      { label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, roles: [], showIfSiteForeman: true },
+      { label: 'Log Site Timesheet', to: '/site-foreman/timesheet', icon: Clock, roles: [], showIfSiteForeman: true },
+      { label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, roles: [], showIfSiteForeman: true },
+      { label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, roles: [], showIfSiteForeman: true },
+      { label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, roles: [], showIfSiteForeman: true },
+      { label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, roles: [], showIfSiteForeman: true },
+      { label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, roles: [], showIfSiteForeman: true },
     ],
   },
   {
