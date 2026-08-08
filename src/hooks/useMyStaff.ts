@@ -113,3 +113,35 @@ export function useIsWorkshopLead() {
   })
   return query.data ?? false
 }
+
+// A site foreman is defined by staff.role = 'site_foreman' AND at least one
+// active staff_assignments row on a project — same "one login → one or more
+// project scopes" shape the DB helper uses. Returns the scoped projects so
+// callers (sidebar visibility, project pickers, banners) share one query.
+export function useMySiteForemanProjects() {
+  const { data: staff, isLoading: staffLoading } = useMyStaffId()
+  const staffId = staff?.id
+  const isForeman = staff?.role === 'site_foreman'
+  const query = useQuery({
+    queryKey: ['my-site-foreman-projects', staffId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_assignments')
+        .select('project_id, projects(id, project_name)')
+        .eq('staff_id', staffId!)
+        .eq('active', true)
+        .not('project_id', 'is', null)
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (data ?? []).map((r: any) => r.projects).filter(Boolean) as { id: string; project_name: string }[]
+    },
+    enabled: !!staffId && isForeman,
+    staleTime: 300000,
+  })
+  return {
+    isForeman,
+    projects: query.data ?? [],
+    hasAny: (query.data?.length ?? 0) > 0,
+    isLoading: staffLoading || (isForeman && query.isLoading),
+  }
+}
