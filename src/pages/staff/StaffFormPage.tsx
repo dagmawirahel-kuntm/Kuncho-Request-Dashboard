@@ -68,12 +68,39 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   })
 
 
-  const [form, setForm] = useState<Partial<StaffInsert>>(
+  // Small typed helper so we can carry the tier-2 fields alongside the
+  // existing StaffInsert shape without patching the generated types.
+  type StaffFormState = Partial<StaffInsert> & {
+    trade_tag?: string | null
+    codename_amharic?: string | null
+    codename_english?: string | null
+  }
+
+  const { data: tradeRoster = [] } = useQuery({
+    queryKey: ['tier2-trade-roster'],
+    staleTime: 600_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tier2_trade_roster')
+        .select('trade_tag, codename_amharic, codename_english, icon_emoji, sort_order')
+        .order('sort_order')
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (data ?? []) as any[]
+    },
+  })
+
+  const [form, setForm] = useState<StaffFormState>(
     record
       ? {
           employee_name: record.employee_name,
           staff_type: record.staff_type,
           employment_type: record.employment_type,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          trade_tag: (record as any).trade_tag ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          codename_amharic: (record as any).codename_amharic ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          codename_english: (record as any).codename_english ?? null,
           role: record.role,
           management_level: record.management_level,
           monthly_salary: record.monthly_salary ?? undefined,
@@ -99,7 +126,9 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  function set(key: keyof StaffInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+  // Accepts the extra tier-2 keys carried on StaffFormState in addition to
+  // StaffInsert fields.
+  function set(key: keyof StaffFormState | string, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   const userProfileOptions = useMemo(
     () => userProfiles.map(u => ({ id: u.id, label: u.full_name, sub: u.email ? `${u.email} · ${u.role}` : u.role })),
@@ -164,9 +193,53 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
             <option>Part Time</option>
             <option>Contract</option>
             <option>Freelance</option>
+            <option value="tier_2_casual">Tier 2 casual worker</option>
           </select>
         </Field>
       </div>
+
+      {form.employment_type === 'tier_2_casual' && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-900/10 dark:border-amber-800 p-3 space-y-3">
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            Tier 2 workers get a card on <span className="font-mono">/hr/casual-workers</span>. Pick a trade and codenames auto-fill from the roster (you can override them below).
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="Trade *">
+              <select
+                className={inputCls}
+                value={form.trade_tag ?? ''}
+                onChange={e => {
+                  const tag = e.target.value || null
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const match = (tradeRoster as any[]).find((r: any) => r.trade_tag === tag)
+                  setForm(f => ({
+                    ...f,
+                    trade_tag: tag,
+                    // Overwrite codenames when the user picks a new trade — the
+                    // BEFORE-insert trigger only fills nulls, so on trade change
+                    // the user expects the codenames to follow. Manual edits
+                    // afterward are preserved.
+                    codename_amharic: match?.codename_amharic ?? f.codename_amharic ?? null,
+                    codename_english: match?.codename_english ?? f.codename_english ?? null,
+                  }))
+                }}
+              >
+                <option value="">— Select trade —</option>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {(tradeRoster as any[]).map((r: any) => (
+                  <option key={r.trade_tag} value={r.trade_tag}>{r.icon_emoji} {r.codename_english}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Codename (Amharic)">
+              <input className={inputCls} value={form.codename_amharic ?? ''} onChange={e => set('codename_amharic', e.target.value || null)} placeholder="የመሠረት ድንጋይ" />
+            </Field>
+            <Field label="Codename (English)">
+              <input className={inputCls} value={form.codename_english ?? ''} onChange={e => set('codename_english', e.target.value || null)} placeholder="The Cornerstone" />
+            </Field>
+          </div>
+        </div>
+      )}
 
       <Field label="Org. Department">
         <select
