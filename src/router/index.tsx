@@ -171,6 +171,7 @@ import WorkOrderFormPage from '@/pages/work-orders/WorkOrderFormPage'
 import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
 import FfeJobDescriptionsPage from '@/pages/work-orders/FfeJobDescriptionsPage'
 import StaffFfeSkillsPage from '@/pages/work-orders/StaffFfeSkillsPage'
+import ExecDashboardPage from '@/pages/exec/ExecDashboardPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -650,6 +651,15 @@ export const router = createBrowserRouter([
           {
             element: <ProtectedRoute allowedRoles={['admin', 'operations_manager']} />,
             children: [{ path: 'overview', element: <OverviewDashboardPage /> }],
+          },
+          // ── Executive dashboard: read-only situational-awareness page
+          // for the CEO — traffic-light per-project cards plus six primary
+          // finance/ops gadgets, all served from materialized views. Also
+          // gated at the MV layer (mv_project_exec_summary is exec/admin
+          // only via role-check RPC in migration 194).
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive']} />,
+            children: [{ path: 'exec', element: <ExecDashboardPage /> }],
           },
           // Workshop view: dynamic-access rule (§0.2) only governs the
           // default LANDING page; per confirmed decision, read access
