@@ -121,6 +121,7 @@ const navGroups: NavGroup[] = [
       { label: 'Price Check Queue', to: '/procurement/price-check-requests', icon: Clock, roles: ['admin', 'executive', 'procurement_officer'] },
       { label: 'My Price Checks', to: '/procurement/my-price-check-requests', icon: ClipboardList },
       { label: 'Volatility Settings', to: '/procurement/volatility', icon: Settings, roles: ['admin', 'procurement_officer'] },
+      { label: 'Item Brands', to: '/procurement/item-brands', icon: Layers, roles: ['admin', 'executive', 'procurement_officer'] },
     ],
   },
   {

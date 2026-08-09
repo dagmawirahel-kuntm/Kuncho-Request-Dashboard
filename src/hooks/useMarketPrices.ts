@@ -133,6 +133,7 @@ export function useLogVerifiedPrice() {
       stock_item_id?: string | null; unit_price: number; vendor_id?: string | null;
       notes?: string; source_reference?: string;
       sub_category_id?: string | null; item_description?: string | null; unit?: string | null;
+      brand?: string | null; specification?: string | null;
     }) => {
       const { data, error } = await supabase.rpc('log_verified_market_price', {
         p_stock_item_id: p.stock_item_id ?? null,
@@ -143,6 +144,8 @@ export function useLogVerifiedPrice() {
         p_sub_category_id: p.sub_category_id ?? null,
         p_item_description: p.item_description ?? null,
         p_unit: p.unit ?? null,
+        p_brand: p.brand ?? null,
+        p_specification: p.specification ?? null,
       })
       if (error) throw error
       return data as string
@@ -164,6 +167,8 @@ export interface SubCategoryPriceRow {
   sub_category_id: string
   sub_category_name: string
   item_description: string | null
+  brand: string | null
+  specification: string | null
   unit_price: number
   currency: string
   unit: string
@@ -174,6 +179,51 @@ export interface SubCategoryPriceRow {
   sourced_by_name: string | null
   notes: string | null
   days_since_sourced: number
+}
+
+export interface BrandRow {
+  id: string
+  stock_item_id: string | null
+  sub_category_id: string | null
+  brand_name: string
+  specification: string | null
+  notes: string | null
+  active: boolean
+  created_at: string
+}
+
+// Brands for a specific stock_item OR sub_category. Item-scoped brands are
+// added onto category-scoped brands so a datalist shows both.
+export function useItemBrands(anchor: { stock_item_id?: string | null; sub_category_id?: string | null }) {
+  return useQuery({
+    enabled: !!(anchor.stock_item_id || anchor.sub_category_id),
+    queryKey: ['item-brands', anchor.stock_item_id ?? null, anchor.sub_category_id ?? null],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const filters: string[] = []
+      if (anchor.stock_item_id)   filters.push(`stock_item_id.eq.${anchor.stock_item_id}`)
+      if (anchor.sub_category_id) filters.push(`sub_category_id.eq.${anchor.sub_category_id}`)
+      const { data, error } = await supabase.from('item_brands').select('*').eq('active', true).or(filters.join(','))
+      if (error) throw error
+      return (data ?? []) as BrandRow[]
+    },
+  })
+}
+
+export function useAllBrands() {
+  return useQuery({
+    queryKey: ['item-brands-all'],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('item_brands')
+        .select('*, stock_items(item_name, item_code), sub_categories(item_name)')
+        .order('brand_name')
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (data ?? []) as any[]
+    },
+  })
 }
 
 export function useSubCategoryLatestPrices() {
@@ -228,6 +278,7 @@ export function useRequestPriceCheck() {
       stock_item_id?: string | null; project_id?: string | null;
       reason?: string; needed_by?: string; order_item_id?: string;
       sub_category_id?: string | null; item_description?: string | null;
+      brand?: string | null; specification?: string | null;
     }) => {
       const { data, error } = await supabase.rpc('request_market_price_check', {
         p_stock_item_id: p.stock_item_id ?? null,
@@ -237,6 +288,8 @@ export function useRequestPriceCheck() {
         p_order_item_id: p.order_item_id ?? null,
         p_sub_category_id: p.sub_category_id ?? null,
         p_item_description: p.item_description ?? null,
+        p_brand: p.brand ?? null,
+        p_specification: p.specification ?? null,
       })
       if (error) throw error
       return data as string
@@ -248,10 +301,11 @@ export function useRequestPriceCheck() {
 export function useFulfillPriceCheck() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (p: { request_id: string; unit_price: number; vendor_id?: string | null; notes?: string }) => {
+    mutationFn: async (p: { request_id: string; unit_price: number; vendor_id?: string | null; notes?: string; brand?: string | null; specification?: string | null }) => {
       const { data, error } = await supabase.rpc('fulfill_market_price_check', {
         p_request_id: p.request_id, p_unit_price: p.unit_price,
         p_vendor_id: p.vendor_id ?? null, p_notes: p.notes ?? null,
+        p_brand: p.brand ?? null, p_specification: p.specification ?? null,
       })
       if (error) throw error
       return data as string
@@ -259,6 +313,7 @@ export function useFulfillPriceCheck() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['market-check-requests'] })
       qc.invalidateQueries({ queryKey: ['market-latest-prices'] })
+      qc.invalidateQueries({ queryKey: ['sub-category-latest-price'] })
     },
   })
 }
