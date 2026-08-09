@@ -58,6 +58,7 @@ const navGroups: NavGroup[] = [
       { label: 'Workshop', to: '/workshop-view', icon: Hammer, roles: ['admin', 'executive', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'] },
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2, roles: ['admin', 'operations_manager'] },
+      { label: 'Executive View', to: '/exec', icon: BarChart3, roles: ['admin', 'executive'] },
       { label: 'Departments', to: '/departments', icon: Network },
     ],
   },
