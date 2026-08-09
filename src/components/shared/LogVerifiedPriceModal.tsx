@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
-import { useLogVerifiedPrice } from '@/hooks/useMarketPrices'
+import { useLogVerifiedPrice, useItemBrands } from '@/hooks/useMarketPrices'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 
 type Mode = 'stock_item' | 'sub_category' | 'new_item'
@@ -31,6 +31,11 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
   const [itemDescription, setItemDescription] = useState('')
   const [unit, setUnit] = useState('unit')
   const [stockItemId, setStockItemId] = useState<string | null>(stockItem?.id ?? null)
+  const [brand, setBrand] = useState('')
+  const [specification, setSpecification] = useState('')
+
+  // Known brands for the current anchor (item or category) — populates the datalist.
+  const { data: knownBrands = [] } = useItemBrands({ stock_item_id: mode === 'stock_item' ? (stockItem?.id ?? stockItemId) : null, sub_category_id: mode !== 'stock_item' ? subCategoryId : null })
 
   const { data: vendors = [] } = useQuery({
     queryKey: ['active-vendors'],
@@ -75,10 +80,12 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
     const n = Number(price)
     if (!n || n <= 0) { toast('Enter a positive price', 'error'); return }
     try {
+      const brandVal = brand.trim() || null
+      const specVal  = specification.trim() || null
       if (mode === 'stock_item') {
         const id = stockItem?.id ?? stockItemId
         if (!id) { toast('Pick an item', 'error'); return }
-        await log.mutateAsync({ stock_item_id: id, unit_price: n, vendor_id: vendorId, notes, source_reference: ref })
+        await log.mutateAsync({ stock_item_id: id, unit_price: n, vendor_id: vendorId, notes, source_reference: ref, brand: brandVal, specification: specVal })
       } else {
         if (!subCategoryId) { toast('Pick a sub-category', 'error'); return }
         if (mode === 'new_item' && !itemDescription.trim()) { toast('Describe the item', 'error'); return }
@@ -86,7 +93,7 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
           sub_category_id: subCategoryId,
           item_description: mode === 'new_item' ? itemDescription.trim() : null,
           unit_price: n, vendor_id: vendorId, notes, source_reference: ref,
-          unit,
+          unit, brand: brandVal, specification: specVal,
         })
       }
       toast('Verified price logged', 'success')
@@ -151,6 +158,23 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Price (ETB) *</label>
           <input type="number" step="0.01" min="0" value={price} onChange={e => setPrice(e.target.value)}
             className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Brand</label>
+            <input value={brand} onChange={e => setBrand(e.target.value)} list="known-brands"
+              placeholder="e.g. Nippon, Dangote, Berger"
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+            <datalist id="known-brands">
+              {knownBrands.map(b => <option key={b.id} value={b.brand_name} />)}
+            </datalist>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Specification</label>
+            <input value={specification} onChange={e => setSpecification(e.target.value)}
+              placeholder="e.g. 20L water-based ivory"
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          </div>
         </div>
         <div>
           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Vendor</label>

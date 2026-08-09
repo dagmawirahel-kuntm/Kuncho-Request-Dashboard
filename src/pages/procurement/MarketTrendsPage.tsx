@@ -277,6 +277,9 @@ function SubCategorySurveys({ isProcurement }: { isProcurement: boolean }) {
                       ? <><span className="font-medium">{r.item_description}</span><span className="block text-[10px] text-slate-400">new item · {r.sub_category_name}</span></>
                       : <><span className="font-medium">{r.sub_category_name}</span><span className="block text-[10px] text-slate-400">sub-category survey</span></>
                     }
+                    {(r.brand || r.specification) && (
+                      <span className="block text-[10px] text-brand mt-0.5">{[r.brand, r.specification].filter(Boolean).join(' · ')}</span>
+                    )}
                   </td>
                   <td className="px-2 py-2 text-xs text-slate-500">{r.unit}</td>
                   <td className="px-2 py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">

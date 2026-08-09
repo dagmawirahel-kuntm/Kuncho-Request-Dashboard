@@ -75,6 +75,11 @@ export default function PriceCheckRequestsPage() {
                           <span className="block text-[10px] text-slate-400">sub-category survey</span>
                         </>
                       )}
+                      {(r.brand || r.specification) && (
+                        <span className="block text-[10px] text-brand mt-0.5">
+                          {[r.brand, r.specification].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-2 text-xs text-slate-600 dark:text-slate-300">{r.requester?.employee_name ?? '—'}</td>
                     <td className="px-2 py-2 text-xs text-slate-500">{r.projects?.project_name ?? '—'}</td>
@@ -114,6 +119,9 @@ function FulfillModal({ request, onClose }: { request: any; onClose: () => void 
   const [price, setPrice] = useState<string>('')
   const [vendorId, setVendorId] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
+  // Brand + spec default to what the requester typed; Procurement can override.
+  const [brand, setBrand] = useState<string>(request.brand ?? '')
+  const [specification, setSpecification] = useState<string>(request.specification ?? '')
 
   const { data: vendors = [] } = useQuery({
     queryKey: ['active-vendors'],
@@ -130,7 +138,10 @@ function FulfillModal({ request, onClose }: { request: any; onClose: () => void 
     const n = Number(price)
     if (!n || n <= 0) { toast('Enter a positive price', 'error'); return }
     try {
-      await fulfill.mutateAsync({ request_id: request.id, unit_price: n, vendor_id: vendorId, notes })
+      await fulfill.mutateAsync({
+        request_id: request.id, unit_price: n, vendor_id: vendorId, notes,
+        brand: brand.trim() || null, specification: specification.trim() || null,
+      })
       toast('Request fulfilled', 'success')
       onClose()
     } catch (e) { toast((e as Error).message, 'error') }
@@ -160,6 +171,18 @@ function FulfillModal({ request, onClose }: { request: any; onClose: () => void 
         <div>
           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Vendor</label>
           <SearchableSelect value={vendorId} onChange={setVendorId} options={vendorOptions} placeholder="Optional…" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Brand</label>
+            <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Dangote"
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Specification</label>
+            <input value={specification} onChange={e => setSpecification(e.target.value)} placeholder="e.g. 50kg PPC"
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          </div>
         </div>
         <div>
           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Notes</label>

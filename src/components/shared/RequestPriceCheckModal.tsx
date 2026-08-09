@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
-import { useRequestPriceCheck } from '@/hooks/useMarketPrices'
+import { useRequestPriceCheck, useItemBrands } from '@/hooks/useMarketPrices'
 import { useProjects } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 
@@ -37,6 +37,13 @@ export function RequestPriceCheckModal({ stockItem, onClose, defaultProjectId, o
   const [itemDescription, setItemDescription] = useState('')
   // For a stock_item picker when not pre-pinned:
   const [stockItemId, setStockItemId] = useState<string | null>(stockItem?.id ?? null)
+  const [brand, setBrand] = useState('')
+  const [specification, setSpecification] = useState('')
+
+  const { data: knownBrands = [] } = useItemBrands({
+    stock_item_id: mode === 'stock_item' ? (stockItem?.id ?? stockItemId) : null,
+    sub_category_id: mode !== 'stock_item' ? subCategoryId : null,
+  })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const projectOptions = projects.map((p: any) => ({ id: p.id, label: p.project_name }))
@@ -71,13 +78,15 @@ export function RequestPriceCheckModal({ stockItem, onClose, defaultProjectId, o
 
   async function handleSave() {
     try {
+      const brandVal = brand.trim() || null
+      const specVal  = specification.trim() || null
       if (mode === 'stock_item') {
         const id = stockItem?.id ?? stockItemId
         if (!id) { toast('Pick an item', 'error'); return }
-        await req.mutateAsync({ stock_item_id: id, project_id: projectId, reason, needed_by: neededBy || undefined, order_item_id: orderItemId })
+        await req.mutateAsync({ stock_item_id: id, project_id: projectId, reason, needed_by: neededBy || undefined, order_item_id: orderItemId, brand: brandVal, specification: specVal })
       } else if (mode === 'sub_category') {
         if (!subCategoryId) { toast('Pick a sub-category', 'error'); return }
-        await req.mutateAsync({ sub_category_id: subCategoryId, project_id: projectId, reason, needed_by: neededBy || undefined })
+        await req.mutateAsync({ sub_category_id: subCategoryId, project_id: projectId, reason, needed_by: neededBy || undefined, brand: brandVal, specification: specVal })
       } else {
         if (!subCategoryId) { toast('Pick a sub-category for the new item', 'error'); return }
         if (!itemDescription.trim()) { toast('Describe the item', 'error'); return }
@@ -86,6 +95,7 @@ export function RequestPriceCheckModal({ stockItem, onClose, defaultProjectId, o
           item_description: itemDescription.trim(),
           project_id: projectId,
           reason, needed_by: neededBy || undefined,
+          brand: brandVal, specification: specVal,
         })
       }
       toast('Price check requested', 'success')
@@ -142,6 +152,24 @@ export function RequestPriceCheckModal({ stockItem, onClose, defaultProjectId, o
             <p className="mt-1 text-[10px] text-slate-400">Free-text — this quote lives on the request, not the stock catalog.</p>
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Brand (optional)</label>
+            <input value={brand} onChange={e => setBrand(e.target.value)} list="req-known-brands"
+              placeholder="e.g. Nippon, Dangote"
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+            <datalist id="req-known-brands">
+              {knownBrands.map(b => <option key={b.id} value={b.brand_name} />)}
+            </datalist>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Specification (optional)</label>
+            <input value={specification} onChange={e => setSpecification(e.target.value)}
+              placeholder="e.g. 20L water-based"
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          </div>
+        </div>
 
         <div>
           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Project</label>
