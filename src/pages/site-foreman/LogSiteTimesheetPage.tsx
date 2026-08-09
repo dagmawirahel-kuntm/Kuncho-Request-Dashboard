@@ -41,7 +41,7 @@ export default function LogSiteTimesheetPage() {
     queryKey: ['site-t2-requisitions', projectId],
     queryFn: async () => {
       const { data, error } = await supabase.from('labor_requisitions')
-        .select('id, role_needed, estimated_day_rate, status')
+        .select('id, role_needed, estimated_day_rate, status, payment_basis, volume_unit, unit_rate')
         .eq('project_id', projectId!)
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,6 +72,13 @@ export default function LogSiteTimesheetPage() {
   const [t2Name, setT2Name] = useState('')
   const [t2Rate, setT2Rate] = useState('')
   const [t2Days, setT2Days] = useState('1')
+  const [t2Volume, setT2Volume] = useState('')
+
+  // Picked requisition may pay by volume — swap the "days" input for "volume completed"
+  // and lock the rate to the requisition's unit_rate.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const t2Req: any = reqs.find(r => r.id === t2ReqId)
+  const t2Volumetric = t2Req?.payment_basis === 'per_volume'
 
   async function addTier1() {
     const a = allocations.find(x => x.id === t1AllocId)
@@ -91,16 +98,20 @@ export default function LogSiteTimesheetPage() {
 
   async function addTier2() {
     if (!t2Name.trim() && !t2ReqId) { toast('Enter a name or pick a requisition', 'error'); return }
+    if (t2Volumetric && !parseFloat(t2Volume)) { toast('Enter volume completed', 'error'); return }
     const days = parseFloat(t2Days) || 1
-    const rate = t2Rate ? parseFloat(t2Rate) : (reqs.find(r => r.id === t2ReqId)?.estimated_day_rate ?? null)
+    const rate = t2Rate ? parseFloat(t2Rate)
+      : (t2Volumetric ? (t2Req.unit_rate ?? null)
+                      : (reqs.find(r => r.id === t2ReqId)?.estimated_day_rate ?? null))
     const { error } = await supabase.from('timesheet').insert([{
       project_id: projectId, date: reportDate,
       labor_tier: 2, labor_requisition_id: t2ReqId, casual_worker_name: t2Name || null,
       days_worked: days, day_rate: rate,
+      volume_completed: t2Volumetric ? parseFloat(t2Volume) : null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }] as any)
     if (error) { toast(error.message, 'error'); return }
-    setT2ReqId(null); setT2Name(''); setT2Rate(''); setT2Days('1'); refetch()
+    setT2ReqId(null); setT2Name(''); setT2Rate(''); setT2Days('1'); setT2Volume(''); refetch()
     qc.invalidateQueries({ queryKey: ['sdr-headcount'] })
     toast('Tier 2 entry added', 'success')
   }
@@ -177,19 +188,38 @@ export default function LogSiteTimesheetPage() {
                     <input className={inputCls} value={t2Name} onChange={e => setT2Name(e.target.value)} />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Day rate</label>
-                    <input type="number" step="0.01" className={inputCls} value={t2Rate} onChange={e => setT2Rate(e.target.value)} />
+                {t2Volumetric ? (
+                  <div className="space-y-2">
+                    <div className="rounded-md border border-brand/30 bg-brand/5 dark:bg-brand/10 px-3 py-2 text-[11px] text-slate-700 dark:text-slate-200">
+                      Piece-work requisition · rate <span className="font-semibold tabular-nums">{formatCurrency(t2Req?.unit_rate ?? 0)}</span> per <span className="font-mono">{t2Req?.volume_unit ?? 'unit'}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                          Volume completed ({t2Req?.volume_unit ?? 'unit'})
+                        </label>
+                        <input type="number" step="0.01" min="0" className={inputCls} value={t2Volume} onChange={e => setT2Volume(e.target.value)} />
+                      </div>
+                      <button onClick={addTier2} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+                        <Plus className="h-4 w-4 inline" /> Add
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Days</label>
-                    <input type="number" step="0.25" min="0" className={inputCls} value={t2Days} onChange={e => setT2Days(e.target.value)} />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Day rate</label>
+                      <input type="number" step="0.01" className={inputCls} value={t2Rate} onChange={e => setT2Rate(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Days</label>
+                      <input type="number" step="0.25" min="0" className={inputCls} value={t2Days} onChange={e => setT2Days(e.target.value)} />
+                    </div>
+                    <button onClick={addTier2} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+                      <Plus className="h-4 w-4 inline" /> Add
+                    </button>
                   </div>
-                  <button onClick={addTier2} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-                    <Plus className="h-4 w-4 inline" /> Add
-                  </button>
-                </div>
+                )}
               </div>
             )}
           </div>

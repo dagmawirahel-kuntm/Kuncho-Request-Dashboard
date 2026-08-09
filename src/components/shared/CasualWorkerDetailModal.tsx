@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { X, ExternalLink } from 'lucide-react'
+import { X, ExternalLink, Send } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkerHistory, type CasualWorkerRow, type TradeRosterEntry, type WorkerRolling, type BadgeSummary } from '@/hooks/useTier2Workers'
 import { Tier2WorkerCard, BADGE_META } from './Tier2WorkerCard'
+import { RequestWorkerForProjectModal } from './RequestWorkerForProjectModal'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 type Tab = 'overview' | 'history' | 'payments' | 'ratings'
@@ -20,6 +21,7 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
   const { role } = useAuth()
   const canSeeRatings = ['admin','executive','hr_officer','project_manager'].includes(role ?? '')
   const [tab, setTab] = useState<Tab>('overview')
+  const [reqOpen, setReqOpen] = useState(false)
   const { data, isLoading } = useWorkerHistory(worker.id)
 
   return (
@@ -33,6 +35,9 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setReqOpen(true)} className="text-xs rounded-md bg-brand text-white px-2.5 py-1 hover:bg-brand/90 inline-flex items-center gap-1">
+              <Send className="h-3 w-3" /> Request for project
+            </button>
             <Link to={`/staff/${worker.id}`} className="text-xs text-slate-500 hover:text-brand flex items-center gap-1">
               Full profile <ExternalLink className="h-3 w-3" />
             </Link>
@@ -135,6 +140,12 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
           </div>
         </div>
       </div>
+      {reqOpen && (
+        <RequestWorkerForProjectModal
+          worker={{ id: worker.id, employee_name: worker.employee_name, role: trade?.codename_english ?? worker.trade_tag, day_rate: worker.day_rate }}
+          onClose={() => setReqOpen(false)}
+        />
+      )}
     </div>
   )
 }

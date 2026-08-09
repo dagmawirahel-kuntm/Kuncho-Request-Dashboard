@@ -8,12 +8,13 @@ import { useToast } from '@/contexts/ToastContext'
 import { useDepartments, useProjects } from '@/hooks/useLookups'
 import { useRollingPerformance } from '@/hooks/useWorkOrderRatings'
 import { StarRating } from '@/components/shared/StarRating'
+import { RequestWorkerForProjectModal } from '@/components/shared/RequestWorkerForProjectModal'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
   Building2, Clock, DollarSign, Briefcase, Hash, User,
   CheckCircle2, Wallet, Shield, Network, Users, KeyRound,
-  TrendingUp,
+  TrendingUp, Send,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -819,6 +820,7 @@ export default function StaffDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role, user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [reqOpen, setReqOpen] = useState(false)
 
   const { data: staff, isLoading } = useQuery({
     queryKey: ['staff-member', id],
@@ -919,14 +921,23 @@ export default function StaffDetailPage() {
           >
             <ArrowLeft className="h-4 w-4" /> {backLabel}
           </Link>
-          {canEdit && (
-            <Link
-              to={`/staff/${staff.id}/edit`}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setReqOpen(true)}
               className="flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-sm text-white transition-colors backdrop-blur-sm"
+              title="Request this person for a project (creates a labor requisition)"
             >
-              <Pencil className="h-3.5 w-3.5" /> Edit Profile
-            </Link>
-          )}
+              <Send className="h-3.5 w-3.5" /> Request for project
+            </button>
+            {canEdit && (
+              <Link
+                to={`/staff/${staff.id}/edit`}
+                className="flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-sm text-white transition-colors backdrop-blur-sm"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit Profile
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Profile content */}
@@ -1070,6 +1081,12 @@ export default function StaffDetailPage() {
           {activeTab === 'timesheets' && <TimesheetsTab timesheets={timesheets} />}
         </div>
       </div>
+      {reqOpen && (
+        <RequestWorkerForProjectModal
+          worker={{ id: staff.id, employee_name: staff.employee_name, role: staff.role, day_rate: staff.day_rate }}
+          onClose={() => setReqOpen(false)}
+        />
+      )}
     </div>
   )
 }
