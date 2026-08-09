@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { HardHat, RefreshCw, ChevronRight, Play } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 
 interface DraftRow {
   id: string
