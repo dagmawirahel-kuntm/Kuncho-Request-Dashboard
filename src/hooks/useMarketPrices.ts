@@ -129,20 +129,61 @@ export function useFreshnessConfig() {
 export function useLogVerifiedPrice() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (p: { stock_item_id: string; unit_price: number; vendor_id?: string | null; notes?: string; source_reference?: string }) => {
+    mutationFn: async (p: {
+      stock_item_id?: string | null; unit_price: number; vendor_id?: string | null;
+      notes?: string; source_reference?: string;
+      sub_category_id?: string | null; item_description?: string | null; unit?: string | null;
+    }) => {
       const { data, error } = await supabase.rpc('log_verified_market_price', {
-        p_stock_item_id: p.stock_item_id, p_unit_price: p.unit_price,
-        p_vendor_id: p.vendor_id ?? null, p_notes: p.notes ?? null,
+        p_stock_item_id: p.stock_item_id ?? null,
+        p_unit_price: p.unit_price,
+        p_vendor_id: p.vendor_id ?? null,
+        p_notes: p.notes ?? null,
         p_source_reference: p.source_reference ?? null,
+        p_sub_category_id: p.sub_category_id ?? null,
+        p_item_description: p.item_description ?? null,
+        p_unit: p.unit ?? null,
       })
       if (error) throw error
       return data as string
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['market-latest-prices'] })
-      qc.invalidateQueries({ queryKey: ['market-latest-price', vars.stock_item_id] })
-      qc.invalidateQueries({ queryKey: ['market-price-history', vars.stock_item_id] })
-      qc.invalidateQueries({ queryKey: ['market-vendor-history', vars.stock_item_id] })
+      if (vars.stock_item_id) {
+        qc.invalidateQueries({ queryKey: ['market-latest-price', vars.stock_item_id] })
+        qc.invalidateQueries({ queryKey: ['market-price-history', vars.stock_item_id] })
+        qc.invalidateQueries({ queryKey: ['market-vendor-history', vars.stock_item_id] })
+      }
+      qc.invalidateQueries({ queryKey: ['sub-category-latest-price'] })
+    },
+  })
+}
+
+export interface SubCategoryPriceRow {
+  id: string
+  sub_category_id: string
+  sub_category_name: string
+  item_description: string | null
+  unit_price: number
+  currency: string
+  unit: string
+  source: string
+  vendor_name: string | null
+  source_reference: string | null
+  sourced_at: string
+  sourced_by_name: string | null
+  notes: string | null
+  days_since_sourced: number
+}
+
+export function useSubCategoryLatestPrices() {
+  return useQuery({
+    queryKey: ['sub-category-latest-price'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_sub_category_latest_price').select('*').order('sourced_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as SubCategoryPriceRow[]
     },
   })
 }
@@ -170,7 +211,7 @@ export function useCheckRequests(scope: 'all_open' | 'mine' | 'all') {
     queryFn: async () => {
       let q = supabase
         .from('market_price_check_requests')
-        .select('*, stock_items(item_name, unit, item_code), requester:staff!market_price_check_requests_requested_by_staff_id_fkey(employee_name), projects(project_name)')
+        .select('*, stock_items(item_name, unit, item_code), sub_categories(item_name), requester:staff!market_price_check_requests_requested_by_staff_id_fkey(employee_name), projects(project_name)')
       if (scope === 'all_open') q = q.eq('status', 'open')
       const { data, error } = await q.order('needed_by', { ascending: true, nullsFirst: false }).order('created_at')
       if (error) throw error
@@ -183,13 +224,19 @@ export function useCheckRequests(scope: 'all_open' | 'mine' | 'all') {
 export function useRequestPriceCheck() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (p: { stock_item_id: string; project_id?: string | null; reason?: string; needed_by?: string; order_item_id?: string }) => {
+    mutationFn: async (p: {
+      stock_item_id?: string | null; project_id?: string | null;
+      reason?: string; needed_by?: string; order_item_id?: string;
+      sub_category_id?: string | null; item_description?: string | null;
+    }) => {
       const { data, error } = await supabase.rpc('request_market_price_check', {
-        p_stock_item_id: p.stock_item_id,
+        p_stock_item_id: p.stock_item_id ?? null,
         p_project_id: p.project_id ?? null,
         p_reason: p.reason ?? null,
         p_needed_by: p.needed_by ?? null,
         p_order_item_id: p.order_item_id ?? null,
+        p_sub_category_id: p.sub_category_id ?? null,
+        p_item_description: p.item_description ?? null,
       })
       if (error) throw error
       return data as string

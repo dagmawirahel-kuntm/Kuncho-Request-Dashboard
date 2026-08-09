@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { useLatestPrices, useVendorHistory, usePriceHistory, FRESHNESS_CLASS, FRESHNESS_LABEL, type LatestPriceRow, type Freshness, type Volatility } from '@/hooks/useMarketPrices'
+import { useLatestPrices, useVendorHistory, usePriceHistory, useSubCategoryLatestPrices, FRESHNESS_CLASS, FRESHNESS_LABEL, type LatestPriceRow, type Freshness, type Volatility } from '@/hooks/useMarketPrices'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { LogVerifiedPriceModal } from '@/components/shared/LogVerifiedPriceModal'
 import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckModal'
@@ -226,6 +226,73 @@ export default function MarketTrendsPage() {
       {reqOpen && selected && (
         <RequestPriceCheckModal stockItem={{ id: selected.stock_item_id, item_name: selected.item_name }} onClose={() => setReqOpen(false)} />
       )}
+
+      <SubCategorySurveys isProcurement={isProcurement} />
+    </div>
+  )
+}
+
+// Category-level and free-text quotes (rows without a stock_item_id). Shows
+// the latest quote per (sub_category, item_description) pair so a repeated
+// survey of the same category updates in place instead of stacking.
+function SubCategorySurveys({ isProcurement }: { isProcurement: boolean }) {
+  const { data: rows = [], isLoading } = useSubCategoryLatestPrices()
+  const [logOpen, setLogOpen] = useState(false)
+  const [reqOpen, setReqOpen] = useState(false)
+
+  return (
+    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+      <div className="px-4 py-3 border-b dark:border-slate-700 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Sub-category surveys & new-item quotes</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Category-level prices and free-text quotes for items not in the stock catalog.</p>
+        </div>
+        <div className="flex gap-2">
+          {isProcurement && <button onClick={() => setLogOpen(true)} className="text-xs rounded-md bg-brand text-white px-2.5 py-1 hover:bg-brand/90">Log category price</button>}
+          <button onClick={() => setReqOpen(true)} className="text-xs rounded-md border dark:border-slate-600 text-slate-600 dark:text-slate-300 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-700">Request survey</button>
+        </div>
+      </div>
+      {isLoading ? (
+        <div className="py-8 text-center text-sm text-slate-400">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="py-8 text-center text-sm text-slate-400">No sub-category surveys yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-900/40 border-b dark:border-slate-700">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium text-slate-500">Anchor</th>
+                <th className="text-left px-2 py-2 font-medium text-slate-500">Unit</th>
+                <th className="text-right px-2 py-2 font-medium text-slate-500">Latest Price</th>
+                <th className="text-left px-2 py-2 font-medium text-slate-500">Vendor</th>
+                <th className="text-left px-2 py-2 font-medium text-slate-500">When</th>
+                <th className="text-left px-2 py-2 font-medium text-slate-500">Source</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y dark:divide-slate-700">
+              {rows.map(r => (
+                <tr key={r.id}>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-200">
+                    {r.item_description
+                      ? <><span className="font-medium">{r.item_description}</span><span className="block text-[10px] text-slate-400">new item · {r.sub_category_name}</span></>
+                      : <><span className="font-medium">{r.sub_category_name}</span><span className="block text-[10px] text-slate-400">sub-category survey</span></>
+                    }
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-500">{r.unit}</td>
+                  <td className="px-2 py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">
+                    {r.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {r.currency}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-slate-500">{r.vendor_name ?? '—'}</td>
+                  <td className="px-2 py-2 text-xs text-slate-500">{r.days_since_sourced}d ago</td>
+                  <td className="px-2 py-2 text-[11px] text-slate-500 capitalize">{(r.source ?? '—').replace(/_/g, ' ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {logOpen && <LogVerifiedPriceModal onClose={() => setLogOpen(false)} />}
+      {reqOpen && <RequestPriceCheckModal onClose={() => setReqOpen(false)} />}
     </div>
   )
 }
