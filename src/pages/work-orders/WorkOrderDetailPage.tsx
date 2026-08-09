@@ -7,9 +7,15 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { StarRating } from '@/components/shared/StarRating'
 import { useStaffDirectory } from '@/hooks/useLookups'
+import { useMyStaffId } from '@/hooks/useMyStaff'
+import {
+  useWorkOrderTeam, useWorkOrderRatings, useUpsertWorkOrderRating, useDeleteWorkOrderRating,
+  type WorkOrderRatingRow,
+} from '@/hooks/useWorkOrderRatings'
 import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus, Star, Trash2, X } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
@@ -128,9 +134,14 @@ export default function WorkOrderDetailPage() {
 
       <LinkedLabor workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} staffNameById={staffNameById} />
       <LinkedMaterials workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
+      {lower(wo.status) === 'completed' && (
+        <TeamRatings workOrderId={wo.id} leadStaffId={wo.assigned_lead_staff_id ?? null} />
+      )}
     </div>
   )
 }
+
+function lower(s: string | null | undefined): string { return (s ?? '').toLowerCase() }
 
 // ── Linked labor allocations ─────────────────────────────────────────
 function LinkedLabor({ workOrderId, projectId, canWrite, staffNameById }: { workOrderId: string; projectId: string; canWrite: boolean; staffNameById: Map<string, string> }) {
@@ -375,6 +386,222 @@ function LinkedMaterials({ workOrderId, projectId, canWrite }: { workOrderId: st
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Team Ratings (only when WO is completed) ─────────────────────────
+// Renders one row per person on the WO team (labor rows ∪ assigned lead).
+// The person's rating card shows the caller's own rating if they've filed
+// one — a foreman/lead/PM/admin/exec who can rate opens a modal to file or
+// edit it. RLS decides visibility for the OTHERS' ratings; when the caller
+// is the ratee themselves, their card never shows raw comments (RLS
+// filters those rows out) and offers no "Rate" button (self-rating is
+// blocked at the DB regardless).
+function TeamRatings({ workOrderId, leadStaffId }: { workOrderId: string; leadStaffId: string | null }) {
+  const { data: team = [], isLoading: teamLoading } = useWorkOrderTeam(workOrderId, leadStaffId)
+  const { data: ratings = [] } = useWorkOrderRatings(workOrderId)
+  const { data: mySelf } = useMyStaffId()
+  const myStaffId = mySelf?.id ?? null
+  const [editing, setEditing] = useState<{ rated: { id: string; employee_name: string }; existing: WorkOrderRatingRow | null } | null>(null)
+
+  // Group ratings by ratee so counts are cheap.
+  const ratingsByRatee = useMemo(() => {
+    const map = new Map<string, WorkOrderRatingRow[]>()
+    for (const r of ratings) {
+      const arr = map.get(r.rated_staff_id) ?? []
+      arr.push(r)
+      map.set(r.rated_staff_id, arr)
+    }
+    return map
+  }, [ratings])
+
+  return (
+    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Team Ratings</h2>
+          <p className="text-[11px] text-slate-400 mt-0.5">Feeds each person's rolling performance score (6-month half-life). Comments are private to the rater, PM, HR, and executives.</p>
+        </div>
+      </div>
+
+      {teamLoading ? (
+        <div className="py-6 text-center text-sm text-slate-400">Loading team…</div>
+      ) : team.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">No labor logged against this WO — nothing to rate.</p>
+      ) : (
+        <div className="divide-y dark:divide-slate-700">
+          {team.map(person => {
+            const forThisPerson = ratingsByRatee.get(person.id) ?? []
+            const mine = myStaffId ? forThisPerson.find(r => r.rater_staff_id === myStaffId) ?? null : null
+            const others = forThisPerson.filter(r => r.rater_staff_id !== myStaffId)
+            const isSelf = person.id === myStaffId
+            const overall = (mine && ((mine.score_quality + mine.score_timeliness + mine.score_safety + mine.score_teamwork) / 4)) ?? null
+            return (
+              <div key={person.id} className="py-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{person.employee_name}</p>
+                    {person.id === leadStaffId && (
+                      <span className="rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 text-[10px] px-1.5 py-0.5 font-semibold">Lead</span>
+                    )}
+                    {isSelf && <span className="text-[10px] text-slate-400">(you)</span>}
+                  </div>
+                  {mine ? (
+                    <div className="flex items-center gap-3 mt-1">
+                      <StarRating score={overall} size="sm" />
+                      <span className="text-[11px] text-slate-500">Your rating · {mine.comment ? `"${mine.comment}"` : 'no comment'}</span>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">You haven't rated this person on this WO.</p>
+                  )}
+                  {others.length > 0 && (
+                    <p className="text-[11px] text-slate-400 mt-0.5">{others.length} other rating{others.length === 1 ? '' : 's'} on file</p>
+                  )}
+                </div>
+                <div className="flex-shrink-0">
+                  {!isSelf && (
+                    <button
+                      onClick={() => setEditing({ rated: { id: person.id, employee_name: person.employee_name }, existing: mine })}
+                      className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                    >
+                      <Star className="h-3.5 w-3.5" /> {mine ? 'Edit' : 'Rate'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {editing && myStaffId && (
+        <RatingModal
+          workOrderId={workOrderId}
+          ratedStaffId={editing.rated.id}
+          ratedName={editing.rated.employee_name}
+          raterStaffId={myStaffId}
+          existing={editing.existing}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function RatingModal({
+  workOrderId, ratedStaffId, ratedName, raterStaffId, existing, onClose,
+}: {
+  workOrderId: string
+  ratedStaffId: string
+  ratedName: string
+  raterStaffId: string
+  existing: WorkOrderRatingRow | null
+  onClose: () => void
+}) {
+  const { toast } = useToast()
+  const upsert = useUpsertWorkOrderRating()
+  const del = useDeleteWorkOrderRating()
+  const [q, setQ] = useState<number>(existing?.score_quality    ?? 4)
+  const [t, setT] = useState<number>(existing?.score_timeliness ?? 4)
+  const [s, setS] = useState<number>(existing?.score_safety     ?? 4)
+  const [tm, setTm] = useState<number>(existing?.score_teamwork ?? 4)
+  const [comment, setComment] = useState<string>(existing?.comment ?? '')
+
+  async function handleSave() {
+    try {
+      await upsert.mutateAsync({
+        work_order_id: workOrderId,
+        rated_staff_id: ratedStaffId,
+        rater_staff_id: raterStaffId,
+        score_quality: q, score_timeliness: t, score_safety: s, score_teamwork: tm,
+        comment: comment.trim() ? comment.trim() : null,
+      })
+      toast(existing ? 'Rating updated' : 'Rating filed', 'success')
+      onClose()
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+
+  async function handleDelete() {
+    if (!existing) return
+    if (!confirm('Remove your rating for this WO?')) return
+    try {
+      await del.mutateAsync({ id: existing.id, work_order_id: workOrderId, rated_staff_id: ratedStaffId })
+      toast('Rating removed', 'success')
+      onClose()
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+
+  const busy = upsert.isPending || del.isPending
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Rate {ratedName}</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Your rating is private to you, project managers, HR, and executives.</p>
+          </div>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+
+        <RatingRow label="Quality"     value={q}  onChange={setQ} />
+        <RatingRow label="Timeliness"  value={t}  onChange={setT} />
+        <RatingRow label="Safety"      value={s}  onChange={setS} />
+        <RatingRow label="Teamwork"    value={tm} onChange={setTm} />
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Comment (optional)</label>
+          <textarea
+            rows={3}
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+            placeholder="What went well? What could have been better?"
+          />
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <div>
+            {existing && (
+              <button onClick={handleDelete} disabled={busy} className="text-xs text-red-500 hover:underline disabled:opacity-60">
+                Remove rating
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} disabled={busy} className="rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">Cancel</button>
+            <button onClick={handleSave} disabled={busy} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+              {busy ? 'Saving…' : existing ? 'Update' : 'Submit'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RatingRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{label}</span>
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map(i => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onChange(i)}
+            className="p-0.5"
+            aria-label={`${label} ${i} stars`}
+          >
+            <Star className={`h-5 w-5 ${i <= value ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-slate-600'}`} />
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
