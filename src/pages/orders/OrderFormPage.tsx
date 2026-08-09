@@ -16,6 +16,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
+import { useLatestPrice, FRESHNESS_CLASS, FRESHNESS_LABEL } from '@/hooks/useMarketPrices'
+import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckModal'
+import { formatCurrency as fmtCurrency } from '@/lib/utils'
 import {
   ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
   Warehouse, Link2, Unlink, Sparkles,
@@ -277,6 +280,56 @@ function StockLinkControl({
   )
 }
 
+// ── Market-price hint (per line row, when a stock_item is linked) ─────────────
+// Shows the latest-known price + freshness for the linked stock_item and,
+// only if the price field is still empty, offers a one-click "use this
+// price" fill. The user's manual entry is never overwritten. Outdated
+// prices sprout a "Request check now" launcher (auto-creates a linked
+// check request via the order_item, closing the loop server-side).
+function MarketPriceHint({ item, onChange }: { item: LineItem; onChange: (patch: Partial<LineItem>) => void }) {
+  const { data: perf } = useLatestPrice(item.stock_item_id ?? undefined)
+  const [reqOpen, setReqOpen] = useState(false)
+  if (!item.stock_item_id) return null
+  if (!perf || perf.display_price == null) {
+    return <p className="text-[10px] text-slate-400">No market price on file for this item — <button type="button" onClick={() => setReqOpen(true)} className="text-brand hover:underline">request a check</button>.
+      {reqOpen && perf && <RequestPriceCheckModal stockItem={{ id: perf.stock_item_id, item_name: perf.item_name }} orderItemId={item.dbId ?? undefined} onClose={() => setReqOpen(false)} />}
+    </p>
+  }
+  const priceEmpty = !item.unit_price_est || Number(item.unit_price_est) === 0
+  return (
+    <div className="flex items-center gap-2 flex-wrap text-[11px]">
+      <span className={`inline-block text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${FRESHNESS_CLASS[perf.freshness]}`}>
+        {FRESHNESS_LABEL[perf.freshness]}
+      </span>
+      <span className="text-slate-500 dark:text-slate-400">
+        Latest: <span className="font-medium tabular-nums text-slate-700 dark:text-slate-200">{fmtCurrency(perf.display_price)}</span>
+        {perf.days_since_display_price != null && <span className="text-slate-400"> · {perf.days_since_display_price}d old</span>}
+      </span>
+      {priceEmpty && (
+        <button type="button" onClick={() => onChange({ unit_price_est: String(perf.display_price) })}
+          className="text-brand hover:underline">
+          Use this price
+        </button>
+      )}
+      {(perf.freshness === 'stale' || perf.freshness === 'outdated') && (
+        <>
+          <span className="text-slate-400">·</span>
+          <button type="button" onClick={() => setReqOpen(true)} className="text-red-600 hover:underline">
+            Request fresh check
+          </button>
+        </>
+      )}
+      {reqOpen && (
+        <RequestPriceCheckModal
+          stockItem={{ id: perf.stock_item_id, item_name: perf.item_name }}
+          orderItemId={item.dbId ?? undefined}
+          onClose={() => setReqOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Line item row ──────────────────────────────────────────────────────────────
 function LineItemRow({
   item, index, isEdit, subCategories, recentItems, stockItems,
@@ -430,6 +483,8 @@ function LineItemRow({
               Ask procurement: check market price
             </label>
           </div>
+          {/* Market-price hint for the linked stock item (freshness + budget suggestion) */}
+          <MarketPriceHint item={item} onChange={onChange} />
           {/* Materials stock-first check — see check_and_fulfill_from_stock (091) */}
           <StockLinkControl item={item} stockItems={stockItems} onChange={onChange} />
           {item.showSpecs && (
