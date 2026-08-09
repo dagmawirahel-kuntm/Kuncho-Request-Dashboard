@@ -55,7 +55,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const { data: projects = [] } = useProjects()
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
 
-  const [form, setForm] = useState<Partial<LaborRequisitionInsert> & { payment_model?: string; pay_cycle?: string; gang_leader_vendor_id?: string | null }>(
+  const [form, setForm] = useState<Partial<LaborRequisitionInsert> & { payment_model?: string; pay_cycle?: string; gang_leader_vendor_id?: string | null; payment_basis?: string; volume_unit?: string | null; unit_rate?: number | null; specific_staff_id?: string | null }>(
     record
       ? {
         project_id: record.project_id,
@@ -74,8 +74,16 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         pay_cycle: (record as any).pay_cycle ?? 'weekly',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         gang_leader_vendor_id: (record as any).gang_leader_vendor_id ?? null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        payment_basis: (record as any).payment_basis ?? 'per_day',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        volume_unit: (record as any).volume_unit ?? null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        unit_rate: (record as any).unit_rate ?? null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        specific_staff_id: (record as any).specific_staff_id ?? null,
       }
-      : { is_casual_or_new: true, headcount: 1, project_id: prefillProjectId ?? undefined, payment_model: 'individual', pay_cycle: 'weekly' }
+      : { is_casual_or_new: true, headcount: 1, project_id: prefillProjectId ?? undefined, payment_model: 'individual', pay_cycle: 'weekly', payment_basis: 'per_day' }
   )
 
   // Vendors filtered to labor-broker types — the DB doesn't constrain this,
@@ -111,11 +119,16 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
 
   async function handleSave() {
     setError(''); setSaving(true)
-    // Clear the vendor field when switching away from gang_leader so the DB
-    // CHECK constraint stays consistent.
-    const cleaned = form.payment_model === 'individual'
+    // Clear the vendor field when switching away from gang_leader, and the
+    // volume fields when switching away from per_volume — the DB CHECKs
+    // require volume_unit + unit_rate iff per_volume, and gang_leader_vendor_id
+    // iff gang_leader.
+    let cleaned = form.payment_model === 'individual'
       ? { ...form, gang_leader_vendor_id: null }
       : form
+    if (cleaned.payment_basis !== 'per_volume') {
+      cleaned = { ...cleaned, volume_unit: null, unit_rate: null }
+    }
     const payload = isEdit ? cleaned : { ...cleaned, requested_by: user?.id ?? null }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('labor_requisitions').update(payload as any).eq('id', id!) : supabase.from('labor_requisitions').insert([payload as any])
@@ -202,6 +215,33 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           <SearchableSelect value={form.gang_leader_vendor_id ?? null} onChange={id => set('gang_leader_vendor_id', id)} options={vendorOptions} placeholder="Select the vendor who receives payment…" />
           <p className="mt-1 text-[11px] text-slate-400">Only vendors flagged as labor brokers are prioritized; all active vendors are available.</p>
         </Field>
+      )}
+
+      <Field label="Work Measurement">
+        <div className="flex gap-2">
+          {[
+            { v: 'per_day',    label: 'By day',    desc: 'Pay day-rate × days worked (default).' },
+            { v: 'per_volume', label: 'By volume', desc: 'Pay unit-rate × piece-work completed (m², pcs, lm, …).' },
+          ].map(opt => (
+            <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm ${form.payment_basis === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+              <input type="radio" name="basis" className="sr-only" checked={form.payment_basis === opt.v} onChange={() => set('payment_basis', opt.v)} />
+              <span className="block font-medium text-center">{opt.label}</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5 text-center">{opt.desc}</span>
+            </label>
+          ))}
+        </div>
+      </Field>
+
+      {form.payment_basis === 'per_volume' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Volume Unit *">
+            <input type="text" className={inputCls} value={form.volume_unit ?? ''} onChange={e => set('volume_unit', e.target.value || null)} placeholder="e.g. m², pcs, lm" list="volume-units" />
+            <datalist id="volume-units"><option value="m²" /><option value="m³" /><option value="lm" /><option value="pcs" /><option value="kg" /><option value="ton" /></datalist>
+          </Field>
+          <Field label={`Unit Rate (ETB${form.volume_unit ? ' per ' + form.volume_unit : ''}) *`}>
+            <input type="number" step="0.01" min={0} className={inputCls} value={form.unit_rate ?? ''} onChange={e => set('unit_rate', e.target.value ? parseFloat(e.target.value) : null)} />
+          </Field>
+        </div>
       )}
 
       <Field label="Notes">
