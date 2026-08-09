@@ -39,6 +39,10 @@ import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
 import CasualWorkersPage from '@/pages/hr/CasualWorkersPage'
 import LaborExpenseDraftsPage from '@/pages/finance/LaborExpenseDraftsPage'
+import MarketTrendsPage from '@/pages/procurement/MarketTrendsPage'
+import PriceCheckRequestsPage from '@/pages/procurement/PriceCheckRequestsPage'
+import MyPriceCheckRequestsPage from '@/pages/procurement/MyPriceCheckRequestsPage'
+import VolatilitySettingsPage from '@/pages/procurement/VolatilitySettingsPage'
 import PayrollPage from '@/pages/payroll/PayrollPage'
 import PayrollFormPage from '@/pages/payroll/PayrollFormPage'
 import VendorsPage from '@/pages/vendors/VendorsPage'
@@ -263,8 +267,13 @@ export const router = createBrowserRouter([
               { path: 'sourcing', element: <SourcingBundlesPage /> },
               { path: 'sourcing/new', element: <SourcingBundleFormPage /> },
               { path: 'sourcing/:id/edit', element: <SourcingBundleFormPage /> },
+              { path: 'procurement/market-trends', element: <MarketTrendsPage /> },
+              { path: 'procurement/price-check-requests', element: <PriceCheckRequestsPage /> },
+              { path: 'procurement/volatility', element: <VolatilitySettingsPage /> },
             ],
           },
+          // My requests is visible to any authenticated user (each sees their own)
+          { path: 'procurement/my-price-check-requests', element: <MyPriceCheckRequestsPage /> },
           {
             // Stock manager / logistics officer also need this view (and the
             // GRN entry point on it) to receive goods against a PO — they
