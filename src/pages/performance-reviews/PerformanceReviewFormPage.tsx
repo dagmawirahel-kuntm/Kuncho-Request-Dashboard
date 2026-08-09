@@ -214,6 +214,69 @@ function EvidencePane({
           </table>
         </div>
       )}
+
+      {/* Competency ratings sub-section — pulls raw competency_ratings for
+          this staff in the same window. Reviewer uses both together to
+          write strengths/improvements/summary. */}
+      <CompetencyEvidenceSection staffId={staffId} from={from} to={to} />
+    </div>
+  )
+}
+
+function CompetencyEvidenceSection({ staffId, from, to }: { staffId: string | null; from: string; to: string }) {
+  const { data: rows = [], isLoading } = useQuery({
+    enabled: !!staffId,
+    queryKey: ['competency-review-evidence', staffId, from, to],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('competency_ratings')
+        .select('id, score, notes, rated_at, rated_by, key_responsibilities(responsibility_title, tier, job_descriptions(role_name))')
+        .eq('staff_id', staffId!)
+        .gte('rated_at', from)
+        .lte('rated_at', to + 'T23:59:59Z')
+        .order('rated_at', { ascending: false })
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (data ?? []) as any[]
+    },
+  })
+
+  if (!staffId) return null
+  return (
+    <div className="pt-3 border-t dark:border-slate-700">
+      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Evidence — Competency Ratings</h4>
+      {isLoading ? (
+        <p className="py-4 text-center text-xs text-slate-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="py-4 text-center text-xs text-slate-400">No competency ratings on file for this window.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border dark:border-slate-700 bg-white dark:bg-slate-800">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 dark:bg-slate-900/40 border-b dark:border-slate-700">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-slate-600 dark:text-slate-300">Date</th>
+                <th className="text-left px-3 py-2 font-medium text-slate-600 dark:text-slate-300">Responsibility</th>
+                <th className="text-center px-2 py-2 font-medium text-slate-600 dark:text-slate-300">Score</th>
+                <th className="text-left px-3 py-2 font-medium text-slate-600 dark:text-slate-300">Notes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y dark:divide-slate-700">
+              {rows.map(r => (
+                <tr key={r.id} className="align-top">
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(r.rated_at)}</td>
+                  <td className="px-3 py-2">
+                    <span className="block truncate max-w-[240px] text-slate-700 dark:text-slate-200">{r.key_responsibilities?.responsibility_title ?? '—'}</span>
+                    <span className="text-[10px] text-slate-400">{r.key_responsibilities?.job_descriptions?.role_name ?? ''} · {r.key_responsibilities?.tier}</span>
+                  </td>
+                  <td className="px-2 py-2 text-center tabular-nums font-semibold text-slate-700 dark:text-slate-200">{r.score} / 5</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-sm">{r.notes ?? <span className="text-slate-300">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

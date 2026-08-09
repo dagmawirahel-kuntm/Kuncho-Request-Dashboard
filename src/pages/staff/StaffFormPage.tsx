@@ -74,7 +74,20 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
     trade_tag?: string | null
     codename_amharic?: string | null
     codename_english?: string | null
+    job_description_id?: string | null
   }
+
+  const { data: jobDescriptions = [] } = useQuery({
+    queryKey: ['job-descriptions-picker'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('job_descriptions')
+        .select('id, role_name, department_id').eq('active', true).order('role_name')
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return data as any[]
+    },
+  })
 
   const { data: tradeRoster = [] } = useQuery({
     queryKey: ['tier2-trade-roster'],
@@ -95,6 +108,8 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           employee_name: record.employee_name,
           staff_type: record.staff_type,
           employment_type: record.employment_type,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          job_description_id: (record as any).job_description_id ?? null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           trade_tag: (record as any).trade_tag ?? null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -197,6 +212,17 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           </select>
         </Field>
       </div>
+
+      <Field label="Job Description">
+        <select className={inputCls} value={form.job_description_id ?? ''} onChange={e => set('job_description_id', e.target.value || null)}>
+          <option value="">— Not yet assigned —</option>
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {(jobDescriptions as any[]).map(jd => (
+            <option key={jd.id} value={jd.id}>{jd.role_name}</option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-slate-400">Sets which role's responsibilities they're rated against on the Competency tab.</p>
+      </Field>
 
       {form.employment_type === 'tier_2_casual' && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-900/10 dark:border-amber-800 p-3 space-y-3">

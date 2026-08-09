@@ -38,6 +38,7 @@ import StaffPage from '@/pages/staff/StaffPage'
 import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
 import CasualWorkersPage from '@/pages/hr/CasualWorkersPage'
+import CompetencyHubPage from '@/pages/hr/CompetencyHubPage'
 import LaborExpenseDraftsPage from '@/pages/finance/LaborExpenseDraftsPage'
 import MarketTrendsPage from '@/pages/procurement/MarketTrendsPage'
 import PriceCheckRequestsPage from '@/pages/procurement/PriceCheckRequestsPage'
@@ -405,6 +406,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'hr/casual-workers', element: <CasualWorkersPage /> },
+              { path: 'hr/competency-hub', element: <CompetencyHubPage /> },
               { path: 'staff', element: <StaffPage /> },
               { path: 'staff/new', element: <StaffFormPage /> },
               { path: 'staff/:id/edit', element: <StaffFormPage /> },
