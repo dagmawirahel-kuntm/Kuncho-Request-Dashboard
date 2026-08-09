@@ -1,11 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { FolderKanban, Package, MapPin } from 'lucide-react'
+import { useMemo } from 'react'
+import { FolderKanban, Package, MapPin, TrendingUp, TrendingDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, buildMonthlyTrend } from '@/lib/utils'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BreakdownBarList } from '@/components/shared/BreakdownBarList'
 import { TrendLineChart } from '@/components/shared/TrendLineChart'
+import { StarRating } from '@/components/shared/StarRating'
+import { useAllRollingPerformance } from '@/hooks/useWorkOrderRatings'
+import { useStaffDirectory } from '@/hooks/useLookups'
 
 interface ProjectRow { department: string | null; active_for_year: boolean; start_date: string | null }
 interface ProductRow { category: string | null; unit_price: number | null; active: boolean }
@@ -69,11 +73,79 @@ export default function ManagementDashboardPage() {
 
       <TrendLineChart title="New Projects Started — Last 6 Months" data={trend} />
 
+      <PerformanceLeaderboard />
+
       <div className="flex flex-wrap gap-2">
         <Link to="/projects" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Project</Link>
         <Link to="/products" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Product</Link>
         <Link to="/locations" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Location</Link>
       </div>
+    </div>
+  )
+}
+
+// Top / bottom 5 by rolling overall score. Only ranks staff whose evidence
+// is dense enough (sufficient_data flag from the view) — otherwise a single
+// bad rating puts a new hire at the bottom.
+function PerformanceLeaderboard() {
+  const { data: perf = [], isLoading } = useAllRollingPerformance()
+  const { data: staffDir = [] } = useStaffDirectory()
+  const nameById = useMemo(() => new Map(staffDir.map((s: { id: string; employee_name: string }) => [s.id, s.employee_name])), [staffDir])
+
+  const ranked = useMemo(() => {
+    return perf
+      .filter(p => p.sufficient_data && p.score_overall != null)
+      .map(p => ({ ...p, name: nameById.get(p.staff_id) ?? '—' }))
+      .sort((a, b) => Number(b.score_overall) - Number(a.score_overall))
+  }, [perf, nameById])
+
+  const top = ranked.slice(0, 5)
+  const bottom = ranked.slice(-5).reverse()
+
+  if (isLoading) {
+    return <div className="rounded-xl border bg-white p-5 text-sm text-slate-400">Loading performance leaderboard…</div>
+  }
+  if (ranked.length === 0) {
+    return (
+      <div className="rounded-xl border bg-white p-5">
+        <h3 className="text-sm font-semibold text-slate-700">Team Performance</h3>
+        <p className="mt-2 text-xs text-slate-400">No staff have enough decay-weighted evidence yet — ratings on completed work orders will populate this leaderboard.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <LeaderboardCard title="Top Performers"    icon={<TrendingUp   className="h-4 w-4 text-emerald-500" />} rows={top} />
+      <LeaderboardCard title="Needs Attention"   icon={<TrendingDown className="h-4 w-4 text-red-500"     />} rows={bottom} />
+    </div>
+  )
+}
+
+function LeaderboardCard({ title, icon, rows }: { title: string; icon: React.ReactNode; rows: { staff_id: string; name: string; score_overall: number | null; effective_sample_size: number; rating_count_all_time: number }[] }) {
+  return (
+    <div className="rounded-xl border bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        {icon}
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+      </div>
+      <ul className="mt-3 divide-y">
+        {rows.map((r, i) => (
+          <li key={r.staff_id} className="py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-5 text-xs font-semibold text-slate-400 tabular-nums">{i + 1}.</span>
+              <Link to={`/staff/${r.staff_id}`} className="text-sm text-slate-700 hover:text-brand truncate">
+                {r.name}
+              </Link>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <StarRating score={Number(r.score_overall ?? 0)} size="sm" />
+              <span className="text-sm font-bold text-slate-800 tabular-nums w-10 text-right">{Number(r.score_overall ?? 0).toFixed(2)}</span>
+              <span className="text-[10px] text-slate-400 w-16 text-right">{r.rating_count_all_time} rating{r.rating_count_all_time === 1 ? '' : 's'}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

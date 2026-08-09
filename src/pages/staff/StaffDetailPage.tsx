@@ -6,11 +6,14 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useDepartments, useProjects } from '@/hooks/useLookups'
+import { useRollingPerformance } from '@/hooks/useWorkOrderRatings'
+import { StarRating } from '@/components/shared/StarRating'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
   Building2, Clock, DollarSign, Briefcase, Hash, User,
   CheckCircle2, Wallet, Shield, Network, Users, KeyRound,
+  TrendingUp,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -46,7 +49,7 @@ const APPROVAL_CHIP: Record<string, string> = {
   rejected:          'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 }
 
-type TabId = 'overview' | 'payroll' | 'advances' | 'timesheets'
+type TabId = 'overview' | 'payroll' | 'advances' | 'timesheets' | 'performance'
 
 // ── Sub-components ────────────────────────────────────────────────
 
@@ -677,6 +680,139 @@ function TimesheetsTab({ timesheets }: { timesheets: (Timesheet & { projects: { 
   )
 }
 
+// ── Performance tab ───────────────────────────────────────────────
+// Aggregate always visible when data qualifies (staff can see their own
+// summary — that is the point). Raw rating history is deliberately gated:
+// the ratee themselves NEVER sees per-rater comments — only admin/exec/HR
+// and PMs do, per the RLS on work_order_ratings. This mirrors the DB.
+function PerformanceTab({ staffId, isOwnProfile, viewerRole }: { staffId: string; isOwnProfile: boolean; viewerRole: string | null }) {
+  const { data: perf, isLoading } = useRollingPerformance(staffId)
+  const canSeeHistory = !isOwnProfile && ['admin', 'executive', 'hr_officer', 'project_manager'].includes(viewerRole ?? '')
+
+  const { data: history = [] } = useQuery({
+    queryKey: ['staff-rating-history', staffId],
+    enabled: canSeeHistory,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_order_ratings')
+        .select('id, work_order_id, rater_staff_id, score_quality, score_timeliness, score_safety, score_teamwork, comment, rated_at, work_orders(scope_of_work, projects(project_name)), rater:staff!work_order_ratings_rater_staff_id_fkey(employee_name)')
+        .eq('rated_staff_id', staffId)
+        .order('rated_at', { ascending: false })
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (data ?? []) as any[]
+    },
+  })
+
+  if (isLoading) return <div className="py-12 text-center text-sm text-slate-400">Loading performance…</div>
+
+  return (
+    <div className="space-y-5">
+      {!perf || !perf.sufficient_data ? (
+        <div className="rounded-xl border bg-slate-50/50 dark:bg-slate-700/20 dark:border-slate-700 p-8 text-center">
+          <TrendingUp className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Insufficient data</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {perf
+              ? `${perf.rating_count_all_time} rating${perf.rating_count_all_time === 1 ? '' : 's'} on file — a rolling score appears once decay-weighted evidence reaches the threshold.`
+              : 'This person has no work order ratings yet. Ratings appear here as project managers, site foremen, and work order leads file them on completed WOs.'}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-5">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Rolling Performance (6-mo half-life)</p>
+              <div className="flex items-center gap-3 mt-1">
+                <StarRating score={perf.score_overall ?? 0} size="md" />
+                <span className="text-2xl font-bold text-slate-800 dark:text-slate-100 tabular-nums">
+                  {perf.score_overall != null ? Number(perf.score_overall).toFixed(2) : '—'}
+                </span>
+                <span className="text-xs text-slate-400">/ 5</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Ratings</p>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                {perf.rating_count_all_time} total · ESS {Number(perf.effective_sample_size).toFixed(2)}
+              </p>
+              {perf.last_rated_at && (
+                <p className="text-[10px] text-slate-400 mt-0.5">Last: {formatDate(perf.last_rated_at)}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t dark:border-slate-700">
+            <DimensionCell label="Quality"    value={perf.score_quality} />
+            <DimensionCell label="Timeliness" value={perf.score_timeliness} />
+            <DimensionCell label="Safety"     value={perf.score_safety} />
+            <DimensionCell label="Teamwork"   value={perf.score_teamwork} />
+          </div>
+        </div>
+      )}
+
+      {canSeeHistory && (
+        <div className="rounded-xl border dark:border-slate-700 overflow-hidden">
+          <div className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 border-b dark:border-slate-700 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rating History</h3>
+            <span className="text-[11px] text-slate-400">Hidden from the person being rated. Comments visible to HR / execs / this project's PM.</span>
+          </div>
+          {history.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">No individual ratings visible to you.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white dark:bg-slate-800 border-b dark:border-slate-700">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">When</th>
+                    <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Work Order</th>
+                    <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Rater</th>
+                    <th className="text-center px-2 py-2 font-medium text-slate-600 dark:text-slate-300">Q</th>
+                    <th className="text-center px-2 py-2 font-medium text-slate-600 dark:text-slate-300">T</th>
+                    <th className="text-center px-2 py-2 font-medium text-slate-600 dark:text-slate-300">S</th>
+                    <th className="text-center px-2 py-2 font-medium text-slate-600 dark:text-slate-300">Tm</th>
+                    <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Comment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y dark:divide-slate-700">
+                  {history.map(r => (
+                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                      <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">{formatDate(r.rated_at)}</td>
+                      <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300">
+                        <span className="block truncate max-w-[220px]" title={r.work_orders?.scope_of_work ?? ''}>{r.work_orders?.scope_of_work ?? '—'}</span>
+                        <span className="text-[10px] text-slate-400">{r.work_orders?.projects?.project_name ?? ''}</span>
+                      </td>
+                      <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300">{r.rater?.employee_name ?? '—'}</td>
+                      <td className="px-2 py-2 text-center tabular-nums">{r.score_quality}</td>
+                      <td className="px-2 py-2 text-center tabular-nums">{r.score_timeliness}</td>
+                      <td className="px-2 py-2 text-center tabular-nums">{r.score_safety}</td>
+                      <td className="px-2 py-2 text-center tabular-nums">{r.score_teamwork}</td>
+                      <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400 max-w-xs">{r.comment ?? <span className="text-slate-300">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DimensionCell({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="rounded-lg bg-slate-50/50 dark:bg-slate-700/20 border dark:border-slate-700 p-3">
+      <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{label}</p>
+      <div className="flex items-center gap-2 mt-1">
+        <StarRating score={value ?? 0} size="sm" />
+        <span className="text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums">{value != null ? Number(value).toFixed(2) : '—'}</span>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────
 
 export default function StaffDetailPage() {
@@ -756,6 +892,7 @@ export default function StaffDetailPage() {
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'performance', label: 'Performance' },
     { id: 'payroll', label: 'Payroll' },
     { id: 'advances', label: 'Cash Advances' },
     { id: 'timesheets', label: 'Timesheets' },
@@ -924,6 +1061,9 @@ export default function StaffDetailPage() {
               <OverviewTab staff={staff} />
               <OrgPlacementSection staff={staff} />
             </div>
+          )}
+          {activeTab === 'performance' && (
+            <PerformanceTab staffId={staff.id} isOwnProfile={isOwnProfile} viewerRole={role ?? null} />
           )}
           {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
           {activeTab === 'advances'   && <AdvancesTab advances={advances} staffId={staff.id} />}
