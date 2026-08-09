@@ -55,7 +55,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const { data: projects = [] } = useProjects()
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
 
-  const [form, setForm] = useState<Partial<LaborRequisitionInsert>>(
+  const [form, setForm] = useState<Partial<LaborRequisitionInsert> & { payment_model?: string; pay_cycle?: string; gang_leader_vendor_id?: string | null }>(
     record
       ? {
         project_id: record.project_id,
@@ -68,17 +68,55 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         estimated_days: record.estimated_days,
         requested_by: record.requested_by,
         notes: record.notes,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        payment_model: (record as any).payment_model ?? 'individual',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pay_cycle: (record as any).pay_cycle ?? 'weekly',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        gang_leader_vendor_id: (record as any).gang_leader_vendor_id ?? null,
       }
-      : { is_casual_or_new: true, headcount: 1, project_id: prefillProjectId ?? undefined }
+      : { is_casual_or_new: true, headcount: 1, project_id: prefillProjectId ?? undefined, payment_model: 'individual', pay_cycle: 'weekly' }
   )
+
+  // Vendors filtered to labor-broker types — the DB doesn't constrain this,
+  // but the picker is opinionated: if you're paying a gang leader you want to
+  // see the ones flagged as such first. We fall back to all vendors so the
+  // list isn't empty for early adopters who haven't tagged one yet.
+  const { data: vendors = [] } = useQuery({
+    queryKey: ['labor-broker-vendors'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vendors')
+        .select('id, vendor_name, vendor_type')
+        .eq('active', true)
+        .order('vendor_name')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+  const vendorOptions = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const brokers = vendors.filter((v: any) => (v.vendor_type ?? '').toLowerCase().includes('labor'))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = brokers.length > 0 ? brokers : (vendors as any[])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return list.map((v: any) => ({ id: v.id, label: v.vendor_type ? `${v.vendor_name} · ${v.vendor_type}` : v.vendor_name }))
+  }, [vendors])
+
+  const estTotal = (Number(form.headcount ?? 0)) * Number(form.estimated_day_rate ?? 0) * Number(form.estimated_days ?? 0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  function set(key: keyof LaborRequisitionInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function set(key: string, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   async function handleSave() {
     setError(''); setSaving(true)
-    const payload = isEdit ? form : { ...form, requested_by: user?.id ?? null }
+    // Clear the vendor field when switching away from gang_leader so the DB
+    // CHECK constraint stays consistent.
+    const cleaned = form.payment_model === 'individual'
+      ? { ...form, gang_leader_vendor_id: null }
+      : form
+    const payload = isEdit ? cleaned : { ...cleaned, requested_by: user?.id ?? null }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('labor_requisitions').update(payload as any).eq('id', id!) : supabase.from('labor_requisitions').insert([payload as any])
     const { error: err } = await op
@@ -125,9 +163,47 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           <input type="number" min={0} className={inputCls} value={form.estimated_days ?? ''} onChange={e => set('estimated_days', e.target.value ? parseInt(e.target.value, 10) : null)} />
         </Field>
       </div>
-      <p className="text-xs text-slate-400 dark:text-slate-500">
-        Estimated total cost is calculated automatically (headcount × day rate × estimated days) once saved — it isn't set here.
-      </p>
+      <div className="rounded-md border border-brand/30 bg-brand/5 dark:bg-brand/10 px-3 py-2 text-xs text-slate-700 dark:text-slate-200">
+        Estimated total: <span className="font-semibold tabular-nums">ETB {estTotal.toLocaleString()}</span>
+        <span className="text-slate-400 ml-1">(headcount × day rate × days)</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Payment Model">
+          <div className="flex gap-2">
+            {[
+              { v: 'individual',  label: 'Individual' },
+              { v: 'gang_leader', label: 'Gang leader' },
+            ].map(opt => (
+              <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm text-center ${form.payment_model === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+                <input type="radio" name="pm" className="sr-only" checked={form.payment_model === opt.v} onChange={() => set('payment_model', opt.v)} />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </Field>
+        <Field label="Pay Cycle">
+          <div className="flex gap-2">
+            {[
+              { v: 'weekly',          label: 'Weekly' },
+              { v: 'engagement_end',  label: 'At engagement end' },
+            ].map(opt => (
+              <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm text-center ${form.pay_cycle === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+                <input type="radio" name="cyc" className="sr-only" checked={form.pay_cycle === opt.v} onChange={() => set('pay_cycle', opt.v)} />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </Field>
+      </div>
+
+      {form.payment_model === 'gang_leader' && (
+        <Field label="Gang Leader Vendor *">
+          <SearchableSelect value={form.gang_leader_vendor_id ?? null} onChange={id => set('gang_leader_vendor_id', id)} options={vendorOptions} placeholder="Select the vendor who receives payment…" />
+          <p className="mt-1 text-[11px] text-slate-400">Only vendors flagged as labor brokers are prioritized; all active vendors are available.</p>
+        </Field>
+      )}
+
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
       </Field>
