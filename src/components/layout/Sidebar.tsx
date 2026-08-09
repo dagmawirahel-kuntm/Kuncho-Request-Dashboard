@@ -137,6 +137,7 @@ const navGroups: NavGroup[] = [
       { label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
+      { label: 'Labor Expense Drafts', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
     ],
   },
   {
@@ -154,6 +155,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'HR Overview', to: '/hr-view', icon: Briefcase, roles: ['admin', 'executive', 'hr_officer'] },
       { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
+      { label: 'Casual Workers', to: '/hr/casual-workers', icon: HardHat, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'executive', 'finance', 'hr_officer'] },

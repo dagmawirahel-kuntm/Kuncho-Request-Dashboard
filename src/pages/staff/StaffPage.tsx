@@ -43,6 +43,10 @@ export default function StaffPage() {
   // above rather than inventing a second interaction for the same job.
   const [noManagerOnly, setNoManagerOnly] = useState(false)
   const [bulkManagerId, setBulkManagerId] = useState('')
+  // Casual (Tier 2) workers live in the same `staff` table but are hidden by
+  // default on this directory — their home is /hr/casual-workers where the
+  // card grid renders them properly. Toggle to include them here for lookup.
+  const [showCasual, setShowCasual] = useState(false)
 
   // Assignment is restricted to admin/hr_officer — everyone else sees the
   // org department as read-only, enforced again server-side by the
@@ -103,6 +107,9 @@ export default function StaffPage() {
   // grow back.
   const rows = useMemo(() => {
     let list = data
+    if (!showCasual) {
+      list = list.filter(s => s.employment_type !== 'tier_2_casual')
+    }
     if (deptFilter !== 'All') {
       list = list.filter(s => (s.staff_type ?? 'Unknown') === deptFilter)
     }
@@ -128,7 +135,7 @@ export default function StaffPage() {
       if (aUnassigned !== bUnassigned) return aUnassigned - bUnassigned
       return a.employee_name.localeCompare(b.employee_name)
     })
-  }, [data, deptFilter, unassignedOnly, noManagerOnly, search])
+  }, [data, deptFilter, unassignedOnly, noManagerOnly, search, showCasual])
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
@@ -288,15 +295,28 @@ export default function StaffPage() {
           )}
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search name, role, phone…"
-            className="w-full sm:w-56 rounded-md border pl-8 pr-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-          />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCasual(s => !s)}
+            className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+              showCasual
+                ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
+            }`}
+            title="Include Tier 2 casual workers in this list"
+          >
+            {showCasual ? '👷 Casual shown' : '👷 Show casual workers'}
+          </button>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search name, role, phone…"
+              className="w-full sm:w-56 rounded-md border pl-8 pr-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
         </div>
       </div>
 

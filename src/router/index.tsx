@@ -37,6 +37,8 @@ import TransportPaymentFormPage from '@/pages/transportation/TransportPaymentFor
 import StaffPage from '@/pages/staff/StaffPage'
 import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
+import CasualWorkersPage from '@/pages/hr/CasualWorkersPage'
+import LaborExpenseDraftsPage from '@/pages/finance/LaborExpenseDraftsPage'
 import PayrollPage from '@/pages/payroll/PayrollPage'
 import PayrollFormPage from '@/pages/payroll/PayrollFormPage'
 import VendorsPage from '@/pages/vendors/VendorsPage'
@@ -391,9 +393,11 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'hr_officer']} />,
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
+              { path: 'hr/casual-workers', element: <CasualWorkersPage /> },
               { path: 'staff', element: <StaffPage /> },
               { path: 'staff/new', element: <StaffFormPage /> },
               { path: 'staff/:id/edit', element: <StaffFormPage /> },
+              { path: 'finance/labor-expense-drafts', element: <LaborExpenseDraftsPage /> },
               { path: 'payroll', element: <PayrollPage /> },
               { path: 'payroll/new', element: <PayrollFormPage /> },
               { path: 'payroll/:id/edit', element: <PayrollFormPage /> },
