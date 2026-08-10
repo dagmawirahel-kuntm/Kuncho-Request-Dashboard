@@ -172,6 +172,8 @@ import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
 import FfeJobDescriptionsPage from '@/pages/work-orders/FfeJobDescriptionsPage'
 import StaffFfeSkillsPage from '@/pages/work-orders/StaffFfeSkillsPage'
 import ExecDashboardPage from '@/pages/exec/ExecDashboardPage'
+import AttendancePage from '@/pages/site-foreman/AttendancePage'
+import TradeCatalogPage from '@/pages/hr/TradeCatalogPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -388,6 +390,9 @@ export const router = createBrowserRouter([
               { path: 'site-foreman/hse', element: <HseLogPage /> },
               { path: 'site-foreman/work-orders', element: <WorkOrdersOnMySitesPage /> },
               { path: 'site-foreman/projects', element: <MyProjectsPage /> },
+              // Tier 2 attendance grid: RLS on timesheet_attendance handles the
+              // foreman-vs-project gate; page reach is broad here.
+              { path: 'site-foreman/attendance', element: <AttendancePage /> },
             ],
           },
           {
@@ -408,6 +413,10 @@ export const router = createBrowserRouter([
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'hr/casual-workers', element: <CasualWorkersPage /> },
               { path: 'hr/competency-hub', element: <CompetencyHubPage /> },
+              // Tier 2 trade catalog — HR polishes newly-approved trades'
+              // emoji + accent colors. RLS on tier2_trade_roster gates writes
+              // to admin per migration 183.
+              { path: 'hr/trades', element: <TradeCatalogPage /> },
               { path: 'staff', element: <StaffPage /> },
               { path: 'staff/new', element: <StaffFormPage /> },
               { path: 'staff/:id/edit', element: <StaffFormPage /> },

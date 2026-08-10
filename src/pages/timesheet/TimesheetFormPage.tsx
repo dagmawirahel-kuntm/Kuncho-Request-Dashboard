@@ -75,7 +75,7 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_requisitions')
-        .select('id, project_id, role_needed, estimated_day_rate, status, projects:project_id(project_name)')
+        .select('id, project_id, role_needed, estimated_day_rate, status, payment_basis, volume_unit, unit_rate, projects:project_id(project_name)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data as any[]
@@ -88,7 +88,9 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
     id: r.id, label: `${r.role_needed ?? 'Role'} · ${r.projects?.project_name ?? 'No project'}`, sub: r.status ?? undefined,
   })), [requisitions])
 
-  const [form, setForm] = useState<Partial<TimesheetInsert>>(
+  // volume_completed is post-migration-189; not in the typed shape yet but the
+  // column exists. Kept on the loose Partial<> object below.
+  const [form, setForm] = useState<Partial<TimesheetInsert> & { volume_completed?: number | null }>(
     record
       ? {
         date: record.date,
@@ -104,6 +106,8 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
         casual_worker_name: record.casual_worker_name,
         day_rate: record.day_rate,
         days_worked: record.days_worked,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        volume_completed: (record as any).volume_completed ?? null,
       }
       : { labor_tier: 1, days_worked: 1 }
   )
@@ -145,17 +149,29 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
     }))
   }
 
+  // When the picked requisition is per_volume, the form flips to volumetric
+  // input (matches the site-foreman timesheet). Day rate + days become
+  // read-only info; volume × unit_rate drives pay via the rollup RPC.
+  const pickedReq = requisitions.find(r => r.id === form.labor_requisition_id)
+  const isVolumetric = tier === 2 && pickedReq?.payment_basis === 'per_volume'
+
   const effectiveRate = useMemo(() => {
+    if (isVolumetric) return pickedReq?.unit_rate ?? null
     if (form.day_rate != null) return form.day_rate
     if (tier === 1) return allocations.find(a => a.id === form.labor_allocation_id)?.day_rate_snapshot ?? null
-    return requisitions.find(r => r.id === form.labor_requisition_id)?.estimated_day_rate ?? null
-  }, [form.day_rate, form.labor_allocation_id, form.labor_requisition_id, tier, allocations, requisitions])
-  const laborCost = effectiveRate != null ? (form.days_worked ?? 1) * effectiveRate : null
+    return pickedReq?.estimated_day_rate ?? null
+  }, [isVolumetric, pickedReq, form.day_rate, form.labor_allocation_id, tier, allocations])
+  const laborCost = isVolumetric
+    ? (form.volume_completed ?? 0) * (pickedReq?.unit_rate ?? 0)
+    : (effectiveRate != null ? (form.days_worked ?? 1) * effectiveRate : null)
 
   async function handleSave() {
     if (tier === 1 && !form.staff_id) { setError('Tier 1 is a named staff member — pick an allocation or a staff member'); return }
     if (tier === 2 && !form.casual_worker_name?.trim() && !form.labor_requisition_id) {
       setError('Tier 2 needs a requisition or a casual worker name'); return
+    }
+    if (isVolumetric && !(form.volume_completed && form.volume_completed > 0)) {
+      setError(`This is a piece-work requisition — enter volume completed in ${pickedReq?.volume_unit ?? 'units'}`); return
     }
     setError(''); setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -209,13 +225,25 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
       </Field>
 
+      {isVolumetric && (
+        <div className="rounded-md border border-brand/30 bg-brand/5 px-3 py-2 text-[11px] text-slate-700">
+          Piece-work requisition · rate <span className="font-semibold tabular-nums">{formatCurrency(pickedReq?.unit_rate ?? 0)}</span> per <span className="font-mono">{pickedReq?.volume_unit ?? 'unit'}</span>. Enter volume completed instead of days.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Date">
           <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
         </Field>
-        <Field label="Days Worked">
-          <input type="number" step="0.25" min="0" className={inputCls} value={form.days_worked ?? ''} onChange={e => set('days_worked', e.target.value ? parseFloat(e.target.value) : null)} />
-        </Field>
+        {isVolumetric ? (
+          <Field label={`Volume Completed (${pickedReq?.volume_unit ?? 'unit'}) *`}>
+            <input type="number" step="0.01" min="0" className={inputCls} value={form.volume_completed ?? ''} onChange={e => setForm(f => ({ ...f, volume_completed: e.target.value ? parseFloat(e.target.value) : null }))} />
+          </Field>
+        ) : (
+          <Field label="Days Worked">
+            <input type="number" step="0.25" min="0" className={inputCls} value={form.days_worked ?? ''} onChange={e => set('days_worked', e.target.value ? parseFloat(e.target.value) : null)} />
+          </Field>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -228,10 +256,19 @@ function TimesheetFormPageBody({ id, record }: { id?: string; record?: Timesheet
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Day Rate (ETB)">
-          <input type="number" step="0.01" min="0" className={inputCls} value={form.day_rate ?? ''} onChange={e => set('day_rate', e.target.value ? parseFloat(e.target.value) : null)}
-            placeholder={effectiveRate != null && form.day_rate == null ? `Default ${effectiveRate}` : 'Override rate'} />
-        </Field>
+        {isVolumetric ? (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Unit Rate (ETB)</label>
+            <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm text-slate-700 tabular-nums">
+              {pickedReq?.unit_rate != null ? formatCurrency(pickedReq.unit_rate) + ' / ' + (pickedReq?.volume_unit ?? 'unit') : '—'}
+            </div>
+          </div>
+        ) : (
+          <Field label="Day Rate (ETB)">
+            <input type="number" step="0.01" min="0" className={inputCls} value={form.day_rate ?? ''} onChange={e => set('day_rate', e.target.value ? parseFloat(e.target.value) : null)}
+              placeholder={effectiveRate != null && form.day_rate == null ? `Default ${effectiveRate}` : 'Override rate'} />
+          </Field>
+        )}
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Labor Cost</label>
           <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 tabular-nums">
