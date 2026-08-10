@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -8,7 +8,7 @@ import { useDepartmentGaps, useSubcontractSummaries, useCandidateSummaries } fro
 import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatDate } from '@/lib/utils'
-import { Users, AlertTriangle, Clock, UserPlus, X, Star } from 'lucide-react'
+import { Users, AlertTriangle, Clock, UserPlus, X, Star, HardHat } from 'lucide-react'
 
 type Tab = 'evaluations' | 'ranking' | 'external'
 
@@ -213,6 +213,7 @@ function RankingTab({ gaps, role }: { gaps: any[]; role: string | null }) {
 function ExternalTab({ subs, cands }: { subs: any[]; cands: any[] }) {
   const [rating, setRating] = useState<null | { kind: 'sub' | 'cand'; id: string; label: string; jdId: string | null }>(null)
   const [addingCand, setAddingCand] = useState(false)
+  const [promoting, setPromoting] = useState<null | { id: string; name: string }>(null)
 
   return (
     <div className="space-y-5">
@@ -285,11 +286,20 @@ function ExternalTab({ subs, cands }: { subs: any[]; cands: any[] }) {
                   <td className="px-2 py-2 text-xs capitalize text-slate-500">{c.outcome}</td>
                   <td className="px-2 py-2 text-right text-xs tabular-nums">{c.responsibilities_rated ?? 0}/{c.responsibilities_total ?? 0}</td>
                   <td className="px-2 py-2 text-right text-xs tabular-nums">{c.avg_score != null ? Number(c.avg_score).toFixed(2) : '—'}</td>
-                  <td className="px-2 py-2 text-right">
-                    <button onClick={() => setRating({ kind: 'cand', id: c.candidate_id, label: c.full_name, jdId: c.assessed_for_role_id })}
-                      disabled={!c.assessed_for_role_id}
-                      className="text-xs rounded-md bg-brand text-white px-2.5 py-1 hover:bg-brand/90 disabled:opacity-40"
-                      title={!c.assessed_for_role_id ? 'Set a role first' : ''}>Rate</button>
+                  <td className="px-2 py-2 text-right whitespace-nowrap">
+                    <div className="inline-flex gap-1">
+                      <button onClick={() => setRating({ kind: 'cand', id: c.candidate_id, label: c.full_name, jdId: c.assessed_for_role_id })}
+                        disabled={!c.assessed_for_role_id}
+                        className="text-xs rounded-md bg-brand text-white px-2.5 py-1 hover:bg-brand/90 disabled:opacity-40"
+                        title={!c.assessed_for_role_id ? 'Set a role first' : ''}>Rate</button>
+                      {c.outcome === 'pending' && (
+                        <button onClick={() => setPromoting({ id: c.candidate_id, name: c.full_name })}
+                          className="text-xs rounded-md border border-amber-400 text-amber-600 dark:text-amber-400 dark:border-amber-500 px-2.5 py-1 hover:bg-amber-50 dark:hover:bg-amber-900/20 inline-flex items-center gap-1"
+                          title="Hire as Tier 2 casual worker">
+                          <HardHat className="h-3 w-3" /> Hire as casual
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -308,6 +318,7 @@ function ExternalTab({ subs, cands }: { subs: any[]; cands: any[] }) {
         />
       )}
       {addingCand && <NewCandidateModal onClose={() => setAddingCand(false)} />}
+      {promoting && <PromoteCandidateModal candidateId={promoting.id} name={promoting.name} onClose={() => setPromoting(null)} />}
     </div>
   )
 }
@@ -422,3 +433,76 @@ function NewCandidateModal({ onClose }: { onClose: () => void }) {
 }
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
+
+// HR promotes a pending candidate to a Tier 2 casual worker via the
+// promote_candidate_to_casual RPC (migration 199). Picks a trade from the
+// tier2_trade_roster and a day rate — the RPC mints the staff row and flips
+// the candidate's outcome to 'hired'. Card then appears on /hr/casual-workers.
+function PromoteCandidateModal({ candidateId, name, onClose }: { candidateId: string; name: string; onClose: () => void }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [tradeTag, setTradeTag] = useState<string | null>(null)
+  const [dayRate, setDayRate] = useState<string>('')
+  const [saving, setSaving] = useState(false)
+
+  const { data: roster = [] } = useQuery({
+    queryKey: ['tier2-trade-roster-picker'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tier2_trade_roster')
+        .select('trade_tag, codename_english, codename_amharic, icon_emoji').order('sort_order')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+  const tradeOptions = useMemo(() =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    roster.map((t: any) => ({ id: t.trade_tag, label: `${t.icon_emoji} ${t.codename_english} · ${t.codename_amharic}` })),
+    [roster])
+
+  async function handleSave() {
+    if (!tradeTag) { toast('Pick a trade', 'error'); return }
+    const rate = parseFloat(dayRate)
+    if (!rate || rate <= 0) { toast('Enter a day rate', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('promote_candidate_to_casual', {
+      p_candidate_id: candidateId, p_trade_tag: tradeTag, p_day_rate: rate,
+    })
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Promoted to Tier 2 casual — card is live on /hr/casual-workers', 'success')
+    qc.invalidateQueries({ queryKey: ['competency-hub-candidates'] })
+    qc.invalidateQueries({ queryKey: ['pending-candidates'] })
+    qc.invalidateQueries({ queryKey: ['casual-workers-list'] })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 shadow-2xl border dark:border-slate-700 p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-2">
+            <HardHat className="h-4 w-4 text-amber-500" /> Hire {name} as Tier 2 casual
+          </h3>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          Mints a staff row (employment type: Tier 2 casual), flips the candidate's outcome to <span className="font-mono">hired</span>, and creates a card on <span className="font-mono">/hr/casual-workers</span>.
+        </p>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Trade *</label>
+          <SearchableSelect value={tradeTag} onChange={setTradeTag} options={tradeOptions} placeholder="Pick a trade…" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Day Rate (ETB) *</label>
+          <input type="number" step="0.01" min={0} className={inputCls} value={dayRate} onChange={e => setDayRate(e.target.value)} placeholder="e.g. 500" />
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t dark:border-slate-700">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !tradeTag || !dayRate} className="rounded-md bg-brand text-white px-3 py-1.5 text-xs font-medium hover:bg-brand/90 disabled:opacity-60">
+            {saving ? 'Hiring…' : 'Hire & create card'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
