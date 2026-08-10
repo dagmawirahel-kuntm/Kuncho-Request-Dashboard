@@ -1,5 +1,5 @@
 {
   "framework": null,
   "installCommand": "npm ci --include=dev",
-  "buildCommand": "npm run build && mkdir -p .vercel/output/static && cp -r dist/. .vercel/output/static/ && printf '%s' '{\"version\":3,\"routes\":[{\"handle\":\"filesystem\"},{\"src\":\"/(.*)\",\"dest\":\"/index.html\"}]}' > .vercel/output/config.json"
+  "buildCommand": "npm run build && mkdir -p .vercel/output/static && if [ -d dist ]; then cp -r dist/. .vercel/output/static/; else echo 'no dist/ on disk — vite must have written directly to .vercel/output/static/; listing:'; ls -la .vercel/output/static/; fi && printf '%s' '{\"version\":3,\"routes\":[{\"handle\":\"filesystem\"},{\"src\":\"/(.*)\",\"dest\":\"/index.html\"}]}' > .vercel/output/config.json"
 }
