@@ -9,6 +9,8 @@ import type { LaborRequisition, LaborRequisitionInsert } from '@/types/database'
 import { useProjects } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { useMyStaffId } from '@/hooks/useMyStaff'
+import { X } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-900 dark:border-slate-600 dark:text-slate-100'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -72,6 +74,8 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const prefillProjectId = searchParams.get('project_id')
   const { toast } = useToast()
   const { user } = useAuth()
+  const { data: myStaff } = useMyStaffId()
+  const myStaffId = myStaff?.id ?? null
   const qc = useQueryClient()
   const { data: projects = [] } = useProjects()
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
@@ -81,6 +85,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const initialAssignMode: AssignMode = r?.specific_staff_id ? 'roster' : r?.candidate_id ? 'new_hire' : 'anonymous'
   const [assignMode, setAssignMode] = useState<AssignMode>(initialAssignMode)
   const [proposingTrade, setProposingTrade] = useState<boolean>(!!(r?.proposed_trade_amharic || r?.proposed_trade_english))
+  const [suggestOpen, setSuggestOpen] = useState(false)
 
   const [form, setForm] = useState<FormState>(
     record
@@ -260,12 +265,29 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       )}
       {assignMode === 'new_hire' && (
         <Field label="Candidate *">
-          <SearchableSelect value={form.candidate_id ?? null} onChange={id => set('candidate_id', id)} options={candidateOptions} placeholder="Pick a pending candidate from Competency Hub…" />
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex-1">
+              <SearchableSelect value={form.candidate_id ?? null} onChange={id => set('candidate_id', id)} options={candidateOptions} placeholder="Pick a pending candidate…" />
+            </div>
+            <button type="button" onClick={() => setSuggestOpen(true)} className="rounded-md border border-brand text-brand px-3 py-1.5 text-xs font-medium hover:bg-brand/5 whitespace-nowrap">
+              + Suggest new
+            </button>
+          </div>
           <p className="mt-1 text-[11px] text-slate-400">
-            On approval: candidate is promoted to a staff row (Tier 2 casual), added to the roster, and allocated to this project.
-            {' '}Not seeing them? Add via <a href="/hr/competency-hub" className="underline text-brand">Competency Hub</a> first.
+            On approval: candidate is promoted to a staff row (Tier 2 casual), added to the roster, and allocated to this project. "Suggest new" adds a pending candidate for HR to review.
           </p>
         </Field>
+      )}
+      {suggestOpen && (
+        <SuggestCandidateModal
+          myStaffId={myStaffId ?? null}
+          onClose={() => setSuggestOpen(false)}
+          onCreated={(newId) => {
+            set('candidate_id', newId)
+            qc.invalidateQueries({ queryKey: ['pending-candidates'] })
+            setSuggestOpen(false)
+          }}
+        />
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -410,5 +432,80 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
       </Field>
     </FormPage>
+  )
+}
+
+// Inline "Suggest new candidate" modal for the new-hire flow. Any role that
+// can raise a labor requisition can suggest a candidate — the DB policy
+// (migration 198) grants operations_manager + project_manager INSERT with
+// WITH CHECK created_by = current_staff_id() AND outcome = 'pending'. HR
+// still owns the review + hire promotion.
+function SuggestCandidateModal({ myStaffId, onClose, onCreated }: {
+  myStaffId: string | null
+  onClose: () => void
+  onCreated: (id: string) => void
+}) {
+  const { toast } = useToast()
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!fullName.trim()) { toast('Full name is required', 'error'); return }
+    setSaving(true)
+    const { data, error } = await supabase.from('candidates').insert([{
+      full_name: fullName.trim(),
+      phone: phone.trim() || null,
+      email: email.trim() || null,
+      outcome: 'pending',
+      outcome_notes: notes.trim() ? `Suggested via labor requisition: ${notes.trim()}` : 'Suggested via labor requisition',
+      created_by: myStaffId,
+    }]).select('id').single()
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Candidate suggested — pending HR review', 'success')
+    onCreated((data as { id: string }).id)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 shadow-2xl border dark:border-slate-700 p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Suggest new candidate</h3>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          Adds a pending candidate to Competency Hub. HR reviews before the requisition can be approved as a hire.
+        </p>
+        <div className="space-y-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Full Name *</label>
+            <input type="text" className={inputCls} value={fullName} onChange={e => setFullName(e.target.value)} placeholder="e.g. Almaz Bekele" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Phone</label>
+              <input type="tel" className={inputCls} value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 0911234567" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Email</label>
+              <input type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} placeholder="optional" />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes for HR</label>
+            <textarea rows={2} className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Where you met them, why you want to hire them, references…" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t dark:border-slate-700">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !fullName.trim()} className="rounded-md bg-brand text-white px-3 py-1.5 text-xs font-medium hover:bg-brand/90 disabled:opacity-60">
+            {saving ? 'Suggesting…' : 'Suggest & select'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
