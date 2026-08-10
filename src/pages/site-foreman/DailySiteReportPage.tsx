@@ -59,7 +59,10 @@ export default function DailySiteReportPage() {
   const [weather, setWeather] = useState<SiteReportWeather | ''>('')
   const [siteAccessible, setSiteAccessible] = useState<SiteAccessible | ''>('yes')
   const [progressNotes, setProgressNotes] = useState('')
-  const [headcountOverride, setHeadcountOverride] = useState<string>('')
+  // Manual headcount override removed after migration 197 — Tier 2 attendance
+  // is now a per-day checkbox on the foreman's landing, so the auto-count from
+  // timesheet + timesheet_attendance is authoritative. Still sending the DB
+  // field as NULL so the row shape stays stable.
   const [materialsNotes, setMaterialsNotes] = useState('')
   const [hseNearMiss, setHseNearMiss] = useState('')
   const [tomorrowPlan, setTomorrowPlan] = useState('')
@@ -125,7 +128,7 @@ export default function DailySiteReportPage() {
       weather: weather || null,
       site_accessible: siteAccessible || null,
       progress_notes: progressNotes || null,
-      headcount_override: headcountOverride ? parseInt(headcountOverride, 10) : null,
+      headcount_override: null,
       materials_notes: materialsNotes || null,
       hse_near_miss_notes: hseNearMiss || null,
       tomorrow_plan: tomorrowPlan || null,
@@ -206,17 +209,16 @@ export default function DailySiteReportPage() {
             </div>
           </Section>
 
-          {/* 2. Headcount */}
+          {/* 2. Headcount — auto-count from timesheet + attendance ticks */}
           <Section title="Headcount" step={2}>
             <p className="text-sm text-slate-600 dark:text-slate-300">
               You logged <span className="font-semibold">{hc?.tier2_headcount ?? 0} Tier 2</span> and{' '}
               <span className="font-semibold">{hc?.tier1_headcount ?? 0} Tier 1</span> staff today.{' '}
               Total: <span className="font-semibold">{hc?.total_headcount ?? 0}</span>.
             </p>
-            <div className="mt-2">
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Override (optional)</label>
-              <input type="number" min="0" className={inputCls} value={headcountOverride} onChange={e => setHeadcountOverride(e.target.value)} disabled={isSubmitted} />
-            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Tier 2 count reflects today's attendance ticks — tick people present on the Attendance widget on your landing page.
+            </p>
           </Section>
 
           {/* 3. Materials */}

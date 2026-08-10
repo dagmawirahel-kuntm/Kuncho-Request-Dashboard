@@ -76,6 +76,7 @@ const navGroups: NavGroup[] = [
       { label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, roles: [], showIfSiteForeman: true },
       { label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, roles: [], showIfSiteForeman: true },
       { label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, roles: [], showIfSiteForeman: true },
+      { label: 'Tier 2 Attendance', to: '/site-foreman/attendance', icon: UserCheck, roles: [], showIfSiteForeman: true },
     ],
   },
   {
@@ -163,6 +164,7 @@ const navGroups: NavGroup[] = [
       { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Casual Workers', to: '/hr/casual-workers', icon: HardHat, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Competency Hub', to: '/hr/competency-hub', icon: Award, roles: ['admin', 'executive', 'hr_officer'] },
+      { label: 'Trade Catalog', to: '/hr/trades', icon: Layers, roles: ['admin', 'executive', 'hr_officer'] },
       { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
