@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { MultiSelect } from '@/components/shared/MultiSelect'
 import type { LaborRequisition, LaborRequisitionInsert } from '@/types/database'
 import { useProjects } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -82,10 +83,40 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = record as any
-  const initialAssignMode: AssignMode = r?.specific_staff_id ? 'roster' : r?.candidate_id ? 'new_hire' : 'anonymous'
+  // Load already-attached candidates (migration 199's join table). If any
+  // rows come back, initial mode = new_hire regardless of the legacy
+  // candidate_id column. Backfill inserted one row per legacy candidate_id,
+  // so the join table is now the source of truth.
+  const { data: attachedCands = [] } = useQuery({
+    queryKey: ['labor-requisition-candidates', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_requisition_candidates')
+        .select('candidate_id, promoted_staff_id')
+        .eq('requisition_id', id!)
+      if (error) throw error
+      return (data ?? []) as { candidate_id: string; promoted_staff_id: string | null }[]
+    },
+  })
+  const initialAssignMode: AssignMode =
+    r?.specific_staff_id ? 'roster'
+    : (r?.candidate_id || attachedCands.length > 0) ? 'new_hire'
+    : 'anonymous'
   const [assignMode, setAssignMode] = useState<AssignMode>(initialAssignMode)
   const [proposingTrade, setProposingTrade] = useState<boolean>(!!(r?.proposed_trade_amharic || r?.proposed_trade_english))
   const [suggestOpen, setSuggestOpen] = useState(false)
+  // Multi-candidate group. Populated from the join table on edit.
+  const [candidateIds, setCandidateIds] = useState<string[]>([])
+  // Sync candidateIds when attachedCands arrives (edit mode) — only for
+  // still-unpromoted candidates; already-hired ones shouldn't be edited.
+  const attachedSig = attachedCands.map(c => c.candidate_id).sort().join(',')
+  useMemo(() => {
+    if (attachedCands.length > 0 && candidateIds.length === 0) {
+      setCandidateIds(attachedCands.map(c => c.candidate_id))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedSig])
 
   const [form, setForm] = useState<FormState>(
     record
@@ -199,7 +230,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   function switchAssignMode(m: AssignMode) {
     setAssignMode(m)
     if (m !== 'roster')   set('specific_staff_id', null)
-    if (m !== 'new_hire') set('candidate_id', null)
+    if (m !== 'new_hire') { set('candidate_id', null); setCandidateIds([]) }
   }
 
   async function handleSave() {
@@ -212,22 +243,60 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
     } else {
       cleaned = { ...cleaned, estimated_days: null }
     }
-    // Enforce mutual exclusion on the client too (DB CHECK backs this up).
     if (assignMode !== 'roster')   cleaned = { ...cleaned, specific_staff_id: null }
-    if (assignMode !== 'new_hire') cleaned = { ...cleaned, candidate_id: null }
-    // Clear the proposed-trade fields unless the user actually asked to propose.
+    // Legacy single candidate_id column: never write it from this form anymore.
+    // The join table (labor_requisition_candidates) is authoritative.
+    cleaned = { ...cleaned, candidate_id: null }
     if (!proposingTrade || cleaned.trade_tag) {
       cleaned = { ...cleaned, proposed_trade_amharic: null, proposed_trade_english: null }
     }
+    // In new-hire mode, headcount tracks the number of selected candidates.
+    if (assignMode === 'new_hire' && candidateIds.length > 0) {
+      cleaned = { ...cleaned, headcount: candidateIds.length }
+    }
+    if (assignMode === 'new_hire' && candidateIds.length === 0) {
+      setError('Pick at least one candidate (or switch to Anonymous headcount)')
+      setSaving(false); return
+    }
 
     const payload = isEdit ? cleaned : { ...cleaned, requested_by: user?.id ?? null }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('labor_requisitions').update(payload as any).eq('id', id!) : supabase.from('labor_requisitions').insert([payload as any])
-    const { error: err } = await op
+    let reqId = id
+    if (isEdit) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: err } = await supabase.from('labor_requisitions').update(payload as any).eq('id', id!)
+      if (err) { setError(err.message); toast(err.message, 'error'); setSaving(false); return }
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: err } = await supabase.from('labor_requisitions').insert([payload as any]).select('id').single()
+      if (err || !data) { setError(err?.message ?? 'Failed to create'); toast(err?.message ?? 'Failed to create', 'error'); setSaving(false); return }
+      reqId = (data as { id: string }).id
+    }
+
+    // Sync join table for new_hire mode. For other modes clear any rows.
+    if (assignMode === 'new_hire' && reqId) {
+      // Fetch what's already attached so we only insert new ones and only
+      // delete rows the user removed (keeping promoted_staff_id links intact
+      // for candidates that survived the edit).
+      const existing = (attachedCands ?? []).map(c => c.candidate_id)
+      const toInsert = candidateIds.filter(x => !existing.includes(x))
+      const toDelete = existing.filter(x => !candidateIds.includes(x))
+      if (toDelete.length > 0) {
+        await supabase.from('labor_requisition_candidates').delete().eq('requisition_id', reqId).in('candidate_id', toDelete)
+      }
+      if (toInsert.length > 0) {
+        const rows = toInsert.map(cid => ({ requisition_id: reqId, candidate_id: cid }))
+        const { error: linkErr } = await supabase.from('labor_requisition_candidates').insert(rows)
+        if (linkErr) { setError(linkErr.message); toast(linkErr.message, 'error'); setSaving(false); return }
+      }
+    } else if (reqId) {
+      // Non-new-hire modes: clear any old join rows for this req.
+      await supabase.from('labor_requisition_candidates').delete().eq('requisition_id', reqId)
+    }
+
     setSaving(false)
-    if (err) { setError(err.message); toast(err.message, 'error'); return }
     dropRecordCache(qc, 'labor-requisition')
     qc.invalidateQueries({ queryKey: ['labor-requisitions'] })
+    qc.invalidateQueries({ queryKey: ['labor-requisition-candidates', reqId] })
     toast(isEdit ? 'Labor requisition updated' : 'Labor requisition created', 'success')
     navigate('/labor-requisitions')
   }
@@ -264,17 +333,24 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         </Field>
       )}
       {assignMode === 'new_hire' && (
-        <Field label="Candidate *">
+        <Field label={`Candidates * ${candidateIds.length > 0 ? `(${candidateIds.length} selected)` : ''}`}>
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="flex-1">
-              <SearchableSelect value={form.candidate_id ?? null} onChange={id => set('candidate_id', id)} options={candidateOptions} placeholder="Pick a pending candidate…" />
+              <MultiSelect
+                value={candidateIds}
+                onChange={setCandidateIds}
+                options={candidateOptions}
+                placeholder="Pick one or more pending candidates…"
+              />
             </div>
             <button type="button" onClick={() => setSuggestOpen(true)} className="rounded-md border border-brand text-brand px-3 py-1.5 text-xs font-medium hover:bg-brand/5 whitespace-nowrap">
               + Suggest new
             </button>
           </div>
           <p className="mt-1 text-[11px] text-slate-400">
-            On approval: candidate is promoted to a staff row (Tier 2 casual), added to the roster, and allocated to this project. "Suggest new" adds a pending candidate for HR to review.
+            On approval: each selected candidate is hired as a Tier 2 casual and allocated to this project.
+            {candidateIds.length > 0 && ` Headcount will be set to ${candidateIds.length}.`}
+            {' '}"Suggest new" adds a pending candidate for HR to review.
           </p>
         </Field>
       )}
@@ -283,7 +359,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           myStaffId={myStaffId ?? null}
           onClose={() => setSuggestOpen(false)}
           onCreated={(newId) => {
-            set('candidate_id', newId)
+            setCandidateIds(prev => prev.includes(newId) ? prev : [...prev, newId])
             qc.invalidateQueries({ queryKey: ['pending-candidates'] })
             setSuggestOpen(false)
           }}
@@ -295,7 +371,14 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           <input type="text" className={inputCls} value={form.role_needed ?? ''} onChange={e => set('role_needed', e.target.value)} placeholder="e.g. Site Electrician" />
         </Field>
         <Field label="Headcount *">
-          <input type="number" min={1} className={inputCls} value={form.headcount ?? ''} onChange={e => set('headcount', e.target.value ? parseInt(e.target.value, 10) : undefined)} disabled={assignMode !== 'anonymous'} />
+          <input type="number" min={1} className={inputCls}
+            value={
+              assignMode === 'new_hire' ? (candidateIds.length || '')
+              : assignMode === 'roster'  ? 1
+              : (form.headcount ?? '')
+            }
+            onChange={e => set('headcount', e.target.value ? parseInt(e.target.value, 10) : undefined)}
+            disabled={assignMode !== 'anonymous'} />
         </Field>
       </div>
 
