@@ -11,6 +11,14 @@ import { parseBankStatementCsv, type ParsedStatement } from '@/lib/bankStatement
 import type { BankStatementImport, BankStatementLine } from '@/types/database'
 import { Upload, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight, RefreshCw, Link2 } from 'lucide-react'
 
+// A statement line joined to whichever side it matched — expense (debit,
+// money out) or sale (credit, money in). At most one of expenses/sales is
+// non-null on any given row.
+type JoinedLine = BankStatementLine & {
+  expenses: { expense_code: string | null; item_service_description: string | null } | null
+  sales: { sales_description: string | null; invoice_number: string | null } | null
+}
+
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
@@ -25,13 +33,15 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
 
 const MATCH_STATUS_LABEL: Record<string, string> = {
   unmatched: 'Unmatched',
-  matched_expense: 'Matched',
+  matched_expense: 'Matched (expense)',
+  matched_sale: 'Matched (sale)',
   duplicate: 'Duplicate',
   manual: 'Manually resolved',
 }
 const MATCH_STATUS_CLS: Record<string, string> = {
   unmatched: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   matched_expense: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  matched_sale: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
   duplicate: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
   manual: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
 }
@@ -68,11 +78,11 @@ export default function BankStatementImportPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('bank_statement_lines')
-        .select('*, expenses:matched_expense_id (expense_code, item_service_description)')
+        .select('*, expenses:matched_expense_id (expense_code, item_service_description), sales:matched_sale_id (sales_description, invoice_number)')
         .eq('import_id', activeImportId!)
         .order('line_no')
       if (error) throw error
-      return data as (BankStatementLine & { expenses: { expense_code: string | null; item_service_description: string | null } | null })[]
+      return data as JoinedLine[]
     },
   })
 
@@ -82,11 +92,11 @@ export default function BankStatementImportPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('bank_statement_lines')
-        .select('*, expenses:matched_expense_id (expense_code, item_service_description)')
+        .select('*, expenses:matched_expense_id (expense_code, item_service_description), sales:matched_sale_id (sales_description, invoice_number)')
         .eq('import_id', expandedImportId!)
         .order('line_no')
       if (error) throw error
-      return data as (BankStatementLine & { expenses: { expense_code: string | null; item_service_description: string | null } | null })[]
+      return data as JoinedLine[]
     },
   })
 
@@ -172,10 +182,11 @@ export default function BankStatementImportPage() {
     if (error) { toast(error.message, 'error'); return }
     const r = data as { matched_count: number; skipped_count: number }
     toast(r.matched_count > 0
-      ? `Rematched ${r.matched_count} line(s) — expense(s) now show as paid`
+      ? `Rematched ${r.matched_count} line(s) — now show as paid`
       : 'No new matches found', r.matched_count > 0 ? 'success' : 'info')
     qc.invalidateQueries({ queryKey: ['bank-statement-lines'] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
+    qc.invalidateQueries({ queryKey: ['sales'] })
   }
 
   return (
@@ -307,7 +318,7 @@ export default function BankStatementImportPage() {
   )
 }
 
-function LinesTable({ lines, committed = false }: { lines: (BankStatementLine & { expenses: { expense_code: string | null; item_service_description: string | null } | null })[]; committed?: boolean }) {
+function LinesTable({ lines, committed = false }: { lines: JoinedLine[]; committed?: boolean }) {
   if (lines.length === 0) return <div className="py-6 text-center text-xs text-slate-400">No lines.</div>
   const totalDebit = lines.reduce((s, l) => s + (l.debit_amount ?? 0), 0)
   const totalCredit = lines.reduce((s, l) => s + (l.credit_amount ?? 0), 0)
@@ -325,7 +336,7 @@ function LinesTable({ lines, committed = false }: { lines: (BankStatementLine & 
             <th className="px-4 py-2 text-right">Credit</th>
             <th className="px-4 py-2">Reference</th>
             <th className="px-4 py-2">Status</th>
-            <th className="px-4 py-2">Matched Expense</th>
+            <th className="px-4 py-2">Matched</th>
             <th className="px-4 py-2 text-right">Offset</th>
           </tr>
         </thead>
@@ -347,8 +358,12 @@ function LinesTable({ lines, committed = false }: { lines: (BankStatementLine & 
                   <Link to={`/expenses/${l.matched_expense_id}`} className="text-brand hover:underline truncate block">
                     {l.expenses.item_service_description ?? l.expenses.expense_code}
                   </Link>
+                ) : l.matched_sale_id && l.sales ? (
+                  <Link to={`/sales/${l.matched_sale_id}`} className="text-brand hover:underline truncate block">
+                    {l.sales.sales_description ?? l.sales.invoice_number}
+                  </Link>
                 ) : committed && l.match_status === 'unmatched' ? (
-                  <MatchToExpenseCell lineId={l.id} />
+                  <MatchLineCell lineId={l.id} direction={Number(l.credit_amount ?? 0) > 0 ? 'credit' : 'debit'} />
                 ) : '—'}
               </td>
               <td className="px-4 py-2 text-right whitespace-nowrap"><VarianceCell line={l} /></td>
@@ -409,64 +424,82 @@ function VarianceCell({ line }: { line: BankStatementLine }) {
 
 // Inline manual pairing for a single unmatched line on a committed import —
 // for cases the reference-code rematch can't catch (mistyped/missing
-// bank_ref, wrong currency of reference, etc.). Candidate list is expenses
-// not yet linked to any transfer; searchable by code/description.
-function MatchToExpenseCell({ lineId }: { lineId: string }) {
+// bank_ref, wrong currency of reference, etc.). Direction picks the
+// candidate table and RPC: debit (money out) → expenses / match_expense_to_
+// statement_line; credit (money in) → sales / match_sale_to_statement_line.
+function MatchLineCell({ lineId, direction }: { lineId: string; direction: 'debit' | 'credit' }) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [expenseId, setExpenseId] = useState<string | null>(null)
+  const [targetId, setTargetId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const isExpense = direction === 'debit'
 
   const { data: candidates = [] } = useQuery({
-    queryKey: ['unmatched-expenses-for-line'],
+    queryKey: ['unmatched-candidates-for-line', direction],
     enabled: open,
     queryFn: async () => {
+      if (isExpense) {
+        const { data, error } = await supabase
+          .from('expenses')
+          .select('id, expense_code, item_service_description, amount_etb, date')
+          .is('transfer_id', null)
+          .order('date', { ascending: false })
+          .limit(300)
+        if (error) throw error
+        return (data ?? []).map(c => ({
+          id: c.id,
+          label: `${c.expense_code ?? ''} ${c.item_service_description ?? ''}`.trim() || 'Expense',
+          sub: `${c.date ?? ''} · ${c.amount_etb != null ? formatCurrency(c.amount_etb) : ''}`,
+        }))
+      }
       const { data, error } = await supabase
-        .from('expenses')
-        .select('id, expense_code, item_service_description, amount_etb, date')
+        .from('sales')
+        .select('id, invoice_number, sales_description, amount, date')
         .is('transfer_id', null)
         .order('date', { ascending: false })
         .limit(300)
       if (error) throw error
-      return data as { id: string; expense_code: string | null; item_service_description: string | null; amount_etb: number | null; date: string | null }[]
+      return (data ?? []).map(s => ({
+        id: s.id,
+        label: `${s.invoice_number ?? ''} ${s.sales_description ?? ''}`.trim() || 'Sale',
+        sub: `${s.date ?? ''} · ${s.amount != null ? formatCurrency(s.amount) : ''}`,
+      }))
     },
   })
-  const options = candidates.map(c => ({
-    id: c.id,
-    label: `${c.expense_code ?? ''} ${c.item_service_description ?? ''}`.trim() || 'Expense',
-    sub: `${c.date ?? ''} · ${c.amount_etb != null ? formatCurrency(c.amount_etb) : ''}`,
-  }))
 
   async function confirm() {
-    if (!expenseId) return
+    if (!targetId) return
     setSaving(true)
-    const { error } = await supabase.rpc('match_expense_to_statement_line', { p_line_id: lineId, p_expense_id: expenseId })
+    const { error } = isExpense
+      ? await supabase.rpc('match_expense_to_statement_line', { p_line_id: lineId, p_expense_id: targetId })
+      : await supabase.rpc('match_sale_to_statement_line', { p_line_id: lineId, p_sale_id: targetId })
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
-    toast('Matched — expense now shows as paid', 'success')
+    toast(isExpense ? 'Matched — expense now shows as paid' : 'Matched — sale now shows as paid', 'success')
     setOpen(false)
-    setExpenseId(null)
+    setTargetId(null)
     qc.invalidateQueries({ queryKey: ['bank-statement-lines'] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
+    qc.invalidateQueries({ queryKey: ['sales'] })
   }
 
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
-        <Link2 className="h-3 w-3" /> Match to expense
+        <Link2 className="h-3 w-3" /> {isExpense ? 'Match to expense' : 'Match to sale'}
       </button>
     )
   }
   return (
     <div className="flex items-center gap-1.5">
       <div className="w-56">
-        <SearchableSelect value={expenseId} onChange={setExpenseId} options={options} placeholder="Search expenses…" />
+        <SearchableSelect value={targetId} onChange={setTargetId} options={candidates} placeholder={isExpense ? 'Search expenses…' : 'Search sales…'} />
       </div>
-      <button onClick={confirm} disabled={!expenseId || saving} className="rounded-md bg-brand px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+      <button onClick={confirm} disabled={!targetId || saving} className="rounded-md bg-brand px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
         {saving ? '…' : 'Confirm'}
       </button>
-      <button onClick={() => { setOpen(false); setExpenseId(null) }} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-3.5 w-3.5" /></button>
+      <button onClick={() => { setOpen(false); setTargetId(null) }} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-3.5 w-3.5" /></button>
     </div>
   )
 }

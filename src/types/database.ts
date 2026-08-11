@@ -754,10 +754,13 @@ export interface Sale {
   manager_approved_at: string | null
   finance_approved_by: string | null
   finance_approved_at: string | null
+  transfer_id: string | null
+  contract_id: string | null
+  is_final_payment: boolean
   created_at: string
   updated_at: string
 }
-export type SaleInsert = Omit<Sale, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at'>
+export type SaleInsert = Omit<Sale, 'id' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'transfer_id'>
 
 // ── Proformas ─────────────────────────────────────────────────────
 export interface Proforma {
@@ -979,7 +982,7 @@ export interface BankStatementImport {
 }
 export type BankStatementImportInsert = Omit<BankStatementImport, 'id' | 'uploaded_at' | 'committed_at' | 'status'>
 
-export type BankStatementLineMatchStatus = 'unmatched' | 'matched_expense' | 'duplicate' | 'manual'
+export type BankStatementLineMatchStatus = 'unmatched' | 'matched_expense' | 'matched_sale' | 'duplicate' | 'manual'
 export interface BankStatementLine {
   id: string
   import_id: string
@@ -994,6 +997,7 @@ export interface BankStatementLine {
   reference: string | null
   reference_code: string | null
   matched_expense_id: string | null
+  matched_sale_id: string | null
   transfer_id: string | null
   match_status: BankStatementLineMatchStatus
   // Recorded at match time (migration 154), not derived on read — the
@@ -1005,7 +1009,7 @@ export interface BankStatementLine {
   variance_amount: number | null
   created_at: string
 }
-export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'matched_sale_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
@@ -1799,6 +1803,10 @@ export interface Contract {
   document_url: string | null
   document_name: string | null
   notes: string | null
+  // per_payment (default): every qualifying sale needs its own WHT
+  // receipt. final_only: WHT is deducted once, on the sale flagged
+  // is_final_payment, computed on the full contract_value.
+  wht_deduction_mode: 'per_payment' | 'final_only'
   created_at: string
   updated_at: string
 }

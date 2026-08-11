@@ -62,6 +62,21 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     const { data: taxSummaries = [] } = useTaxSummaries()
     const { data: userProfiles = [] } = useUserProfiles()
     const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name, sub: c.phone_number ?? undefined })), [clients])
+    const [formClientId, setFormClientId] = useState<string | null>(record?.client_id ?? clientId ?? null)
+    const { data: clientContracts = [] } = useQuery({
+      queryKey: ['contracts-for-client', formClientId],
+      queryFn: async () => {
+        const { data, error } = await supabase
+          .from('contracts')
+          .select('id, contract_no, wht_deduction_mode')
+          .eq('client_id', formClientId!)
+          .order('signed_date', { ascending: false, nullsFirst: false })
+        if (error) throw error
+        return data
+      },
+      enabled: !!formClientId,
+    })
+    const contractOptions = useMemo(() => clientContracts.map((c: any) => ({ id: c.id, label: c.contract_no ?? 'Untitled contract' })), [clientContracts])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
     const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
     const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
@@ -88,15 +103,22 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         tax_summary_id: record.tax_summary_id,
         due_date: record.due_date,
         payment_date: record.payment_date,
+        contract_id: record.contract_id,
+        is_final_payment: record.is_final_payment,
       }
-      : { sales_status: 'Draft', is_project_funded: true, client_id: clientId ?? undefined }
+      : { sales_status: 'Draft', is_project_funded: true, client_id: clientId ?? undefined, is_final_payment: false }
   )
+    const selectedContract = useMemo(() => clientContracts.find((c: any) => c.id === form.contract_id) ?? null, [clientContracts, form.contract_id])
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
     const [rejecting, setRejecting] = useState(false)
     const [rejectionReason, setRejectionReason] = useState('')
 
     function set(key: keyof SaleInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+    function setClient(newClientId: string | null) {
+      setFormClientId(newClientId)
+      setForm(f => ({ ...f, client_id: newClientId ?? undefined, contract_id: null, is_final_payment: false }))
+    }
 
   const approvalStatus = record?.approval_status ?? 'pending'
   const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
@@ -226,8 +248,31 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         <input type="text" className={inputCls} value={form.product_or_service ?? ''} onChange={e => set('product_or_service', e.target.value)} />
       </Field>
       <Field label="Client">
-        <SearchableSelect value={form.client_id ?? null} onChange={id => set('client_id', id)} options={clientOptions} placeholder="Select client…" />
+        <SearchableSelect value={form.client_id ?? null} onChange={setClient} options={clientOptions} placeholder="Select client…" />
       </Field>
+      {formClientId && (
+        <Field label="Contract">
+          <SearchableSelect value={form.contract_id ?? null} onChange={id => set('contract_id', id)} options={contractOptions} placeholder="Select signed contract (optional)…" />
+          {selectedContract && (
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-slate-500">
+                WHT deduction mode: {selectedContract.wht_deduction_mode === 'final_only' ? 'On final payment only' : 'On every payment'}
+              </p>
+              {selectedContract.wht_deduction_mode === 'final_only' && (
+                <label className="flex items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+                    checked={form.is_final_payment === true}
+                    onChange={e => set('is_final_payment', e.target.checked)}
+                  />
+                  This is the final payment on this contract — withhold WHT now
+                </label>
+              )}
+            </div>
+          )}
+        </Field>
+      )}
       <Field label="Project">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
         <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">
