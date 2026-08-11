@@ -7,6 +7,7 @@ export const CATEGORY_LABELS: Record<FixedAssetCategory, string> = {
   office_furniture: 'Office Furniture',
   site_equipment: 'Site Equipment',
   workshop_machinery: 'Workshop Machinery',
+  vehicle: 'Vehicle',
 }
 
 export const DEFAULT_USEFUL_LIFE: Record<FixedAssetCategory, number> = {
@@ -14,6 +15,7 @@ export const DEFAULT_USEFUL_LIFE: Record<FixedAssetCategory, number> = {
   office_furniture: 10,
   site_equipment: 5,
   workshop_machinery: 10,
+  vehicle: 5,
 }
 
 export const METHOD_LABELS: Record<DepreciationMethod, string> = {

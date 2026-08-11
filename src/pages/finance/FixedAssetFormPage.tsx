@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -95,6 +95,41 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // The link lives on vehicles.fixed_asset_id, not on this table — a
+  // vehicle keeps its own row for energy logs/maintenance/driver
+  // assignment, and only optionally points at a fixed_assets row for
+  // depreciation. originalVehicleId tracks what's linked today so a
+  // change on save can clear the old link, not just set the new one.
+  const { data: originalVehicleId } = useQuery({
+    queryKey: ['fixed-asset-linked-vehicle', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vehicles').select('id').eq('fixed_asset_id', id!).maybeSingle()
+      if (error) throw error
+      return data?.id ?? null
+    },
+    enabled: isEdit,
+  })
+  const [linkedVehicleId, setLinkedVehicleId] = useState<string | null>(null)
+  const vehicleLinkInitialized = useRef(false)
+  if (isEdit && originalVehicleId !== undefined && !vehicleLinkInitialized.current) {
+    vehicleLinkInitialized.current = true
+    if (originalVehicleId) setLinkedVehicleId(originalVehicleId)
+  }
+
+  const { data: vehicleRows = [] } = useQuery({
+    queryKey: ['vehicles-for-fixed-asset-link'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vehicles').select('id, name, plate_number, fixed_asset_id').eq('active', true).order('name')
+      if (error) throw error
+      return data as { id: string; name: string; plate_number: string | null; fixed_asset_id: string | null }[]
+    },
+    enabled: form.category === 'vehicle',
+  })
+  const vehicleOptions = useMemo(
+    () => vehicleRows.filter(v => !v.fixed_asset_id || v.id === linkedVehicleId).map(v => ({ id: v.id, label: v.name, sub: v.plate_number ?? undefined })),
+    [vehicleRows, linkedVehicleId]
+  )
+
   function set<K extends keyof FixedAssetInsert>(key: K, value: FixedAssetInsert[K]) { setForm(f => ({ ...f, [key]: value })) }
 
   // Purchase cost gate mirrors the DB CHECK constraint — surfaced here so
@@ -159,12 +194,28 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
 
     setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('fixed_assets').update(form as any).eq('id', id!) : supabase.from('fixed_assets').insert([form as any])
-    const { error: err } = await op
+    const op = isEdit
+      ? supabase.from('fixed_assets').update(form as any).eq('id', id!).select('id').single()
+      : supabase.from('fixed_assets').insert([form as any]).select('id').single()
+    const { data: saved, error: err } = await op
+    if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
+
+    const assetId = saved!.id as string
+    if (form.category === 'vehicle' && linkedVehicleId !== (originalVehicleId ?? null)) {
+      if (originalVehicleId) {
+        const { error: clearErr } = await supabase.from('vehicles').update({ fixed_asset_id: null }).eq('id', originalVehicleId)
+        if (clearErr) { setSaving(false); toast(`Asset saved, but unlinking the previous vehicle failed: ${clearErr.message}`, 'error'); return }
+      }
+      if (linkedVehicleId) {
+        const { error: linkErr } = await supabase.from('vehicles').update({ fixed_asset_id: assetId }).eq('id', linkedVehicleId)
+        if (linkErr) { setSaving(false); toast(`Asset saved, but linking the vehicle failed: ${linkErr.message}`, 'error'); return }
+      }
+    }
+
     setSaving(false)
-    if (err) { setError(err.message); toast(err.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['fixed-assets'] })
     qc.invalidateQueries({ queryKey: ['fixed-asset-register-summary'] })
+    qc.invalidateQueries({ queryKey: ['vehicles-for-fixed-asset-link'] })
     toast(isEdit ? 'Asset updated' : 'Asset registered', 'success')
     navigate('/finance/fixed-assets')
   }
@@ -181,6 +232,23 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
           <input type="text" className={inputCls} value={form.asset_name ?? ''} onChange={e => set('asset_name', e.target.value)} placeholder="e.g. Dell Latitude 5420 #14" />
         </Field>
       </div>
+
+      {form.category === 'vehicle' && (
+        <Field label="Linked Vehicle" hint="The vehicle keeps its own record for energy logs, maintenance, and driver assignment — this only links it to a purchase cost and depreciation schedule.">
+          <SearchableSelect
+            value={linkedVehicleId}
+            onChange={v => {
+              setLinkedVehicleId(v)
+              if (v && !form.asset_name?.trim()) {
+                const picked = vehicleRows.find(row => row.id === v)
+                if (picked) set('asset_name', picked.name)
+              }
+            }}
+            options={vehicleOptions}
+            placeholder="Select vehicle to register…"
+          />
+        </Field>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Serial Number">

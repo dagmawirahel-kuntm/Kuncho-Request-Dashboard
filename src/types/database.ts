@@ -631,6 +631,8 @@ export interface Vehicle {
   capacity_class: VehicleCapacityClass | null
   assigned_driver_id: string | null
   active: boolean
+  /** Set once this vehicle is registered on the fixed asset register — its purchase cost, depreciation, and schedule then live on that fixed_assets row instead. */
+  fixed_asset_id: string | null
   created_at: string
   updated_at: string
 }
@@ -2405,7 +2407,7 @@ export interface SiteDailyReport {
 // ── Fixed Asset Register ─────────────────────────────────────────
 // Everything owned that isn't a vehicle (`vehicles`) or a tool
 // (`tool_units`) — those keep their own specialized lifecycle tables.
-export type FixedAssetCategory = 'it_equipment' | 'office_furniture' | 'site_equipment' | 'workshop_machinery'
+export type FixedAssetCategory = 'it_equipment' | 'office_furniture' | 'site_equipment' | 'workshop_machinery' | 'vehicle'
 export type DepreciationMethod = 'straight_line' | 'declining_balance' | 'units_of_production' | 'sum_of_years'
 export type FixedAssetCondition = 'new' | 'good' | 'fair' | 'poor' | 'under_repair' | 'retired'
 export type FixedAssetDisposalMethod = 'sold' | 'scrapped' | 'donated' | 'lost'
