@@ -1,11 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
@@ -230,6 +232,32 @@ export default function ExpenseDetailPage() {
     enabled: !!id,
   })
 
+  // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
+  // (polymorphic — no real FK), so it can't ride along on the join above.
+  const { data: hasUnresolvedLedgerFailure } = useQuery({
+    queryKey: ['expense-has-ledger-failure', id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('ledger_posting_failures')
+        .select('id', { count: 'exact', head: true })
+        .eq('source_table', 'expenses').eq('source_id', id!).eq('resolved', false)
+      if (error) throw error
+      return (count ?? 0) > 0
+    },
+    enabled: !!id,
+  })
+  const expenseHint = useMemo(() => {
+    if (!expense || hasUnresolvedLedgerFailure === undefined) return null
+    return resolveHint({
+      entityType: 'expense',
+      id: expense.id,
+      approvalStatus: expense.approval_status,
+      accountId: expense.account_id,
+      hasUnresolvedLedgerFailure,
+      isFinanceUser: canApproveAsFinance(role),
+    })
+  }, [expense, hasUnresolvedLedgerFailure, role])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -393,6 +421,8 @@ export default function ExpenseDetailPage() {
             </div>
           </div>
         )}
+
+        <TrainerHintBanner entityType="expense" entityId={expense.id} hint={expenseHint} />
 
         {/* Hero card */}
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>

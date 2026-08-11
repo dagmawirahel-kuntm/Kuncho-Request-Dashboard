@@ -1,4 +1,4 @@
-import { Outlet, useLocation, NavLink } from 'react-router-dom'
+import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { GlobalSearch } from './GlobalSearch'
@@ -7,7 +7,7 @@ import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { LogOut, ChevronRight, Menu, Sun, Moon, CalendarRange } from 'lucide-react'
+import { LogOut, ChevronRight, Menu, Sun, Moon, CalendarRange, Settings } from 'lucide-react'
 
 function FiscalYearControl() {
   const { periods, current, value, setValue, canToggle } = useFiscalYear()
@@ -156,6 +156,13 @@ export function AppShell() {
               </span>
             )}
             <span className="hidden text-sm font-medium text-slate-700 md:inline dark:text-slate-200">{profile?.full_name ?? 'User'}</span>
+            <Link
+              to="/settings"
+              title="Settings"
+              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
             <button
               onClick={signOut}
               className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"

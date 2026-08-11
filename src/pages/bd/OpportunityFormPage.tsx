@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import type { Opportunity, OpportunityInsert } from '@/types/database'
 import { useClients, useStaff } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -46,12 +48,37 @@ export default function OpportunityFormPage() {
 function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportunity }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillClientId = searchParams.get('client_id')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: clients = [] } = useClients()
   const { data: staff = [] } = useStaff()
   const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name })), [clients])
   const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
+
+  // Trainer hint: proformas have no opportunity_id column, so the closest
+  // available check is whether this opportunity's client has any proforma
+  // on record at all.
+  const { data: hasProforma } = useQuery({
+    queryKey: ['opportunity-client-has-proforma', record?.client_id],
+    queryFn: async () => {
+      const { count, error } = await supabase.from('proformas').select('id', { count: 'exact', head: true }).eq('client_id', record!.client_id!)
+      if (error) throw error
+      return (count ?? 0) > 0
+    },
+    enabled: !!record?.client_id,
+  })
+  const opportunityHint = useMemo(() => {
+    if (!record) return null
+    return resolveHint({
+      entityType: 'opportunity',
+      id: record.id,
+      clientId: record.client_id,
+      stage: record.stage,
+      hasProforma: hasProforma ?? true,
+    })
+  }, [record, hasProforma])
 
   const [form, setForm] = useState<Partial<OpportunityInsert>>(
     record
@@ -65,7 +92,7 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
         expected_close_date: record.expected_close_date,
         notes: record.notes,
       }
-      : { stage: 'lead' }
+      : { stage: 'lead', client_id: prefillClientId ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -89,6 +116,7 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
 
   return (
     <FormPage title={isEdit ? 'Edit Opportunity' : 'New Opportunity'} backTo="/opportunities" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Opportunity'} onSave={handleSave}>
+      {isEdit && <TrainerHintBanner entityType="opportunity" entityId={id!} hint={opportunityHint} />}
       <Field label="Title *">
         <input type="text" className={inputCls} value={form.title ?? ''} onChange={e => set('title', e.target.value)} placeholder="e.g. XYZ Office Fit-Out" />
       </Field>

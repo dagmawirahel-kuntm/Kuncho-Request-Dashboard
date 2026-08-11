@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -6,6 +6,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
 import {
@@ -360,6 +362,18 @@ export default function PurchaseOrderPage() {
     enabled: !!id,
   })
 
+  const bundleHint = useMemo(() => {
+    if (!bundle || grn === undefined) return null
+    return resolveHint({
+      entityType: 'purchase_order',
+      id: bundle.id,
+      status: bundle.status,
+      orderedAt: bundle.ordered_at,
+      hasGrn: !!grn,
+      hasExpense: !!bundle.expense_id,
+    })
+  }, [bundle, grn])
+
   if (isLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
   if (bundleError) {
     return (
@@ -637,6 +651,8 @@ export default function PurchaseOrderPage() {
           )}
         </div>
       </div>
+
+      <TrainerHintBanner entityType="purchase_order" entityId={bundle.id} hint={bundleHint} />
 
       {/* Status timeline */}
       <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm">
