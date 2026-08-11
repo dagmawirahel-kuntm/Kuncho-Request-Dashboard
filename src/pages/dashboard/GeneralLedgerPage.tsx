@@ -478,7 +478,9 @@ function PostingFailuresTab() {
   const [retrying, setRetrying] = useState<string | null>(null)
   async function handleRetry(f: LedgerPostingFailure) {
     setRetrying(f.id)
-    const { data, error } = await supabase.rpc('retry_expense_ledger_posting', { p_expense_id: f.source_id })
+    const { data, error } = f.source_table === 'sales'
+      ? await supabase.rpc('retry_sale_ledger_posting', { p_sale_id: f.source_id })
+      : await supabase.rpc('retry_expense_ledger_posting', { p_expense_id: f.source_id })
     setRetrying(null)
     if (error) { toast(error.message, 'error'); return }
     const result = data as string
@@ -514,7 +516,7 @@ function PostingFailuresTab() {
                     transaction still absent from the books — precisely the
                     case that needs re-posting. Retrying an entry that did post
                     is harmless, it reports "Already posted". */}
-                {f.source_table === 'expenses' && (
+                {(f.source_table === 'expenses' || f.source_table === 'sales') && (
                   <button
                     onClick={() => handleRetry(f)}
                     disabled={retrying === f.id}
