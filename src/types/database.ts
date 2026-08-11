@@ -85,6 +85,7 @@ export interface UserProfile {
   is_ride_hailing_authorized: boolean
   is_tax_officer: boolean
   email: string | null
+  trainer_hints_enabled: boolean
   created_at: string
 }
 export type UserProfileInsert = Omit<UserProfile, 'created_at'>

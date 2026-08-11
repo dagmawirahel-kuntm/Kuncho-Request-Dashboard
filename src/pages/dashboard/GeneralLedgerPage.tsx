@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -44,7 +45,9 @@ function Empty({ children }: { children: React.ReactNode }) {
 export default function GeneralLedgerPage() {
   const { role } = useAuth()
   const canManage = role === 'admin' || role === 'finance'
-  const [tab, setTab] = useState<TabKey>('trial-balance')
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab')
+  const [tab, setTab] = useState<TabKey>(TABS.some(t => t.key === initialTab) ? (initialTab as TabKey) : 'trial-balance')
   const visibleTabs = TABS.filter(t => !('adminFinanceOnly' in t && t.adminFinanceOnly) || canManage)
 
   return (
@@ -478,7 +481,9 @@ function PostingFailuresTab() {
   const [retrying, setRetrying] = useState<string | null>(null)
   async function handleRetry(f: LedgerPostingFailure) {
     setRetrying(f.id)
-    const { data, error } = await supabase.rpc('retry_expense_ledger_posting', { p_expense_id: f.source_id })
+    const { data, error } = f.source_table === 'sales'
+      ? await supabase.rpc('retry_sale_ledger_posting', { p_sale_id: f.source_id })
+      : await supabase.rpc('retry_expense_ledger_posting', { p_expense_id: f.source_id })
     setRetrying(null)
     if (error) { toast(error.message, 'error'); return }
     const result = data as string
@@ -514,7 +519,7 @@ function PostingFailuresTab() {
                     transaction still absent from the books — precisely the
                     case that needs re-posting. Retrying an entry that did post
                     is harmless, it reports "Already posted". */}
-                {f.source_table === 'expenses' && (
+                {(f.source_table === 'expenses' || f.source_table === 'sales') && (
                   <button
                     onClick={() => handleRetry(f)}
                     disabled={retrying === f.id}

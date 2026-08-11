@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FileUpload } from '@/components/shared/FileUpload'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import type { Contract, ContractInsert, Client } from '@/types/database'
 import { useClients, useProjects, useOpportunities } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -59,6 +61,10 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
   const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name })), [clients])
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
   const opportunityOptions = useMemo(() => opportunities.map((o: any) => ({ id: o.id, label: o.title, sub: o.stage })), [opportunities])
+  const contractHint = useMemo(() => {
+    if (!record) return null
+    return resolveHint({ entityType: 'contract', id: record.id, clientId: record.client_id, status: record.status, projectId: record.project_id })
+  }, [record])
 
   const [form, setForm] = useState<Partial<ContractInsert>>(
     record
@@ -176,6 +182,7 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
 
   return (
     <FormPage title={isEdit ? 'Edit Contract' : 'New Contract'} backTo="/contracts" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Contract'} onSave={handleSave}>
+      {isEdit && <TrainerHintBanner entityType="contract" entityId={id!} hint={contractHint} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Contract No.">
           <input type="text" className={inputCls} value={form.contract_no ?? ''} onChange={e => set('contract_no', e.target.value)} placeholder="e.g. KUN-2026-001" />

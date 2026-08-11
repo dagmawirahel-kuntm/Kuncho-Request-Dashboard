@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -10,6 +10,8 @@ import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import { useStaff } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
 import type {
@@ -439,6 +441,30 @@ export default function ProjectWorkspacePage() {
     enabled: !!id,
   })
 
+  // Trainer hint: does this project have a linked contract, and does that
+  // contract have an upstream opportunity.
+  const { data: projectContract } = useQuery({
+    queryKey: ['project-contract-link', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('contracts').select('id, opportunity_id').eq('project_id', id!).limit(1).maybeSingle()
+      if (error) throw error
+      return data as { id: string; opportunity_id: string | null } | null
+    },
+    enabled: !!id,
+  })
+  const projectHint = useMemo(() => {
+    if (!project || projectContract === undefined) return null
+    return resolveHint({
+      entityType: 'project',
+      id: project.id,
+      clientId: project.client_id,
+      stage: project.stage,
+      createdAt: project.created_at,
+      hasContract: !!projectContract,
+      contractHasOpportunity: !!projectContract?.opportunity_id,
+    })
+  }, [project, projectContract])
+
   const { data: summary } = useQuery({
     queryKey: ['project-budget-summary', id],
     queryFn: async () => {
@@ -791,6 +817,8 @@ export default function ProjectWorkspacePage() {
         </div>
       </div>
 
+      <TrainerHintBanner entityType="project" entityId={project.id} hint={projectHint} />
+
       {/* Project details editor */}
       {editingDetails && (
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
@@ -829,7 +857,7 @@ export default function ProjectWorkspacePage() {
 
       {/* Stage timeline + editor */}
       {project.stage && (
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm space-y-3">
+        <div id="stage" className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm space-y-3">
           <div className="flex items-center gap-0">
             {STAGE_STEPS.map((step, i) => {
               const stageIdx = STAGE_ORDER.indexOf(project.stage!)

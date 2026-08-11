@@ -11,6 +11,8 @@ import {
   AlertTriangle, FileCheck, Banknote, PackageCheck, Landmark, FileSignature,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge, TierIconBadge, TIER_STYLES } from './ClientsPage'
@@ -674,6 +676,30 @@ export default function ClientDetailPage() {
     },
   })
 
+  // Trainer hint: does this client have any opportunities / projects on record.
+  const { data: hasOpportunities } = useQuery({
+    queryKey: ['client-has-opportunities', id],
+    queryFn: async () => {
+      const { count, error } = await supabase.from('opportunities').select('id', { count: 'exact', head: true }).eq('client_id', id!)
+      if (error) throw error
+      return (count ?? 0) > 0
+    },
+    enabled: !!id,
+  })
+  const { data: hasProjects } = useQuery({
+    queryKey: ['client-has-projects', id],
+    queryFn: async () => {
+      const { count, error } = await supabase.from('projects').select('id', { count: 'exact', head: true }).eq('client_id', id!)
+      if (error) throw error
+      return (count ?? 0) > 0
+    },
+    enabled: !!id,
+  })
+  const clientHint = useMemo(() => {
+    if (!id || hasOpportunities === undefined || hasProjects === undefined) return null
+    return resolveHint({ entityType: 'client', id, hasOpportunities, hasProjects })
+  }, [id, hasOpportunities, hasProjects])
+
   // Shared cache with ClientsPage — used to compute relative tier ranking
   const { data: allSalesStats = [] } = useQuery({
     queryKey: ['client-sales-stats'],
@@ -856,6 +882,8 @@ export default function ClientDetailPage() {
           ))}
         </div>
       </div>
+
+      <TrainerHintBanner entityType="client" entityId={id!} hint={clientHint} />
 
       {/* File completeness meter */}
       <FileCompletenessMeter client={client} sales={sales} attachments={attachments} contracts={clientContracts} />

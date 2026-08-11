@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { resolveHint } from '@/lib/trainerHints'
 import type { Order, OrderItem, OrderItemStatus, FinanceSourcingReview } from '@/types/database'
 import { useProjects, useStaff, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
@@ -128,6 +130,32 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
   })
   const reviewByItem = useMemo(() => new Map(sourcingReviews.map(r => [r.order_item_id, r])), [sourcingReviews])
 
+  // Trainer hint: has any of this order's items already been bundled into a
+  // sourcing bundle (this codebase's PO).
+  const { data: hasBundle } = useQuery({
+    queryKey: ['order-has-bundle', order.id],
+    queryFn: async () => {
+      if (itemIds.length === 0) return false
+      const { count, error } = await supabase.from('sourcing_bundle_items').select('id', { count: 'exact', head: true }).in('order_item_id', itemIds)
+      if (error) throw error
+      return (count ?? 0) > 0
+    },
+    enabled: itemIds.length > 0,
+  })
+  const orderHint = useMemo(() => {
+    if (hasBundle === undefined) return null
+    const unsourced = items.some(i => i.status === 'pending' || i.status === 'partially_sourced')
+    return resolveHint({
+      entityType: 'purchase_request',
+      id: order.id,
+      approvalStatus: order.approval_status,
+      hasItems: items.length > 0,
+      hasPendingItems: unsourced,
+      allItemsResolved: items.length > 0 && !unsourced,
+      hasBundle: !!hasBundle,
+    })
+  }, [order, items, hasBundle])
+
   const { data: costGroupBudgets = [] } = useQuery({
     queryKey: ['cost-group-remaining', order.project_id],
     queryFn: async () => {
@@ -236,6 +264,8 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
           </Link>
         )}
       </div>
+
+      <TrainerHintBanner entityType="purchase_request" entityId={order.id} hint={orderHint} />
 
       {/* Hero card */}
       <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
