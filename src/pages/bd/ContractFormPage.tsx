@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -49,6 +49,8 @@ export default function ContractFormPage() {
 function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillClientId = searchParams.get('client_id')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: clients = [] } = useClients()
@@ -76,8 +78,9 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
         document_url: record.document_url,
         document_name: record.document_name,
         notes: record.notes,
+        wht_deduction_mode: record.wht_deduction_mode ?? 'per_payment',
       }
-      : { status: 'draft' }
+      : { status: 'draft', client_id: prefillClientId ?? undefined, wht_deduction_mode: 'per_payment' }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -115,6 +118,7 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       document_url: form.document_url ?? null,
       document_name: form.document_name ?? null,
       notes: form.notes ?? null,
+      wht_deduction_mode: form.wht_deduction_mode ?? 'per_payment',
       created_at: record?.created_at ?? '',
       updated_at: record?.updated_at ?? '',
     }
@@ -218,12 +222,26 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="WHT Rate (%)">
-          <input type="number" step="0.01" className={inputCls} value={form.wht_rate ?? ''} onChange={e => set('wht_rate', e.target.value ? parseFloat(e.target.value) : null)} />
+          <input type="number" step="0.01" className={inputCls} value={form.wht_rate ?? ''} onChange={e => set('wht_rate', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 3" />
         </Field>
         <Field label="Retention (%)">
           <input type="number" step="0.01" className={inputCls} value={form.retention_percent ?? ''} onChange={e => set('retention_percent', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
+      <Field label="WHT Deduction">
+        <div className="flex gap-2">
+          {[
+            { v: 'per_payment', label: 'On every payment', desc: 'Each qualifying invoice (≥20k) against this client needs its own WHT receipt.' },
+            { v: 'final_only',  label: 'On final payment',  desc: 'WHT is withheld once, on the invoice marked final, computed on the full contract value.' },
+          ].map(opt => (
+            <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm ${form.wht_deduction_mode === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+              <input type="radio" name="whtmode" className="sr-only" checked={form.wht_deduction_mode === opt.v} onChange={() => set('wht_deduction_mode', opt.v)} />
+              <span className="block font-medium text-center">{opt.label}</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5 text-center">{opt.desc}</span>
+            </label>
+          ))}
+        </div>
+      </Field>
       <Field label="Contract Document">
         {isEdit ? (
           <div className="space-y-3">

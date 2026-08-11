@@ -8,7 +8,7 @@ import {
   ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, FileText,
   TrendingUp, CheckCircle2, Clock, ExternalLink, Upload,
   FileBadge, Receipt, Paperclip, Download, X, RotateCcw, Check,
-  AlertTriangle, FileCheck, Banknote, PackageCheck, Landmark,
+  AlertTriangle, FileCheck, Banknote, PackageCheck, Landmark, FileSignature,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useToast } from '@/contexts/ToastContext'
@@ -19,6 +19,28 @@ import { getClientLogoUrl } from '@/hooks/useClientLogo'
 // ── Constants ─────────────────────────────────────────────────────────────────
 const WHT_THRESHOLD = 20_000
 const WHT_RATE = 0.03
+
+// ── Contract-aware WHT qualification ────────────────────────────────────────
+// Sales are only linked to a contract when the user picked one on the sale
+// form; unlinked sales fall back to the old per-sale-amount rule. A contract
+// in 'final_only' mode withholds once, on whichever sale is flagged as the
+// final payment, computed on the full contract value rather than that
+// invoice's amount.
+type ContractRow = { id: string; contract_no: string | null; contract_value: number | null; status: string | null; signed_date: string | null; wht_rate: number | null; wht_deduction_mode: string }
+function contractForSale(sale: { contract_id?: string | null }, contracts: ContractRow[]): ContractRow | null {
+  return sale.contract_id ? contracts.find(c => c.id === sale.contract_id) ?? null : null
+}
+function saleWht(sale: { amount: number | null; contract_id?: string | null; is_final_payment?: boolean }, contracts: ContractRow[]) {
+  const contract = contractForSale(sale, contracts)
+  const rate = contract?.wht_rate ?? WHT_RATE
+  if (contract?.wht_deduction_mode === 'final_only') {
+    const base = Number(contract.contract_value ?? 0)
+    const qualifies = !!sale.is_final_payment && base > WHT_THRESHOLD
+    return { qualifies, base, rate }
+  }
+  const base = Number(sale.amount ?? 0)
+  return { qualifies: base >= WHT_THRESHOLD, base, rate }
+}
 
 // ── Tax workflow chip ─────────────────────────────────────────────────────────
 // Shown only on receipt/wht_receipt documents, which are the only ones
@@ -273,14 +295,15 @@ function ContractSummary({ contracts, paidSales }: { contracts: ClientAttachment
 
 // ── WHT Receipt Tracker ───────────────────────────────────────────────────────
 function WhtTracker({
-  sales, attachments, clientId, onUploaded,
+  sales, attachments, clientId, contracts, onUploaded,
 }: {
   sales: SaleRow[]
   attachments: ClientAttachment[]
   clientId: string
+  contracts: ContractRow[]
   onUploaded: () => void
 }) {
-  const qualifyingSales = sales.filter(s => Number(s.amount ?? 0) >= WHT_THRESHOLD)
+  const qualifyingSales = sales.filter(s => saleWht(s, contracts).qualifies)
   const whtAttachments = attachments.filter(a => a.category === 'wht_receipt')
 
   if (qualifyingSales.length === 0) {
@@ -322,6 +345,8 @@ function WhtTracker({
           const age = daysAgo(s.date)
           const overdue = !hasReceipt && age != null && age > 30
           const daysLeft = !hasReceipt && age != null ? 30 - age : null
+          const { base, rate } = saleWht(s, contracts)
+          const isFinalOnly = contractForSale(s, contracts)?.wht_deduction_mode === 'final_only'
 
           return (
             <div key={s.id} className={`flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 ${i < qualifyingSales.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
@@ -333,7 +358,7 @@ function WhtTracker({
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="text-xs text-slate-500">{fmt(s.date)}</span>
                   <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                    WHT: {formatCurrency(Number(s.amount ?? 0) * WHT_RATE)}
+                    WHT: {formatCurrency(base * rate)}{isFinalOnly ? ' (on contract value)' : ''}
                   </span>
                   {overdue && <span className="text-xs font-medium text-red-500">Overdue ({age}d ago)</span>}
                   {!hasReceipt && !overdue && daysLeft != null && daysLeft > 0 && (
@@ -360,7 +385,7 @@ function WhtTracker({
 }
 
 // ── Transfer Matcher ──────────────────────────────────────────────────────────
-function TransferMatcher({ sales, transfers }: { sales: SaleRow[]; transfers: Transfer[] }) {
+function TransferMatcher({ sales, transfers, contracts }: { sales: SaleRow[]; transfers: Transfer[]; contracts: ContractRow[] }) {
   const paidSales = sales.filter(s => s.sales_status === 'Paid')
 
   if (paidSales.length === 0) {
@@ -373,8 +398,8 @@ function TransferMatcher({ sales, transfers }: { sales: SaleRow[]; transfers: Tr
 
   function findMatch(sale: SaleRow): Transfer | null {
     const saleAmt = Number(sale.amount ?? 0)
-    const whtApplies = saleAmt >= WHT_THRESHOLD
-    const expected = whtApplies ? saleAmt * (1 - WHT_RATE) : saleAmt
+    const { qualifies: whtApplies, base, rate } = saleWht(sale, contracts)
+    const expected = whtApplies ? saleAmt - base * rate : saleAmt
     const tolerance = Math.max(expected * 0.02, 10)
 
     const candidates = transfers.filter(t => {
@@ -396,8 +421,8 @@ function TransferMatcher({ sales, transfers }: { sales: SaleRow[]; transfers: Tr
     <div className="rounded-xl border dark:border-slate-700 overflow-hidden">
       {paidSales.map((s, i) => {
         const saleAmt = Number(s.amount ?? 0)
-        const whtApplies = saleAmt >= WHT_THRESHOLD
-        const expectedCredit = whtApplies ? saleAmt * (1 - WHT_RATE) : saleAmt
+        const { qualifies: whtApplies, base, rate } = saleWht(s, contracts)
+        const expectedCredit = whtApplies ? saleAmt - base * rate : saleAmt
         const match = findMatch(s)
 
         return (
@@ -438,11 +463,11 @@ function TransferMatcher({ sales, transfers }: { sales: SaleRow[]; transfers: Tr
 
 // ── File completeness meter ───────────────────────────────────────────────────
 function FileCompletenessMeter({
-  client, sales, attachments,
-}: { client: Client; sales: Sale[]; attachments: ClientAttachment[] }) {
+  client, sales, attachments, contracts,
+}: { client: Client; sales: SaleRow[]; attachments: ClientAttachment[]; contracts: ContractRow[] }) {
   const hasReceipt = attachments.some(a => a.category === 'receipt')
   const hasContract = attachments.some(a => a.category === 'contract')
-  const qualifyingSales = sales.filter(s => Number(s.amount ?? 0) >= WHT_THRESHOLD)
+  const qualifyingSales = sales.filter(s => saleWht(s, contracts).qualifies)
   const whtNeeded = qualifyingSales.length
   const whtCollected = attachments.filter(a => a.category === 'wht_receipt').length
   const whtComplete = whtNeeded === 0 || whtCollected >= whtNeeded
@@ -499,29 +524,30 @@ function FileCompletenessMeter({
 
 // ── Collection Monitor (Collections tab) ──────────────────────────────────────
 function CollectionMonitor({
-  client, sales, attachments, transfers, onUploaded,
+  client, sales, attachments, transfers, contracts, onUploaded,
 }: {
   client: Client
   sales: SaleRow[]
   attachments: ClientAttachment[]
   transfers: Transfer[]
+  contracts: ContractRow[]
   onUploaded: () => void
 }) {
-  const contracts = attachments.filter(a => a.category === 'contract')
+  const contractDocs = attachments.filter(a => a.category === 'contract')
   const paidSales = sales.filter(s => s.sales_status === 'Paid')
-  const qualifyingSales = sales.filter(s => Number(s.amount ?? 0) >= WHT_THRESHOLD)
+  const qualifyingSales = sales.filter(s => saleWht(s, contracts).qualifies)
   const whtCollected = attachments.filter(a => a.category === 'wht_receipt').length
   const whtNeeded = qualifyingSales.length
-  const totalContracted = contracts.reduce((s, c) => s + Number(c.amount ?? 0), 0)
+  const totalContracted = contractDocs.reduce((s, c) => s + Number(c.amount ?? 0), 0)
   const totalCollected = paidSales.reduce((s, r) => s + Number(r.amount ?? 0), 0)
-  const hasContractAmounts = contracts.some(c => c.amount != null && Number(c.amount) > 0)
+  const hasContractAmounts = contractDocs.some(c => c.amount != null && Number(c.amount) > 0)
 
   return (
     <div className="space-y-6">
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Contracts', value: String(contracts.length), color: '#3B82F6' },
+          { label: 'Contracts', value: String(contractDocs.length), color: '#3B82F6' },
           { label: 'Contracted', value: hasContractAmounts ? formatCurrency(totalContracted) : '—', color: '#6366F1' },
           { label: 'Collected', value: formatCurrency(totalCollected), color: '#10B981' },
           {
@@ -542,7 +568,7 @@ function CollectionMonitor({
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
           <FileBadge className="h-4 w-4 text-blue-500" /> Contract vs Collected
         </h3>
-        <ContractSummary contracts={contracts} paidSales={paidSales} />
+        <ContractSummary contracts={contractDocs} paidSales={paidSales} />
       </section>
 
       {/* WHT receipt tracker */}
@@ -551,7 +577,7 @@ function CollectionMonitor({
           <FileCheck className="h-4 w-4 text-amber-500" /> WHT Receipt Tracker
           <span className="text-xs font-normal text-slate-400">· Sales ≥ {formatCurrency(WHT_THRESHOLD)} incur 3% WHT</span>
         </h3>
-        <WhtTracker sales={sales} attachments={attachments} clientId={client.id} onUploaded={onUploaded} />
+        <WhtTracker sales={sales} attachments={attachments} clientId={client.id} contracts={contracts} onUploaded={onUploaded} />
       </section>
 
       {/* Bank transfer matching */}
@@ -560,7 +586,7 @@ function CollectionMonitor({
           <Banknote className="h-4 w-4 text-slate-500" /> Bank Transfer Matching
           <span className="text-xs font-normal text-slate-400">· Matches paid sales against recorded transfers (97% for WHT sales)</span>
         </h3>
-        <TransferMatcher sales={sales} transfers={transfers} />
+        <TransferMatcher sales={sales} transfers={transfers} contracts={contracts} />
       </section>
     </div>
   )
@@ -607,6 +633,24 @@ export default function ClientDetailPage() {
       const { data, error } = await supabase.from('sales').select('*, projects:project_id ( project_name )').eq('client_id', id!).order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
       return data as SaleRow[]
+    },
+    enabled: !!id,
+  })
+
+  // Structured contracts (BD module, migration 084) — distinct from the
+  // free-form "contract" category under client_attachments below, which is
+  // just an uploaded file. This is the signed-contract record with a value,
+  // WHT rate, and the deduction mode this feature adds.
+  const { data: clientContracts = [] } = useQuery({
+    queryKey: ['client-contracts', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('id, contract_no, contract_value, status, signed_date, wht_rate, wht_deduction_mode')
+        .eq('client_id', id!)
+        .order('signed_date', { ascending: false, nullsFirst: false })
+      if (error) throw error
+      return data as { id: string; contract_no: string | null; contract_value: number | null; status: string | null; signed_date: string | null; wht_rate: number | null; wht_deduction_mode: string }[]
     },
     enabled: !!id,
   })
@@ -734,7 +778,7 @@ export default function ClientDetailPage() {
   }
 
   // Collections tab badge: how many outstanding WHT receipts
-  const whtNeeded = sales.filter(s => Number(s.amount ?? 0) >= WHT_THRESHOLD).length
+  const whtNeeded = sales.filter(s => saleWht(s, clientContracts).qualifies).length
   const whtCollected = attachments.filter(a => a.category === 'wht_receipt').length
   const whtOutstanding = Math.max(whtNeeded - whtCollected, 0)
 
@@ -814,7 +858,7 @@ export default function ClientDetailPage() {
       </div>
 
       {/* File completeness meter */}
-      <FileCompletenessMeter client={client} sales={sales} attachments={attachments} />
+      <FileCompletenessMeter client={client} sales={sales} attachments={attachments} contracts={clientContracts} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b dark:border-slate-700">
@@ -870,7 +914,7 @@ export default function ClientDetailPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{s.sales_description || '—'}</p>
-                          {Number(s.amount ?? 0) >= WHT_THRESHOLD && (
+                          {saleWht(s, clientContracts).qualifies && (
                             <span className="flex-shrink-0 text-[10px] font-medium rounded px-1 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">WHT</span>
                           )}
                         </div>
@@ -918,6 +962,7 @@ export default function ClientDetailPage() {
           sales={sales}
           attachments={attachments}
           transfers={transfers}
+          contracts={clientContracts}
           onUploaded={invalidateAttachments}
         />
       )}
@@ -997,6 +1042,36 @@ export default function ClientDetailPage() {
 
       {/* ── INFO ──────────────────────────────────────────────────── */}
       {tab === 'info' && (
+        <div className="space-y-4">
+        <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+              <FileSignature className="h-4 w-4 text-slate-400" /> Contracts
+            </h3>
+            <Link to={`/contracts/new?client_id=${id}`} className="text-xs text-brand hover:underline">+ New contract</Link>
+          </div>
+          {clientContracts.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-slate-400">No signed contracts on file. Contracts raised in the BD module for this client will show up here.</p>
+          ) : (
+            <div className="divide-y dark:divide-slate-700">
+              {clientContracts.map(c => (
+                <Link key={c.id} to={`/contracts/${c.id}/edit`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{c.contract_no ?? 'Untitled contract'}</p>
+                    <p className="text-xs text-slate-400">
+                      {c.signed_date ?? 'Not signed'} · {c.status ?? 'draft'} ·{' '}
+                      WHT {c.wht_deduction_mode === 'final_only' ? 'on final payment' : 'on every payment'}
+                      {c.wht_rate != null ? ` (${c.wht_rate}%)` : ''}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                    {c.contract_value != null ? formatCurrency(c.contract_value) : '—'}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 divide-y dark:divide-slate-700 shadow-sm">
           {[
             { icon: <Building2 className="h-4 w-4" />, label: 'Business Type',    value: client.business_type },
@@ -1021,6 +1096,7 @@ export default function ClientDetailPage() {
               <p className="text-sm text-slate-700 dark:text-slate-200 mt-0.5">{client.receipt_vouched ? 'Yes' : 'No'}</p>
             </div>
           </div>
+        </div>
         </div>
       )}
     </div>
