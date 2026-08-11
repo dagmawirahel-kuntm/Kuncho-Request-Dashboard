@@ -145,6 +145,9 @@ const navGroups: NavGroup[] = [
       { label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Labor Expense Drafts', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
+      // Read-only for everyone (register + book value), actions gated
+      // inside the page itself — no roles restriction here on purpose.
+      { label: 'Fixed Assets', to: '/finance/fixed-assets', icon: Archive },
     ],
   },
   {

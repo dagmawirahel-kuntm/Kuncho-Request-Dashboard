@@ -122,6 +122,8 @@ import DepartmentOrgChartPage from '@/pages/departments/DepartmentOrgChartPage'
 import DesignPackagesPage from '@/pages/design/DesignPackagesPage'
 import DesignPackageFormPage from '@/pages/design/DesignPackageFormPage'
 import DesignPackageDetailPage from '@/pages/design/DesignPackageDetailPage'
+import FixedAssetsPage from '@/pages/finance/FixedAssetsPage'
+import FixedAssetFormPage from '@/pages/finance/FixedAssetFormPage'
 import ContractsPage from '@/pages/bd/ContractsPage'
 import ContractFormPage from '@/pages/bd/ContractFormPage'
 import OpportunitiesPage from '@/pages/bd/OpportunitiesPage'
@@ -359,6 +361,8 @@ export const router = createBrowserRouter([
               { path: 'tax-management/log', element: <TaxEngagementFormPage /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
+              { path: 'finance/fixed-assets/new', element: <FixedAssetFormPage /> },
+              { path: 'finance/fixed-assets/:id/edit', element: <FixedAssetFormPage /> },
             ],
           },
           {
@@ -502,6 +506,7 @@ export const router = createBrowserRouter([
           // gated to sales/admin/manager, matching contracts/opportunities RLS.
           { path: 'contracts', element: <ContractsPage /> },
           { path: 'opportunities', element: <OpportunitiesPage /> },
+          { path: 'finance/fixed-assets', element: <FixedAssetsPage /> },
           {
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'sales']} />,
             children: [

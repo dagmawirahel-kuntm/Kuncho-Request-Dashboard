@@ -2401,3 +2401,133 @@ export interface SiteDailyReport {
   created_at: string
   updated_at: string
 }
+
+// ── Fixed Asset Register ─────────────────────────────────────────
+// Everything owned that isn't a vehicle (`vehicles`) or a tool
+// (`tool_units`) — those keep their own specialized lifecycle tables.
+export type FixedAssetCategory = 'it_equipment' | 'office_furniture' | 'site_equipment' | 'workshop_machinery'
+export type DepreciationMethod = 'straight_line' | 'declining_balance' | 'units_of_production' | 'sum_of_years'
+export type FixedAssetCondition = 'new' | 'good' | 'fair' | 'poor' | 'under_repair' | 'retired'
+export type FixedAssetDisposalMethod = 'sold' | 'scrapped' | 'donated' | 'lost'
+
+export interface FixedAssetAttachment {
+  url: string
+  name: string
+}
+
+export interface FixedAsset {
+  id: string
+  asset_code: string
+  asset_name: string
+  category: FixedAssetCategory
+  serial_number: string | null
+  manufacturer: string | null
+  model: string | null
+  purchase_date: string
+  purchase_cost_etb: number
+  purchase_expense_id: string | null
+  purchase_vendor_id: string | null
+  useful_life_years: number
+  depreciation_method: DepreciationMethod
+  declining_balance_rate: number | null
+  total_expected_units: number | null
+  salvage_value_etb: number
+  depreciation_start_date: string
+  location_id: string | null
+  custodian_staff_id: string | null
+  condition: FixedAssetCondition
+  last_verified_at: string | null
+  last_verified_by_staff_id: string | null
+  disposal_date: string | null
+  disposal_method: FixedAssetDisposalMethod | null
+  disposal_value_etb: number | null
+  disposal_notes: string | null
+  notes: string | null
+  attachments: FixedAssetAttachment[]
+  is_active: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+export type FixedAssetInsert = Omit<FixedAsset,
+  'id' | 'asset_code' | 'last_verified_at' | 'last_verified_by_staff_id' | 'created_by' | 'created_at' | 'updated_at'>
+
+export interface FixedAssetCurrent extends FixedAsset {
+  years_elapsed: number
+  accumulated_depreciation: number
+  current_book_value: number
+  remaining_useful_life_years: number
+  annual_depreciation_this_year: number
+  monthly_depreciation: number
+}
+
+export interface FixedAssetUsageLog {
+  id: string
+  fixed_asset_id: string
+  period_start_date: string
+  period_end_date: string
+  units_produced: number
+  logged_by_staff_id: string | null
+  notes: string | null
+  created_at: string
+}
+export type FixedAssetUsageLogInsert = Omit<FixedAssetUsageLog, 'id' | 'created_at'>
+
+export type FixedAssetMovementType = 'custodian_change' | 'location_change' | 'condition_change' | 'note'
+
+export interface FixedAssetMovement {
+  id: string
+  fixed_asset_id: string
+  movement_type: FixedAssetMovementType
+  from_custodian_staff_id: string | null
+  to_custodian_staff_id: string | null
+  from_location_id: string | null
+  to_location_id: string | null
+  from_condition: string | null
+  to_condition: string | null
+  note: string | null
+  moved_by_staff_id: string | null
+  moved_at: string
+}
+
+export interface DepreciationScheduleRow {
+  year_number: number
+  year_end_date: string
+  yearly_depreciation: number
+  cumulative_depreciation: number
+  book_value: number
+}
+
+export interface FixedAssetRegisterSummaryByCategory {
+  category: FixedAssetCategory
+  assets_count: number
+  original_cost: number
+  accumulated_depreciation: number
+  current_book_value: number
+}
+
+export interface FixedAssetRegisterSummary {
+  total_assets_count: number
+  total_original_cost: number
+  total_accumulated_depreciation: number
+  total_current_book_value: number
+  by_category: FixedAssetRegisterSummaryByCategory[]
+  assets_due_for_verification: number
+  assets_disposed_this_fy_count: number
+  assets_disposed_this_fy_value: number
+}
+
+export type AssetBaseSource = 'fixed' | 'vehicle' | 'tool'
+
+export interface AssetBaseUnifiedRow {
+  asset_source: AssetBaseSource
+  id: string
+  name: string
+  category: string
+  original_cost: number | null
+  current_book_value: number | null
+  condition: string | null
+  custodian: string | null
+  location: string | null
+  is_active: boolean
+}
