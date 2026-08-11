@@ -9,7 +9,7 @@ import { FileUpload } from '@/components/shared/FileUpload'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useStaff } from '@/hooks/useLookups'
 import type { Expense, Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
-import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera, Fuel, Pencil, UserCircle2 } from 'lucide-react'
+import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera, Fuel, Pencil, UserCircle2, Archive } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
   available:   { label: 'Available',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -53,6 +53,16 @@ export default function VehicleDetailPage() {
       if (error) throw error
       return data as Vehicle
     },
+  })
+
+  const { data: linkedFixedAsset } = useQuery({
+    queryKey: ['vehicle-fixed-asset', vehicle?.fixed_asset_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_fixed_asset_current').select('asset_code, current_book_value').eq('id', vehicle!.fixed_asset_id!).maybeSingle()
+      if (error) throw error
+      return data as { asset_code: string; current_book_value: number } | null
+    },
+    enabled: !!vehicle?.fixed_asset_id,
   })
 
   const { data: jobs = [] } = useQuery({
@@ -201,6 +211,17 @@ export default function VehicleDetailPage() {
               ? <><BookOpen className="h-3.5 w-3.5 text-emerald-500" /><span className="text-emerald-600 dark:text-emerald-400">On the books (PPE)</span></>
               : <><BookX className="h-3.5 w-3.5 text-slate-400" /><span className="text-slate-400">Off-books</span></>}
           </p>
+
+          {vehicle.fixed_asset_id ? (
+            <Link to="/finance/fixed-assets" className="flex items-center gap-1.5 text-xs font-medium text-brand hover:underline w-fit">
+              <Archive className="h-3.5 w-3.5" />
+              {linkedFixedAsset ? `Registered as ${linkedFixedAsset.asset_code} · ${formatCurrency(linkedFixedAsset.current_book_value)} book value` : 'Registered on the fixed asset register'}
+            </Link>
+          ) : canManage && (
+            <Link to="/finance/fixed-assets/new" className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-brand w-fit">
+              <Archive className="h-3.5 w-3.5" /> Not on the fixed asset register — register for depreciation
+            </Link>
+          )}
 
           {vehicle.purpose_notes && (
             <div>
