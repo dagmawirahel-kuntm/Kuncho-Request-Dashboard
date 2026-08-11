@@ -12,9 +12,13 @@
 -- ONLY gate — and anon had EXECUTE on them via this project's
 -- default privileges (same root cause as the anon-grant fix already
 -- applied to the two internal helpers). Fix: reject NULL explicitly.
--- Also revoking EXECUTE from anon on all six public BOQ
+-- Also revoking EXECUTE from anon AND PUBLIC on all six public BOQ
 -- change-order RPCs as defense in depth — none of them have any
--- legitimate unauthenticated caller.
+-- legitimate unauthenticated caller. A live check confirmed all six
+-- carry a standing PUBLIC grant (CREATE FUNCTION's default), which
+-- alone gives anon EXECUTE regardless of anything revoked from anon
+-- specifically — Postgres ACLs are additive across a role's direct
+-- grants and PUBLIC's grants, so both must be revoked.
 -- ============================================================
 
 SET search_path TO public;
@@ -223,12 +227,22 @@ $$;
 -- Defense in depth: anon has no legitimate reason to call any of the
 -- six public BOQ change-order RPCs. Revoke explicitly rather than
 -- relying solely on the in-body check.
-REVOKE EXECUTE ON FUNCTION submit_boq_change_order(UUID, TEXT, TEXT, BOOLEAN, NUMERIC, JSONB) FROM anon;
-REVOKE EXECUTE ON FUNCTION pm_approve_change_order(UUID) FROM anon;
-REVOKE EXECUTE ON FUNCTION finance_approve_change_order(UUID) FROM anon;
-REVOKE EXECUTE ON FUNCTION exec_approve_change_order(UUID) FROM anon;
-REVOKE EXECUTE ON FUNCTION record_client_signoff(UUID, TEXT) FROM anon;
-REVOKE EXECUTE ON FUNCTION reject_change_order(UUID, TEXT) FROM anon;
+--
+-- Must also revoke from PUBLIC, not just anon: a live check
+-- (information_schema.routine_privileges) confirmed all six
+-- functions carry a standing grantee = 'PUBLIC' EXECUTE row (created
+-- by CREATE FUNCTION's default behavior, same as the anon-by-default
+-- issue). In Postgres's ACL model, a role's effective privileges are
+-- the union of privileges granted directly to it AND privileges
+-- granted to PUBLIC — revoking from anon alone does not remove what
+-- anon still holds via the PUBLIC grant. authenticated is left
+-- untouched since it is the legitimate caller for all six.
+REVOKE EXECUTE ON FUNCTION submit_boq_change_order(UUID, TEXT, TEXT, BOOLEAN, NUMERIC, JSONB) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION pm_approve_change_order(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION finance_approve_change_order(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION exec_approve_change_order(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION record_client_signoff(UUID, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION reject_change_order(UUID, TEXT) FROM PUBLIC, anon;
 
 SELECT routine_name, grantee, privilege_type
 FROM information_schema.routine_privileges
