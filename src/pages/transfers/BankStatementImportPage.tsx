@@ -9,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { parseBankStatementCsv, type ParsedStatement } from '@/lib/bankStatementParser'
 import type { BankStatementImport, BankStatementLine } from '@/types/database'
-import { Upload, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight, RefreshCw, Link2 } from 'lucide-react'
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
@@ -158,6 +158,26 @@ export default function BankStatementImportPage() {
     qc.invalidateQueries({ queryKey: ['bank-statement-lines', importId] })
   }
 
+  const [rematching, setRematching] = useState(false)
+
+  // Committed imports don't get automatically revisited when a backfilled
+  // expense finally gets a matching bank_ref — this re-runs the same
+  // reference-code match rule against every still-unmatched committed line
+  // and, unlike the original auto-match, actually flips payment_state so
+  // the expense surfaces as paid.
+  async function handleRematch(importId?: string) {
+    setRematching(true)
+    const { data, error } = await supabase.rpc('rematch_committed_statement_lines', { p_import_id: importId ?? null }).select().single()
+    setRematching(false)
+    if (error) { toast(error.message, 'error'); return }
+    const r = data as { matched_count: number; skipped_count: number }
+    toast(r.matched_count > 0
+      ? `Rematched ${r.matched_count} line(s) — expense(s) now show as paid`
+      : 'No new matches found', r.matched_count > 0 ? 'success' : 'info')
+    qc.invalidateQueries({ queryKey: ['bank-statement-lines'] })
+    qc.invalidateQueries({ queryKey: ['expenses'] })
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -237,7 +257,16 @@ export default function BankStatementImportPage() {
         </Section>
       )}
 
-      <Section title="Import History">
+      <Section title="Import History" sub="Backfilled an expense's bank reference after committing? Rematch to pick it up — it flips the expense to paid, it doesn't just relabel the line.">
+        <div className="px-4 py-2 border-b dark:border-slate-700 flex justify-end">
+          <button
+            onClick={() => handleRematch()}
+            disabled={rematching}
+            className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${rematching ? 'animate-spin' : ''}`} /> Rematch all committed lines
+          </button>
+        </div>
         {loadingImports ? (
           <div className="py-8 text-center text-sm text-slate-400">Loading…</div>
         ) : imports.length === 0 ? (
@@ -254,9 +283,21 @@ export default function BankStatementImportPage() {
                       <p className="text-xs text-slate-400">{imp.period_start ?? '—'} → {imp.period_end ?? '—'} · uploaded {formatDate(imp.uploaded_at)}</p>
                     </div>
                   </button>
-                  <StatusBadge status={imp.status} />
+                  <div className="flex items-center gap-2 shrink-0">
+                    {imp.status === 'committed' && (
+                      <button
+                        onClick={() => handleRematch(imp.id)}
+                        disabled={rematching}
+                        className="text-xs rounded-md border dark:border-slate-600 px-2 py-1 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                        title="Rematch this import's unmatched lines against current expenses"
+                      >
+                        Rematch
+                      </button>
+                    )}
+                    <StatusBadge status={imp.status} />
+                  </div>
                 </div>
-                {expandedImportId === imp.id && <LinesTable lines={expandedLines} />}
+                {expandedImportId === imp.id && <LinesTable lines={expandedLines} committed={imp.status === 'committed'} />}
               </div>
             ))}
           </div>
@@ -266,7 +307,7 @@ export default function BankStatementImportPage() {
   )
 }
 
-function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expense_code: string | null; item_service_description: string | null } | null })[] }) {
+function LinesTable({ lines, committed = false }: { lines: (BankStatementLine & { expenses: { expense_code: string | null; item_service_description: string | null } | null })[]; committed?: boolean }) {
   if (lines.length === 0) return <div className="py-6 text-center text-xs text-slate-400">No lines.</div>
   const totalDebit = lines.reduce((s, l) => s + (l.debit_amount ?? 0), 0)
   const totalCredit = lines.reduce((s, l) => s + (l.credit_amount ?? 0), 0)
@@ -306,6 +347,8 @@ function LinesTable({ lines }: { lines: (BankStatementLine & { expenses: { expen
                   <Link to={`/expenses/${l.matched_expense_id}`} className="text-brand hover:underline truncate block">
                     {l.expenses.item_service_description ?? l.expenses.expense_code}
                   </Link>
+                ) : committed && l.match_status === 'unmatched' ? (
+                  <MatchToExpenseCell lineId={l.id} />
                 ) : '—'}
               </td>
               <td className="px-4 py-2 text-right whitespace-nowrap"><VarianceCell line={l} /></td>
@@ -361,6 +404,70 @@ function VarianceCell({ line }: { line: BankStatementLine }) {
       {over ? '+' : '−'}{formatCurrency(Math.abs(Number(line.variance_amount)))}
       <span className="ml-1 font-normal text-slate-400">{over ? 'over' : 'short'}</span>
     </span>
+  )
+}
+
+// Inline manual pairing for a single unmatched line on a committed import —
+// for cases the reference-code rematch can't catch (mistyped/missing
+// bank_ref, wrong currency of reference, etc.). Candidate list is expenses
+// not yet linked to any transfer; searchable by code/description.
+function MatchToExpenseCell({ lineId }: { lineId: string }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [expenseId, setExpenseId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const { data: candidates = [] } = useQuery({
+    queryKey: ['unmatched-expenses-for-line'],
+    enabled: open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('id, expense_code, item_service_description, amount_etb, date')
+        .is('transfer_id', null)
+        .order('date', { ascending: false })
+        .limit(300)
+      if (error) throw error
+      return data as { id: string; expense_code: string | null; item_service_description: string | null; amount_etb: number | null; date: string | null }[]
+    },
+  })
+  const options = candidates.map(c => ({
+    id: c.id,
+    label: `${c.expense_code ?? ''} ${c.item_service_description ?? ''}`.trim() || 'Expense',
+    sub: `${c.date ?? ''} · ${c.amount_etb != null ? formatCurrency(c.amount_etb) : ''}`,
+  }))
+
+  async function confirm() {
+    if (!expenseId) return
+    setSaving(true)
+    const { error } = await supabase.rpc('match_expense_to_statement_line', { p_line_id: lineId, p_expense_id: expenseId })
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Matched — expense now shows as paid', 'success')
+    setOpen(false)
+    setExpenseId(null)
+    qc.invalidateQueries({ queryKey: ['bank-statement-lines'] })
+    qc.invalidateQueries({ queryKey: ['expenses'] })
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
+        <Link2 className="h-3 w-3" /> Match to expense
+      </button>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-56">
+        <SearchableSelect value={expenseId} onChange={setExpenseId} options={options} placeholder="Search expenses…" />
+      </div>
+      <button onClick={confirm} disabled={!expenseId || saving} className="rounded-md bg-brand px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+        {saving ? '…' : 'Confirm'}
+      </button>
+      <button onClick={() => { setOpen(false); setExpenseId(null) }} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-3.5 w-3.5" /></button>
+    </div>
   )
 }
 

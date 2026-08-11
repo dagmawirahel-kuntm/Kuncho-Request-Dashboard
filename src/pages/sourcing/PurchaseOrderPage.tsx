@@ -22,6 +22,10 @@ const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
 
 const VAT_RATE = 0.15
 const WHT_RATE = 0.03
+// Ethiopian withholding rule: a purchase only falls in the WHT bracket once
+// its subtotal (goods/services value before VAT) exceeds this floor. Below
+// it, no WHT applies regardless of the vendor's tax-registration status.
+const WHT_SUBTOTAL_THRESHOLD = 20000
 
 type BundleDetail = {
   id: string
@@ -421,7 +425,9 @@ export default function PurchaseOrderPage() {
   const grandTotal = sortedItems.reduce((sum, item) =>
     sum + (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0), 0)
 
-  const whtEligible = !!bundle.vendors?.wth_eligible
+  // Vendor must be tax-registered AND the PO subtotal must clear the
+  // withholding bracket floor — either alone is not sufficient.
+  const whtEligible = !!bundle.vendors?.wth_eligible && grandTotal > WHT_SUBTOTAL_THRESHOLD
   const vatAmount = grandTotal * VAT_RATE
   // Gross = what the vendor invoices. WHT is withheld from this at payment
   // and remitted to ERCA, so it is the figure the vendor's own invoice and
@@ -806,6 +812,13 @@ export default function PurchaseOrderPage() {
                     <td className="px-4 py-2 text-right text-sm text-amber-600 dark:text-amber-400 tabular-nums">−{formatCurrency(whtAmount)}</td>
                   </tr>
                 </>
+              )}
+              {!whtEligible && bundle.vendors?.wth_eligible && grandTotal <= WHT_SUBTOTAL_THRESHOLD && (
+                <tr className="bg-slate-50 dark:bg-slate-700/30">
+                  <td colSpan={8} className="px-4 py-2 text-right text-[11px] text-slate-400 italic">
+                    No WHT — subtotal ({formatCurrency(grandTotal)}) is at or below the {formatCurrency(WHT_SUBTOTAL_THRESHOLD)} withholding bracket floor.
+                  </td>
+                </tr>
               )}
               <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
                 <td colSpan={7} className="px-4 py-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-300">
