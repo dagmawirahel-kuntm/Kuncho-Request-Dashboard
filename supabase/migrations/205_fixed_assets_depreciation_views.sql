@@ -44,8 +44,10 @@ BEGIN
     RETURN;
   END IF;
 
+  -- date - date in Postgres already yields an integer day count, not an
+  -- interval, so this is a plain numeric division — no EXTRACT/EPOCH.
   v_years_elapsed := LEAST(
-    GREATEST(EXTRACT(EPOCH FROM (p_as_of - v_asset.depreciation_start_date)) / 86400.0 / 365.25, 0),
+    GREATEST((p_as_of - v_asset.depreciation_start_date)::numeric / 365.25, 0),
     v_asset.useful_life_years
   );
   v_full_years := FLOOR(v_years_elapsed)::INT;
