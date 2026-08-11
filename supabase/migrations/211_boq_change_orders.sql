@@ -510,9 +510,14 @@ GRANT EXECUTE ON FUNCTION record_client_signoff(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION reject_change_order(UUID, TEXT) TO authenticated;
 
 -- Internal-only: never callable directly by a client, only reachable
--- as a nested call from the DEFINER functions above.
-REVOKE EXECUTE ON FUNCTION duplicate_boq_as_new_version(UUID) FROM PUBLIC, authenticated;
-REVOKE EXECUTE ON FUNCTION finalize_change_order(UUID) FROM PUBLIC, authenticated;
+-- as a nested call from the DEFINER functions above. This project's
+-- default privileges grant EXECUTE on new functions to anon as well
+-- as authenticated (confirmed live: anon had a direct grant even
+-- after revoking from PUBLIC/authenticated alone) — anon must be
+-- revoked explicitly too, or an unauthenticated client could call
+-- these directly via PostgREST and bypass the whole approval chain.
+REVOKE EXECUTE ON FUNCTION duplicate_boq_as_new_version(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION finalize_change_order(UUID) FROM PUBLIC, anon, authenticated;
 
 -- ── Amend v_boq_current_per_project to add has_active_change_order ─
 CREATE OR REPLACE VIEW v_boq_current_per_project
