@@ -17,7 +17,7 @@ import {
   type WorkOrderRatingRow,
 } from '@/hooks/useWorkOrderRatings'
 import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, WoProgressUpdate, SiteMaterialReceipt } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus, UserPlus2 } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
@@ -715,7 +715,15 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
       assigned_by_staff_id: mySelf?.id ?? null,
     }])
     setSaving(false)
-    if (error) { toast(error.message, 'error'); return }
+    if (error) {
+      // 23505 = unique_violation on uq_wo_crew_active — someone else's
+      // recent add hadn't reached this browser's cached crew list yet.
+      // Refetch so the dropdown drops the stale option, and say so
+      // plainly instead of surfacing the raw constraint name.
+      qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
+      toast(error.code === '23505' ? 'This person is already on the crew for this work order' : error.message, 'error')
+      return
+    }
     qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
     setSelectedStaffId(null); setRoleOnWo(''); setShowAdd(false)
     toast('Crew member added', 'success')
@@ -735,9 +743,20 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Users className="h-4 w-4" /> Crew ({crew.length})</h2>
         {canManage && (
-          <button onClick={() => setShowAdd(s => !s)} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-            {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Add Crew'}
-          </button>
+          <div className="flex items-center gap-2">
+            <Link to={`/labor-requisitions/new?project_id=${projectId}&work_order_id=${workOrderId}`} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+              <UserPlus2 className="h-3.5 w-3.5" /> Request Labor
+            </Link>
+            <button
+              onClick={() => {
+                if (!showAdd) qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
+                setShowAdd(s => !s)
+              }}
+              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Add Crew'}
+            </button>
+          </div>
         )}
       </div>
       {showAdd && (
