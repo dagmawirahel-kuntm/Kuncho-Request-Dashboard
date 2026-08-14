@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import DailySiteReportPage from '@/pages/site-foreman/DailySiteReportPage'
-import LogSiteTimesheetPage from '@/pages/site-foreman/LogSiteTimesheetPage'
+import LogAttendancePage from '@/pages/site-foreman/LogAttendancePage'
+import LogMaterialReceiptPage from '@/pages/site-foreman/LogMaterialReceiptPage'
 import SiteFloatRequestPage from '@/pages/site-foreman/SiteFloatRequestPage'
 import { FinanceSitePettyCashQueuePage, PMSitePettyCashQueuePage } from '@/pages/site-foreman/SitePettyCashQueue'
 import { MaterialsRequestedPage, HseLogPage, WorkOrdersOnMySitesPage, MyProjectsPage } from '@/pages/site-foreman/ScopedListPages'
@@ -143,6 +144,8 @@ import HseIncidentFormPage from '@/pages/hse-incidents/HseIncidentFormPage'
 import HseInductionsPage from '@/pages/hse-inductions/HseInductionsPage'
 import HseInductionFormPage from '@/pages/hse-inductions/HseInductionFormPage'
 import LaborRequisitionsPage from '@/pages/labor-requisitions/LaborRequisitionsPage'
+import LaborRequisitionDetailPage from '@/pages/labor-requisitions/LaborRequisitionDetailPage'
+import Tier2CandidatesPage from '@/pages/hr/Tier2CandidatesPage'
 import PettyCashPage from '@/pages/petty-cash/PettyCashPage'
 import PettyCashFloatFormPage from '@/pages/petty-cash/PettyCashFloatFormPage'
 import PettyCashDetailPage from '@/pages/petty-cash/PettyCashDetailPage'
@@ -175,7 +178,6 @@ import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
 import FfeJobDescriptionsPage from '@/pages/work-orders/FfeJobDescriptionsPage'
 import StaffFfeSkillsPage from '@/pages/work-orders/StaffFfeSkillsPage'
 import ExecDashboardPage from '@/pages/exec/ExecDashboardPage'
-import AttendancePage from '@/pages/site-foreman/AttendancePage'
 import TradeCatalogPage from '@/pages/hr/TradeCatalogPage'
 
 export const router = createBrowserRouter([
@@ -390,15 +392,19 @@ export const router = createBrowserRouter([
             // gated by role since they're written-to.
             children: [
               { path: 'site-foreman/daily-report', element: <DailySiteReportPage /> },
-              { path: 'site-foreman/timesheet', element: <LogSiteTimesheetPage /> },
+              // Log Site Timesheet (Tier1+Tier2 via `timesheet`) and the
+              // separate Tier 2-only weekly grid (`timesheet_attendance`)
+              // are both folded into WO-owned attendance — old links keep
+              // working via redirect rather than 404ing.
+              { path: 'site-foreman/timesheet', element: <Navigate to="/site-foreman/log-attendance" replace /> },
+              { path: 'site-foreman/attendance', element: <Navigate to="/site-foreman/log-attendance" replace /> },
+              { path: 'site-foreman/log-attendance', element: <LogAttendancePage /> },
+              { path: 'site-foreman/log-material-receipt', element: <LogMaterialReceiptPage /> },
               { path: 'site-foreman/float-request', element: <SiteFloatRequestPage /> },
               { path: 'site-foreman/materials', element: <MaterialsRequestedPage /> },
               { path: 'site-foreman/hse', element: <HseLogPage /> },
               { path: 'site-foreman/work-orders', element: <WorkOrdersOnMySitesPage /> },
               { path: 'site-foreman/projects', element: <MyProjectsPage /> },
-              // Tier 2 attendance grid: RLS on timesheet_attendance handles the
-              // foreman-vs-project gate; page reach is broad here.
-              { path: 'site-foreman/attendance', element: <AttendancePage /> },
             ],
           },
           {
@@ -411,6 +417,15 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
             children: [
               { path: 'pm/site-petty-cash-requests', element: <PMSitePettyCashQueuePage /> },
+            ],
+          },
+          {
+            // HR-only, per the provision_tier_2_worker_from_candidate RPC's
+            // own role check (admin/executive/hr_officer) — narrower than
+            // the general HR block below, which also admits finance.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'hr_officer']} />,
+            children: [
+              { path: 'hr/tier2-candidates', element: <Tier2CandidatesPage /> },
             ],
           },
           {
@@ -564,6 +579,7 @@ export const router = createBrowserRouter([
           // approve/reject/delete happen from the list itself (RLS-gated
           // separately to operations_manager/hr_officer/admin, see 094).
           { path: 'labor-requisitions', element: <LaborRequisitionsPage /> },
+          { path: 'labor-requisitions/:id', element: <LaborRequisitionDetailPage /> },
           {
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'operations_manager', 'hr_officer']} />,
             children: [

@@ -9,7 +9,7 @@ import { formatDate, formatCurrency, cn } from '@/lib/utils'
 import type { LaborRequisition } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Eye } from 'lucide-react'
 
 type LaborRequisitionRow = LaborRequisition & { projects: { project_name: string } | null }
 
@@ -80,6 +80,7 @@ export default function LaborRequisitionsPage() {
       header: '',
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
+          <Link to={`/labor-requisitions/${row.original.id}`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700" title="View"><Eye className="h-3.5 w-3.5" /></Link>
           {canManage && row.original.status === 'pending' && (
             <>
               <button onClick={() => handleDecision(row.original.id, 'approved')} className="rounded p-1 text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30" title="Approve"><Check className="h-3.5 w-3.5" /></button>

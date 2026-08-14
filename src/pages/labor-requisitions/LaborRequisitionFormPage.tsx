@@ -74,7 +74,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const [searchParams] = useSearchParams()
   const prefillProjectId = searchParams.get('project_id')
   const { toast } = useToast()
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   const { data: myStaff } = useMyStaffId()
   const myStaffId = myStaff?.id ?? null
   const qc = useQueryClient()
@@ -106,6 +106,14 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const [assignMode, setAssignMode] = useState<AssignMode>(initialAssignMode)
   const [proposingTrade, setProposingTrade] = useState<boolean>(!!(r?.proposed_trade_amharic || r?.proposed_trade_english))
   const [suggestOpen, setSuggestOpen] = useState(false)
+  // "+ New Vendor" fast path is admin-only: vendors INSERT RLS
+  // (admin/procurement_officer/executive/finance) doesn't cover most
+  // requisition-creating roles (project_manager/operations_manager/
+  // hr_officer/site_foreman), and widening it was explicitly declined —
+  // so the button only appears where the direct insert will actually
+  // succeed, rather than showing a control that fails for everyone else.
+  const canCreateVendor = role === 'admin'
+  const [newVendorOpen, setNewVendorOpen] = useState(false)
   // Multi-candidate group. Populated from the join table on edit.
   const [candidateIds, setCandidateIds] = useState<string[]>([])
   // Sync candidateIds when attachedCands arrives (edit mode) — only for
@@ -451,10 +459,10 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Payment Model">
           <div className="flex gap-2">
-            {[
+            {([
               { v: 'individual',  label: 'Individual' },
               { v: 'gang_leader', label: 'Gang leader' },
-            ].map(opt => (
+            ] as const).map(opt => (
               <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm text-center ${form.payment_model === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
                 <input type="radio" name="pm" className="sr-only" checked={form.payment_model === opt.v} onChange={() => set('payment_model', opt.v)} />
                 {opt.label}
@@ -464,10 +472,10 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         </Field>
         <Field label="Pay Cycle">
           <div className="flex gap-2">
-            {[
+            {([
               { v: 'weekly',          label: 'Weekly' },
               { v: 'engagement_end',  label: 'At engagement end' },
-            ].map(opt => (
+            ] as const).map(opt => (
               <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm text-center ${form.pay_cycle === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
                 <input type="radio" name="cyc" className="sr-only" checked={form.pay_cycle === opt.v} onChange={() => set('pay_cycle', opt.v)} />
                 {opt.label}
@@ -479,17 +487,34 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
 
       {form.payment_model === 'gang_leader' && (
         <Field label="Gang Leader Vendor *">
-          <SearchableSelect value={form.gang_leader_vendor_id ?? null} onChange={id => set('gang_leader_vendor_id', id)} options={vendorOptions} placeholder="Select the vendor who receives payment…" />
+          <div className="flex gap-2">
+            <div className="flex-1"><SearchableSelect value={form.gang_leader_vendor_id ?? null} onChange={id => set('gang_leader_vendor_id', id)} options={vendorOptions} placeholder="Select the vendor who receives payment…" /></div>
+            {canCreateVendor && (
+              <button type="button" onClick={() => setNewVendorOpen(true)} className="whitespace-nowrap rounded-md border border-brand/40 px-3 py-2 text-xs font-medium text-brand hover:bg-brand/5 dark:hover:bg-brand/10">+ New Vendor</button>
+            )}
+          </div>
           <p className="mt-1 text-[11px] text-slate-400">Only vendors flagged as labor brokers are prioritized; all active vendors are available.</p>
         </Field>
+      )}
+      {newVendorOpen && (
+        <NewVendorModal
+          onClose={() => setNewVendorOpen(false)}
+          onCreated={(newId) => {
+            set('gang_leader_vendor_id', newId)
+            qc.invalidateQueries({ queryKey: ['labor-broker-vendors'] })
+            qc.invalidateQueries({ queryKey: ['vendors'] })
+            qc.invalidateQueries({ queryKey: ['vendors-lookup'] })
+            setNewVendorOpen(false)
+          }}
+        />
       )}
 
       <Field label="Work Measurement">
         <div className="flex gap-2">
-          {[
+          {([
             { v: 'per_day',    label: 'By day',    desc: 'Pay day-rate × days worked (default).' },
             { v: 'per_volume', label: 'By volume', desc: 'Pay unit-rate × piece-work completed (m², pcs, lm, …).' },
-          ].map(opt => (
+          ] as const).map(opt => (
             <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm ${form.payment_basis === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
               <input type="radio" name="basis" className="sr-only" checked={form.payment_basis === opt.v} onChange={() => set('payment_basis', opt.v)} />
               <span className="block font-medium text-center">{opt.label}</span>
@@ -523,6 +548,69 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
 // (migration 198) grants operations_manager + project_manager INSERT with
 // WITH CHECK created_by = current_staff_id() AND outcome = 'pending'. HR
 // still owns the review + hire promotion.
+function NewVendorModal({ onClose, onCreated }: {
+  onClose: () => void
+  onCreated: (id: string) => void
+}) {
+  const { toast } = useToast()
+  const [vendorName, setVendorName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [bankAccount, setBankAccount] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!vendorName.trim()) { toast('Vendor name is required', 'error'); return }
+    setSaving(true)
+    const { data, error } = await supabase.from('vendors').insert([{
+      vendor_name: vendorName.trim(),
+      vendor_type: 'Labor Broker',
+      phone_contact: phone.trim() || null,
+      bank_account: bankAccount.trim() || null,
+      notes: notes.trim() || null,
+    }]).select('id').single()
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Vendor added', 'success')
+    onCreated((data as { id: string }).id)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 shadow-2xl border dark:border-slate-700 p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">New gang leader vendor</h3>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Vendor Name *</label>
+            <input type="text" className={inputCls} value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="e.g. Getachew Gang Leaders" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Phone *</label>
+            <input type="tel" className={inputCls} value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 0911234567" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Bank Account</label>
+            <input type="text" className={inputCls} value={bankAccount} onChange={e => setBankAccount(e.target.value)} placeholder="optional" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes</label>
+            <textarea rows={2} className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="optional" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t dark:border-slate-700">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !vendorName.trim() || !phone.trim()} className="rounded-md bg-brand text-white px-3 py-1.5 text-xs font-medium hover:bg-brand/90 disabled:opacity-60">
+            {saving ? 'Adding…' : 'Add & select'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SuggestCandidateModal({ myStaffId, onClose, onCreated }: {
   myStaffId: string | null
   onClose: () => void

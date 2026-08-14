@@ -121,6 +121,14 @@ export interface Staff {
   // Line manager (migration 161). Null is legal — department heads and
   // Executive legitimately have none. Cycles rejected by trigger.
   reports_to_id: string | null
+  // Tier 2 casual-labor fields (migration 183/197)
+  trade_tag: string | null
+  codename_amharic: string | null
+  codename_english: string | null
+  referred_by_staff_id: string | null
+  first_engaged_at: string | null
+  last_engaged_at: string | null
+  job_description_id: string | null
   created_at: string
   updated_at: string
 }
@@ -1958,12 +1966,17 @@ export interface LaborAllocation {
   status: LaborAllocationStatus
   assigned_by: string | null
   notes: string | null
+  labor_requisition_id: string | null
   created_at: string
 }
 export type LaborAllocationInsert = Omit<LaborAllocation, 'id' | 'day_rate_snapshot' | 'created_at'>
 
 // ── Labor: Tier 2 (new/casual labor requisition, single approval) ──
 export type LaborRequisitionStatus = 'pending' | 'approved' | 'rejected'
+export type LaborRequisitionPaymentModel = 'individual' | 'gang_leader'
+export type LaborRequisitionPayCycle = 'weekly' | 'engagement_end'
+export type LaborRequisitionPaymentBasis = 'per_day' | 'per_volume'
+export type RequisitionSlotsStatus = 'open' | 'partial' | 'filled'
 export interface LaborRequisition {
   id: string
   project_id: string
@@ -1980,9 +1993,23 @@ export interface LaborRequisition {
   approved_by: string | null
   approved_at: string | null
   notes: string | null
+  payment_model: LaborRequisitionPaymentModel
+  gang_leader_vendor_id: string | null
+  pay_cycle: LaborRequisitionPayCycle
+  specific_staff_id: string | null
+  payment_basis: LaborRequisitionPaymentBasis
+  volume_unit: string | null
+  unit_rate: number | null
+  candidate_id: string | null
+  trade_tag: string | null
+  proposed_trade_amharic: string | null
+  proposed_trade_english: string | null
+  estimated_total_volume: number | null
+  slots_filled: number
+  slots_status: RequisitionSlotsStatus
   created_at: string
 }
-export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'created_at'>
+export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'slots_filled' | 'slots_status' | 'created_at'>
 
 // ── Subcontract ──────────────────────────────────────────────────
 export type SubcontractorEngagementStatus = 'drafting' | 'agreed' | 'in_progress' | 'completed' | 'terminated'
@@ -2234,10 +2261,11 @@ export interface WorkOrder {
   status: WorkOrderStatus
   target_completion_date: string | null
   property_id: string | null
+  current_progress_pct: number
   created_at: string
   updated_at: string
 }
-export type WorkOrderInsert = Omit<WorkOrder, 'id' | 'created_at' | 'updated_at'>
+export type WorkOrderInsert = Omit<WorkOrder, 'id' | 'created_at' | 'updated_at' | 'current_progress_pct'>
 
 export interface WorkOrderLabor {
   id: string
@@ -2245,6 +2273,92 @@ export interface WorkOrderLabor {
   labor_allocation_id: string
   created_at: string
 }
+
+// ── Work order crew (assignment layer, additive alongside work_order_labor) ──
+export interface WorkOrderCrew {
+  id: string
+  work_order_id: string
+  staff_id: string
+  role_on_wo: string | null
+  assigned_by_staff_id: string | null
+  assigned_at: string
+  removed_at: string | null
+  removed_by_staff_id: string | null
+}
+export type WorkOrderCrewInsert = Omit<WorkOrderCrew, 'id' | 'assigned_at' | 'removed_at' | 'removed_by_staff_id'>
+
+// ── WO-owned daily attendance (Tier 1 + Tier 2 site staff) ──────────
+export interface WoAttendanceLog {
+  id: string
+  work_order_id: string | null
+  project_id: string
+  staff_id: string
+  log_date: string
+  hours_logged: number
+  is_unallocated: boolean
+  notes: string | null
+  logged_by_staff_id: string
+  synced_timesheet_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type WoAttendanceLogInsert = Omit<WoAttendanceLog, 'id' | 'project_id' | 'synced_timesheet_id' | 'created_at' | 'updated_at'> & { project_id?: string }
+
+// ── Direct-to-site material receipts (never touches stock_items) ────
+export interface SiteMaterialReceipt {
+  id: string
+  project_id: string
+  work_order_id: string | null
+  purchase_order_id: string | null
+  item_description: string
+  stock_item_id: string | null
+  quantity: number
+  unit: string
+  received_by_staff_id: string
+  received_at: string
+  vendor_id: string | null
+  photo_evidence: string[] | null
+  notes: string | null
+  created_at: string
+}
+export type SiteMaterialReceiptInsert = Omit<SiteMaterialReceipt, 'id' | 'received_at' | 'created_at'>
+
+// ── WO progress updates ──────────────────────────────────────────────
+export interface WoProgressUpdate {
+  id: string
+  work_order_id: string
+  progress_pct: number
+  note: string | null
+  photos: string[] | null
+  updated_by_staff_id: string
+  created_at: string
+}
+export type WoProgressUpdateInsert = Omit<WoProgressUpdate, 'id' | 'created_at'>
+
+// ── Candidates (Competency Hub external assessments + Tier 2 HR queue) ──
+export type CandidateOutcome = 'pending' | 'hired' | 'rejected' | 'withdrawn'
+export type CandidateType = 'salaried_or_subcontractor' | 'tier_2_casual'
+export interface Candidate {
+  id: string
+  full_name: string
+  phone: string | null
+  email: string | null
+  assessed_for_role_id: string | null
+  outcome: CandidateOutcome
+  outcome_notes: string | null
+  assessed_by_dept_head_staff_id: string | null
+  created_by: string | null
+  candidate_type: CandidateType
+  trade_tag: string | null
+  labor_requisition_id: string | null
+  hr_approved_by_staff_id: string | null
+  hr_approved_at: string | null
+  provisioned_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type CandidateInsert = Omit<Candidate, 'id' | 'outcome' | 'hr_approved_by_staff_id' | 'hr_approved_at' | 'provisioned_staff_id' | 'created_at' | 'updated_at'>
+
 
 export interface WorkOrderMaterial {
   id: string
