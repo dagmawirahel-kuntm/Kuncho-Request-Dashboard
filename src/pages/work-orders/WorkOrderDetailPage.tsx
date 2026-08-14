@@ -8,14 +8,16 @@ import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StarRating } from '@/components/shared/StarRating'
+import { FileUpload } from '@/components/shared/FileUpload'
 import { useStaffDirectory } from '@/hooks/useLookups'
-import { useMyStaffId } from '@/hooks/useMyStaff'
+import { useMyStaffId, useMySiteForemanProjects } from '@/hooks/useMyStaff'
+import { useTradeRoster, useAllRolling } from '@/hooks/useTier2Workers'
 import {
   useWorkOrderTeam, useWorkOrderRatings, useUpsertWorkOrderRating, useDeleteWorkOrderRating,
   type WorkOrderRatingRow,
 } from '@/hooks/useWorkOrderRatings'
-import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Star, Trash2, X } from 'lucide-react'
+import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, WoProgressUpdate, SiteMaterialReceipt } from '@/types/database'
+import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
@@ -109,10 +111,20 @@ export default function WorkOrderDetailPage() {
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Target Completion</p>
-              <p className="text-sm text-slate-700 dark:text-slate-300">{formatDate(wo.target_completion_date)}</p>
+              <p className="text-sm text-slate-700 dark:text-slate-300">{formatDate(wo.target_completion_date)} {daysRemainingLabel(wo.target_completion_date, wo.status)}</p>
             </div>
           </div>
           <StatusBadge status={wo.status} />
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between text-xs">
+            <span className="font-medium text-slate-600 dark:text-slate-300">Progress</span>
+            <span className="text-slate-400">{wo.current_progress_pct}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+            <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${Math.min(100, wo.current_progress_pct)}%` }} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t dark:border-slate-700">
@@ -132,6 +144,13 @@ export default function WorkOrderDetailPage() {
         <p className="text-[11px] text-slate-400">Derived entirely from linked labor allocations and stock issues below — never entered directly.</p>
       </div>
 
+      <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} />
+      <TodayActivitySection workOrderId={wo.id} staffNameById={staffNameById} />
+      <ProgressSection workOrderId={wo.id} canWrite={canWrite} />
+      <MaterialReceiptsSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
+      <BlockersPanel projectId={wo.project_id} />
+      <PhotosGrid workOrderId={wo.id} />
+
       <LinkedLabor workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} staffNameById={staffNameById} />
       <LinkedMaterials workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
       {lower(wo.status) === 'completed' && (
@@ -142,6 +161,23 @@ export default function WorkOrderDetailPage() {
 }
 
 function lower(s: string | null | undefined): string { return (s ?? '').toLowerCase() }
+
+function daysRemainingLabel(targetDate: string | null, status: string): string {
+  if (!targetDate || status === 'completed' || status === 'cancelled') return ''
+  const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / 86_400_000)
+  if (days < 0) return `· ${Math.abs(days)}d overdue`
+  if (days === 0) return '· due today'
+  return `· ${days}d remaining`
+}
+
+// Anyone in WRITE_ROLES, or a site foreman scoped to this specific
+// project (RLS on work_order_crew/wo_attendance_log/wo_progress_updates/
+// site_material_receipts is the real gate — this just avoids showing
+// controls that would fail for a foreman on a different site).
+function useCanWriteWoOps(projectId: string, canWrite: boolean): boolean {
+  const { projects } = useMySiteForemanProjects()
+  return canWrite || projects.some(p => p.id === projectId)
+}
 
 // ── Linked labor allocations ─────────────────────────────────────────
 function LinkedLabor({ workOrderId, projectId, canWrite, staffNameById }: { workOrderId: string; projectId: string; canWrite: boolean; staffNameById: Map<string, string> }) {
@@ -600,6 +636,480 @@ function RatingRow({ label, value, onChange }: { label: string; value: number; o
           >
             <Star className={`h-5 w-5 ${i <= value ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-slate-600'}`} />
           </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Crew section: work_order_crew (Tier 1 + Tier 2 assignment layer) ──
+type CrewRow = WorkOrderCrew & { staff: { employee_name: string; employment_type: string | null; trade_tag: string | null; codename_amharic: string | null; codename_english: string | null } | null }
+
+function Tier2MiniBadge({ tradeTag, codenameAmharic, codenameEnglish, score }: { tradeTag: string | null; codenameAmharic: string | null; codenameEnglish: string | null; score: number | null }) {
+  const { data: roster = [] } = useTradeRoster()
+  const trade = roster.find(t => t.trade_tag === tradeTag)
+  const accent = trade?.color_accent ?? '#7a7f8c'
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] dark:border-slate-600" style={{ borderColor: accent }}>
+      <span>{trade?.icon_emoji ?? '🛠️'}</span>
+      <span className="font-medium text-slate-700 dark:text-slate-200">{codenameAmharic ?? trade?.codename_amharic ?? codenameEnglish ?? 'Tier 2'}</span>
+      <span className="font-mono text-slate-400">{score != null ? `${score}/100` : '—'}</span>
+    </span>
+  )
+}
+
+function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameById }: {
+  workOrderId: string; projectId: string; canWrite: boolean; leadStaffId: string | null; staffNameById: Map<string, string>
+}) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { data: mySelf } = useMyStaffId()
+  const canManage = useCanWriteWoOps(projectId, canWrite)
+  const [showAdd, setShowAdd] = useState(false)
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null)
+  const [roleOnWo, setRoleOnWo] = useState('')
+  const [saving, setSaving] = useState(false)
+  const { data: rolling = [] } = useAllRolling()
+  const rollingByStaff = useMemo(() => new Map(rolling.map(r => [r.staff_id, r.overall_score_100])), [rolling])
+
+  const { data: crew = [], isLoading } = useQuery({
+    queryKey: ['work-order-crew', workOrderId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_order_crew')
+        .select('*, staff(employee_name, employment_type, trade_tag, codename_amharic, codename_english)')
+        .eq('work_order_id', workOrderId)
+        .is('removed_at', null)
+      if (error) throw error
+      return data as unknown as CrewRow[]
+    },
+  })
+
+  const { data: candidatePool = [] } = useQuery({
+    queryKey: ['wo-crew-candidates', projectId],
+    queryFn: async () => {
+      const [assignments, allocations] = await Promise.all([
+        supabase.from('staff_assignments').select('staff_id, staff:staff_id(employee_name)').eq('project_id', projectId).eq('active', true),
+        supabase.from('labor_allocations').select('staff_id, staff:staff_id(employee_name)').eq('project_id', projectId).eq('status', 'active'),
+      ])
+      if (assignments.error) throw assignments.error
+      if (allocations.error) throw allocations.error
+      const merged = new Map<string, string>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of [...(assignments.data ?? []), ...(allocations.data ?? [])] as any[]) {
+        if (r.staff_id) merged.set(r.staff_id, r.staff?.employee_name ?? staffNameById.get(r.staff_id) ?? '—')
+      }
+      return Array.from(merged.entries()).map(([id, label]) => ({ id, label }))
+    },
+    enabled: showAdd,
+  })
+
+  const alreadyOnCrew = new Set(crew.map(c => c.staff_id))
+  const addOptions = candidatePool.filter(o => !alreadyOnCrew.has(o.id))
+
+  async function handleAdd() {
+    if (!selectedStaffId) return
+    setSaving(true)
+    const { error } = await supabase.from('work_order_crew').insert([{
+      work_order_id: workOrderId, staff_id: selectedStaffId, role_on_wo: roleOnWo.trim() || null,
+      assigned_by_staff_id: mySelf?.id ?? null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
+    setSelectedStaffId(null); setRoleOnWo(''); setShowAdd(false)
+    toast('Crew member added', 'success')
+  }
+
+  async function handleRemove(rowId: string) {
+    const { error } = await supabase.from('work_order_crew')
+      .update({ removed_at: new Date().toISOString(), removed_by_staff_id: mySelf?.id ?? null })
+      .eq('id', rowId)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
+    toast('Removed from crew', 'success')
+  }
+
+  return (
+    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Users className="h-4 w-4" /> Crew ({crew.length})</h2>
+        {canManage && (
+          <button onClick={() => setShowAdd(s => !s)} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Add Crew'}
+          </button>
+        )}
+      </div>
+      {showAdd && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex-1"><SearchableSelect value={selectedStaffId} onChange={setSelectedStaffId} options={addOptions} placeholder="Select staff allocated to this project…" /></div>
+          <input value={roleOnWo} onChange={e => setRoleOnWo(e.target.value)} placeholder="Role on WO (optional)" className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 sm:w-48" />
+          <button onClick={handleAdd} disabled={saving || !selectedStaffId} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{saving ? 'Adding…' : 'Add'}</button>
+        </div>
+      )}
+      {isLoading ? (
+        <div className="py-6 text-center text-sm text-slate-400">Loading…</div>
+      ) : crew.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">No crew assigned yet.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {crew.map(c => (
+            <div key={c.id} className="flex items-center gap-2 rounded-full border px-2.5 py-1.5 dark:border-slate-600">
+              {c.staff?.employment_type === 'tier_2_casual' ? (
+                <Tier2MiniBadge tradeTag={c.staff.trade_tag} codenameAmharic={c.staff.codename_amharic} codenameEnglish={c.staff.codename_english} score={rollingByStaff.get(c.staff_id) ?? null} />
+              ) : (
+                <span className="text-sm text-slate-700 dark:text-slate-200">{c.staff?.employee_name ?? staffNameById.get(c.staff_id) ?? '—'}</span>
+              )}
+              {c.staff_id === leadStaffId && <span className="rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 font-semibold">Lead</span>}
+              {c.role_on_wo && <span className="text-[10px] text-slate-400">{c.role_on_wo}</span>}
+              {canManage && (
+                <button onClick={() => handleRemove(c.id)} className="text-slate-400 hover:text-red-500" title="Remove"><UserMinus className="h-3.5 w-3.5" /></button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Today's activity: hours logged today + who logged in ────────────
+function TodayActivitySection({ workOrderId, staffNameById }: { workOrderId: string; staffNameById: Map<string, string> }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: rows = [] } = useQuery({
+    queryKey: ['wo-attendance-today', workOrderId, today],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('wo_attendance_log').select('*, staff:staff_id(employee_name)').eq('work_order_id', workOrderId).eq('log_date', today)
+      if (error) throw error
+      return data as unknown as (WoAttendanceLog & { staff: { employee_name: string } | null })[]
+    },
+  })
+  const totalHours = rows.reduce((sum, r) => sum + Number(r.hours_logged), 0)
+
+  return (
+    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-2">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Clock className="h-4 w-4" /> Today's Activity</h2>
+      <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{totalHours} hrs <span className="text-xs font-normal text-slate-400">logged today</span></p>
+      {rows.length === 0 ? (
+        <p className="text-sm text-slate-400">No hours logged yet today.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {rows.map(r => (
+            <span key={r.id} className="rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300">
+              {r.staff?.employee_name ?? staffNameById.get(r.staff_id) ?? '—'} · {r.hours_logged}h
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Progress: current %, update modal, history ───────────────────────
+function ProgressSection({ workOrderId, canWrite }: { workOrderId: string; canWrite: boolean }) {
+  const qc = useQueryClient()
+  const [modalOpen, setModalOpen] = useState(false)
+  const { data: history = [], isLoading } = useQuery({
+    queryKey: ['wo-progress-updates', workOrderId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('wo_progress_updates').select('*, staff:updated_by_staff_id(employee_name)').eq('work_order_id', workOrderId).order('created_at', { ascending: false })
+      if (error) throw error
+      return data as unknown as (WoProgressUpdate & { staff: { employee_name: string } | null })[]
+    },
+  })
+
+  return (
+    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><TrendingUp className="h-4 w-4" /> Progress History</h2>
+        {canWrite && (
+          <button onClick={() => setModalOpen(true)} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
+            <Plus className="h-3.5 w-3.5" /> Update Progress
+          </button>
+        )}
+      </div>
+      {isLoading ? (
+        <div className="py-4 text-center text-sm text-slate-400">Loading…</div>
+      ) : history.length === 0 ? (
+        <p className="py-4 text-center text-sm text-slate-400">No progress updates yet.</p>
+      ) : (
+        <div className="divide-y dark:divide-slate-700">
+          {history.map(h => (
+            <div key={h.id} className="py-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-brand">{h.progress_pct}%</span>
+                <span className="text-xs text-slate-400">{formatDate(h.created_at)} · {h.staff?.employee_name ?? '—'}</span>
+              </div>
+              {h.note && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{h.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+      {modalOpen && (
+        <ProgressUpdateModal
+          workOrderId={workOrderId}
+          onClose={() => setModalOpen(false)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['wo-progress-updates', workOrderId] })
+            qc.invalidateQueries({ queryKey: ['work-order-detail'] })
+            setModalOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function ProgressUpdateModal({ workOrderId, onClose, onSaved }: { workOrderId: string; onClose: () => void; onSaved: () => void }) {
+  const { toast } = useToast()
+  const { data: mySelf } = useMyStaffId()
+  const [pct, setPct] = useState(50)
+  const [note, setNote] = useState('')
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [photoName, setPhotoName] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!mySelf?.id) return
+    setSaving(true)
+    const { error } = await supabase.from('wo_progress_updates').insert([{
+      work_order_id: workOrderId, progress_pct: pct, note: note.trim() || null, updated_by_staff_id: mySelf.id,
+      photos: photoUrl ? [photoUrl] : null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Progress updated', 'success')
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Update Progress</h3>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <div>
+          <div className="mb-1 flex items-center justify-between text-sm">
+            <span className="text-slate-600 dark:text-slate-300">Progress</span>
+            <span className="font-semibold text-brand">{pct}%</span>
+          </div>
+          <input type="range" min={0} max={100} step={5} value={pct} onChange={e => setPct(Number(e.target.value))} className="w-full accent-brand" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Note (optional)</label>
+          <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" placeholder="What changed?" />
+        </div>
+        <FileUpload bucket="documents" folder="wo-progress-photos" fileUrl={photoUrl} fileName={photoName} onUpload={(url, name) => { setPhotoUrl(url); setPhotoName(name) }} onClear={() => { setPhotoUrl(null); setPhotoName(null) }} accept="image/*" label="Photo (optional)" />
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} disabled={saving} className="rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Direct-to-site material receipts ─────────────────────────────────
+function MaterialReceiptsSection({ workOrderId, projectId, canWrite }: { workOrderId: string; projectId: string; canWrite: boolean }) {
+  const qc = useQueryClient()
+  const canManage = useCanWriteWoOps(projectId, canWrite)
+  const [modalOpen, setModalOpen] = useState(false)
+  const { data: receipts = [], isLoading } = useQuery({
+    queryKey: ['wo-material-receipts', workOrderId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('site_material_receipts').select('*').eq('work_order_id', workOrderId).order('received_at', { ascending: false })
+      if (error) throw error
+      return data as SiteMaterialReceipt[]
+    },
+  })
+
+  return (
+    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Package className="h-4 w-4" /> Direct-to-Site Materials</h2>
+        {canManage && (
+          <button onClick={() => setModalOpen(true)} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Plus className="h-3.5 w-3.5" /> Log Material Receipt
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-400">Booked as consumed against this WO — never enters warehouse stock.</p>
+      {isLoading ? (
+        <div className="py-4 text-center text-sm text-slate-400">Loading…</div>
+      ) : receipts.length === 0 ? (
+        <p className="py-4 text-center text-sm text-slate-400">No direct-to-site receipts logged yet.</p>
+      ) : (
+        <div className="divide-y dark:divide-slate-700">
+          {receipts.map(r => (
+            <div key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <div className="min-w-0">
+                <p className="font-medium text-slate-700 dark:text-slate-200">{r.item_description}</p>
+                <p className="text-xs text-slate-400">{r.quantity} {r.unit} · {formatDate(r.received_at)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {modalOpen && (
+        <MaterialReceiptModal
+          workOrderId={workOrderId}
+          projectId={projectId}
+          onClose={() => setModalOpen(false)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['wo-material-receipts', workOrderId] })
+            setModalOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function MaterialReceiptModal({ workOrderId, projectId, onClose, onSaved }: {
+  workOrderId: string; projectId: string; onClose: () => void; onSaved: () => void
+}) {
+  const { toast } = useToast()
+  const { data: mySelf } = useMyStaffId()
+  const [itemDescription, setItemDescription] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [unit, setUnit] = useState('')
+  const [notes, setNotes] = useState('')
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [photoName, setPhotoName] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!mySelf?.id) return
+    if (!itemDescription.trim() || !quantity || !unit.trim()) { toast('Item, quantity, and unit are required', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('site_material_receipts').insert([{
+      project_id: projectId, work_order_id: workOrderId,
+      item_description: itemDescription.trim(), quantity: parseFloat(quantity), unit: unit.trim(),
+      notes: notes.trim() || null, received_by_staff_id: mySelf.id,
+      photo_evidence: photoUrl ? [photoUrl] : null,
+    }])
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Material receipt logged', 'success')
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Log Material Receipt</h3>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Item *</label>
+          <input value={itemDescription} onChange={e => setItemDescription(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" placeholder="e.g. Cement 50kg bags" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Quantity *</label>
+            <input type="number" step="0.01" min="0" value={quantity} onChange={e => setQuantity(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Unit *</label>
+            <input value={unit} onChange={e => setUnit(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" placeholder="bags, pcs, m³…" />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Notes</label>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" placeholder="optional" />
+        </div>
+        <FileUpload bucket="documents" folder="site-material-receipts" fileUrl={photoUrl} fileName={photoName} onUpload={(url, name) => { setPhotoUrl(url); setPhotoName(name) }} onClear={() => { setPhotoUrl(null); setPhotoName(null) }} accept="image/*" label="Delivery photo (optional)" />
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} disabled={saving} className="rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Blockers panel: open HSE incidents today + pending purchase requests ──
+function BlockersPanel({ projectId }: { projectId: string }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: incidents = [] } = useQuery({
+    queryKey: ['wo-blockers-hse', projectId, today],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('hse_incidents').select('id, incident_type, severity, description').eq('project_id', projectId).eq('status', 'open').eq('incident_date', today)
+      if (error) throw error
+      return data as { id: string; incident_type: string; severity: string; description: string | null }[]
+    },
+  })
+  const { data: pendingOrders = [] } = useQuery({
+    queryKey: ['wo-blockers-orders', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('orders').select('id, order_name, item_service_description').eq('project_id', projectId).eq('status', 'pending')
+      if (error) throw error
+      return data as { id: string; order_name: string | null; item_service_description: string | null }[]
+    },
+  })
+
+  if (incidents.length === 0 && pendingOrders.length === 0) return null
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-900/10 space-y-3">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800 dark:text-amber-300"><AlertTriangle className="h-4 w-4" /> Blockers</h2>
+      {incidents.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">Open HSE Incidents Today</p>
+          <ul className="space-y-1">
+            {incidents.map(i => (
+              <li key={i.id} className="text-sm text-amber-900 dark:text-amber-200">
+                <span className="font-semibold capitalize">{i.incident_type.replace('_', ' ')}</span> ({i.severity}) {i.description && `— ${i.description}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {pendingOrders.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">Pending Purchase Requests</p>
+          <ul className="space-y-1">
+            {pendingOrders.map(o => (
+              <li key={o.id} className="text-sm text-amber-900 dark:text-amber-200">{o.order_name ?? o.item_service_description ?? 'Untitled request'}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Photos grid: progress-update photos + material-receipt photos ────
+function PhotosGrid({ workOrderId }: { workOrderId: string }) {
+  const { data: progressPhotos = [] } = useQuery({
+    queryKey: ['wo-photos-progress', workOrderId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('wo_progress_updates').select('photos, created_at').eq('work_order_id', workOrderId).not('photos', 'is', null).order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []).flatMap(r => (r.photos as string[] | null) ?? [])
+    },
+  })
+  const { data: materialPhotos = [] } = useQuery({
+    queryKey: ['wo-photos-materials', workOrderId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('site_material_receipts').select('photo_evidence, received_at').eq('work_order_id', workOrderId).not('photo_evidence', 'is', null).order('received_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []).flatMap(r => (r.photo_evidence as string[] | null) ?? [])
+    },
+  })
+  const photos = [...progressPhotos, ...materialPhotos]
+  if (photos.length === 0) return null
+
+  return (
+    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Camera className="h-4 w-4" /> Photos</h2>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {photos.map((url, i) => (
+          <a key={`${url}-${i}`} href={url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-md border dark:border-slate-700 bg-slate-100 dark:bg-slate-700">
+            <img src={url} alt="" className="h-full w-full object-cover" />
+          </a>
         ))}
       </div>
     </div>

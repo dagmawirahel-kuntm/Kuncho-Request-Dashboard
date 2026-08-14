@@ -70,13 +70,13 @@ const navGroups: NavGroup[] = [
     title: 'Site Ops',
     items: [
       { label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, roles: [], showIfSiteForeman: true },
-      { label: 'Log Site Timesheet', to: '/site-foreman/timesheet', icon: Clock, roles: [], showIfSiteForeman: true },
+      { label: 'Log Attendance', to: '/site-foreman/log-attendance', icon: Clock, roles: [], showIfSiteForeman: true },
+      { label: 'Log Material Receipt', to: '/site-foreman/log-material-receipt', icon: Package, roles: [], showIfSiteForeman: true },
       { label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, roles: [], showIfSiteForeman: true },
       { label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, roles: [], showIfSiteForeman: true },
       { label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, roles: [], showIfSiteForeman: true },
       { label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, roles: [], showIfSiteForeman: true },
       { label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, roles: [], showIfSiteForeman: true },
-      { label: 'Tier 2 Attendance', to: '/site-foreman/attendance', icon: UserCheck, roles: [], showIfSiteForeman: true },
     ],
   },
   {
@@ -167,6 +167,7 @@ const navGroups: NavGroup[] = [
       { label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Casual Workers', to: '/hr/casual-workers', icon: HardHat, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Competency Hub', to: '/hr/competency-hub', icon: Award, roles: ['admin', 'executive', 'hr_officer'] },
+      { label: 'Tier 2 Candidates', to: '/hr/tier2-candidates', icon: UserCheck, roles: ['admin', 'executive', 'hr_officer'] },
       { label: 'Trade Catalog', to: '/hr/trades', icon: Layers, roles: ['admin', 'executive', 'hr_officer'] },
       { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
