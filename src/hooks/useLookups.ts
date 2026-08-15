@@ -448,7 +448,7 @@ export function useStaffDirectory() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_staff_directory')
-        .select('id,employee_name,role')
+        .select('id,employee_name,role,employment_type,trade_tag,codename_amharic,codename_english')
         .order('employee_name')
       if (error) throw error
       return data ?? []

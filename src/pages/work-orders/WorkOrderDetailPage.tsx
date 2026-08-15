@@ -49,6 +49,7 @@ export default function WorkOrderDetailPage() {
   // access to `staff` at all.
   const { data: staffDirectory = [] } = useStaffDirectory()
   const staffNameById = useMemo(() => new Map(staffDirectory.map((s: any) => [s.id, s.employee_name])), [staffDirectory])
+  const staffDirectoryById = useMemo(() => new Map(staffDirectory.map((s: any) => [s.id, s])), [staffDirectory])
 
   const { data: cost } = useQuery({
     queryKey: ['work-order-cost', id],
@@ -144,7 +145,7 @@ export default function WorkOrderDetailPage() {
         <p className="text-[11px] text-slate-400">Derived entirely from linked labor allocations and stock issues below — never entered directly.</p>
       </div>
 
-      <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} />
+      <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
       <TodayActivitySection workOrderId={wo.id} staffNameById={staffNameById} />
       <ProgressSection workOrderId={wo.id} canWrite={canWrite} />
       <MaterialReceiptsSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
@@ -658,8 +659,10 @@ function Tier2MiniBadge({ tradeTag, codenameAmharic, codenameEnglish, score }: {
   )
 }
 
-function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameById }: {
+function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameById, staffDirectoryById }: {
   workOrderId: string; projectId: string; canWrite: boolean; leadStaffId: string | null; staffNameById: Map<string, string>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  staffDirectoryById: Map<string, any>
 }) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -772,10 +775,18 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
         <p className="py-6 text-center text-sm text-slate-400">No crew assigned yet.</p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {crew.map(c => (
+          {crew.map(c => {
+            const fallback = staffDirectoryById.get(c.staff_id)
+            const employmentType = c.staff?.employment_type ?? fallback?.employment_type ?? null
+            return (
             <div key={c.id} className="flex items-center gap-2 rounded-full border px-2.5 py-1.5 dark:border-slate-600">
-              {c.staff?.employment_type === 'tier_2_casual' ? (
-                <Tier2MiniBadge tradeTag={c.staff.trade_tag} codenameAmharic={c.staff.codename_amharic} codenameEnglish={c.staff.codename_english} score={rollingByStaff.get(c.staff_id) ?? null} />
+              {employmentType === 'tier_2_casual' ? (
+                <Tier2MiniBadge
+                  tradeTag={c.staff?.trade_tag ?? fallback?.trade_tag ?? null}
+                  codenameAmharic={c.staff?.codename_amharic ?? fallback?.codename_amharic ?? null}
+                  codenameEnglish={c.staff?.codename_english ?? fallback?.codename_english ?? null}
+                  score={rollingByStaff.get(c.staff_id) ?? null}
+                />
               ) : (
                 <span className="text-sm text-slate-700 dark:text-slate-200">{c.staff?.employee_name ?? staffNameById.get(c.staff_id) ?? '—'}</span>
               )}
@@ -785,7 +796,8 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
                 <button onClick={() => handleRemove(c.id)} className="text-slate-400 hover:text-red-500" title="Remove"><UserMinus className="h-3.5 w-3.5" /></button>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

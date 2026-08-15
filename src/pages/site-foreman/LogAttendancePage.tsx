@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useMySiteForemanProjects, useMyStaffId } from '@/hooks/useMyStaff'
+import { useStaffDirectory } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { WoAttendanceLog } from '@/types/database'
@@ -92,7 +93,19 @@ export default function LogAttendancePage() {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [date, setDate] = useState(today)
 
-  const { data: activeWOs = [] } = useQuery({
+  // v_staff_directory, not a raw `staff` embed — site foremen and
+  // project managers have no RLS read access to `staff` at all, so the
+  // embedded staff!work_order_crew_staff_id_fkey(...) join below comes
+  // back null for them even though the FK hint resolves the relationship
+  // correctly. Fall back to the directory for the name/employment_type.
+  const { data: staffDirectory = [] } = useStaffDirectory()
+  const staffDirectoryById = useMemo(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    () => new Map(staffDirectory.map((s: any) => [s.id, s])),
+    [staffDirectory],
+  )
+
+  const { data: rawActiveWOs = [] } = useQuery({
     queryKey: ['attendance-active-wos', projectId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -103,17 +116,23 @@ export default function LogAttendancePage() {
         .order('created_at')
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (data ?? []).map((wo: any) => ({
-        id: wo.id, scope_of_work: wo.scope_of_work, work_type: wo.work_type,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        crew: (wo.work_order_crew ?? []).filter((c: any) => !c.removed_at).map((c: any) => ({
-          staff_id: c.staff_id, role_on_wo: c.role_on_wo,
-          employee_name: c.staff?.employee_name ?? '—', employment_type: c.staff?.employment_type ?? null,
-        })),
-      })) as WoWithCrew[]
+      return data as any[]
     },
     enabled: !!projectId,
   })
+
+  const activeWOs = useMemo(() => rawActiveWOs.map(wo => ({
+    id: wo.id, scope_of_work: wo.scope_of_work, work_type: wo.work_type,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    crew: (wo.work_order_crew ?? []).filter((c: any) => !c.removed_at).map((c: any) => {
+      const fallback = staffDirectoryById.get(c.staff_id)
+      return {
+        staff_id: c.staff_id, role_on_wo: c.role_on_wo,
+        employee_name: c.staff?.employee_name ?? fallback?.employee_name ?? '—',
+        employment_type: c.staff?.employment_type ?? fallback?.employment_type ?? null,
+      }
+    }),
+  })) as WoWithCrew[], [rawActiveWOs, staffDirectoryById])
 
   const { data: dayRows = [], refetch } = useQuery({
     queryKey: ['wo-attendance-day', projectId, date],
