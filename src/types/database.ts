@@ -2007,6 +2007,7 @@ export interface LaborRequisition {
   estimated_total_volume: number | null
   slots_filled: number
   slots_status: RequisitionSlotsStatus
+  work_order_id: string | null
   created_at: string
 }
 export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'slots_filled' | 'slots_status' | 'created_at'>

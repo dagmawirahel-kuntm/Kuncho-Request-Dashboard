@@ -6,7 +6,7 @@ import { formatDate, formatCurrency, cn } from '@/lib/utils'
 import type { LaborRequisition, Candidate } from '@/types/database'
 import { ChevronLeft, Pencil, Clock, CheckCircle2, XCircle } from 'lucide-react'
 
-type ReqRow = LaborRequisition & { projects: { project_name: string } | null }
+type ReqRow = LaborRequisition & { projects: { project_name: string } | null; work_orders: { scope_of_work: string } | null }
 type CandidateRow = Candidate
 
 function SlotProgressBar({ filled, total }: { filled: number; total: number }) {
@@ -50,7 +50,7 @@ export default function LaborRequisitionDetailPage() {
   const { data: req, isLoading } = useQuery({
     queryKey: ['labor-requisition-detail', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('labor_requisitions').select('*, projects(project_name)').eq('id', id!).single()
+      const { data, error } = await supabase.from('labor_requisitions').select('*, projects(project_name), work_orders(scope_of_work)').eq('id', id!).single()
       if (error) throw error
       return data as ReqRow
     },
@@ -96,6 +96,14 @@ export default function LaborRequisitionDetailPage() {
           <div><p className="text-xs text-slate-400">Start Date</p><p className="font-medium text-slate-700 dark:text-slate-200">{formatDate(req.start_date)}</p></div>
           <div><p className="text-xs text-slate-400">Day Rate</p><p className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(req.estimated_day_rate)}</p></div>
           <div><p className="text-xs text-slate-400">Payment Model</p><p className="font-medium text-slate-700 dark:text-slate-200 capitalize">{req.payment_model.replace('_', ' ')}</p></div>
+          <div>
+            <p className="text-xs text-slate-400">Work Order</p>
+            {req.work_order_id ? (
+              <Link to={`/work-orders/${req.work_order_id}`} className="font-medium text-brand hover:underline">{req.work_orders?.scope_of_work ?? 'View work order'}</Link>
+            ) : (
+              <p className="font-medium text-slate-400">Not linked</p>
+            )}
+          </div>
         </div>
 
         <div className={cn('rounded-md border p-3', req.slots_status === 'filled' ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-900/20' : 'border-slate-200 dark:border-slate-700')}>

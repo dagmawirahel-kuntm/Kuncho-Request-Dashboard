@@ -73,6 +73,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const prefillProjectId = searchParams.get('project_id')
+  const prefillWorkOrderId = searchParams.get('work_order_id')
   const { toast } = useToast()
   const { user, role } = useAuth()
   const { data: myStaff } = useMyStaffId()
@@ -151,13 +152,29 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         proposed_trade_amharic: r?.proposed_trade_amharic ?? null,
         proposed_trade_english: r?.proposed_trade_english ?? null,
         estimated_total_volume: r?.estimated_total_volume ?? null,
+        work_order_id: record.work_order_id,
       }
       : {
         is_casual_or_new: true, headcount: 1,
         project_id: prefillProjectId ?? undefined,
+        work_order_id: prefillWorkOrderId ?? null,
         payment_model: 'individual', pay_cycle: 'weekly', payment_basis: 'per_day',
       }
   )
+
+  // Work orders on the selected project — optional target for this
+  // requisition. Once approved and the resulting allocation goes
+  // active, the hired worker is auto-added to this WO's crew.
+  const { data: projectWorkOrders = [] } = useQuery({
+    queryKey: ['labor-req-project-work-orders', form.project_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('work_orders').select('id, scope_of_work').eq('project_id', form.project_id!).order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!form.project_id,
+  })
+  const workOrderOptions = useMemo(() => projectWorkOrders.map(w => ({ id: w.id, label: w.scope_of_work })), [projectWorkOrders])
 
   // Roster + candidate + trade catalog lookups — each cheap and cached.
   const { data: roster = [] } = useQuery({
@@ -315,6 +332,11 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
     <FormPage title={isEdit ? 'Edit Labor Requisition' : 'New Labor Requisition'} backTo="/labor-requisitions" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Submit Requisition'} onSave={handleSave}>
       <Field label="Project *">
         <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id ?? undefined)} options={projectOptions} placeholder="Select project…" />
+      </Field>
+
+      <Field label="Work Order (optional)">
+        <SearchableSelect value={form.work_order_id ?? null} onChange={id => set('work_order_id', id)} options={workOrderOptions} placeholder={form.project_id ? 'Select a work order…' : 'Pick a project first'} />
+        <p className="mt-1 text-[11px] text-slate-400">If set, the hired worker is automatically added to this work order's crew once they're actually active on site.</p>
       </Field>
 
       {/* ── Assignment mode ─────────────────────────────────────────────── */}
