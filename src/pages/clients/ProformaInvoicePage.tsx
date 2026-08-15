@@ -5,6 +5,7 @@ import { ArrowLeft, Plus, Trash2, Printer, Save, ArrowRight, CheckCircle2 } from
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { documentBaseCss, renderLetterhead, renderFooter } from '@/lib/documentTheme'
 import type { Client } from '@/types/database'
 
 const VAT_RATE = 0.15
@@ -51,15 +52,9 @@ function buildHtml(p: {
 <head>
 <meta charset="UTF-8">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
+${documentBaseCss}
 html{zoom:0.58}
-body{font-family:Georgia,serif;padding:40px 52px;color:#111;font-size:11pt;line-height:1.5;min-height:1123px}
-.lh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.brand{font-size:26pt;font-weight:900;font-family:Arial,sans-serif}
-.sub{font-size:10pt;color:#666;margin-top:2px}
-.meta{text-align:right;font-size:9.5pt;color:#555;line-height:1.6}
-.meta b{font-weight:700}
-hr{border:none;border-top:1.5px solid #111;margin:10px 0 16px}
+body{padding:40px 52px;color:#111;font-size:11pt;line-height:1.5;min-height:1123px}
 .to{font-size:10pt;margin-bottom:20px}
 .to b{font-size:11pt}
 table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:10pt}
@@ -71,25 +66,15 @@ tbody tr:nth-child(even){background:#f7f9fb}
 td{padding:7px 10px;border-bottom:1px solid #ddd}
 .tot{font-size:11pt;font-weight:700}
 .subtot td{border-top:2px solid #1B3A5C;background:#f0f4f8}
-.foot{margin-top:60px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:10px;display:flex;justify-content:space-between}
 .notice{font-size:9pt;color:#888;margin-top:20px;font-style:italic}
 </style>
 </head>
 <body>
-<div class="lh">
-  <div>
-    <div class="brand" style="color:#1B3A5C">KUNCHO</div>
-    <div class="sub">Kuncho Construction & Events PLC</div>
-    <div class="sub" style="margin-top:4px;color:#999">Addis Ababa, Ethiopia</div>
-  </div>
-  <div class="meta">
-    <div style="font-size:16pt;font-weight:900;color:#1B3A5C;letter-spacing:-0.5px">PROFORMA INVOICE</div>
-    <div><b>${p.proformaNum || '—'}</b></div>
-    <div>${p.date}</div>
-    ${p.validityDays ? `<div>Valid for: ${p.validityDays} days</div>` : ''}
-  </div>
-</div>
-<hr/>
+${renderLetterhead({
+  docTitle: 'PROFORMA INVOICE',
+  docCode: p.proformaNum || undefined,
+  metaLines: [p.date, ...(p.validityDays ? [`Valid for: ${p.validityDays} days`] : [])],
+})}
 ${p.client ? `
 <div class="to">
   <div style="color:#888;font-size:9pt;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Bill To</div>
@@ -118,10 +103,7 @@ ${p.client ? `
 ${p.paymentTerms ? `<div style="font-size:10pt;margin-bottom:8px"><b>Payment Terms:</b> ${p.paymentTerms}</div>` : ''}
 ${p.notes ? `<div style="font-size:10pt;color:#555">${p.notes}</div>` : ''}
 <div class="notice">This proforma invoice is not a tax invoice. Subject to change.</div>
-<div class="foot">
-  <span>Kuncho Construction & Events · Addis Ababa, Ethiopia</span>
-  <span>Ref: ${p.proformaNum || '—'}</span>
-</div>
+${renderFooter(p.proformaNum || undefined)}
 </body>
 </html>`
 }

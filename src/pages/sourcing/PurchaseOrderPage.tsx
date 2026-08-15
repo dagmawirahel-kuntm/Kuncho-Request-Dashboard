@@ -8,6 +8,7 @@ import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
+import { documentBaseCss, renderLetterhead, renderFooter } from '@/lib/documentTheme'
 import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
 import {
@@ -138,14 +139,8 @@ function buildPoHtml(p: {
 <head>
 <meta charset="UTF-8">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Georgia,serif;padding:40px 52px;color:#111;font-size:11pt;line-height:1.5}
-.lh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.brand{font-size:26pt;font-weight:900;font-family:Arial,sans-serif}
-.sub{font-size:10pt;color:#666;margin-top:2px}
-.meta{text-align:right;font-size:9.5pt;color:#555;line-height:1.6}
-.meta b{font-weight:700}
-hr{border:none;border-top:1.5px solid #111;margin:10px 0 16px}
+${documentBaseCss}
+body{padding:40px 52px;color:#111;font-size:11pt;line-height:1.5}
 .parties{display:flex;justify-content:space-between;gap:24px;margin-bottom:20px}
 .party{font-size:10pt}
 .party .label{color:#888;font-size:9pt;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
@@ -167,24 +162,17 @@ td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
 .totals .gross td{border-top:1px solid #d4d4d4;padding-top:6px;font-weight:600}
 .wht{color:#b45309}
 .notes{font-size:9.5pt;color:#555;margin-top:16px}
-.foot{margin-top:50px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:10px;display:flex;justify-content:space-between}
 </style>
 </head>
 <body>
-<div class="lh">
-  <div>
-    <div class="brand" style="color:#1B3A5C">KUNCHO</div>
-    <div class="sub">Kuncho Construction & Events PLC</div>
-    <div class="sub" style="margin-top:4px;color:#999">Addis Ababa, Ethiopia</div>
-  </div>
-  <div class="meta">
-    <div style="font-size:16pt;font-weight:900;color:#1B3A5C;letter-spacing:-0.5px">PURCHASE ORDER</div>
-    <div><b>${bundle.bundle_code}</b></div>
-    <div>${formatDateGC(bundle.created_at)}</div>
-    ${bundle.expected_delivery_date ? `<div>Expected delivery: ${formatDateGC(bundle.expected_delivery_date)}</div>` : ''}
-  </div>
-</div>
-<hr/>
+${renderLetterhead({
+  docTitle: 'PURCHASE ORDER',
+  docCode: bundle.bundle_code,
+  metaLines: [
+    formatDateGC(bundle.created_at),
+    ...(bundle.expected_delivery_date ? [`Expected delivery: ${formatDateGC(bundle.expected_delivery_date)}`] : []),
+  ],
+})}
 <div class="parties">
   <div class="party">
     <div class="label">Vendor / Supplier</div>
@@ -218,10 +206,7 @@ td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
   <tr class="net"><td>Net Payable to Vendor</td><td class="val">${fmt(netPayable)}</td></tr>
 </table>
 ${bundle.notes ? `<div class="notes"><b>Notes:</b> ${bundle.notes}</div>` : ''}
-<div class="foot">
-  <span>Kuncho Construction & Events · Addis Ababa, Ethiopia</span>
-  <span>Ref: ${bundle.bundle_code}</span>
-</div>
+${renderFooter(bundle.bundle_code)}
 </body>
 </html>`
 }
