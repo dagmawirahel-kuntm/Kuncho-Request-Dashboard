@@ -103,7 +103,7 @@ export function AppShell() {
   return (
     <>
     <AnimatedBackground />
-    <div className="relative z-10 flex h-screen overflow-hidden bg-transparent">
+    <div className="relative z-10 flex h-screen overflow-hidden bg-transparent print:block print:h-auto print:overflow-visible">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(c => !c)}
@@ -112,9 +112,9 @@ export function AppShell() {
         isDark={dark}
         onToggleTheme={toggleDark}
       />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         {/* Header */}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6 dark:bg-slate-800 dark:border-slate-700">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6 dark:bg-slate-800 dark:border-slate-700 print:hidden">
           <button
             onClick={() => setMobileOpen(true)}
             className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 lg:hidden dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -174,7 +174,7 @@ export function AppShell() {
         </header>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
           <div key={location.pathname} className="animate-fade-in">
             <Outlet />
           </div>

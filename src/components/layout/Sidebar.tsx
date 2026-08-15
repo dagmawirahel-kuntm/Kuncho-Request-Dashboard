@@ -332,13 +332,13 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
     <>
       {mobileOpen && (
         <div
-          className="animate-fade-in fixed inset-0 z-30 bg-black/40 lg:hidden"
+          className="animate-fade-in fixed inset-0 z-30 bg-black/40 lg:hidden print:hidden"
           onClick={onCloseMobile}
         />
       )}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex h-screen shrink-0 flex-col bg-sidebar overflow-y-auto transition-all duration-200',
+          'fixed inset-y-0 left-0 z-40 flex h-screen shrink-0 flex-col bg-sidebar overflow-y-auto transition-all duration-200 print:hidden',
           'lg:static lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           collapsed ? 'w-56 lg:w-16' : 'w-56',

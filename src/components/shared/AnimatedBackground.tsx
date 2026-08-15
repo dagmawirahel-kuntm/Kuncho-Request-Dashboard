@@ -112,5 +112,5 @@ export function AnimatedBackground() {
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize) }
   }, [])
 
-  return <canvas ref={ref} className="pointer-events-none fixed inset-0 z-0" aria-hidden />
+  return <canvas ref={ref} className="pointer-events-none fixed inset-0 z-0 print:hidden" aria-hidden />
 }

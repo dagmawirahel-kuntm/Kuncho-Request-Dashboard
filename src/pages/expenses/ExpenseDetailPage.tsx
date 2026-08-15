@@ -9,7 +9,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaffDirectory } from '@/hooks/useLookups'
-import { COMPANY_NAME, COMPANY_ADDRESS } from '@/lib/documentTheme'
+import { COMPANY_NAME, COMPANY_ADDRESS, gradientCss } from '@/lib/documentTheme'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
@@ -62,24 +62,24 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a', maxWidth: '750px', margin: '0 auto', padding: '24px' }}>
 
       {/* Company header */}
-      <div style={{ borderBottom: '3px solid #1B3A5C', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ background: gradientCss('laborPayment'), borderRadius: '10px', padding: '18px 22px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-            <div style={{ width: '36px', height: '36px', background: '#1B3A5C', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.22)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: '#fff', fontWeight: 900, fontSize: '12px', letterSpacing: '-0.5px' }}>K</span>
             </div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#1B3A5C', letterSpacing: '-0.3px' }}>
+            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#fff', letterSpacing: '-0.3px' }}>
               {COMPANY_NAME}
             </h1>
           </div>
-          <p style={{ margin: 0, fontSize: '10px', color: '#888', lineHeight: 1.6 }}>
+          <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.78)', lineHeight: 1.6 }}>
             {COMPANY_ADDRESS}
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <p style={{ margin: 0, fontSize: '9px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1.2px' }}>Document</p>
-          <p style={{ margin: '3px 0 0', fontSize: '20px', fontWeight: 800, color: '#1B3A5C' }}>PAYMENT REQUEST</p>
-          <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: '11px', color: '#555', fontWeight: 700 }}>
+          <p style={{ margin: 0, fontSize: '9px', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '1.2px' }}>Document</p>
+          <p style={{ margin: '3px 0 0', fontSize: '20px', fontWeight: 800, color: '#fff' }}>PAYMENT REQUEST</p>
+          <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>
             {expense.expense_code ?? '—'}
           </p>
         </div>
