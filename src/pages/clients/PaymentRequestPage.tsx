@@ -85,6 +85,7 @@ ${renderLetterhead({
   docTitle: 'PAYMENT REQUEST',
   docCode: p.refNum ? `Ref: ${p.refNum}` : undefined,
   metaLines: [p.date],
+  gradient: 'paymentRequestLetter',
 })}
 <div style="margin-bottom:14px">
   <div class="sl">To:</div>

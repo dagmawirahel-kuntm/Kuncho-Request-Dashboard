@@ -172,6 +172,7 @@ ${renderLetterhead({
     formatDateGC(bundle.created_at),
     ...(bundle.expected_delivery_date ? [`Expected delivery: ${formatDateGC(bundle.expected_delivery_date)}`] : []),
   ],
+  gradient: 'purchaseOrder',
 })}
 <div class="parties">
   <div class="party">

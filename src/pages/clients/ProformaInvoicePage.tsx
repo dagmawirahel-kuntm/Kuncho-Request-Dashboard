@@ -74,6 +74,7 @@ ${renderLetterhead({
   docTitle: 'PROFORMA INVOICE',
   docCode: p.proformaNum || undefined,
   metaLines: [p.date, ...(p.validityDays ? [`Valid for: ${p.validityDays} days`] : [])],
+  gradient: 'proforma',
 })}
 ${p.client ? `
 <div class="to">

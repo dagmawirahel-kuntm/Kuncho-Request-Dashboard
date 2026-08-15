@@ -1,9 +1,13 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx'
 import type { Contract, Client } from '@/types/database'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { COMPANY_NAME, COMPANY_ADDRESS, BRAND_NAVY, documentBaseCss, renderCenteredLetterhead } from '@/lib/documentTheme'
+import { COMPANY_NAME, COMPANY_ADDRESS, BRAND_NAVY, DOCUMENT_GRADIENTS, documentBaseCss, renderCenteredLetterhead } from '@/lib/documentTheme'
 
 const BRAND_NAVY_DOCX = BRAND_NAVY.replace('#', '')
+// Word has no gradient fill for paragraph shading — use the darker end
+// of the bdContract gradient (#lib/documentTheme.ts) as a solid band,
+// matching the print view's letterhead as closely as the format allows.
+const BD_CONTRACT_SHADING_DOCX = DOCUMENT_GRADIENTS.bdContract.from.replace('#', '')
 
 function row(label: string, value: string) {
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
@@ -147,12 +151,15 @@ export async function buildContractDocx(contract: Contract, client: Client): Pro
       children: [
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: COMPANY_NAME, bold: true, size: 32, font: 'Arial', color: BRAND_NAVY_DOCX })],
+          shading: { fill: BD_CONTRACT_SHADING_DOCX },
+          spacing: { before: 100, after: 40 },
+          children: [new TextRun({ text: COMPANY_NAME, bold: true, size: 32, font: 'Arial', color: 'FFFFFF' })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 50 },
-          children: [new TextRun({ text: COMPANY_ADDRESS, size: 16, font: 'Arial', color: '999999' })],
+          shading: { fill: BD_CONTRACT_SHADING_DOCX },
+          spacing: { after: 300 },
+          children: [new TextRun({ text: COMPANY_ADDRESS, size: 16, font: 'Arial', color: 'FFFFFF' })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -237,7 +244,7 @@ export function printContract(contract: Contract, client: Client) {
       @media print { body { margin: 0.5in; } }
     </style></head>
     <body>
-      ${renderCenteredLetterhead()}
+      ${renderCenteredLetterhead({ gradient: 'bdContract' })}
       <h2>Service Contract</h2>
       <h3>Contract Details</h3>
       <table>
