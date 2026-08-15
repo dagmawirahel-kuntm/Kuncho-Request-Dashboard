@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { documentBaseCss, renderLetterhead, COMPANY_NAME, COMPANY_ADDRESS, BRAND_NAVY } from '@/lib/documentTheme'
 import type { Client } from '@/types/database'
 
 const inputCls =
@@ -58,16 +59,9 @@ function buildHtml(p: {
 <head>
 <meta charset="UTF-8">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
+${documentBaseCss}
 html{zoom:0.58}
-body{font-family:Georgia,serif;padding:40px 52px;color:#111;font-size:11pt;line-height:1.55;min-height:1123px}
-.lh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.brand{font-size:26pt;font-weight:900;font-family:Arial,sans-serif}
-.sub{font-size:10pt;color:#666;margin-top:2px}
-.city{font-size:8.5pt;color:#999;margin-top:1px}
-.meta{text-align:right;font-size:9.5pt;color:#555;line-height:1.6}
-.meta b{font-weight:700}
-hr{border:none;border-top:1.5px solid #111;margin:10px 0 16px}
+body{padding:40px 52px;color:#111;font-size:11pt;line-height:1.55;min-height:1123px}
 .sl{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
 .to-name{font-size:11.5pt;font-weight:700}
 .to-sub{font-size:9.5pt;color:#555;line-height:1.6}
@@ -76,7 +70,7 @@ p{margin-bottom:10px;font-size:10.5pt;color:#222}
 table{width:100%;border-collapse:collapse;font-size:9.5pt;margin:10px 0}
 td{border:1px solid #ccc;padding:6px 10px;vertical-align:top}
 td.l{background:#f7f7f7;font-weight:700;width:200px;color:#333}
-tr.g td{background:#111;color:#fff;font-weight:700;font-size:10pt}
+tr.g td{background:${BRAND_NAVY};color:#fff;font-weight:700;font-size:10pt}
 .sig{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:32px;font-size:9.5pt}
 .sp{color:#777;margin-bottom:32px}
 .sl2{border-top:1px solid #aaa;padding-top:4px}
@@ -87,18 +81,11 @@ tr.g td{background:#111;color:#fff;font-weight:700;font-size:10pt}
 </style>
 </head>
 <body>
-<div class="lh">
-  <div>
-    <div class="brand">ቁ KUNCHO</div>
-    <div class="sub">Construction &amp; Events</div>
-    <div class="city">Addis Ababa, Ethiopia</div>
-  </div>
-  <div class="meta">
-    ${p.refNum ? `<div><b>Ref: ${p.refNum}</b></div>` : ''}
-    <div>${p.date}</div>
-  </div>
-</div>
-<hr>
+${renderLetterhead({
+  docTitle: 'PAYMENT REQUEST',
+  docCode: p.refNum ? `Ref: ${p.refNum}` : undefined,
+  metaLines: [p.date],
+})}
 <div style="margin-bottom:14px">
   <div class="sl">To:</div>
   <div class="to-name">${p.client?.client_name ?? '—'}</div>
@@ -117,10 +104,10 @@ ${p.notes ? `<p style="font-style:italic;color:#555">${p.notes}</p>` : ''}
 <p>We trust that the above request will receive your favourable consideration and look forward to your prompt response.</p>
 <p>Thank you for your continued partnership.</p>
 <div class="sig">
-  <div><div class="sp">Prepared by:</div><div class="sl2"><div class="sn">Authorised Signatory</div><div class="so">Kuncho Construction &amp; Events</div></div></div>
+  <div><div class="sp">Prepared by:</div><div class="sl2"><div class="sn">Authorised Signatory</div><div class="so">${COMPANY_NAME}</div></div></div>
   <div><div class="sp">Received by:</div><div class="sl2"><div class="sn">Representative</div><div class="so">${p.client?.client_name ?? ''}</div></div></div>
 </div>
-<div class="footer">Kuncho Construction &amp; Events &middot; Addis Ababa, Ethiopia${p.refNum ? ` &middot; Ref: ${p.refNum}` : ''} &middot; ${p.date}</div>
+<div class="footer">${COMPANY_NAME} &middot; ${COMPANY_ADDRESS}${p.refNum ? ` &middot; Ref: ${p.refNum}` : ''} &middot; ${p.date}</div>
 </body>
 </html>`
 }
@@ -154,7 +141,7 @@ export default function PaymentRequestPage() {
   const [amountRequested, setAmountRequested] = useState<number>(0)
   const [bankName, setBankName]             = useState('')
   const [accountNumber, setAccountNumber]   = useState('')
-  const [accountName, setAccountName]       = useState('Kuncho Construction & Events')
+  const [accountName, setAccountName]       = useState(COMPANY_NAME)
   const [notes, setNotes]                   = useState('')
 
   const computedAdvance = isNew ? (contractValue * advancePct) / 100 : 0

@@ -3,6 +3,7 @@ import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
+import { documentBaseCss, renderCenteredLetterhead, COMPANY_NAME } from '@/lib/documentTheme'
 import type { Vendor, SourcingBundle, SourcingBundleItem, Expense } from '@/types/database'
 import { ArrowLeft, Printer, FileText } from 'lucide-react'
 
@@ -50,11 +51,11 @@ function buildHtml(f: {
 <head>
 <meta charset="utf-8"/>
 <style>
+${documentBaseCss}
   @page { size: A4; margin: 22mm 20mm 22mm 20mm; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
   html { zoom: 0.58; }
   @media print { html { zoom: 1; } }
-  body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.55; color: #000; }
+  body { font-size: 11pt; line-height: 1.55; color: #000; }
   h1 { font-size: 13pt; text-align: center; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 3mm; }
   h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: .04em; margin: 6mm 0 2mm; border-bottom: 1px solid #bbb; padding-bottom: 1mm; }
   p { margin-bottom: 2mm; }
@@ -65,7 +66,7 @@ function buildHtml(f: {
   .party { border: 1px solid #bbb; padding: 4mm; font-size: 10pt; line-height: 1.6; }
   .party .role { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .05em; color: #555; margin-bottom: 1mm; }
   .amount { font-weight: 700; font-size: 12pt; }
-  .hv-badge { display: inline-block; background: #1a1a1a; color: #fff; font-size: 9pt; padding: 1.5mm 4mm; border-radius: 2px; margin-bottom: 3mm; }
+  .hv-badge { display: inline-block; background: #1B3A5C; color: #fff; font-size: 9pt; padding: 1.5mm 4mm; border-radius: 2px; margin-bottom: 3mm; }
   ol { margin: 2mm 0 2mm 6mm; }
   ol li { margin-bottom: 1.5mm; }
   .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 15mm; margin-top: 12mm; }
@@ -73,18 +74,12 @@ function buildHtml(f: {
   .witness-area { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 8mm; }
   .witness-line { border-top: 1px solid #888; padding-top: 2mm; font-size: 9.5pt; line-height: 2; }
   .footer { margin-top: 8mm; border-top: 1px solid #ddd; padding-top: 2mm; font-size: 8pt; color: #777; text-align: center; }
-  .letterhead { text-align: center; padding-bottom: 4mm; margin-bottom: 5mm; border-bottom: 2.5px double #000; }
-  .letterhead .name { font-size: 16pt; font-weight: 900; letter-spacing: -.01em; }
-  .letterhead .sub { font-size: 8.5pt; color: #555; margin-top: 1mm; }
   .meta { text-align: center; font-size: 10pt; margin-bottom: 4mm; }
 </style>
 </head>
 <body>
 
-<div class="letterhead">
-  <div class="name">KUNCHO CONSTRUCTION &amp; TRADING PLC</div>
-  <div class="sub">Addis Ababa, Ethiopia &nbsp;|&nbsp; Tel: +251 XXX XXX XXX &nbsp;|&nbsp; kuncho@example.com</div>
-</div>
+${renderCenteredLetterhead()}
 
 ${isHighValue ? '<div style="text-align:center;margin-bottom:4mm"><span class="hv-badge">HIGH VALUE CONTRACT ≥ ETB 100,000</span></div>' : ''}
 
@@ -101,7 +96,7 @@ ${isHighValue ? '<div style="text-align:center;margin-bottom:4mm"><span class="h
 <div class="parties">
   <div class="party">
     <div class="role">Party A — Client</div>
-    <strong>Kuncho Construction &amp; Trading PLC</strong><br/>
+    <strong>${COMPANY_NAME}</strong><br/>
     Addis Ababa, Ethiopia<br/>
     TIN: ______________________<br/>
     Represented by: ${f.kunchoRep || '______________________'}<br/>
@@ -133,7 +128,7 @@ ${val > 0 ? `<br/><em>(${valWords} only)</em>` : ''}</p>
 
 <h2>5. General Terms &amp; Conditions</h2>
 <ol>
-  <li>The Vendor/Contractor shall complete the agreed scope of work within the specified timeline and to the quality standards of Kuncho Construction &amp; Trading PLC.</li>
+  <li>The Vendor/Contractor shall complete the agreed scope of work within the specified timeline and to the quality standards of ${COMPANY_NAME}.</li>
   <li>Payment will be released upon satisfactory completion of each milestone, submission of a valid VAT invoice, and provision of all required receipts.</li>
   <li>The Vendor/Contractor shall comply with all applicable Ethiopian tax obligations, including Withholding Tax (WHT) where applicable.</li>
   <li>Any changes to the scope, timeline, or contract value must be documented via a written variation order signed by both parties.</li>
@@ -151,7 +146,7 @@ ${f.specialConditions ? `<h2>6. Special Conditions</h2><p style="white-space:pre
 <div class="signatures">
   <div>
     <div class="sig-area">
-      <strong>For Kuncho Construction &amp; Trading PLC</strong><br/>
+      <strong>For ${COMPANY_NAME}</strong><br/>
       Name: ${f.kunchoRep || '______________________'}<br/>
       Title: ${f.kunchoTitle || '______________________'}<br/>
       Signature: ______________________<br/>

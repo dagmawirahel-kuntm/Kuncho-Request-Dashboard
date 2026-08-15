@@ -1,8 +1,9 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx'
 import type { Contract, Client } from '@/types/database'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { COMPANY_NAME, COMPANY_ADDRESS, BRAND_NAVY, documentBaseCss, renderCenteredLetterhead } from '@/lib/documentTheme'
 
-const COMPANY_NAME = 'Kuncho'
+const BRAND_NAVY_DOCX = BRAND_NAVY.replace('#', '')
 
 function row(label: string, value: string) {
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
@@ -146,12 +147,17 @@ export async function buildContractDocx(contract: Contract, client: Client): Pro
       children: [
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: COMPANY_NAME, bold: true, size: 32 })],
+          children: [new TextRun({ text: COMPANY_NAME, bold: true, size: 32, font: 'Arial', color: BRAND_NAVY_DOCX })],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 50 },
+          children: [new TextRun({ text: COMPANY_ADDRESS, size: 16, font: 'Arial', color: '999999' })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 300 },
-          children: [new TextRun({ text: 'SERVICE CONTRACT', bold: true, size: 26 })],
+          children: [new TextRun({ text: 'SERVICE CONTRACT', bold: true, size: 26, font: 'Arial', color: BRAND_NAVY_DOCX })],
         }),
         new Paragraph({
           heading: HeadingLevel.HEADING_2,
@@ -220,10 +226,10 @@ export function printContract(contract: Contract, client: Client) {
     .join('')
   const html = `<!doctype html><html><head><title>${esc(contract.contract_no ?? 'Contract')}</title>
     <style>
-      body { font-family: Georgia, 'Times New Roman', serif; color: #1a1a1a; max-width: 720px; margin: 40px auto; line-height: 1.5; }
-      h1 { text-align: center; font-size: 22px; margin-bottom: 2px; }
+      ${documentBaseCss}
+      body { color: #1a1a1a; max-width: 720px; margin: 40px auto; line-height: 1.5; }
       h2 { text-align: center; font-size: 16px; margin-top: 0; color: #444; }
-      h3 { font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 28px; }
+      h3 { font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 28px; color: ${BRAND_NAVY}; }
       table { width: 100%; border-collapse: collapse; margin-top: 8px; }
       td { padding: 4px 0; vertical-align: top; }
       td.label { font-weight: bold; width: 32%; }
@@ -231,7 +237,7 @@ export function printContract(contract: Contract, client: Client) {
       @media print { body { margin: 0.5in; } }
     </style></head>
     <body>
-      <h1>${esc(COMPANY_NAME)}</h1>
+      ${renderCenteredLetterhead()}
       <h2>Service Contract</h2>
       <h3>Contract Details</h3>
       <table>
