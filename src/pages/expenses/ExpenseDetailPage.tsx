@@ -9,6 +9,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaffDirectory } from '@/hooks/useLookups'
+import { COMPANY_NAME, COMPANY_ADDRESS } from '@/lib/documentTheme'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
@@ -68,12 +69,11 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
               <span style={{ color: '#fff', fontWeight: 900, fontSize: '12px', letterSpacing: '-0.5px' }}>K</span>
             </div>
             <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#1B3A5C', letterSpacing: '-0.3px' }}>
-              KUNCHO TRADING PLC
+              {COMPANY_NAME}
             </h1>
           </div>
           <p style={{ margin: 0, fontSize: '10px', color: '#888', lineHeight: 1.6 }}>
-            Addis Ababa, Ethiopia &nbsp;·&nbsp; P.O. Box XXXX<br />
-            Tel: +251 XXX XXX XXX &nbsp;·&nbsp; TIN: XXXXXXXXX
+            {COMPANY_ADDRESS}
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -226,7 +226,7 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
       {/* Footer */}
       <div style={{ marginTop: '44px', borderTop: '1px solid #e4e8ee', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <p style={{ margin: 0, fontSize: '9px', color: '#bbb' }}>
-          KUNCHO TRADING PLC &nbsp;·&nbsp; This is an official payment request document
+          {COMPANY_NAME} &nbsp;·&nbsp; This is an official payment request document
         </p>
         <p style={{ margin: 0, fontSize: '9px', color: '#bbb' }}>
           Generated {today} &nbsp;·&nbsp; Ref: {expense.expense_code ?? expense.id}
