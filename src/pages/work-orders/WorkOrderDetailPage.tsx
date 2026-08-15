@@ -677,7 +677,7 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
     queryFn: async () => {
       const { data, error } = await supabase
         .from('work_order_crew')
-        .select('*, staff(employee_name, employment_type, trade_tag, codename_amharic, codename_english)')
+        .select('*, staff!work_order_crew_staff_id_fkey(employee_name, employment_type, trade_tag, codename_amharic, codename_english)')
         .eq('work_order_id', workOrderId)
         .is('removed_at', null)
       if (error) throw error
