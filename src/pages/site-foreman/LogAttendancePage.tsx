@@ -97,7 +97,7 @@ export default function LogAttendancePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('work_orders')
-        .select('id, scope_of_work, work_type, work_order_crew(staff_id, role_on_wo, removed_at, staff(employee_name, employment_type))')
+        .select('id, scope_of_work, work_type, work_order_crew(staff_id, role_on_wo, removed_at, staff!work_order_crew_staff_id_fkey(employee_name, employment_type))')
         .eq('project_id', projectId!)
         .eq('status', 'in_progress')
         .order('created_at')
