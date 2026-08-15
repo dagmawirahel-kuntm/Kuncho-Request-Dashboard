@@ -14,7 +14,7 @@ export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
 export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'other'
-export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent'
+export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent' | 'labor_payment'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type PayrollApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -442,6 +442,10 @@ export interface Expense {
   payment_state_changed_at: string | null
   property_id: string | null
   rent_payment_request_id: string | null
+  paid_to_staff_id: string | null
+  rolled_up_from_requisition_id: string | null
+  rollup_period_start: string | null
+  rollup_period_end: string | null
   created_at: string
   updated_at: string
 }

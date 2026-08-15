@@ -8,6 +8,7 @@ import { canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
+import { useStaffDirectory } from '@/hooks/useLookups'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
@@ -27,6 +28,7 @@ const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string 
   subcontract:    { bg: '#164E63', label: 'Subcontract',        abbr: 'SUB' },
   maintenance:    { bg: '#78350F', label: 'Vehicle Maintenance', abbr: 'MNT' },
   property_rent:  { bg: '#365314', label: 'Property Rent',       abbr: 'RENT' },
+  labor_payment:  { bg: '#0F766E', label: 'Labor Payment',       abbr: 'LBR' },
 }
 
 type ExpenseWithJoins = Expense & {
@@ -43,7 +45,9 @@ type ExpenseWithJoins = Expense & {
 
 // ── Print invoice component ───────────────────────────────────────────────────
 
-function PrintInvoice({ expense }: { expense: ExpenseWithJoins }) {
+type LaborWorkerRow = { staff_id: string; employee_name: string; days_worked: number | null; day_rate: number | null; subtotal: number | null }
+
+function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: ExpenseWithJoins; laborWorkers: LaborWorkerRow[]; paidToStaffName: string | null }) {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
   const vendorName = expense.vendors?.vendor_name ?? expense.vendors_name
   const vendorBank = expense.vendors?.bank_account ?? expense.vendors_bank_account
@@ -106,6 +110,43 @@ function PrintInvoice({ expense }: { expense: ExpenseWithJoins }) {
             {vendorBank && <p style={{ margin: 0 }}><strong>Bank Account:</strong> {vendorBank}</p>}
             {vendorLocation && <p style={{ margin: 0 }}><strong>Location:</strong> {vendorLocation}</p>}
           </div>
+        </div>
+      )}
+      {!vendorName && laborWorkers.length === 0 && paidToStaffName && (
+        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            Payee / Staff
+          </div>
+          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
+            <p style={{ margin: 0 }}><strong>Name:</strong> {paidToStaffName}</p>
+          </div>
+        </div>
+      )}
+      {!vendorName && laborWorkers.length > 0 && (
+        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            Labor Payment — Worker Breakdown
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+            <thead>
+              <tr style={{ background: '#f4f6f8' }}>
+                <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888' }}>Worker</th>
+                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '60px' }}>Days</th>
+                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '90px' }}>Rate</th>
+                <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '100px' }}>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {laborWorkers.map(w => (
+                <tr key={w.staff_id} style={{ borderTop: '1px solid #e4e8ee' }}>
+                  <td style={{ padding: '6px 12px' }}>{w.employee_name}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.days_worked ?? '—'}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.day_rate != null ? formatCurrency(w.day_rate) : '—'}</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600 }}>{w.subtotal != null ? formatCurrency(w.subtotal) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -232,6 +273,30 @@ export default function ExpenseDetailPage() {
     enabled: !!id,
   })
 
+  // Labor payment breakdown (rollup drafts): staff names go through
+  // v_staff_directory, not a raw staff embed — not every role that can
+  // view an expense has RLS read access to `staff` directly (see the
+  // same note on useStaffDirectory).
+  const { data: staffDirectory = [] } = useStaffDirectory()
+  const staffNameById = useMemo(() => new Map(staffDirectory.map((s: any) => [s.id, s.employee_name])), [staffDirectory])
+
+  const { data: rawLaborWorkers = [] } = useQuery({
+    queryKey: ['expense-labor-workers', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_expense_workers')
+        .select('staff_id, days_worked, day_rate, subtotal')
+        .eq('expense_id', id!)
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!id && !!expense?.rolled_up_from_requisition_id,
+  })
+  const laborWorkers = useMemo(() => rawLaborWorkers.map(w => ({
+    ...w, employee_name: staffNameById.get(w.staff_id) ?? 'Unknown staff',
+  })), [rawLaborWorkers, staffNameById])
+  const paidToStaffName = expense?.paid_to_staff_id ? (staffNameById.get(expense.paid_to_staff_id) ?? null) : null
+
   // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
   // (polymorphic — no real FK), so it can't ride along on the join above.
   const { data: hasUnresolvedLedgerFailure } = useQuery({
@@ -336,7 +401,7 @@ export default function ExpenseDetailPage() {
     <>
       {/* Print-only invoice */}
       <div className="hidden print:block">
-        <PrintInvoice expense={expense} />
+        <PrintInvoice expense={expense} laborWorkers={laborWorkers} paidToStaffName={paidToStaffName} />
       </div>
 
       {/* Screen view */}
