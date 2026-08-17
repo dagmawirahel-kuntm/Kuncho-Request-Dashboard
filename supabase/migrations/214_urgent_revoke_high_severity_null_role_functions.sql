@@ -1,18 +1,28 @@
 -- ============================================================
--- URGENT, MINIMAL fast-track mitigation for the get_user_role()
--- NULL-bypass bug (see 213_null_role_auth_hardening.sql for the
--- full, tested fix). This migration does ONLY ONE THING: revoke
--- EXECUTE on all 32 originally-flagged HIGH-severity functions
--- (SECURITY DEFINER, no RLS backstop, unauthenticated-callable) plus
--- 1 non-trigger MEDIUM, from PUBLIC and anon.
+-- URGENT, MINIMAL fast-track mitigation. This migration does ONLY
+-- ONE THING: REVOKE EXECUTE FROM PUBLIC, anon on 34 functions — no
+-- function bodies are touched anywhere in this file.
+--
+-- 33 of the 34 share the get_user_role() NULL-bypass bug (see
+-- 213_null_role_auth_hardening.sql for the full, tested logic fix):
+-- the 32 originally-flagged HIGH-severity functions, 1 non-trigger
+-- MEDIUM (refresh_exec_dashboard_now), and provision_tier_2_worker_from_candidate
+-- (found later — see its own comment below for how).
+--
+-- The 34th, custodian_flag_asset_issue, is a DIFFERENT bug class
+-- entirely (unnecessary PUBLIC/anon grant on an otherwise-correctly-
+-- gated DEFINER function) — see its own section below.
 --
 -- promote_candidate_to_casual was briefly, incorrectly excluded from
 -- an earlier version of this file based on a live pg_proc check that
 -- returned a false negative — a direct, isolated re-check confirmed
 -- it exists, is SECURITY DEFINER, and has EXECUTE granted to both
--- PUBLIC and anon right now. Root cause of the false negative is
--- unconfirmed; treat this file as re-verified and correct as of this
--- version, not as-of the earlier one.
+-- PUBLIC and anon right now. Root cause of that false negative is now
+-- known: a separate conversation applied Tier 2 labor features to
+-- this database independently of this thread, which also explains
+-- provision_tier_2_worker_from_candidate below (never in the
+-- original 48-name audit at all). Treat this file as re-verified and
+-- correct as of this version, not as-of any earlier one.
 --
 -- No function bodies are touched here — zero logic change, zero
 -- new risk of breaking existing behavior. This closes the anon
@@ -93,6 +103,12 @@ REVOKE EXECUTE ON FUNCTION mark_wht_receipt_prepared(UUID, TEXT, TEXT) FROM PUBL
 -- staff rows and mutates candidates records, so it is not a
 -- read-only exposure.
 REVOKE EXECUTE ON FUNCTION promote_candidate_to_casual(UUID, TEXT, NUMERIC) FROM PUBLIC, anon;
+-- provision_tier_2_worker_from_candidate: found after this file was
+-- first written, root cause identified as a separate conversation
+-- that applied Tier 2 labor features to this database independently.
+-- Same bug pattern (unguarded get_user_role() NOT IN), same DEFINER
+-- exposure, writes new staff + labor_allocations rows.
+REVOKE EXECUTE ON FUNCTION provision_tier_2_worker_from_candidate(UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION match_expense_to_statement_line(UUID, UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION rematch_committed_statement_lines(UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION match_sale_to_transfer(UUID, UUID) FROM PUBLIC, anon;
@@ -103,8 +119,24 @@ REVOKE EXECUTE ON FUNCTION retry_sale_ledger_posting(UUID) FROM PUBLIC, anon;
 -- trigger, excluded above with explanation)
 REVOKE EXECUTE ON FUNCTION refresh_exec_dashboard_now() FROM PUBLIC, anon;
 
+-- ════════════════════════════════════════════════════════════════
+-- A DIFFERENT bug class, found during the same review pass: not the
+-- get_user_role() NULL-bypass pattern at all. custodian_flag_asset_issue
+-- (Fixed Asset Register PR) is SECURITY DEFINER with PUBLIC+anon
+-- EXECUTE, but its authorization check is actually correct — it uses
+-- current_staff_id() with a proper explicit IS NULL guard, and
+-- matches the caller against the asset's actual custodian. Checked
+-- fixed_assets/fixed_asset_movements RLS directly: both are
+-- admin/finance-only for UPDATE/INSERT, so DEFINER is load-bearing
+-- here (an ordinary custodian must be able to self-serve this action,
+-- which narrower RLS alone wouldn't allow) — same architecture as the
+-- BOQ change-order approval RPCs. authenticated already has its own
+-- EXECUTE grant separately, so revoking PUBLIC/anon only removes
+-- reach nothing legitimate ever needed.
+REVOKE EXECUTE ON FUNCTION custodian_flag_asset_issue(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+
 -- Verify: expect ONLY authenticated, postgres, service_role for each
--- of the 32 functions above — no PUBLIC, no anon.
+-- of the 34 functions above — no PUBLIC, no anon.
 SELECT routine_name, grantee, privilege_type
 FROM information_schema.routine_privileges
 WHERE routine_name IN (
@@ -115,8 +147,9 @@ WHERE routine_name IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate',
+  'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
-  'refresh_exec_dashboard_now'
+  'refresh_exec_dashboard_now', 'custodian_flag_asset_issue'
 )
 ORDER BY routine_name, grantee;

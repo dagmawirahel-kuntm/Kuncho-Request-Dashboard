@@ -1087,6 +1087,75 @@ BEGIN
 END $fn$;
 
 REVOKE EXECUTE ON FUNCTION promote_candidate_to_casual(UUID, TEXT, NUMERIC) FROM PUBLIC, anon;
+
+-- ── provision_tier_2_worker_from_candidate ──────────────────────────
+-- Root cause of both this and promote_candidate_to_casual having been
+-- missed by the original file-based audit and my first live check:
+-- a separate conversation applied Tier 2 labor features to this same
+-- database independently of this thread's review, including this
+-- function. Not in the original 48-name list at all. Writes new
+-- staff rows and labor_allocations rows — a real write path.
+CREATE OR REPLACE FUNCTION public.provision_tier_2_worker_from_candidate(p_candidate_id uuid)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
+DECLARE
+  v_role     user_role;
+  v_cand     candidates%ROWTYPE;
+  v_req      labor_requisitions%ROWTYPE;
+  v_new_id   uuid;
+  v_actor_id uuid;
+BEGIN
+  v_role := public.get_user_role();
+  IF v_role IS NULL OR v_role NOT IN ('admin', 'executive', 'hr_officer') THEN
+    RAISE EXCEPTION 'Only admin/executive/HR may approve and provision a Tier 2 candidate';
+  END IF;
+
+  SELECT * INTO v_cand FROM candidates WHERE id = p_candidate_id;
+  IF v_cand.id IS NULL THEN
+    RAISE EXCEPTION 'Candidate % not found', p_candidate_id;
+  END IF;
+  IF v_cand.candidate_type <> 'tier_2_casual' THEN
+    RAISE EXCEPTION 'Candidate % is not a Tier 2 casual candidate', p_candidate_id;
+  END IF;
+  IF v_cand.outcome <> 'pending' THEN
+    RAISE EXCEPTION 'Candidate % has already been decided (outcome: %)', p_candidate_id, v_cand.outcome;
+  END IF;
+
+  IF v_cand.labor_requisition_id IS NOT NULL THEN
+    SELECT * INTO v_req FROM labor_requisitions WHERE id = v_cand.labor_requisition_id;
+  END IF;
+
+  v_actor_id := public.current_staff_id();
+
+  INSERT INTO staff
+    (employee_name, phone_number, email, employment_type, status,
+     trade_tag, day_rate, first_engaged_at)
+  VALUES
+    (v_cand.full_name, v_cand.phone, v_cand.email, 'tier_2_casual', 'active',
+     v_cand.trade_tag, v_req.estimated_day_rate, CURRENT_DATE)
+  RETURNING id INTO v_new_id;
+
+  UPDATE candidates
+     SET outcome = 'hired',
+         hr_approved_by_staff_id = v_actor_id,
+         hr_approved_at = now(),
+         provisioned_staff_id = v_new_id,
+         updated_at = now()
+   WHERE id = p_candidate_id;
+
+  IF v_req.id IS NOT NULL THEN
+    INSERT INTO labor_allocations
+      (staff_id, project_id, start_date, status, assigned_by, notes, labor_requisition_id)
+    VALUES
+      (v_new_id, v_req.project_id, CURRENT_DATE, 'active', auth.uid(),
+       'Provisioned via Tier 2 HR queue from candidate ' || p_candidate_id::text ||
+       ' for requisition ' || v_req.id::text,
+       v_req.id);
+  END IF;
+
+  RETURN v_new_id;
+END $function$;
+
+REVOKE EXECUTE ON FUNCTION provision_tier_2_worker_from_candidate(UUID) FROM PUBLIC, anon;
 -- Deserves its own deliberate decision, not bundling here.
 
 -- ── match_expense_to_statement_line (200) ────────────────────────────
@@ -1884,7 +1953,7 @@ WHERE proname IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
   'refresh_exec_dashboard_now',
   'enforce_expense_approval_transitions', 'enforce_cash_advance_approval_transitions',
@@ -1907,7 +1976,7 @@ WHERE routine_name IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
   'refresh_exec_dashboard_now', 'log_verified_market_price', 'fulfill_market_price_check',
   'cancel_market_price_check', 'approve_site_petty_cash_request', 'reject_site_petty_cash_request'
