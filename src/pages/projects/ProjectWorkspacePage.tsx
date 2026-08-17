@@ -226,6 +226,67 @@ const RETURN_STATUS_CLS: Record<StockReturnRequestStatus, string> = {
   rejected: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 }
 
+// What's been purchased and placed at this project vs. what's already
+// gone back — the answer to "how much of what I bought is still here."
+// v_project_material_balance has no notion of per-work-order
+// consumption (nothing in this system tracks that granularly yet), so
+// this is placed-vs-returned, not a live depletion meter.
+function MaterialsBalanceSection({ projectId }: { projectId: string }) {
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['project-material-balance-full', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_project_material_balance')
+        .select('stock_item_id, item_name, unit, qty_placed, qty_returned, qty_pending, qty_available_to_return')
+        .eq('project_id', projectId)
+        .order('item_name')
+      if (error) throw error
+      return data as { stock_item_id: string; item_name: string; unit: string | null; qty_placed: number; qty_returned: number; qty_pending: number; qty_available_to_return: number }[]
+    },
+  })
+
+  return (
+    <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
+      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+        <Package className="h-4 w-4" /> Materials Balance
+      </h3>
+      <p className="text-[11px] text-slate-400">
+        Every item purchased and placed at this project (warehouse-issued or delivered straight to site), less whatever's already been returned or is pending return.
+      </p>
+      {isLoading ? (
+        <div className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
+      ) : data.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No materials placed at this project yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b dark:border-slate-700 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                <th className="pb-2 pr-3">Item</th>
+                <th className="pb-2 pr-3 text-right">Placed</th>
+                <th className="pb-2 pr-3 text-right">Returned</th>
+                <th className="pb-2 pr-3 text-right">Pending Return</th>
+                <th className="pb-2 text-right">Still On Site</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y dark:divide-slate-700">
+              {data.map(r => (
+                <tr key={r.stock_item_id}>
+                  <td className="py-2 pr-3 text-slate-700 dark:text-slate-200">{r.item_name}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{r.qty_placed} {r.unit ?? ''}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-slate-500 dark:text-slate-400">{r.qty_returned || '—'}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-slate-500 dark:text-slate-400">{r.qty_pending || '—'}</td>
+                  <td className="py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">{r.qty_available_to_return} {r.unit ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ReturnToStockSection({ projectId, projectManagerId }: { projectId: string; projectManagerId: string | null }) {
   const { toast } = useToast()
   const { role } = useAuth()
@@ -1101,6 +1162,7 @@ export default function ProjectWorkspacePage() {
       {/* Return to stock (148): project reports what's coming back;
           stock_manager confirming receipt is what actually restores it
           to stock — see StockManagerViewPage's own queue for that half. */}
+      <MaterialsBalanceSection projectId={id!} />
       <ReturnToStockSection projectId={id!} projectManagerId={project?.project_manager_id ?? null} />
 
       {/* Activity */}
