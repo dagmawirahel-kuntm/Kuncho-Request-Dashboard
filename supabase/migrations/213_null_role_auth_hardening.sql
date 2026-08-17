@@ -1033,50 +1033,14 @@ END;
 $function$;
 REVOKE EXECUTE ON FUNCTION mark_wht_receipt_prepared(UUID, TEXT, TEXT) FROM PUBLIC, anon;
 
--- ── promote_candidate_to_casual (199) ────────────────────────────────
-CREATE OR REPLACE FUNCTION public.promote_candidate_to_casual(
-  p_candidate_id  uuid,
-  p_trade_tag     text,
-  p_day_rate      numeric
-) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
-DECLARE
-  v_role   user_role;
-  v_cand   candidates%ROWTYPE;
-  v_new_id uuid;
-BEGIN
-  v_role := public.get_user_role();
-  IF v_role IS NULL OR v_role NOT IN ('admin','executive','hr_officer') THEN
-    RAISE EXCEPTION 'Only admin/executive/HR may promote a candidate to casual worker';
-  END IF;
-
-  SELECT * INTO v_cand FROM candidates WHERE id = p_candidate_id;
-  IF v_cand.id IS NULL THEN
-    RAISE EXCEPTION 'Candidate % not found', p_candidate_id;
-  END IF;
-  IF v_cand.outcome = 'hired' THEN
-    RAISE EXCEPTION 'Candidate is already hired';
-  END IF;
-
-  INSERT INTO staff
-    (employee_name, phone_number, email, employment_type, status,
-     trade_tag, day_rate, first_engaged_at)
-  VALUES
-    (v_cand.full_name, v_cand.phone, v_cand.email, 'tier_2_casual', 'active',
-     p_trade_tag, p_day_rate, CURRENT_DATE)
-  RETURNING id INTO v_new_id;
-
-  UPDATE candidates
-     SET outcome = 'hired',
-         outcome_notes = COALESCE(outcome_notes, '') ||
-           CASE WHEN outcome_notes IS NULL OR outcome_notes = '' THEN '' ELSE E'\n' END ||
-           'Promoted to Tier 2 casual from Competency Hub',
-         updated_at = now()
-   WHERE id = p_candidate_id;
-
-  RETURN v_new_id;
-END $fn$;
-
-REVOKE EXECUTE ON FUNCTION promote_candidate_to_casual(UUID, TEXT, NUMERIC) FROM PUBLIC, anon;
+-- promote_candidate_to_casual (199) intentionally excluded: confirmed
+-- via live pg_proc lookup that it does not exist in this database at
+-- all (its sibling from the same migration file,
+-- on_labor_req_approved_promote_candidate, does exist). A security
+-- hardening migration should only touch functions that are currently
+-- live — this isn't a live bug to patch, and deploying it now would
+-- be introducing net-new functionality, not fixing an exposure.
+-- Deserves its own deliberate decision, not bundling here.
 
 -- ── match_expense_to_statement_line (200) ────────────────────────────
 CREATE OR REPLACE FUNCTION public.match_expense_to_statement_line(
@@ -1298,17 +1262,16 @@ REVOKE EXECUTE ON FUNCTION retry_sale_ledger_posting(UUID) FROM PUBLIC, anon;
 -- MEDIUM
 -- ════════════════════════════════════════════════════════════════
 
--- ── block_finance_contact_reassign_by_non_admin (147) — trigger, no REVOKE ─
-CREATE OR REPLACE FUNCTION block_finance_contact_reassign_by_non_admin()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.finance_contact_id IS DISTINCT FROM OLD.finance_contact_id
-     AND (get_user_role() IS NULL OR get_user_role() <> 'admin') THEN
-    RAISE EXCEPTION 'Only an admin can assign or reassign a project''s finance contact';
-  END IF;
-  RETURN NEW;
-END;
-$$;
+-- block_finance_contact_reassign_by_non_admin (147) intentionally
+-- excluded: confirmed via live pg_proc/pg_trigger lookup that neither
+-- this function nor its trigger exist in this database — and
+-- projects.finance_contact_id doesn't exist as a column either, so
+-- there is nothing live to attach a fixed trigger to. This is a
+-- missing feature (the reassignment guard was apparently never
+-- deployed), not a live security regression — if the underlying gap
+-- (a deactivated PM could otherwise reassign a finance contact once
+-- this feature exists) needs addressing, that's a deliberate,
+-- separately-reviewed PR, not part of this hardening pass.
 
 -- ── refresh_exec_dashboard_now (195) — not a trigger, REVOKE added ──
 CREATE OR REPLACE FUNCTION public.refresh_exec_dashboard_now()
@@ -1871,9 +1834,9 @@ WHERE proname IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
-  'block_finance_contact_reassign_by_non_admin', 'refresh_exec_dashboard_now',
+  'refresh_exec_dashboard_now',
   'enforce_expense_approval_transitions', 'enforce_cash_advance_approval_transitions',
   'enforce_sale_approval_transitions', 'enforce_payroll_approval_transitions',
   'enforce_fuel_expense_requester', 'enforce_staff_department_assignment',
@@ -1894,7 +1857,7 @@ WHERE routine_name IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
   'refresh_exec_dashboard_now', 'log_verified_market_price', 'fulfill_market_price_check',
   'cancel_market_price_check', 'approve_site_petty_cash_request', 'reject_site_petty_cash_request'
