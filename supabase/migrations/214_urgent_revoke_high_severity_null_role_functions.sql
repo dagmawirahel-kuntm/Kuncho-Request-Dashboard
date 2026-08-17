@@ -2,12 +2,17 @@
 -- URGENT, MINIMAL fast-track mitigation for the get_user_role()
 -- NULL-bypass bug (see 213_null_role_auth_hardening.sql for the
 -- full, tested fix). This migration does ONLY ONE THING: revoke
--- EXECUTE on 31 of the 32 originally-flagged HIGH-severity functions
+-- EXECUTE on all 32 originally-flagged HIGH-severity functions
 -- (SECURITY DEFINER, no RLS backstop, unauthenticated-callable) plus
--- 1 non-trigger MEDIUM, from PUBLIC and anon. promote_candidate_to_casual
--- (one of the 32) is excluded — confirmed via live pg_proc lookup that
--- it does not exist in this database at all, so REVOKE on it would
--- error the whole migration. See the comment at its former line below.
+-- 1 non-trigger MEDIUM, from PUBLIC and anon.
+--
+-- promote_candidate_to_casual was briefly, incorrectly excluded from
+-- an earlier version of this file based on a live pg_proc check that
+-- returned a false negative — a direct, isolated re-check confirmed
+-- it exists, is SECURITY DEFINER, and has EXECUTE granted to both
+-- PUBLIC and anon right now. Root cause of the false negative is
+-- unconfirmed; treat this file as re-verified and correct as of this
+-- version, not as-of the earlier one.
 --
 -- No function bodies are touched here — zero logic change, zero
 -- new risk of breaking existing behavior. This closes the anon
@@ -24,7 +29,7 @@
 -- would not remove what anon still holds via PUBLIC.
 --
 -- authenticated is deliberately left untouched: every one of these
--- 31 is meant to be callable by real, logged-in staff with the
+-- 32 is meant to be callable by real, logged-in staff with the
 -- correct role. Revoking from authenticated would break the app for
 -- legitimate users; the NULL-bypass bug only matters for callers
 -- with no matching active user_profiles row (unauthenticated, or a
@@ -79,17 +84,15 @@ REVOKE EXECUTE ON FUNCTION reconcile_account(UUID, DATE, NUMERIC, TEXT, TEXT, TE
 REVOKE EXECUTE ON FUNCTION confirm_receipt_pickup(TEXT, UUID, TEXT) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION match_line_to_payroll(UUID, UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION mark_wht_receipt_prepared(UUID, TEXT, TEXT) FROM PUBLIC, anon;
--- promote_candidate_to_casual (originally flagged HIGH) is excluded:
--- live-checked against pg_proc and confirmed it does NOT exist in
--- this database, despite being defined in migration
--- 199_multi_candidate_and_promote_rpc.sql. The sibling function from
--- that same file, on_labor_req_approved_promote_candidate (a
--- trigger), DOES exist live — so this isn't "migration 199 was never
--- applied," it's that this specific function from it never made it
--- into the live schema. Cause not fully diagnosed; flagging for you
--- rather than guessing. No REVOKE is possible on a function that
--- doesn't exist (Postgres errors, doesn't no-op), so it's left out
--- here entirely.
+-- promote_candidate_to_casual: corrected. An earlier check of this
+-- migration incorrectly concluded this function didn't exist live
+-- (see 213 for the full incident note) — a direct, isolated re-check
+-- against pg_proc confirmed it DOES exist, is SECURITY DEFINER, and
+-- has EXECUTE granted to both PUBLIC and anon right now. Root cause
+-- of the earlier false negative is unconfirmed. This one writes new
+-- staff rows and mutates candidates records, so it is not a
+-- read-only exposure.
+REVOKE EXECUTE ON FUNCTION promote_candidate_to_casual(UUID, TEXT, NUMERIC) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION match_expense_to_statement_line(UUID, UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION rematch_committed_statement_lines(UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION match_sale_to_transfer(UUID, UUID) FROM PUBLIC, anon;
@@ -101,7 +104,7 @@ REVOKE EXECUTE ON FUNCTION retry_sale_ledger_posting(UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION refresh_exec_dashboard_now() FROM PUBLIC, anon;
 
 -- Verify: expect ONLY authenticated, postgres, service_role for each
--- of the 31 functions above — no PUBLIC, no anon.
+-- of the 32 functions above — no PUBLIC, no anon.
 SELECT routine_name, grantee, privilege_type
 FROM information_schema.routine_privileges
 WHERE routine_name IN (
@@ -112,7 +115,7 @@ WHERE routine_name IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'promote_candidate_to_casual', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
   'refresh_exec_dashboard_now'
 )
