@@ -1156,6 +1156,120 @@ BEGIN
 END $function$;
 
 REVOKE EXECUTE ON FUNCTION provision_tier_2_worker_from_candidate(UUID) FROM PUBLIC, anon;
+
+-- ── confirm_vrf_payment ──────────────────────────────────────────────
+-- Found by manual body review, NOT the regex sweep: a different
+-- syntactic shape of the same NULL-propagation bug.
+-- `NOT (COALESCE(v_is_vrf_mgr, false) OR get_user_role() = 'admin')`
+-- — for an anon/unmatched caller, get_user_role() is NULL, so
+-- `get_user_role() = 'admin'` is NULL, `false OR NULL` is NULL, and
+-- `NOT NULL` is NULL — the RAISE EXCEPTION branch never fires. Marks
+-- an expense payment_state = 'paid' — a real financial write.
+CREATE OR REPLACE FUNCTION public.confirm_vrf_payment(p_expense_id uuid, p_vrf_id uuid, p_certificate_url text DEFAULT NULL::text, p_certificate_name text DEFAULT NULL::text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
+DECLARE
+  v_is_vrf_mgr  BOOLEAN;
+  v_state       TEXT;
+  v_method      TEXT;
+  v_amount      NUMERIC;
+  v_vrf_status  TEXT;
+  v_return_acct UUID;
+  v_available   NUMERIC;
+BEGIN
+  SELECT is_vrf_manager INTO v_is_vrf_mgr FROM user_profiles WHERE id = auth.uid();
+  IF NOT (COALESCE(v_is_vrf_mgr, false) OR COALESCE(get_user_role() = 'admin', false)) THEN
+    RAISE EXCEPTION 'Only the VRF Manager (or an admin) can confirm a VRF payment';
+  END IF;
+
+  IF p_vrf_id IS NULL THEN RAISE EXCEPTION 'Select the settled VRF this payment is drawn from'; END IF;
+  IF p_certificate_url IS NULL THEN RAISE EXCEPTION 'Attach a payment confirmation certificate before marking it paid'; END IF;
+
+  SELECT payment_state, payment_method, amount_etb INTO v_state, v_method, v_amount FROM expenses WHERE id = p_expense_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Expense not found'; END IF;
+  IF v_method IS DISTINCT FROM 'vrf' THEN RAISE EXCEPTION 'This is not a VRF payment'; END IF;
+  IF v_state NOT IN ('approved_to_pay', 'sent') THEN
+    RAISE EXCEPTION 'Only an approved or sent VRF payment can be confirmed (current: %)', v_state;
+  END IF;
+
+  SELECT status, return_account_id INTO v_vrf_status, v_return_acct FROM vendor_receipt_facilitation WHERE id = p_vrf_id;
+  IF v_vrf_status IS DISTINCT FROM 'settled' THEN
+    RAISE EXCEPTION 'Payments can only be drawn from a settled VRF (this one is %)', COALESCE(v_vrf_status, 'missing');
+  END IF;
+
+  SELECT fund_available INTO v_available FROM v_vrf_fund_status WHERE vrf_id = p_vrf_id;
+  IF COALESCE(v_available,0) < COALESCE(v_amount,0) THEN
+    RAISE EXCEPTION 'This VRF fund has only % available, cannot cover %', COALESCE(v_available,0), COALESCE(v_amount,0);
+  END IF;
+
+  UPDATE expenses SET
+    payment_state = 'paid',
+    vrf_id = p_vrf_id,
+    account_id = COALESCE(v_return_acct, account_id),
+    disbursed_by = auth.uid(),
+    payment_certificate_url = p_certificate_url,
+    payment_certificate_name = p_certificate_name,
+    payment_confirmed_by = auth.uid(),
+    payment_confirmed_at = NOW()
+  WHERE id = p_expense_id;
+END;
+$function$;
+
+REVOKE EXECUTE ON FUNCTION confirm_vrf_payment(UUID, UUID, TEXT, TEXT) FROM PUBLIC, anon;
+
+-- ── verify_vendor_record ─────────────────────────────────────────────
+-- Found by manual body review: v_checker_role is resolved from
+-- user_profiles WHERE id = auth.uid() — NULL for anon. The maker-
+-- checker gate `(v_maker_role IN (...) AND v_checker_role IN (...))
+-- OR (...)` with v_checker_role NULL collapses the whole compound
+-- condition to NULL, and NOT(NULL) is NULL — the RAISE EXCEPTION
+-- never fires. This would let an anonymous caller flip a vendor's
+-- verification_status to 'verified', undermining the maker-checker
+-- anti-fraud control entirely. Fix: explicit NULL guard on both
+-- resolved roles before the compound check, not just a COALESCE
+-- wrap (clearer given the AND/OR/NOT nesting).
+CREATE OR REPLACE FUNCTION public.verify_vendor_record(p_vendor_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
+DECLARE
+  v_vendor       RECORD;
+  v_maker_role   TEXT;
+  v_checker_role TEXT;
+BEGIN
+  SELECT * INTO v_vendor FROM vendors WHERE id = p_vendor_id;
+  IF v_vendor IS NULL THEN
+    RAISE EXCEPTION 'Vendor not found';
+  END IF;
+  IF v_vendor.verification_status <> 'pending_verification' THEN
+    RAISE EXCEPTION 'Vendor % is not pending verification (status = %)', p_vendor_id, v_vendor.verification_status;
+  END IF;
+  IF v_vendor.entered_by IS NULL THEN
+    RAISE EXCEPTION 'Vendor % has no recorded maker to check against — grandfathered record, nothing to verify', p_vendor_id;
+  END IF;
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+  IF auth.uid() = v_vendor.entered_by THEN
+    RAISE EXCEPTION 'The same person cannot both enter/edit and verify a vendor record';
+  END IF;
+
+  SELECT role INTO v_maker_role FROM user_profiles WHERE id = v_vendor.entered_by;
+  SELECT role INTO v_checker_role FROM user_profiles WHERE id = auth.uid();
+
+  IF v_maker_role IS NULL OR v_checker_role IS NULL THEN
+    RAISE EXCEPTION 'Cannot verify — maker or checker role could not be resolved';
+  END IF;
+
+  IF NOT (
+    (v_maker_role IN ('finance', 'admin') AND v_checker_role IN ('procurement_officer', 'admin'))
+    OR (v_maker_role IN ('procurement_officer', 'admin') AND v_checker_role IN ('finance', 'admin'))
+  ) THEN
+    RAISE EXCEPTION 'Verifier must be from a different department than whoever entered/edited the vendor record (one finance, one procurement)';
+  END IF;
+
+  UPDATE vendors SET verification_status = 'verified', verified_by = auth.uid(), verified_at = NOW() WHERE id = p_vendor_id;
+END;
+$function$;
+
+REVOKE EXECUTE ON FUNCTION verify_vendor_record(UUID) FROM PUBLIC, anon;
 -- Deserves its own deliberate decision, not bundling here.
 
 -- ── match_expense_to_statement_line (200) ────────────────────────────
@@ -1953,7 +2067,7 @@ WHERE proname IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate', 'confirm_vrf_payment', 'verify_vendor_record', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
   'refresh_exec_dashboard_now',
   'enforce_expense_approval_transitions', 'enforce_cash_advance_approval_transitions',
@@ -1976,7 +2090,7 @@ WHERE routine_name IN (
   'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
   'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
   'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
-  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate', 'confirm_vrf_payment', 'verify_vendor_record', 'match_expense_to_statement_line', 'rematch_committed_statement_lines',
   'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
   'refresh_exec_dashboard_now', 'log_verified_market_price', 'fulfill_market_price_check',
   'cancel_market_price_check', 'approve_site_petty_cash_request', 'reject_site_petty_cash_request'

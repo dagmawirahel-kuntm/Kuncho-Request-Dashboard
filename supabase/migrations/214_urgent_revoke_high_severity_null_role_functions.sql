@@ -135,6 +135,39 @@ REVOKE EXECUTE ON FUNCTION refresh_exec_dashboard_now() FROM PUBLIC, anon;
 -- reach nothing legitimate ever needed.
 REVOKE EXECUTE ON FUNCTION custodian_flag_asset_issue(UUID, TEXT, TEXT) FROM PUBLIC, anon;
 
+-- confirm_vrf_payment and verify_vendor_record: real NULL-bypass bugs
+-- found by manual body review of the "safe" bucket (different
+-- syntactic shapes than the get_user_role() NOT IN pattern — see
+-- 213 for the full logic fixes). Revoked here too since 214 is
+-- meant to close the anon/PUBLIC attack surface immediately,
+-- independent of whether the logic fix has landed yet.
+REVOKE EXECUTE ON FUNCTION confirm_vrf_payment(UUID, UUID, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION verify_vendor_record(UUID) FROM PUBLIC, anon;
+
+-- refresh_exec_dashboard (no "_now"): the internal DEFINER function
+-- that refresh_exec_dashboard_now calls. Has NO auth check of its
+-- own and independently carried PUBLIC+anon EXECUTE, so the
+-- wrapper's role gate was bypassable by calling this one directly.
+-- authenticated is intentionally NOT revoked: refresh_exec_dashboard_now
+-- is SECURITY INVOKER, so its nested call to this function runs
+-- under the original caller's own authenticated role, not a
+-- definer's — revoking authenticated here would break the
+-- legitimate path through the wrapper.
+REVOKE EXECUTE ON FUNCTION refresh_exec_dashboard() FROM PUBLIC, anon;
+
+-- Lower priority, not the NULL-bypass action-bug class (no write
+-- capable of causing real harm, or read-only), but no legitimate
+-- reason for anon to reach them either — closing as cheap hygiene.
+-- log_posting_failure: lets anon write arbitrary rows into the
+-- internal ledger diagnostics log (minor integrity nuisance, not a
+-- financial or data-correctness risk).
+REVOKE EXECUTE ON FUNCTION log_posting_failure(TEXT, UUID, TEXT) FROM PUBLIC, anon;
+-- staff_effective_day_rate / get_item_volatility: read-only lookups,
+-- no write risk, but staff_effective_day_rate exposes salary/day-rate
+-- data to an unauthenticated caller who knows a staff_id.
+REVOKE EXECUTE ON FUNCTION staff_effective_day_rate(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION get_item_volatility(UUID) FROM PUBLIC, anon;
+
 -- Verify: expect ONLY authenticated, postgres, service_role for each
 -- of the 34 functions above — no PUBLIC, no anon.
 SELECT routine_name, grantee, privilege_type
