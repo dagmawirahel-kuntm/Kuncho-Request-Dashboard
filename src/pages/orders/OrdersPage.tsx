@@ -21,6 +21,14 @@ type OrderWithMeta = Order & {
   _reviewPending: number
 }
 
+// A line item's own status is the only thing that still reflects real
+// progress — approval_status stopped moving once the manager→finance
+// ladder was retired (migrations 149/163), so every request looked
+// identically "Pending" regardless of whether it was brand new or
+// already fully delivered.
+const FULFILLED_ITEM_STATUSES = new Set(['sourced', 'stock_fulfilled'])
+const PARTIAL_ITEM_STATUSES   = new Set(['partially_sourced', 'stock_pending_dispatch'])
+
 const PRIORITY_CLS: Record<string, string> = {
   critical: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-400',
   urgent:   'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400',
@@ -163,14 +171,6 @@ export default function PurchaseRequestsPage() {
       return (data as { order_item_id: string }[]).map(r => r.order_item_id)
     },
   })
-
-  // A line item's own status is the only thing that still reflects real
-  // progress — approval_status stopped moving once the manager→finance
-  // ladder was retired (migrations 149/163), so every request looked
-  // identically "Pending" regardless of whether it was brand new or
-  // already fully delivered.
-  const FULFILLED_ITEM_STATUSES = new Set(['sourced', 'stock_fulfilled'])
-  const PARTIAL_ITEM_STATUSES   = new Set(['partially_sourced', 'stock_pending_dispatch'])
 
   const countMap = useMemo(() => {
     const pendingReviewSet = new Set(pendingReviewItemIds)
