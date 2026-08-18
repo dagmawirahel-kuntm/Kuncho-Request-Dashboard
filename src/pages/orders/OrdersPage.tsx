@@ -7,7 +7,7 @@ import type { Order, OrderApprovalStatus, OrderPriority } from '@/types/database
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  Plus, Pencil, Trash2, Package, Zap, AlertCircle, Clock,
+  Plus, Pencil, Trash2, Package, Zap, AlertCircle,
   CheckCircle2, Search, ChevronRight, AlertTriangle, XCircle,
 } from 'lucide-react'
 
@@ -214,11 +214,16 @@ export default function PurchaseRequestsPage() {
     return list
   }, [data, approvalFilter, search])
 
+  // Mirrors FulfillmentBar's read of the same data — "needs attention" is
+  // any request with a genuinely stuck line, "fulfilled" is every
+  // remaining line sourced or delivered. Neither depends on
+  // approval_status, which nothing has moved since the approval ladder
+  // was retired.
   const stats = useMemo(() => ({
-    pending:  data.filter(o => o.approval_status === 'pending').length,
-    urgent:   data.filter(o => o.priority === 'urgent' || o.priority === 'critical').length,
-    newItems: data.filter(o => o.is_new_item || o._total === 0).length,
-    approved: data.filter(o => o.approval_status === 'finance_approved').length,
+    needsAttention: data.filter(o => o._blocked > 0).length,
+    urgent:         data.filter(o => o.priority === 'urgent' || o.priority === 'critical').length,
+    newItems:       data.filter(o => o.is_new_item || o._total === 0).length,
+    fulfilled:      data.filter(o => o.approval_status !== 'rejected' && o._total > 0 && o._blocked === 0 && o._fulfilled === o._total).length,
   }), [data])
 
   async function handleDelete(id: string) {
@@ -256,10 +261,10 @@ export default function PurchaseRequestsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Awaiting Approval" value={stats.pending} icon={<Clock className="h-4 w-4" />} colorCls="bg-amber-50 text-amber-600 dark:bg-amber-900/30" />
-        <StatCard label="Urgent / Critical" value={stats.urgent} icon={<AlertCircle className="h-4 w-4" />} colorCls="bg-red-50 text-red-500 dark:bg-red-900/30" />
+        <StatCard label="Needs Attention" value={stats.needsAttention} icon={<AlertTriangle className="h-4 w-4" />} colorCls="bg-red-50 text-red-500 dark:bg-red-900/30" />
+        <StatCard label="Urgent / Critical" value={stats.urgent} icon={<AlertCircle className="h-4 w-4" />} colorCls="bg-amber-50 text-amber-600 dark:bg-amber-900/30" />
         <StatCard label="New Items (Market)" value={stats.newItems} icon={<Zap className="h-4 w-4" />} colorCls="bg-purple-50 text-purple-500 dark:bg-purple-900/30" />
-        <StatCard label="Fully Approved" value={stats.approved} icon={<CheckCircle2 className="h-4 w-4" />} colorCls="bg-green-50 text-green-600 dark:bg-green-900/30" />
+        <StatCard label="Fulfilled" value={stats.fulfilled} icon={<CheckCircle2 className="h-4 w-4" />} colorCls="bg-green-50 text-green-600 dark:bg-green-900/30" />
       </div>
 
       {/* Search + filter bar */}
