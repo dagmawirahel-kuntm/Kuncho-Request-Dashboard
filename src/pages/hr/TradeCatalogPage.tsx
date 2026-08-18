@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
-import { Palette, Save, X } from 'lucide-react'
+import { Palette, Save, X, Plus } from 'lucide-react'
 
 interface Trade {
   trade_tag: string
@@ -32,6 +32,37 @@ export default function TradeCatalogPage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState<Partial<Trade>>({})
 
+  const [showAdd, setShowAdd] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const blankNewTrade: Trade = {
+    trade_tag: '', codename_amharic: '', codename_english: '', icon_emoji: '🛠️',
+    color_accent: 'bg-slate-100', color_accent_2: 'text-slate-700', sort_order: 100,
+  }
+  const [newTrade, setNewTrade] = useState<Trade>(blankNewTrade)
+
+  function openAdd() {
+    const nextSort = trades.length > 0 ? Math.max(...trades.map(t => t.sort_order)) + 10 : 10
+    setNewTrade({ ...blankNewTrade, sort_order: nextSort })
+    setShowAdd(true)
+  }
+
+  async function addTrade() {
+    const tag = newTrade.trade_tag.trim().toLowerCase().replace(/\s+/g, '_')
+    if (!tag) { toast('Trade tag is required', 'error'); return }
+    if (!newTrade.codename_english.trim() || !newTrade.codename_amharic.trim()) {
+      toast('Both codenames are required', 'error'); return
+    }
+    setAdding(true)
+    const { error } = await supabase.from('tier2_trade_roster').insert([{ ...newTrade, trade_tag: tag }])
+    setAdding(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Trade added', 'success')
+    setShowAdd(false)
+    setNewTrade(blankNewTrade)
+    qc.invalidateQueries({ queryKey: ['tier2-trade-roster-admin'] })
+    qc.invalidateQueries({ queryKey: ['tier2-roster-list'] })
+  }
+
   function startEdit(t: Trade) {
     setEditing(t.trade_tag)
     setDraft({
@@ -53,14 +84,66 @@ export default function TradeCatalogPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <Palette className="h-6 w-6 text-brand" /> Trade Catalog
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Tier 2 trade roster. HR polishes newly-approved trades here — swap default emoji/color for something distinctive so the casual-worker cards look right.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Palette className="h-6 w-6 text-brand" /> Trade Catalog
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Tier 2 trade roster. HR polishes newly-approved trades here — swap default emoji/color for something distinctive so the casual-worker cards look right.
+          </p>
+        </div>
+        {!showAdd && (
+          <button onClick={openAdd} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 shrink-0">
+            <Plus className="h-3.5 w-3.5" /> Add Trade
+          </button>
+        )}
       </div>
+
+      {showAdd && (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Trade Tag *</label>
+              <input className={inputCls} value={newTrade.trade_tag} onChange={e => setNewTrade(t => ({ ...t, trade_tag: e.target.value }))} placeholder="e.g. welder" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">English Codename *</label>
+              <input className={inputCls} value={newTrade.codename_english} onChange={e => setNewTrade(t => ({ ...t, codename_english: e.target.value }))} placeholder="The Sparkforger" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Amharic Codename *</label>
+              <input className={inputCls} value={newTrade.codename_amharic} onChange={e => setNewTrade(t => ({ ...t, codename_amharic: e.target.value }))} placeholder="የብረት ብየዳ" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Emoji</label>
+              <input className={inputCls} value={newTrade.icon_emoji} onChange={e => setNewTrade(t => ({ ...t, icon_emoji: e.target.value }))} maxLength={4} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Color 1 (bg)</label>
+              <input className={inputCls} value={newTrade.color_accent} onChange={e => setNewTrade(t => ({ ...t, color_accent: e.target.value }))} placeholder="bg-amber-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Color 2 (text)</label>
+              <input className={inputCls} value={newTrade.color_accent_2} onChange={e => setNewTrade(t => ({ ...t, color_accent_2: e.target.value }))} placeholder="text-amber-800" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Sort Order</label>
+              <input type="number" className={inputCls} value={newTrade.sort_order} onChange={e => setNewTrade(t => ({ ...t, sort_order: parseInt(e.target.value, 10) || 0 }))} />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs ${newTrade.color_accent} ${newTrade.color_accent_2}`}>
+              <span>{newTrade.icon_emoji}</span>
+              <span>{newTrade.codename_english || 'Preview'}</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setShowAdd(false); setNewTrade(blankNewTrade) }} disabled={adding} className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">Cancel</button>
+              <button onClick={addTrade} disabled={adding} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{adding ? 'Adding…' : 'Add Trade'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading trades…</div>
