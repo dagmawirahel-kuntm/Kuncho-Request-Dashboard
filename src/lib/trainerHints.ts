@@ -78,6 +78,8 @@ export interface ProjectHintInput {
   createdAt: string
   hasContract: boolean
   contractHasOpportunity: boolean
+  hasApprovedBoq: boolean
+  hasSchedule: boolean
 }
 
 export interface PurchaseRequestHintInput {
@@ -183,6 +185,22 @@ export function resolveHint(input: HintInput): TrainerHint | null {
           why: "This project has a signed contract and has sat in Business Development for over a week — it's ready to advance.",
           actionLabel: 'Open Stage Panel',
           actionRoute: `/projects/${input.id}#stage`,
+        }
+      }
+      // PR 9b: BOQ approved, no schedule built yet. Checked after the
+      // business_development hint above (that one wins if somehow both
+      // conditions are true — an approved BOQ this early would be
+      // unusual, but the earlier-stage nudge is the more urgent one
+      // either way) and before the backfill checks below, keeping the
+      // "forward hints beat backfill hints" guardrail intact.
+      if (input.hasApprovedBoq && !input.hasSchedule) {
+        return {
+          variant: 'next_step',
+          code: 'project.boq_approved_no_schedule',
+          message: 'BOQ approved — build the schedule.',
+          why: 'This project has an approved BOQ but no schedule yet — a schedule turns the BOQ into a real timeline with tasks and dates.',
+          actionLabel: 'Open Schedule Tab',
+          actionRoute: `/projects/${input.id}#schedule`,
         }
       }
       if (!input.hasContract) {

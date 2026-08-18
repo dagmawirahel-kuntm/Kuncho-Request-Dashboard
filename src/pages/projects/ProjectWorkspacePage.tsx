@@ -452,8 +452,23 @@ export default function ProjectWorkspacePage() {
     },
     enabled: !!id,
   })
+  // Trainer hint (PR 9b): does this project have an approved BOQ, and
+  // does a schedule already exist for it.
+  const { data: projectBoqSchedule } = useQuery({
+    queryKey: ['project-boq-schedule-link', id],
+    queryFn: async () => {
+      const [{ data: boq, error: boqError }, { data: schedule, error: scheduleError }] = await Promise.all([
+        supabase.from('boqs').select('id').eq('project_id', id!).eq('status', 'approved').limit(1).maybeSingle(),
+        supabase.from('schedules').select('id').eq('project_id', id!).limit(1).maybeSingle(),
+      ])
+      if (boqError) throw boqError
+      if (scheduleError) throw scheduleError
+      return { hasApprovedBoq: !!boq, hasSchedule: !!schedule }
+    },
+    enabled: !!id,
+  })
   const projectHint = useMemo(() => {
-    if (!project || projectContract === undefined) return null
+    if (!project || projectContract === undefined || projectBoqSchedule === undefined) return null
     return resolveHint({
       entityType: 'project',
       id: project.id,
@@ -462,8 +477,10 @@ export default function ProjectWorkspacePage() {
       createdAt: project.created_at,
       hasContract: !!projectContract,
       contractHasOpportunity: !!projectContract?.opportunity_id,
+      hasApprovedBoq: !!projectBoqSchedule?.hasApprovedBoq,
+      hasSchedule: !!projectBoqSchedule?.hasSchedule,
     })
-  }, [project, projectContract])
+  }, [project, projectContract, projectBoqSchedule])
 
   const { data: summary } = useQuery({
     queryKey: ['project-budget-summary', id],
