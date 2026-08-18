@@ -274,10 +274,8 @@ export function useUserProfiles() {
 }
 
 // Finance role holders — for assigning a project's finance_contact_id
-// (147). Any of these can also act on a finance_sourcing_reviews
-// decision regardless of whose project it is (§3/§4: no identity lock,
-// any finance role holder is sufficient) — this list is only for
-// picking who to show as the suggested/primary contact.
+// (147, §1 — the sourcing review gate itself was retired in 226). This
+// list is only for picking who to show as the suggested/primary contact.
 export function useFinanceContacts() {
   return useQuery({
     queryKey: ['finance-contacts-lookup'],
