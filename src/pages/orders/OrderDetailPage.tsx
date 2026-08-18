@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { StatusBadge } from '@/components/shared/StatusBadge'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import type { Order, OrderItem, OrderItemStatus, FinanceSourcingReview } from '@/types/database'
@@ -21,8 +20,6 @@ type OrderItemWithCostGroup = OrderItem & {
   sub_categories: { parent_category_id: string | null; categories: { cost_group_id: string | null } | null } | null
 }
 
-type StepStatus = 'done' | 'active' | 'rejected' | 'waiting'
-
 const ITEM_S: Record<OrderItemStatus, { label: string; bg: string; border: string }> = {
   pending:                { label: 'Pending',       bg: 'text-slate-500 bg-slate-100 dark:bg-slate-700',         border: 'border-l-slate-300 dark:border-l-slate-500' },
   sourced:                { label: 'Sourced',       bg: 'text-green-700 bg-green-50 dark:bg-green-900/30',       border: 'border-l-green-400' },
@@ -37,20 +34,32 @@ const ALL_STATUSES: OrderItemStatus[] = ['pending', 'sourced', 'partially_source
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:text-slate-100'
 
-// ── Approval step dot ─────────────────────────────────────────────────────────
-function StepDot({ status }: { status: StepStatus }) {
-  return (
-    <div className={`flex-shrink-0 h-9 w-9 rounded-full border-2 flex items-center justify-center z-10 transition-colors ${
-      status === 'done'     ? 'bg-green-500 border-green-500 text-white shadow-sm shadow-green-200 dark:shadow-green-900' :
-      status === 'active'   ? 'bg-amber-400 border-amber-400 text-white shadow-sm shadow-amber-200 dark:shadow-amber-900' :
-      status === 'rejected' ? 'bg-red-500 border-red-500 text-white shadow-sm shadow-red-200 dark:shadow-red-900' :
-                              'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
-    }`}>
-      {status === 'done'     && <CheckCircle2 className="h-4 w-4" />}
-      {status === 'active'   && <Clock className="h-4 w-4" />}
-      {status === 'rejected' && <XCircle className="h-4 w-4" />}
-    </div>
-  )
+// ── Fulfillment — reads real per-line state instead of approval_status,
+// which nothing has moved since the manager→finance ladder was retired
+// (migrations 149/163). Mirrors the same read used on the list page.
+const FULFILLED_ITEM_STATUSES = new Set<OrderItemStatus>(['sourced', 'stock_fulfilled'])
+const PARTIAL_ITEM_STATUSES   = new Set<OrderItemStatus>(['partially_sourced', 'stock_pending_dispatch'])
+
+type Fulfillment = { total: number; fulfilled: number; partial: number; blocked: number; reviewPending: number }
+
+function FulfillmentChip({ order, f }: { order: Order; f: Fulfillment }) {
+  const base = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold'
+  if (order.approval_status === 'rejected') {
+    return <span className={`${base} bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400`}><XCircle className="h-3.5 w-3.5" />Rejected</span>
+  }
+  if (f.blocked > 0) {
+    return <span className={`${base} bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400`}><AlertTriangle className="h-3.5 w-3.5" />Needs attention</span>
+  }
+  if (f.reviewPending > 0) {
+    return <span className={`${base} bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`}><Wallet className="h-3.5 w-3.5" />Awaiting finance</span>
+  }
+  if (f.total > 0 && f.fulfilled === f.total) {
+    return <span className={`${base} bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400`}><CheckCircle2 className="h-3.5 w-3.5" />Fulfilled</span>
+  }
+  if (f.fulfilled > 0 || f.partial > 0) {
+    return <span className={`${base} bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400`}><Clock className="h-3.5 w-3.5" />Sourcing &middot; {f.fulfilled + f.partial}/{f.total}</span>
+  }
+  return <span className={`${base} bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400`}><Clock className="h-3.5 w-3.5" />{f.total > 0 ? 'Not started' : 'No items yet'}</span>
 }
 
 // ── Page loader ───────────────────────────────────────────────────────────────
@@ -130,6 +139,17 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
   })
   const reviewByItem = useMemo(() => new Map(sourcingReviews.map(r => [r.order_item_id, r])), [sourcingReviews])
 
+  const fulfillment: Fulfillment = useMemo(() => {
+    const relevant = items.filter(i => i.status !== 'cancelled')
+    return {
+      total:         relevant.length,
+      fulfilled:     relevant.filter(i => FULFILLED_ITEM_STATUSES.has(i.status)).length,
+      partial:       relevant.filter(i => PARTIAL_ITEM_STATUSES.has(i.status)).length,
+      blocked:       relevant.filter(i => i.status === 'unfulfilled').length,
+      reviewPending: sourcingReviews.filter(r => r.status === 'pending').length,
+    }
+  }, [items, sourcingReviews])
+
   // Trainer hint: has any of this order's items already been bundled into a
   // sourcing bundle (this codebase's PO).
   const { data: hasBundle } = useQuery({
@@ -207,17 +227,6 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
   const canCancelRequest = canApproveAsExecutive(role) || canApproveAsFinance(role)
   const canCreate        = role !== 'procurement_officer'
   const canUpdateItems   = role === 'admin' || role === 'executive' || role === 'procurement_officer'
-
-  const rejectedAtMgr    = approvalStatus === 'rejected' && !order.manager_approved_by
-  const rejectedAtFin    = approvalStatus === 'rejected' && !!order.manager_approved_by
-  // Purely historical now — never 'active', because nothing is waiting
-  // on these steps any more. Orders approved under the old ladder keep
-  // showing who approved them and when.
-  const step2: StepStatus = rejectedAtMgr ? 'rejected' : order.manager_approved_by ? 'done' : 'waiting'
-  const step3: StepStatus = rejectedAtFin ? 'rejected' : order.finance_approved_by ? 'done' : 'waiting'
-
-  const line1Cls = step2 === 'rejected' ? 'bg-red-300 dark:bg-red-700'  : step2 === 'done' ? 'bg-green-400' : 'bg-slate-200 dark:bg-slate-600'
-  const line2Cls = step3 === 'rejected' ? 'bg-red-300 dark:bg-red-700'  : step3 === 'done' ? 'bg-green-400' : 'bg-slate-200 dark:bg-slate-600'
 
   async function handleApproval(nextStatus: string, extra: Record<string, unknown> = {}) {
     const { error } = await supabase.from('orders')
@@ -311,7 +320,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
                 {order.priority === 'critical' ? 'Critical' : 'Urgent'}
               </span>
             )}
-            <StatusBadge status={approvalStatus} />
+            <FulfillmentChip order={order} f={fulfillment} />
           </div>
         </div>
 
@@ -352,63 +361,56 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
         ))}
       </div>
 
-      {/* Approval workflow panel */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-5">
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Approval Workflow</p>
-
-        {/* Stepper */}
-        <div>
-          <div className="flex items-center px-4">
-            <StepDot status="done" />
-            <div className={`flex-1 h-0.5 transition-colors ${line1Cls}`} />
-            <StepDot status={step2} />
-            <div className={`flex-1 h-0.5 transition-colors ${line2Cls}`} />
-            <StepDot status={step3} />
-          </div>
-
-          <div className="flex mt-3 px-4">
-            {/* Step 1 */}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Submitted</p>
-              <p className="text-[11px] text-green-600 dark:text-green-400">Recorded</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(order.created_at) ?? '—'}</p>
-            </div>
-
-            {/* Step 2 */}
-            <div className="flex-1 min-w-0 text-center">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Manager Review</p>
-              <p className={`text-[11px] ${
-                step2 === 'done'     ? 'text-green-600 dark:text-green-400'  :
-                step2 === 'rejected' ? 'text-red-500 dark:text-red-400'      :
-                                       'text-slate-400'
-              }`}>
-                {step2 === 'done'     ? (profileName(order.manager_approved_by) ?? 'Approved') :
-                 step2 === 'rejected' ? 'Rejected'       :
-                 '—'}
-              </p>
-              {order.manager_approved_at && step2 === 'done' && (
-                <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(order.manager_approved_at)}</p>
-              )}
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex-1 min-w-0 text-right">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Finance Review</p>
-              <p className={`text-[11px] ${
-                step3 === 'done'     ? 'text-green-600 dark:text-green-400'  :
-                step3 === 'rejected' ? 'text-red-500 dark:text-red-400'      :
-                                       'text-slate-400'
-              }`}>
-                {step3 === 'done'     ? (profileName(order.finance_approved_by) ?? 'Approved') :
-                 step3 === 'rejected' ? 'Rejected'        :
-                 '—'}
-              </p>
-              {order.finance_approved_at && step3 === 'done' && (
-                <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(order.finance_approved_at)}</p>
-              )}
-            </div>
-          </div>
+      {/* Fulfillment panel — replaces the dead approval-ladder stepper.
+          approval_status stopped moving once the manager→finance ladder
+          was retired (migrations 149/163); this reads the same real
+          signal the list page does: each line's own status plus finance
+          sourcing review, both of which are live below. */}
+      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fulfillment</p>
+          <FulfillmentChip order={order} f={fulfillment} />
         </div>
+
+        {approvalStatus !== 'rejected' && fulfillment.total > 0 && (() => {
+          const rest = fulfillment.total - fulfillment.fulfilled - fulfillment.partial - fulfillment.blocked
+          const seg = (n: number) => `${Math.max((n / fulfillment.total) * 100, n > 0 ? 4 : 0)}%`
+          return (
+            <div className="space-y-2">
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                {fulfillment.fulfilled > 0 && <span className="h-full bg-green-500" style={{ width: seg(fulfillment.fulfilled) }} />}
+                {fulfillment.partial > 0   && <span className="h-full bg-sky-500"   style={{ width: seg(fulfillment.partial) }} />}
+                {rest > 0                  && <span className="h-full"              style={{ width: seg(rest) }} />}
+                {fulfillment.blocked > 0   && <span className="h-full bg-red-500"   style={{ width: seg(fulfillment.blocked) }} />}
+              </div>
+              <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-green-500" />{fulfillment.fulfilled} sourced</span>
+                {fulfillment.partial > 0 && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-sky-500" />{fulfillment.partial} partial</span>}
+                {rest > 0 && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-600" />{rest} waiting</span>}
+                {fulfillment.blocked > 0 && (
+                  <span className="flex items-center gap-1 font-medium text-red-600 dark:text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-500" />{fulfillment.blocked} stuck</span>
+                )}
+                {fulfillment.reviewPending > 0 && (
+                  <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"><Wallet className="h-3 w-3" />{fulfillment.reviewPending} awaiting finance</span>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Historical approval record — only the handful of requests
+            approved under the old ladder before it was retired show
+            anything here. */}
+        {(order.manager_approved_by || order.finance_approved_by) && (
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            {order.manager_approved_by && (
+              <>Approved by {profileName(order.manager_approved_by) ?? '—'}{order.manager_approved_at ? ` on ${formatDate(order.manager_approved_at)}` : ''} under the previous approval process.{order.finance_approved_by ? ' ' : ''}</>
+            )}
+            {order.finance_approved_by && (
+              <>Finance-approved by {profileName(order.finance_approved_by) ?? '—'}{order.finance_approved_at ? ` on ${formatDate(order.finance_approved_at)}` : ''}.</>
+            )}
+          </p>
+        )}
 
         {/* Rejection notice */}
         {approvalStatus === 'rejected' && order.rejection_reason && (
@@ -420,19 +422,6 @@ function DetailContent({ order, items }: { order: Order; items: OrderItemWithCos
             </div>
           </div>
         )}
-
-        {/* The PR approval ladder is retired — a request is sourceable
-            on creation. All that remains is a "don't source this"
-            switch; the real gates are the per-line finance sourcing
-            review and the PO approval by amount. */}
-        <div className="flex items-start gap-2.5 rounded-lg bg-slate-50 dark:bg-slate-700/40 border dark:border-slate-700 p-3">
-          <AlertCircle className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Purchase requests no longer need a separate approval to be sourced. Spending is controlled downstream — by the
-            finance review on each line below, and by the purchase-order approval limits. Any approvals shown above are
-            historical.
-          </p>
-        </div>
 
         {approvalStatus !== 'rejected' && canCancelRequest && !rejecting && (
           <div className="flex gap-2 pt-1 border-t dark:border-slate-700">
