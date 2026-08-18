@@ -2,21 +2,23 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatDate } from '@/lib/utils'
 import type { Order, OrderApprovalStatus, OrderPriority } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   Plus, Pencil, Trash2, Package, Zap, AlertCircle, Clock,
-  CheckCircle2, Search, ChevronRight, AlertTriangle, ListChecks,
+  CheckCircle2, Search, ChevronRight, AlertTriangle, XCircle,
 } from 'lucide-react'
 
 type OrderWithMeta = Order & {
   projects: { project_name: string } | null
   staff: { employee_name: string } | null
-  _itemCount: number
-  _pendingItems: number
+  _total: number
+  _fulfilled: number
+  _partial: number
+  _blocked: number
+  _reviewPending: number
 }
 
 const PRIORITY_CLS: Record<string, string> = {
@@ -61,15 +63,44 @@ function StatCard({ label, value, icon, colorCls }: { label: string; value: numb
   )
 }
 
-function ItemCountBadge({ total, pending }: { total: number; pending: number }) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
-        <ListChecks className="h-3 w-3" />{total}
+// ── Fulfillment bar — replaces the item-count + approval-status pair.
+// Reads real per-line progress (sourced/partial/stuck) instead of the
+// approval_status field, which nothing has moved since the approval
+// ladder was retired.
+function FulfillmentBar({ order, total, fulfilled, partial, blocked, reviewPending }: {
+  order: Order; total: number; fulfilled: number; partial: number; blocked: number; reviewPending: number
+}) {
+  if (order.approval_status === 'rejected') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-900/30 px-2.5 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+        <XCircle className="h-3 w-3" />Rejected
       </span>
-      {pending > 0 && pending < total && (
-        <span className="text-[10px] text-slate-400">{pending} pending</span>
-      )}
+    )
+  }
+  if (total === 0) {
+    return <span className="text-xs text-slate-400 dark:text-slate-500">No items yet</span>
+  }
+  const rest = total - fulfilled - partial - blocked
+  const segWidth = (n: number) => `${Math.max((n / total) * 100, n > 0 ? 6 : 0)}%`
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex h-1.5 w-[72px] overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+        {fulfilled > 0 && <span className="h-full bg-green-500" style={{ width: segWidth(fulfilled) }} />}
+        {partial > 0   && <span className="h-full bg-sky-500"   style={{ width: segWidth(partial) }} />}
+        {rest > 0      && <span className="h-full"               style={{ width: segWidth(rest) }} />}
+        {blocked > 0   && <span className="h-full bg-red-500"    style={{ width: segWidth(blocked) }} />}
+      </div>
+      <span className="flex items-center gap-1 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+        {blocked > 0 ? (
+          <span className="flex items-center gap-0.5 font-semibold text-red-600 dark:text-red-400">
+            <AlertTriangle className="h-2.5 w-2.5" />{blocked} stuck
+          </span>
+        ) : reviewPending > 0 ? (
+          <span className="font-medium text-amber-600 dark:text-amber-400">{reviewPending} to clear</span>
+        ) : (
+          <><span className="font-semibold text-slate-700 dark:text-slate-200">{fulfilled + partial}</span>/{total}</>
+        )}
+      </span>
     </div>
   )
 }
@@ -110,32 +141,60 @@ export default function PurchaseRequestsPage() {
     },
   })
 
-  const { data: itemCounts = [] } = useQuery({
+  const { data: itemRows = [] } = useQuery({
     queryKey: ['order-item-counts'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('order_items')
-        .select('order_id, status')
+        .select('id, order_id, status')
       if (error) throw error
-      return data as { order_id: string; status: string }[]
+      return data as { id: string; order_id: string; status: string }[]
     },
   })
 
+  const { data: pendingReviewItemIds = [] } = useQuery({
+    queryKey: ['order-item-pending-reviews'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('finance_sourcing_reviews')
+        .select('order_item_id')
+        .eq('status', 'pending')
+      if (error) throw error
+      return (data as { order_item_id: string }[]).map(r => r.order_item_id)
+    },
+  })
+
+  // A line item's own status is the only thing that still reflects real
+  // progress — approval_status stopped moving once the manager→finance
+  // ladder was retired (migrations 149/163), so every request looked
+  // identically "Pending" regardless of whether it was brand new or
+  // already fully delivered.
+  const FULFILLED_ITEM_STATUSES = new Set(['sourced', 'stock_fulfilled'])
+  const PARTIAL_ITEM_STATUSES   = new Set(['partially_sourced', 'stock_pending_dispatch'])
+
   const countMap = useMemo(() => {
-    const m: Record<string, { total: number; pending: number }> = {}
-    for (const row of itemCounts) {
-      if (!m[row.order_id]) m[row.order_id] = { total: 0, pending: 0 }
-      m[row.order_id].total++
-      if (row.status === 'pending') m[row.order_id].pending++
+    const pendingReviewSet = new Set(pendingReviewItemIds)
+    const m: Record<string, { total: number; fulfilled: number; partial: number; blocked: number; reviewPending: number }> = {}
+    for (const row of itemRows) {
+      if (!m[row.order_id]) m[row.order_id] = { total: 0, fulfilled: 0, partial: 0, blocked: 0, reviewPending: 0 }
+      const bucket = m[row.order_id]
+      if (row.status !== 'cancelled') bucket.total++
+      if (FULFILLED_ITEM_STATUSES.has(row.status)) bucket.fulfilled++
+      else if (PARTIAL_ITEM_STATUSES.has(row.status)) bucket.partial++
+      else if (row.status === 'unfulfilled') bucket.blocked++
+      if (pendingReviewSet.has(row.id)) bucket.reviewPending++
     }
     return m
-  }, [itemCounts])
+  }, [itemRows, pendingReviewItemIds])
 
   const data: OrderWithMeta[] = useMemo(() =>
     orders.map(o => ({
       ...o,
-      _itemCount:   countMap[o.id]?.total   ?? 0,
-      _pendingItems: countMap[o.id]?.pending ?? 0,
+      _total:          countMap[o.id]?.total          ?? 0,
+      _fulfilled:      countMap[o.id]?.fulfilled       ?? 0,
+      _partial:        countMap[o.id]?.partial         ?? 0,
+      _blocked:        countMap[o.id]?.blocked         ?? 0,
+      _reviewPending:  countMap[o.id]?.reviewPending    ?? 0,
     }))
   , [orders, countMap])
 
@@ -158,7 +217,7 @@ export default function PurchaseRequestsPage() {
   const stats = useMemo(() => ({
     pending:  data.filter(o => o.approval_status === 'pending').length,
     urgent:   data.filter(o => o.priority === 'urgent' || o.priority === 'critical').length,
-    newItems: data.filter(o => o.is_new_item || o._itemCount === 0).length,
+    newItems: data.filter(o => o.is_new_item || o._total === 0).length,
     approved: data.filter(o => o.approval_status === 'finance_approved').length,
   }), [data])
 
@@ -175,6 +234,7 @@ export default function PurchaseRequestsPage() {
     }
     qc.invalidateQueries({ queryKey: ['orders'] })
     qc.invalidateQueries({ queryKey: ['order-item-counts'] })
+    qc.invalidateQueries({ queryKey: ['order-item-pending-reviews'] })
     toast('Purchase request deleted', 'success')
   }
 
@@ -274,12 +334,18 @@ export default function PurchaseRequestsPage() {
 
               {/* Right meta */}
               <div className="hidden sm:flex items-center gap-5 flex-shrink-0">
-                <ItemCountBadge total={order._itemCount} pending={order._pendingItems} />
                 <div className="text-right min-w-[70px]">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Required by</p>
                   <RequiredBy date={order.required_by_date} />
                 </div>
-                <StatusBadge status={order.approval_status} />
+                <FulfillmentBar
+                  order={order}
+                  total={order._total}
+                  fulfilled={order._fulfilled}
+                  partial={order._partial}
+                  blocked={order._blocked}
+                  reviewPending={order._reviewPending}
+                />
               </div>
 
               {/* Actions */}
