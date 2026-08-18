@@ -18,7 +18,6 @@ type OrderWithMeta = Order & {
   _fulfilled: number
   _partial: number
   _blocked: number
-  _reviewPending: number
 }
 
 // A line item's own status is the only thing that still reflects real
@@ -75,8 +74,8 @@ function StatCard({ label, value, icon, colorCls }: { label: string; value: numb
 // Reads real per-line progress (sourced/partial/stuck) instead of the
 // approval_status field, which nothing has moved since the approval
 // ladder was retired.
-function FulfillmentBar({ order, total, fulfilled, partial, blocked, reviewPending }: {
-  order: Order; total: number; fulfilled: number; partial: number; blocked: number; reviewPending: number
+function FulfillmentBar({ order, total, fulfilled, partial, blocked }: {
+  order: Order; total: number; fulfilled: number; partial: number; blocked: number
 }) {
   if (order.approval_status === 'rejected') {
     return (
@@ -103,8 +102,6 @@ function FulfillmentBar({ order, total, fulfilled, partial, blocked, reviewPendi
           <span className="flex items-center gap-0.5 font-semibold text-red-600 dark:text-red-400">
             <AlertTriangle className="h-2.5 w-2.5" />{blocked} stuck
           </span>
-        ) : reviewPending > 0 ? (
-          <span className="font-medium text-amber-600 dark:text-amber-400">{reviewPending} to clear</span>
         ) : (
           <><span className="font-semibold text-slate-700 dark:text-slate-200">{fulfilled + partial}</span>/{total}</>
         )}
@@ -154,47 +151,32 @@ export default function PurchaseRequestsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('order_items')
-        .select('id, order_id, status')
+        .select('order_id, status')
       if (error) throw error
-      return data as { id: string; order_id: string; status: string }[]
-    },
-  })
-
-  const { data: pendingReviewItemIds = [] } = useQuery({
-    queryKey: ['order-item-pending-reviews'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('finance_sourcing_reviews')
-        .select('order_item_id')
-        .eq('status', 'pending')
-      if (error) throw error
-      return (data as { order_item_id: string }[]).map(r => r.order_item_id)
+      return data as { order_id: string; status: string }[]
     },
   })
 
   const countMap = useMemo(() => {
-    const pendingReviewSet = new Set(pendingReviewItemIds)
-    const m: Record<string, { total: number; fulfilled: number; partial: number; blocked: number; reviewPending: number }> = {}
+    const m: Record<string, { total: number; fulfilled: number; partial: number; blocked: number }> = {}
     for (const row of itemRows) {
-      if (!m[row.order_id]) m[row.order_id] = { total: 0, fulfilled: 0, partial: 0, blocked: 0, reviewPending: 0 }
+      if (!m[row.order_id]) m[row.order_id] = { total: 0, fulfilled: 0, partial: 0, blocked: 0 }
       const bucket = m[row.order_id]
       if (row.status !== 'cancelled') bucket.total++
       if (FULFILLED_ITEM_STATUSES.has(row.status)) bucket.fulfilled++
       else if (PARTIAL_ITEM_STATUSES.has(row.status)) bucket.partial++
       else if (row.status === 'unfulfilled') bucket.blocked++
-      if (pendingReviewSet.has(row.id)) bucket.reviewPending++
     }
     return m
-  }, [itemRows, pendingReviewItemIds])
+  }, [itemRows])
 
   const data: OrderWithMeta[] = useMemo(() =>
     orders.map(o => ({
       ...o,
-      _total:          countMap[o.id]?.total          ?? 0,
-      _fulfilled:      countMap[o.id]?.fulfilled       ?? 0,
-      _partial:        countMap[o.id]?.partial         ?? 0,
-      _blocked:        countMap[o.id]?.blocked         ?? 0,
-      _reviewPending:  countMap[o.id]?.reviewPending    ?? 0,
+      _total:     countMap[o.id]?.total     ?? 0,
+      _fulfilled: countMap[o.id]?.fulfilled ?? 0,
+      _partial:   countMap[o.id]?.partial   ?? 0,
+      _blocked:   countMap[o.id]?.blocked   ?? 0,
     }))
   , [orders, countMap])
 
@@ -239,7 +221,6 @@ export default function PurchaseRequestsPage() {
     }
     qc.invalidateQueries({ queryKey: ['orders'] })
     qc.invalidateQueries({ queryKey: ['order-item-counts'] })
-    qc.invalidateQueries({ queryKey: ['order-item-pending-reviews'] })
     toast('Purchase request deleted', 'success')
   }
 
@@ -349,7 +330,6 @@ export default function PurchaseRequestsPage() {
                   fulfilled={order._fulfilled}
                   partial={order._partial}
                   blocked={order._blocked}
-                  reviewPending={order._reviewPending}
                 />
               </div>
 

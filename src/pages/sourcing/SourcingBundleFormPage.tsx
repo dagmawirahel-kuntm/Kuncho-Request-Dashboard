@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
-import type { SourcingBundleInsert, FinanceSourcingReview, SourcingBundlePaymentPattern } from '@/types/database'
+import type { SourcingBundleInsert, SourcingBundlePaymentPattern } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert } from 'lucide-react'
 
@@ -181,47 +181,6 @@ export default function SourcingBundleFormPage() {
     },
     enabled: orderItemIds.length > 0,
   })
-
-  // Finance sourcing review (147) — a line still 'pending'/'rejected'
-  // can't actually be sourced (the DB trigger blocks the INSERT
-  // regardless), so it's disabled here rather than left to fail at
-  // click time. 'exempt'/'approved' are cleared; no row at all means
-  // it never needed a review (fully stock-fulfilled lines never reach
-  // this list anyway).
-  const { data: sourcingReviews = [] } = useQuery({
-    queryKey: ['finance-sourcing-reviews-for-sourcing', orderItemIds],
-    queryFn: async () => {
-      if (!orderItemIds.length) return []
-      const { data, error } = await supabase.from('finance_sourcing_reviews').select('*').in('order_item_id', orderItemIds)
-      if (error) throw error
-      return data as FinanceSourcingReview[]
-    },
-    enabled: orderItemIds.length > 0,
-  })
-  const reviewByItem = useMemo(() => new Map(sourcingReviews.map(r => [r.order_item_id, r])), [sourcingReviews])
-
-  function financeReviewBlock(item: OrderItemRow | undefined) {
-    if (!item) return null
-    const review = reviewByItem.get(item.id)
-    if (!review || review.status === 'exempt' || review.status === 'approved') return null
-    return (
-      <span
-        className={`text-[10px] font-medium rounded px-1.5 py-0.5 whitespace-nowrap ${
-          review.status === 'rejected'
-            ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20'
-            : 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
-        }`}
-        title={review.status === 'rejected' ? 'Finance rejected this line — it cannot be sourced' : 'Awaiting finance review before it can be sourced'}
-      >
-        {review.status === 'rejected' ? 'Finance rejected' : 'Awaiting finance review'}
-      </span>
-    )
-  }
-
-  function isBlockedFromSourcing(item: OrderItemRow): boolean {
-    const review = reviewByItem.get(item.id)
-    return !!review && review.status !== 'exempt' && review.status !== 'approved'
-  }
 
   function stockBadge(item: OrderItemRow | undefined) {
     if (!item) return null
@@ -660,11 +619,9 @@ export default function SourcingBundleFormPage() {
                     </span>
                   )}
                 </div>
-                {items.map(item => {
-                  const blocked = isBlockedFromSourcing(item)
-                  return (
+                {items.map(item => (
                   <div key={item.id}
-                    className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${blocked ? 'opacity-60' : 'hover:bg-slate-50 dark:hover:bg-slate-700/20'}`}>
+                    className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/20">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{item.item_name}</p>
                       <p className="text-[11px] text-slate-400">
@@ -673,18 +630,15 @@ export default function SourcingBundleFormPage() {
                       </p>
                       <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                         {stockBadge(item)}
-                        {financeReviewBlock(item)}
                       </div>
                     </div>
                     <button onClick={() => addItem(item)}
-                      disabled={blocked}
-                      title={blocked ? 'Needs a finance review decision before it can be sourced' : 'Add to bundle'}
-                      className="shrink-0 rounded p-1 text-brand hover:bg-brand/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                      title="Add to bundle"
+                      className="shrink-0 rounded p-1 text-brand hover:bg-brand/10 transition-colors">
                       <Plus className="h-4 w-4" />
                     </button>
                   </div>
-                  )
-                })}
+                ))}
               </div>
             ))}
           </div>
