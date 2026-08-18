@@ -455,8 +455,10 @@ export const router = createBrowserRouter([
           },
           {
             // Workspace is also read by procurement (point-of-spend checks
-            // reference it) — one step wider than the management CRUD above
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer']} allowAssignedProjectManager />,
+            // reference it), plus operations_manager and design — both
+            // already read-granted at the RLS layer for BOQ/Schedule (209,
+            // 218) but missing here until the Schedule tab needed them.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'procurement_officer', 'operations_manager', 'design']} allowAssignedProjectManager />,
             children: [
               { path: 'projects/:id', element: <ProjectWorkspacePage /> },
             ],
