@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import DailySiteReportPage from '@/pages/site-foreman/DailySiteReportPage'
+import SiteDailyReportsViewerPage from '@/pages/site-foreman/SiteDailyReportsViewerPage'
 import LogAttendancePage from '@/pages/site-foreman/LogAttendancePage'
 import LogMaterialReceiptPage from '@/pages/site-foreman/LogMaterialReceiptPage'
 import SiteFloatRequestPage from '@/pages/site-foreman/SiteFloatRequestPage'
@@ -408,9 +409,21 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'finance']} />,
+            // 'executive' included to match spcfr_exec_read's read grant on
+            // the underlying table — otherwise an exec's sidebar link would
+            // just bounce them back to "/".
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
             children: [
               { path: 'finance/site-petty-cash-requests', element: <FinanceSitePettyCashQueuePage /> },
+            ],
+          },
+          {
+            // Matches sdr_pm_read/sdr_exec_all — the only two roles RLS on
+            // site_daily_reports actually grants read access to besides the
+            // foreman's own rows.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            children: [
+              { path: 'site-foreman/reports', element: <SiteDailyReportsViewerPage /> },
             ],
           },
           {
