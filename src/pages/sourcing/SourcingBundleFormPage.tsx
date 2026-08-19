@@ -8,14 +8,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import type { SourcingBundleInsert, SourcingBundlePaymentPattern } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
-import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert } from 'lucide-react'
+import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers } from 'lucide-react'
 
 type OrderRow = {
   id: string
-  request_code: string
-  order_name: string
+  request_code: string | null
+  order_name: string | null
   project_id: string | null
   approval_status: string
+  priority: string | null
+  required_by_date: string | null
+  is_new_item: boolean
   projects: { project_name: string } | null
 }
 
@@ -115,7 +118,7 @@ export default function SourcingBundleFormPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, request_code, order_name, project_id, approval_status, projects(project_name)')
+        .select('id, request_code, order_name, project_id, approval_status, priority, required_by_date, is_new_item, projects(project_name)')
         .neq('approval_status', 'rejected')
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -204,6 +207,29 @@ export default function SourcingBundleFormPage() {
     return null
   }
 
+  function priorityBadge(priority: string | null) {
+    if (!priority || priority === 'normal') return null
+    return (
+      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
+        priority === 'critical'
+          ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+          : 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+      }`}>
+        {priority === 'critical' ? 'Critical' : 'Urgent'}
+      </span>
+    )
+  }
+
+  function requiredByBadge(dateStr: string | null) {
+    if (!dateStr) return null
+    const days = Math.round((new Date(dateStr).getTime() - new Date().getTime()) / 86400000)
+    const label = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due in ${days}d`
+    const cls = days < 0 ? 'text-red-600 dark:text-red-400 font-semibold'
+      : days <= 3 ? 'text-amber-600 dark:text-amber-400 font-medium'
+      : 'text-slate-400'
+    return <span className={`shrink-0 text-[10px] whitespace-nowrap ${cls}`}>{label}</span>
+  }
+
   const orderMap = useMemo(() => {
     const m: Record<string, OrderRow> = {}
     for (const o of approvedOrders) m[o.id] = o
@@ -265,12 +291,26 @@ export default function SourcingBundleFormPage() {
       const order = orderMap[item.order_id]
       return (
         item.item_name.toLowerCase().includes(q) ||
-        order?.request_code.toLowerCase().includes(q) ||
-        order?.order_name.toLowerCase().includes(q) ||
+        (order?.request_code ?? '').toLowerCase().includes(q) ||
+        (order?.order_name ?? '').toLowerCase().includes(q) ||
         (order?.projects?.project_name ?? '').toLowerCase().includes(q)
       )
     })
   }, [availableItems, itemSearch, orderMap])
+
+  // Overdue/urgent PRs first so a procurement officer scanning a long
+  // list sees what actually needs sourcing today, instead of whatever
+  // happened to be submitted most recently.
+  function orderUrgencyRank(o: OrderRow): number {
+    if (o.required_by_date) {
+      const days = Math.round((new Date(o.required_by_date).getTime() - new Date().getTime()) / 86400000)
+      if (days < 0) return 0
+      if (days <= 3) return 1
+    }
+    if (o.priority === 'critical') return 1
+    if (o.priority === 'urgent') return 2
+    return o.required_by_date ? 2 : 3
+  }
 
   const groupedAvailable = useMemo(() => {
     const groups: Record<string, { order: OrderRow; items: OrderItemRow[] }> = {}
@@ -280,12 +320,19 @@ export default function SourcingBundleFormPage() {
       if (!groups[order.id]) groups[order.id] = { order, items: [] }
       groups[order.id].items.push(item)
     }
-    return Object.values(groups)
+    return Object.values(groups).sort((a, b) => {
+      const rankDiff = orderUrgencyRank(a.order) - orderUrgencyRank(b.order)
+      if (rankDiff !== 0) return rankDiff
+      if (a.order.required_by_date && b.order.required_by_date) {
+        return new Date(a.order.required_by_date).getTime() - new Date(b.order.required_by_date).getTime()
+      }
+      return 0
+    })
   }, [filteredAvailable, orderMap])
 
-  function addItem(item: OrderItemRow) {
+  function toBundleLine(item: OrderItemRow, sortOrder: number): BundleLineItem {
     const order = orderMap[item.order_id]
-    setBundleItems(prev => [...prev, {
+    return {
       _key: item.id,
       order_item_id: item.id,
       item_name: item.item_name,
@@ -296,8 +343,25 @@ export default function SourcingBundleFormPage() {
       quantity_actual: String(item.quantity),
       unit_price_actual: item.unit_price_est != null ? String(item.unit_price_est) : '',
       notes: '',
-      sort_order: prev.length,
-    }])
+      sort_order: sortOrder,
+    }
+  }
+
+  function addItem(item: OrderItemRow) {
+    setBundleItems(prev => [...prev, toBundleLine(item, prev.length)])
+  }
+
+  // Pulls a whole PR's remaining lines into the bundle in one click —
+  // the common case for a procurement officer is sourcing everything
+  // on a request together, not clicking each line individually.
+  function addAllInGroup(items: OrderItemRow[]) {
+    setBundleItems(prev => {
+      const existingIds = new Set(prev.map(i => i.order_item_id))
+      const additions = items
+        .filter(item => !existingIds.has(item.id))
+        .map((item, idx) => toBundleLine(item, prev.length + idx))
+      return [...prev, ...additions]
+    })
   }
 
   function removeItem(orderItemId: string) {
@@ -610,14 +674,33 @@ export default function SourcingBundleFormPage() {
               </div>
             ) : groupedAvailable.map(({ order, items }) => (
               <div key={order.id} className="border-b dark:border-slate-700 last:border-0">
-                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-700/30 flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-xs font-bold text-brand">{order.request_code}</span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">{order.order_name}</span>
-                  {order.projects && (
-                    <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 rounded px-1.5 py-0.5 whitespace-nowrap">
-                      {order.projects.project_name}
+                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-700/30">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-brand shrink-0">{order.request_code ?? '—'}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1 min-w-[6rem]">{order.order_name ?? 'Untitled request'}</span>
+                    {priorityBadge(order.priority)}
+                    {requiredByBadge(order.required_by_date)}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    {order.projects && (
+                      <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 rounded px-1.5 py-0.5 whitespace-nowrap">
+                        {order.projects.project_name}
+                      </span>
+                    )}
+                    {order.is_new_item && (
+                      <span className="flex items-center gap-0.5 text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded px-1.5 py-0.5 whitespace-nowrap">
+                        <Zap className="h-2.5 w-2.5" />Market search
+                      </span>
+                    )}
+                    <span className="flex items-center gap-0.5 text-[10px] text-slate-400 whitespace-nowrap">
+                      <Layers className="h-2.5 w-2.5" />{items.length} item{items.length !== 1 ? 's' : ''}
                     </span>
-                  )}
+                    <button onClick={() => addAllInGroup(items)}
+                      title="Add every line from this request to the bundle"
+                      className="ml-auto text-[11px] font-medium text-brand hover:underline shrink-0">
+                      Add all
+                    </button>
+                  </div>
                 </div>
                 {items.map(item => (
                   <div key={item.id}
