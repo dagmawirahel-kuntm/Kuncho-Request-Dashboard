@@ -2820,6 +2820,31 @@ export interface BoqChangeOrderItem {
   created_at: string
 }
 
+// v_boq_items_flat / v_boq_procurement_spec (PR 9a, group 3 frontend)
+export interface BoqFlatRow {
+  item_id: string
+  boq_id: string
+  project_id: string
+  version_number: number
+  boq_title: string
+  room: string | null
+  category: string | null
+  sub_category: string | null
+  name: string
+  notes: string | null
+  node_type: BoqNodeType
+  unit: string | null
+  quantity: number | null
+  unit_rate_etb: number | null
+  total_etb: number
+  is_priced_elsewhere: boolean
+  absorbed_by_item_id: string | null
+}
+
+export interface BoqProcurementSpecRow extends BoqFlatRow {
+  absorbed_by_name: string | null
+}
+
 // v_boq_tree(p_boq_id) RPC row shape
 export interface BoqTreeRow {
   id: string
