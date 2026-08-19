@@ -12,6 +12,7 @@ import { RecentActivityFeed, type ActivityItem } from '@/components/shared/Recen
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { ScheduleSection } from '@/components/projects/ScheduleSection'
+import { BoqSection } from '@/components/projects/BoqSection'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaff } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
@@ -1182,6 +1183,12 @@ export default function ProjectWorkspacePage() {
           Need workshop or site work done? Create a work order →
         </Link>
       </div>
+
+      {/* BOQ (PR 9a.5): the frontend half of PR 9a, which only ever shipped
+          as database migrations -- Excel import, manual tree entry, and
+          approval. Placed before Schedule since a BOQ is the thing Schedule
+          links against. */}
+      <BoqSection projectId={id!} projectName={project?.project_name ?? ''} />
 
       {/* Schedule (PR 9b): tasks with baseline tracking, working-day-aware
           dates, simple dependencies, BOQ linkage, WO spawning. */}

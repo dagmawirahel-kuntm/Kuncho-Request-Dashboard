@@ -38,6 +38,8 @@ const statusVariantMap: Record<string, Variant> = {
   in_progress: 'blue',
   blocked: 'red',
   on_hold: 'orange',
+  internal_review: 'yellow',
+  superseded: 'slate',
 }
 
 interface StatusBadgeProps {

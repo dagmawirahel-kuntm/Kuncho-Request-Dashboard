@@ -2727,6 +2727,72 @@ export interface ScheduleTaskBoqItem {
   created_at: string
 }
 
+// PR 9a.5: BOQ frontend types, against the live boqs/boq_items schema
+// (PR 9a shipped these tables in migrations 209-215 but never a frontend).
+export type BoqStatus = 'draft' | 'internal_review' | 'approved' | 'superseded'
+export type BoqNodeType = 'section' | 'line_item' | 'lump_sum'
+
+export interface Boq {
+  id: string
+  project_id: string
+  version_number: number
+  parent_boq_id: string | null
+  title: string
+  status: BoqStatus
+  source_proforma_id: string | null
+  owner_pm_staff_id: string
+  total_direct_etb: number
+  total_lump_sum_etb: number
+  grand_total_etb: number
+  notes: string | null
+  approved_at: string | null
+  approved_by_staff_id: string | null
+  created_by_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BoqItem {
+  id: string
+  boq_id: string
+  parent_item_id: string | null
+  display_order: number
+  node_type: BoqNodeType
+  name: string
+  notes: string | null
+  unit: string | null
+  quantity: number | null
+  unit_rate_etb: number | null
+  total_etb: number | null
+  is_priced_elsewhere: boolean
+  absorbed_by_item_id: string | null
+  source_item_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+// v_boq_tree(p_boq_id) RPC row shape
+export interface BoqTreeRow {
+  id: string
+  boq_id: string
+  parent_item_id: string | null
+  display_order: number
+  node_type: BoqNodeType
+  name: string
+  notes: string | null
+  unit: string | null
+  quantity: number | null
+  unit_rate_etb: number | null
+  total_etb: number
+  is_priced_elsewhere: boolean
+  absorbed_by_item_id: string | null
+  source_item_id: string | null
+  depth: number
+  path: string
+  sort_path: number[]
+  weight_pct: number
+}
+
 export interface CalendarHoliday {
   id: string
   holiday_date: string
