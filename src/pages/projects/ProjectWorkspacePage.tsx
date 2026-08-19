@@ -454,17 +454,25 @@ export default function ProjectWorkspacePage() {
     enabled: !!id,
   })
   // Trainer hint (PR 9b): does this project have an approved BOQ, and
-  // does a schedule already exist for it.
+  // does a schedule already exist for it. Extended in PR 9c: is that
+  // schedule baselined with literally nothing progress-reported yet.
   const { data: projectBoqSchedule } = useQuery({
     queryKey: ['project-boq-schedule-link', id],
     queryFn: async () => {
       const [{ data: boq, error: boqError }, { data: schedule, error: scheduleError }] = await Promise.all([
         supabase.from('boqs').select('id').eq('project_id', id!).eq('status', 'approved').limit(1).maybeSingle(),
-        supabase.from('schedules').select('id').eq('project_id', id!).limit(1).maybeSingle(),
+        supabase.from('schedules').select('id, status').eq('project_id', id!).limit(1).maybeSingle(),
       ])
       if (boqError) throw boqError
       if (scheduleError) throw scheduleError
-      return { hasApprovedBoq: !!boq, hasSchedule: !!schedule }
+      let hasBaselinedScheduleWithNoProgress = false
+      if (schedule?.status === 'approved') {
+        const { data: progressed, error: progressError } = await supabase
+          .from('schedule_tasks').select('id').eq('schedule_id', schedule.id).gt('progress_pct', 0).limit(1).maybeSingle()
+        if (progressError) throw progressError
+        hasBaselinedScheduleWithNoProgress = !progressed
+      }
+      return { hasApprovedBoq: !!boq, hasSchedule: !!schedule, hasBaselinedScheduleWithNoProgress }
     },
     enabled: !!id,
   })
@@ -480,6 +488,7 @@ export default function ProjectWorkspacePage() {
       contractHasOpportunity: !!projectContract?.opportunity_id,
       hasApprovedBoq: !!projectBoqSchedule?.hasApprovedBoq,
       hasSchedule: !!projectBoqSchedule?.hasSchedule,
+      hasBaselinedScheduleWithNoProgress: !!projectBoqSchedule?.hasBaselinedScheduleWithNoProgress,
     })
   }, [project, projectContract, projectBoqSchedule])
 

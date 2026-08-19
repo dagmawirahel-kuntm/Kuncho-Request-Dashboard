@@ -150,14 +150,17 @@ export function ScheduleGanttChart({ tasks, onEditTask }: Props) {
                   <div className="absolute rounded-sm border border-dashed border-slate-400 dark:border-slate-500 bg-slate-200/40 dark:bg-slate-500/20"
                     style={{ left: baselineLeft, width: baselineWidth, top, height: BAR_HEIGHT }} />
                 )}
-                {/* Current bar */}
+                {/* Current bar, with a darker progress-fill overlay (PR 9c) growing
+                    from the left — same bar, no separate track, so slip and
+                    progress read together at a glance. */}
                 <button
                   onClick={() => onEditTask(t)}
-                  title={`${t.title} — ${formatDateGC(t.current_start_date)} to ${formatDateGC(t.current_end_date)}${slip != null && slip !== 0 ? ` (${slip > 0 ? '+' : ''}${slip}d vs plan)` : ''}`}
-                  className={`absolute rounded-sm cursor-pointer hover:brightness-110 flex items-center ${STATUS_BAR_CLASS[t.status]} ${overdue ? 'ring-2 ring-offset-1 ring-amber-500 dark:ring-offset-slate-800' : ''}`}
+                  title={`${t.title} — ${formatDateGC(t.current_start_date)} to ${formatDateGC(t.current_end_date)}${slip != null && slip !== 0 ? ` (${slip > 0 ? '+' : ''}${slip}d vs plan)` : ''} — ${t.progress_pct}% ${t.progress_source === 'derived' ? '(from work orders)' : '(manual)'}`}
+                  className={`absolute rounded-sm cursor-pointer hover:brightness-110 flex items-center overflow-hidden ${STATUS_BAR_CLASS[t.status]} ${overdue ? 'ring-2 ring-offset-1 ring-amber-500 dark:ring-offset-slate-800' : ''}`}
                   style={{ left: currentLeft, width: currentWidth, top, height: BAR_HEIGHT }}
                 >
-                  {overdue && <AlertTriangle className="h-3 w-3 text-amber-700 dark:text-amber-300 mx-auto" />}
+                  <span className="absolute inset-y-0 left-0 bg-black/25" style={{ width: `${t.progress_pct}%` }} />
+                  {overdue && <AlertTriangle className="relative h-3 w-3 text-amber-700 dark:text-amber-300 mx-auto" />}
                 </button>
               </div>
             )

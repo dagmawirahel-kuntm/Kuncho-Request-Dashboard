@@ -2571,14 +2571,35 @@ export interface ScheduleTask {
   actual_end_date: string | null
   status: ScheduleTaskStatus
   auto_cascade: boolean
+  progress_pct: number
+  progress_source: 'manual' | 'derived'
   created_by_staff_id: string | null
   created_at: string
   updated_at: string
 }
 export type ScheduleTaskInsert = Omit<ScheduleTask,
   'id' | 'planned_start_date' | 'planned_end_date' | 'planned_duration_days' | 'current_end_date'
-  | 'actual_start_date' | 'actual_end_date' | 'created_at' | 'updated_at'
+  | 'actual_start_date' | 'actual_end_date' | 'created_at' | 'updated_at' | 'progress_pct' | 'progress_source'
 > & { current_end_date?: string }
+
+// v_boq_item_physical_progress (PR 9c)
+export interface BoqItemPhysicalProgress {
+  item_id: string
+  boq_id: string
+  project_id: string
+  name: string
+  node_type: string
+  total_etb: number
+  progress_pct: number | null
+  linked_task_count: number
+}
+
+// v_project_physical_progress (PR 9c)
+export interface ProjectPhysicalProgress {
+  project_id: string
+  boq_id: string
+  physical_progress_pct: number | null
+}
 
 export interface ScheduleTaskBoqItem {
   id: string

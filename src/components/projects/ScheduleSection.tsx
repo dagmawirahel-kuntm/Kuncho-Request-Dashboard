@@ -11,7 +11,7 @@ import { buildTaskTree, daysSlipped } from '@/lib/scheduleTree'
 import { ScheduleTaskFormModal } from './ScheduleTaskFormModal'
 import { LinkBoqItemsModal } from './LinkBoqItemsModal'
 import { ScheduleGanttChart } from './ScheduleGanttChart'
-import type { Schedule, ScheduleTask, StaleScheduleBoqLink } from '@/types/database'
+import type { Schedule, ScheduleTask, StaleScheduleBoqLink, ProjectPhysicalProgress } from '@/types/database'
 import {
   CalendarRange, AlertTriangle, Plus, Link2, ClipboardList, Lock, RotateCcw, Pencil, ChevronRight,
   Table2, GanttChartSquare,
@@ -119,6 +119,20 @@ export function ScheduleSection({ projectId, projectName }: Props) {
       return (data ?? []) as StaleScheduleBoqLink[]
     },
     enabled: !!schedule?.id,
+  })
+
+  // BOQ-value-weighted physical progress (PR 9c) — a distinct number from
+  // the manually-entered projects.physical_progress field used in the
+  // Progress vs Spend card elsewhere on this page; kept separate rather
+  // than reconciled, per the user's explicit choice.
+  const { data: physicalProgress } = useQuery({
+    queryKey: ['project-physical-progress', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_project_physical_progress').select('*').eq('project_id', projectId).maybeSingle()
+      if (error) throw error
+      return data as ProjectPhysicalProgress | null
+    },
+    enabled: !!schedule,
   })
 
   const isOwnerPm = !!schedule && !!myStaff?.id && myStaff.id === schedule.owner_pm_staff_id
@@ -266,6 +280,14 @@ export function ScheduleSection({ projectId, projectName }: Props) {
             <span className="font-medium text-slate-700 dark:text-slate-200">{schedule.title}</span>
             <span>PM: {schedule.staff?.employee_name ?? '—'}</span>
             <span>{schedule.baseline_locked_at ? `Baselined ${formatDateGC(schedule.baseline_locked_at)}` : 'Not yet baselined'}</span>
+            {physicalProgress?.physical_progress_pct != null && (
+              <span className="flex items-center gap-1.5" title="BOQ-value-weighted physical progress, from task progress rolled up through linked BOQ items">
+                <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                  <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${physicalProgress.physical_progress_pct}%` }} />
+                </span>
+                <span className="font-medium text-slate-700 dark:text-slate-200">{physicalProgress.physical_progress_pct}% physical</span>
+              </span>
+            )}
           </div>
 
           {staleLinks.length > 0 && (
@@ -313,6 +335,7 @@ export function ScheduleSection({ projectId, projectName }: Props) {
                     <th className="py-1.5 px-1 font-medium">Current</th>
                     <th className="py-1.5 px-1 font-medium text-right">Dur.</th>
                     <th className="py-1.5 px-1 font-medium">Status</th>
+                    <th className="py-1.5 px-1 font-medium">Progress</th>
                     <th className="py-1.5 px-1 font-medium text-right">Slip</th>
                     <th className="py-1.5 px-1 font-medium">Predecessor</th>
                     <th className="py-1.5 px-1 font-medium">BOQ</th>
@@ -339,6 +362,14 @@ export function ScheduleSection({ projectId, projectName }: Props) {
                         </td>
                         <td className="py-1.5 px-1 text-right text-slate-500 dark:text-slate-400">{task.current_duration_days}d</td>
                         <td className="py-1.5 px-1"><StatusBadge status={task.status} /></td>
+                        <td className="py-1.5 px-1">
+                          <div className="flex items-center gap-1.5" title={task.progress_source === 'derived' ? 'Derived from linked work order reports' : 'Manually set'}>
+                            <span className="h-1.5 w-10 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700 shrink-0">
+                              <span className={`block h-full rounded-full ${task.progress_source === 'derived' ? 'bg-blue-500' : 'bg-slate-400'}`} style={{ width: `${task.progress_pct}%` }} />
+                            </span>
+                            <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">{task.progress_pct}%{task.progress_source === 'derived' ? ' •' : ''}</span>
+                          </div>
+                        </td>
                         <td className={`py-1.5 px-1 text-right font-medium ${slip != null && slip > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
                           {slip == null ? '—' : slip > 0 ? `+${slip}` : slip}
                         </td>
