@@ -11,6 +11,7 @@ import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
+import { ScheduleSection } from '@/components/projects/ScheduleSection'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaff } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
@@ -513,8 +514,31 @@ export default function ProjectWorkspacePage() {
     },
     enabled: !!id,
   })
+  // Trainer hint (PR 9b): does this project have an approved BOQ, and
+  // does a schedule already exist for it. Extended in PR 9c: is that
+  // schedule baselined with literally nothing progress-reported yet.
+  const { data: projectBoqSchedule } = useQuery({
+    queryKey: ['project-boq-schedule-link', id],
+    queryFn: async () => {
+      const [{ data: boq, error: boqError }, { data: schedule, error: scheduleError }] = await Promise.all([
+        supabase.from('boqs').select('id').eq('project_id', id!).eq('status', 'approved').limit(1).maybeSingle(),
+        supabase.from('schedules').select('id, status').eq('project_id', id!).limit(1).maybeSingle(),
+      ])
+      if (boqError) throw boqError
+      if (scheduleError) throw scheduleError
+      let hasBaselinedScheduleWithNoProgress = false
+      if (schedule?.status === 'approved') {
+        const { data: progressed, error: progressError } = await supabase
+          .from('schedule_tasks').select('id').eq('schedule_id', schedule.id).gt('progress_pct', 0).limit(1).maybeSingle()
+        if (progressError) throw progressError
+        hasBaselinedScheduleWithNoProgress = !progressed
+      }
+      return { hasApprovedBoq: !!boq, hasSchedule: !!schedule, hasBaselinedScheduleWithNoProgress }
+    },
+    enabled: !!id,
+  })
   const projectHint = useMemo(() => {
-    if (!project || projectContract === undefined) return null
+    if (!project || projectContract === undefined || projectBoqSchedule === undefined) return null
     return resolveHint({
       entityType: 'project',
       id: project.id,
@@ -523,8 +547,11 @@ export default function ProjectWorkspacePage() {
       createdAt: project.created_at,
       hasContract: !!projectContract,
       contractHasOpportunity: !!projectContract?.opportunity_id,
+      hasApprovedBoq: !!projectBoqSchedule?.hasApprovedBoq,
+      hasSchedule: !!projectBoqSchedule?.hasSchedule,
+      hasBaselinedScheduleWithNoProgress: !!projectBoqSchedule?.hasBaselinedScheduleWithNoProgress,
     })
-  }, [project, projectContract])
+  }, [project, projectContract, projectBoqSchedule])
 
   const { data: summary } = useQuery({
     queryKey: ['project-budget-summary', id],
@@ -1155,6 +1182,10 @@ export default function ProjectWorkspacePage() {
           Need workshop or site work done? Create a work order →
         </Link>
       </div>
+
+      {/* Schedule (PR 9b): tasks with baseline tracking, working-day-aware
+          dates, simple dependencies, BOQ linkage, WO spawning. */}
+      <ScheduleSection projectId={id!} projectName={project?.project_name ?? ''} />
 
       {/* Labor Tier 1: routine assignment, no approval */}
       <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />

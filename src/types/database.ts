@@ -2652,3 +2652,148 @@ export interface AssetBaseUnifiedRow {
   location: string | null
   is_active: boolean
 }
+
+// ── Schedule (PR 9b) ─────────────────────────────────────────────
+export type ScheduleStatus = 'draft' | 'approved' | 'completed'
+export interface Schedule {
+  id: string
+  project_id: string
+  boq_id: string | null
+  title: string
+  status: ScheduleStatus
+  non_working_weekdays: number[]
+  owner_pm_staff_id: string
+  baseline_locked_at: string | null
+  baseline_locked_by_staff_id: string | null
+  created_by_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ScheduleTaskStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked' | 'on_hold'
+export interface ScheduleTask {
+  id: string
+  schedule_id: string
+  parent_task_id: string | null
+  predecessor_task_id: string | null
+  lag_days: number
+  display_order: number
+  title: string
+  notes: string | null
+  planned_start_date: string | null
+  planned_end_date: string | null
+  planned_duration_days: number | null
+  current_start_date: string
+  current_end_date: string
+  current_duration_days: number
+  actual_start_date: string | null
+  actual_end_date: string | null
+  status: ScheduleTaskStatus
+  auto_cascade: boolean
+  progress_pct: number
+  progress_source: 'manual' | 'derived'
+  created_by_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type ScheduleTaskInsert = Omit<ScheduleTask,
+  'id' | 'planned_start_date' | 'planned_end_date' | 'planned_duration_days' | 'current_end_date'
+  | 'actual_start_date' | 'actual_end_date' | 'created_at' | 'updated_at' | 'progress_pct' | 'progress_source'
+> & { current_end_date?: string }
+
+// v_boq_item_physical_progress (PR 9c)
+export interface BoqItemPhysicalProgress {
+  item_id: string
+  boq_id: string
+  project_id: string
+  name: string
+  node_type: string
+  total_etb: number
+  progress_pct: number | null
+  linked_task_count: number
+}
+
+// v_project_physical_progress (PR 9c)
+export interface ProjectPhysicalProgress {
+  project_id: string
+  boq_id: string
+  physical_progress_pct: number | null
+}
+
+export interface ScheduleTaskBoqItem {
+  id: string
+  schedule_task_id: string
+  boq_item_id: string
+  created_at: string
+}
+
+export interface CalendarHoliday {
+  id: string
+  holiday_date: string
+  name: string
+  applies_to_project_id: string | null
+  created_by_staff_id: string | null
+  created_at: string
+}
+
+export interface ScheduleBaselineReset {
+  id: string
+  schedule_id: string
+  reason: string
+  reset_by_staff_id: string | null
+  reset_at: string
+}
+
+// v_schedule_task_health
+export interface ScheduleTaskHealth {
+  task_id: string
+  schedule_id: string
+  title: string
+  status: ScheduleTaskStatus
+  current_start_date: string
+  current_end_date: string
+  planned_start_date: string | null
+  planned_end_date: string | null
+  days_slipped: number | null
+  is_overdue: boolean
+  is_on_critical_path: boolean
+}
+
+// v_project_schedule_summary
+export interface ProjectScheduleSummary {
+  project_id: string
+  schedule_id: string
+  schedule_status: ScheduleStatus
+  baseline_locked_at: string | null
+  total_tasks: number
+  tasks_completed: number
+  tasks_overdue: number
+  avg_days_slipped_incomplete: number | null
+}
+
+// v_schedule_tasks_with_stale_boq_links
+export interface StaleScheduleBoqLink {
+  schedule_id: string
+  project_id: string
+  schedule_boq_id: string
+  current_approved_boq_id: string | null
+  task_id: string
+  task_title: string
+  stale_boq_item_id: string
+  stale_boq_item_name: string | null
+}
+
+// v_schedule_gantt_data(p_schedule_id)
+export interface ScheduleGanttRow {
+  id: string
+  title: string
+  parent_task_id: string | null
+  depth: number
+  current_start_date: string
+  current_end_date: string
+  planned_start_date: string | null
+  planned_end_date: string | null
+  status: ScheduleTaskStatus
+  predecessor_task_id: string | null
+  days_slipped: number | null
+}

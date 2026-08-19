@@ -1,0 +1,188 @@
+-- ============================================================
+-- URGENT, MINIMAL fast-track mitigation. This migration does ONLY
+-- ONE THING: REVOKE EXECUTE FROM PUBLIC, anon on 34 functions — no
+-- function bodies are touched anywhere in this file.
+--
+-- 33 of the 34 share the get_user_role() NULL-bypass bug (see
+-- 213_null_role_auth_hardening.sql for the full, tested logic fix):
+-- the 32 originally-flagged HIGH-severity functions, 1 non-trigger
+-- MEDIUM (refresh_exec_dashboard_now), and provision_tier_2_worker_from_candidate
+-- (found later — see its own comment below for how).
+--
+-- The 34th, custodian_flag_asset_issue, is a DIFFERENT bug class
+-- entirely (unnecessary PUBLIC/anon grant on an otherwise-correctly-
+-- gated DEFINER function) — see its own section below.
+--
+-- promote_candidate_to_casual was briefly, incorrectly excluded from
+-- an earlier version of this file based on a live pg_proc check that
+-- returned a false negative — a direct, isolated re-check confirmed
+-- it exists, is SECURITY DEFINER, and has EXECUTE granted to both
+-- PUBLIC and anon right now. Root cause of that false negative is now
+-- known: a separate conversation applied Tier 2 labor features to
+-- this database independently of this thread, which also explains
+-- provision_tier_2_worker_from_candidate below (never in the
+-- original 48-name audit at all). Treat this file as re-verified and
+-- correct as of this version, not as-of any earlier one.
+--
+-- No function bodies are touched here — zero logic change, zero
+-- new risk of breaking existing behavior. This closes the anon
+-- attack surface immediately (an anonymous caller with only the
+-- project's URL + publishable/anon key can no longer invoke any of
+-- these 32 functions at all, regardless of the NULL-check bug still
+-- present in their bodies) while the full fix (213) gets proper
+-- per-function testing on its own timeline.
+--
+-- Why PUBLIC and not just anon: confirmed live for a related fix
+-- that these functions carry a standing grantee = 'PUBLIC' EXECUTE
+-- row (CREATE FUNCTION's default). Postgres ACLs are additive across
+-- a role's own grants and PUBLIC's grants — revoking only from anon
+-- would not remove what anon still holds via PUBLIC.
+--
+-- authenticated is deliberately left untouched: every one of these
+-- 32 is meant to be callable by real, logged-in staff with the
+-- correct role. Revoking from authenticated would break the app for
+-- legitimate users; the NULL-bypass bug only matters for callers
+-- with no matching active user_profiles row (unauthenticated, or a
+-- deactivated account), which by definition are not `authenticated`
+-- sessions with a valid role.
+--
+-- Safe to apply before OR after 213 — REVOKE is idempotent
+-- (re-revoking an already-revoked privilege is a silent no-op, not
+-- an error), so 213 applying the same REVOKE statements again later
+-- is harmless.
+--
+-- NOT included here: block_finance_contact_reassign_by_non_admin
+-- (the other MEDIUM-severity finding). It's a trigger function
+-- (RETURNS trigger) — Postgres refuses direct SQL calls to
+-- trigger-returning functions regardless of EXECUTE grants ("trigger
+-- functions can only be called as triggers"), so revoking EXECUTE on
+-- it provides no actual protection. Its real exposure is that the
+-- base table's RLS backstop (projects UPDATE, ownership-only, no
+-- role check) doesn't cover the gap either — that one needs the
+-- NULL-guard body fix in 213, there is no fast-track mitigation for it.
+-- ============================================================
+
+SET search_path TO public;
+
+REVOKE EXECUTE ON FUNCTION undo_grn_fulfillment(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION revert_legacy_fulfillment(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION create_batch_payment(UUID[], UUID, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_batch_to_transfer(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_expense_to_transfer(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION convert_opening_balances_to_journal_entry() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION close_fiscal_period(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION reopen_fiscal_period(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION close_vendor_advance(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION sign_off_stock_dispatch(UUID, UUID, NUMERIC) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION link_expense_vrf(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION confirm_expense_cash_payment(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_payroll_to_transfer(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION link_payroll_vrf(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION auto_match_statement_import(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION commit_statement_import(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION unarchive_all() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION retry_expense_ledger_posting(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION confirm_vendor_receipt_physical(UUID, TEXT) FROM PUBLIC, anon;
+-- confirm_sales_receipt_physical (originally flagged HIGH #20) is
+-- excluded: confirmed via migration 158 (DROP FUNCTION IF EXISTS
+-- confirm_sales_receipt_physical(UUID, TEXT)) that it no longer
+-- exists — sales_receipts was collapsed into client_attachments and
+-- replaced by confirm_client_receipt_physical, which IS included below.
+REVOKE EXECUTE ON FUNCTION confirm_client_receipt_physical(UUID, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION split_expense_partial_payment(UUID, NUMERIC, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION reconcile_account(UUID, DATE, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION confirm_receipt_pickup(TEXT, UUID, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_line_to_payroll(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION mark_wht_receipt_prepared(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+-- promote_candidate_to_casual: corrected. An earlier check of this
+-- migration incorrectly concluded this function didn't exist live
+-- (see 213 for the full incident note) — a direct, isolated re-check
+-- against pg_proc confirmed it DOES exist, is SECURITY DEFINER, and
+-- has EXECUTE granted to both PUBLIC and anon right now. Root cause
+-- of the earlier false negative is unconfirmed. This one writes new
+-- staff rows and mutates candidates records, so it is not a
+-- read-only exposure.
+REVOKE EXECUTE ON FUNCTION promote_candidate_to_casual(UUID, TEXT, NUMERIC) FROM PUBLIC, anon;
+-- provision_tier_2_worker_from_candidate: found after this file was
+-- first written, root cause identified as a separate conversation
+-- that applied Tier 2 labor features to this database independently.
+-- Same bug pattern (unguarded get_user_role() NOT IN), same DEFINER
+-- exposure, writes new staff + labor_allocations rows.
+REVOKE EXECUTE ON FUNCTION provision_tier_2_worker_from_candidate(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_expense_to_statement_line(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION rematch_committed_statement_lines(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_sale_to_transfer(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION match_sale_to_statement_line(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION retry_sale_ledger_posting(UUID) FROM PUBLIC, anon;
+
+-- MEDIUM severity, non-trigger (the other MEDIUM finding is a
+-- trigger, excluded above with explanation)
+REVOKE EXECUTE ON FUNCTION refresh_exec_dashboard_now() FROM PUBLIC, anon;
+
+-- ════════════════════════════════════════════════════════════════
+-- A DIFFERENT bug class, found during the same review pass: not the
+-- get_user_role() NULL-bypass pattern at all. custodian_flag_asset_issue
+-- (Fixed Asset Register PR) is SECURITY DEFINER with PUBLIC+anon
+-- EXECUTE, but its authorization check is actually correct — it uses
+-- current_staff_id() with a proper explicit IS NULL guard, and
+-- matches the caller against the asset's actual custodian. Checked
+-- fixed_assets/fixed_asset_movements RLS directly: both are
+-- admin/finance-only for UPDATE/INSERT, so DEFINER is load-bearing
+-- here (an ordinary custodian must be able to self-serve this action,
+-- which narrower RLS alone wouldn't allow) — same architecture as the
+-- BOQ change-order approval RPCs. authenticated already has its own
+-- EXECUTE grant separately, so revoking PUBLIC/anon only removes
+-- reach nothing legitimate ever needed.
+REVOKE EXECUTE ON FUNCTION custodian_flag_asset_issue(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+
+-- confirm_vrf_payment and verify_vendor_record: real NULL-bypass bugs
+-- found by manual body review of the "safe" bucket (different
+-- syntactic shapes than the get_user_role() NOT IN pattern — see
+-- 213 for the full logic fixes). Revoked here too since 214 is
+-- meant to close the anon/PUBLIC attack surface immediately,
+-- independent of whether the logic fix has landed yet.
+REVOKE EXECUTE ON FUNCTION confirm_vrf_payment(UUID, UUID, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION verify_vendor_record(UUID) FROM PUBLIC, anon;
+
+-- refresh_exec_dashboard (no "_now"): the internal DEFINER function
+-- that refresh_exec_dashboard_now calls. Has NO auth check of its
+-- own and independently carried PUBLIC+anon EXECUTE, so the
+-- wrapper's role gate was bypassable by calling this one directly.
+-- authenticated is intentionally NOT revoked: refresh_exec_dashboard_now
+-- is SECURITY INVOKER, so its nested call to this function runs
+-- under the original caller's own authenticated role, not a
+-- definer's — revoking authenticated here would break the
+-- legitimate path through the wrapper.
+REVOKE EXECUTE ON FUNCTION refresh_exec_dashboard() FROM PUBLIC, anon;
+
+-- Lower priority, not the NULL-bypass action-bug class (no write
+-- capable of causing real harm, or read-only), but no legitimate
+-- reason for anon to reach them either — closing as cheap hygiene.
+-- log_posting_failure: lets anon write arbitrary rows into the
+-- internal ledger diagnostics log (minor integrity nuisance, not a
+-- financial or data-correctness risk).
+REVOKE EXECUTE ON FUNCTION log_posting_failure(TEXT, UUID, TEXT) FROM PUBLIC, anon;
+-- staff_effective_day_rate / get_item_volatility: read-only lookups,
+-- no write risk, but staff_effective_day_rate exposes salary/day-rate
+-- data to an unauthenticated caller who knows a staff_id.
+REVOKE EXECUTE ON FUNCTION staff_effective_day_rate(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION get_item_volatility(UUID) FROM PUBLIC, anon;
+
+-- Verify: expect ONLY authenticated, postgres, service_role for each
+-- of the 34 functions above — no PUBLIC, no anon.
+SELECT routine_name, grantee, privilege_type
+FROM information_schema.routine_privileges
+WHERE routine_name IN (
+  'undo_grn_fulfillment', 'revert_legacy_fulfillment', 'create_batch_payment',
+  'match_batch_to_transfer', 'match_expense_to_transfer', 'convert_opening_balances_to_journal_entry',
+  'close_fiscal_period', 'reopen_fiscal_period', 'close_vendor_advance', 'sign_off_stock_dispatch',
+  'link_expense_vrf', 'confirm_expense_cash_payment', 'match_payroll_to_transfer', 'link_payroll_vrf',
+  'auto_match_statement_import', 'commit_statement_import', 'unarchive_all', 'retry_expense_ledger_posting',
+  'confirm_vendor_receipt_physical', 'confirm_client_receipt_physical', 'split_expense_partial_payment',
+  'reconcile_account', 'confirm_receipt_pickup', 'match_line_to_payroll', 'mark_wht_receipt_prepared',
+  'promote_candidate_to_casual', 'provision_tier_2_worker_from_candidate',
+  'match_expense_to_statement_line', 'rematch_committed_statement_lines',
+  'match_sale_to_transfer', 'match_sale_to_statement_line', 'retry_sale_ledger_posting',
+  'refresh_exec_dashboard_now', 'custodian_flag_asset_issue'
+)
+ORDER BY routine_name, grantee;

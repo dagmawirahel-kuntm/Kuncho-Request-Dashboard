@@ -34,6 +34,10 @@ const statusVariantMap: Record<string, Variant> = {
   approved_to_pay: 'yellow',
   sent: 'blue',
   void: 'red',
+  not_started: 'slate',
+  in_progress: 'blue',
+  blocked: 'red',
+  on_hold: 'orange',
 }
 
 interface StatusBadgeProps {
