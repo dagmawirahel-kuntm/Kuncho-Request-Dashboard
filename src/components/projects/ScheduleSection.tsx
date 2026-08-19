@@ -10,9 +10,11 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildTaskTree, daysSlipped } from '@/lib/scheduleTree'
 import { ScheduleTaskFormModal } from './ScheduleTaskFormModal'
 import { LinkBoqItemsModal } from './LinkBoqItemsModal'
+import { ScheduleGanttChart } from './ScheduleGanttChart'
 import type { Schedule, ScheduleTask, StaleScheduleBoqLink } from '@/types/database'
 import {
   CalendarRange, AlertTriangle, Plus, Link2, ClipboardList, Lock, RotateCcw, Pencil, ChevronRight,
+  Table2, GanttChartSquare,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -29,6 +31,7 @@ export function ScheduleSection({ projectId, projectName }: Props) {
   const qc = useQueryClient()
   const navigate = useNavigate()
 
+  const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table')
   const [building, setBuilding] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [editingTask, setEditingTask] = useState<ScheduleTask | null>(null)
@@ -275,7 +278,19 @@ export function ScheduleSection({ projectId, projectName }: Props) {
           )}
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400">{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400">{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+              <div className="flex items-center rounded-md border dark:border-slate-600 overflow-hidden">
+                <button onClick={() => setViewMode('table')}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs ${viewMode === 'table' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                  <Table2 className="h-3 w-3" /> Table
+                </button>
+                <button onClick={() => setViewMode('gantt')}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs border-l dark:border-slate-600 ${viewMode === 'gantt' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                  <GanttChartSquare className="h-3 w-3" /> Gantt
+                </button>
+              </div>
+            </div>
             {canManage && (
               <button onClick={() => setShowAddTask(true)}
                 className="flex items-center gap-1 text-xs font-medium text-brand hover:underline">
@@ -286,6 +301,8 @@ export function ScheduleSection({ projectId, projectName }: Props) {
 
           {tasks.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No tasks yet.</p>
+          ) : viewMode === 'gantt' ? (
+            <ScheduleGanttChart tasks={orderedTasks} onEditTask={setEditingTask} />
           ) : (
             <div className="overflow-x-auto -mx-1">
               <table className="w-full text-xs">
