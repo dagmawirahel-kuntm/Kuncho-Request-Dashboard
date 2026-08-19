@@ -40,6 +40,10 @@ const statusVariantMap: Record<string, Variant> = {
   on_hold: 'orange',
   internal_review: 'yellow',
   superseded: 'slate',
+  pending_pm: 'yellow',
+  pending_finance: 'yellow',
+  pending_exec: 'yellow',
+  pending_client_signoff: 'orange',
 }
 
 interface StatusBadgeProps {

@@ -8,8 +8,10 @@ import { useMyStaffId } from '@/hooks/useMyStaff'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ImportBoqModal } from './ImportBoqModal'
 import { BoqItemFormModal } from './BoqItemFormModal'
+import { RequestChangeOrderModal } from './RequestChangeOrderModal'
+import { BoqVersionHistoryModal } from './BoqVersionHistoryModal'
 import type { Boq, BoqItem, BoqTreeRow } from '@/types/database'
-import { FileText, Upload, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Lock, AlertTriangle, ListTree } from 'lucide-react'
+import { FileText, Upload, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Lock, AlertTriangle, ListTree, FileEdit, History } from 'lucide-react'
 
 interface Props {
   projectId: string
@@ -27,6 +29,8 @@ export function BoqSection({ projectId, projectName }: Props) {
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null)
   const [approving, setApproving] = useState(false)
   const [creatingManually, setCreatingManually] = useState(false)
+  const [showRequestCO, setShowRequestCO] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
 
   const { data: boq, isLoading: boqLoading } = useQuery({
     queryKey: ['project-boq', projectId],
@@ -56,6 +60,10 @@ export function BoqSection({ projectId, projectName }: Props) {
   const isOwnerPm = !!boq && !!myStaff?.id && myStaff.id === boq.owner_pm_staff_id
   const canManage = !!boq && (role === 'admin' || isOwnerPm) && (boq.status === 'draft' || boq.status === 'internal_review')
   const canCreate = role === 'admin' || role === 'project_manager' || role === 'operations_manager' || role === 'design' || role === 'finance' || role === 'procurement_officer'
+  // Matches submit_boq_change_order's own role check exactly (212/9a) --
+  // not project-owner-scoped at the RLS layer, so the UI gate isn't either.
+  const canRequestCO = !!boq && boq.status === 'approved' &&
+    (role === 'admin' || role === 'project_manager' || role === 'operations_manager' || role === 'design')
 
   function invalidateAll() {
     qc.invalidateQueries({ queryKey: ['project-boq', projectId] })
@@ -132,6 +140,10 @@ export function BoqSection({ projectId, projectName }: Props) {
         {boq && (
           <div className="flex items-center gap-2">
             <StatusBadge status={boq.status} />
+            <button onClick={() => setShowHistory(true)}
+              className="flex items-center gap-1 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+              <History className="h-3.5 w-3.5" /> History
+            </button>
             {canManage && (
               <>
                 <button onClick={() => setShowImport(true)}
@@ -144,6 +156,12 @@ export function BoqSection({ projectId, projectName }: Props) {
                   <Lock className="h-3.5 w-3.5" /> {approving ? 'Approving…' : 'Approve'}
                 </button>
               </>
+            )}
+            {canRequestCO && (
+              <button onClick={() => setShowRequestCO(true)}
+                className="flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
+                <FileEdit className="h-3.5 w-3.5" /> Request Change Order
+              </button>
             )}
           </div>
         )}
@@ -274,6 +292,19 @@ export function BoqSection({ projectId, projectName }: Props) {
           onClose={() => setEditingItem(null)}
           onSaved={invalidateAll}
         />
+      )}
+
+      {showRequestCO && boq && (
+        <RequestChangeOrderModal
+          boqId={boq.id}
+          tree={tree}
+          onClose={() => setShowRequestCO(false)}
+          onSubmitted={invalidateAll}
+        />
+      )}
+
+      {showHistory && (
+        <BoqVersionHistoryModal projectId={projectId} onClose={() => setShowHistory(false)} />
       )}
     </div>
   )
