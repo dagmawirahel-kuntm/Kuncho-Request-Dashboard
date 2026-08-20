@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
-import type { Order, OrderApprovalStatus, OrderPriority } from '@/types/database'
+import type { Order, OrderPriority } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -27,6 +27,28 @@ type OrderWithMeta = Order & {
 // already fully delivered.
 const FULFILLED_ITEM_STATUSES = new Set(['sourced', 'stock_fulfilled'])
 const PARTIAL_ITEM_STATUSES   = new Set(['partially_sourced', 'stock_pending_dispatch'])
+
+// Single source of truth for "what state is this request really in" —
+// shared by the stat cards, the filter chips, and (in spirit) the
+// per-row FulfillmentBar, so all three always agree with each other.
+type FulfillmentState = 'rejected' | 'needs_attention' | 'fulfilled' | 'sourcing' | 'not_started'
+
+function classifyOrder(o: OrderWithMeta): FulfillmentState {
+  if (o.approval_status === 'rejected') return 'rejected'
+  if (o._blocked > 0) return 'needs_attention'
+  if (o._total > 0 && o._fulfilled === o._total) return 'fulfilled'
+  if (o._fulfilled > 0 || o._partial > 0) return 'sourcing'
+  return 'not_started'
+}
+
+const FULFILLMENT_FILTERS: { label: string; value: FulfillmentState | 'all' }[] = [
+  { label: 'All',             value: 'all' },
+  { label: 'Needs Attention', value: 'needs_attention' },
+  { label: 'Sourcing',        value: 'sourcing' },
+  { label: 'Not Started',     value: 'not_started' },
+  { label: 'Fulfilled',       value: 'fulfilled' },
+  { label: 'Rejected',        value: 'rejected' },
+]
 
 const PRIORITY_CLS: Record<string, string> = {
   critical: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-400',
@@ -110,15 +132,6 @@ function FulfillmentBar({ order, total, fulfilled, partial, blocked }: {
   )
 }
 
-// ── Approval badge filter ──────────────────────────────────────────────────────
-const APPROVAL_FILTERS: { label: string; value: OrderApprovalStatus | 'all' }[] = [
-  { label: 'All',              value: 'all' },
-  { label: 'Pending',          value: 'pending' },
-  { label: 'Manager Approved', value: 'manager_approved' },
-  { label: 'Finance Approved', value: 'finance_approved' },
-  { label: 'Rejected',         value: 'rejected' },
-]
-
 export default function PurchaseRequestsPage() {
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -131,7 +144,7 @@ export default function PurchaseRequestsPage() {
     return role === 'admin' || (role === 'staff' && order.requested_by_user_id === user?.id)
   }
   const [search, setSearch] = useState('')
-  const [approvalFilter, setApprovalFilter] = useState<OrderApprovalStatus | 'all'>('all')
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentState | 'all'>('all')
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ['orders'],
@@ -182,7 +195,7 @@ export default function PurchaseRequestsPage() {
 
   const filtered = useMemo(() => {
     let list = data
-    if (approvalFilter !== 'all') list = list.filter(o => o.approval_status === approvalFilter)
+    if (fulfillmentFilter !== 'all') list = list.filter(o => classifyOrder(o) === fulfillmentFilter)
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(o =>
@@ -194,18 +207,13 @@ export default function PurchaseRequestsPage() {
       )
     }
     return list
-  }, [data, approvalFilter, search])
+  }, [data, fulfillmentFilter, search])
 
-  // Mirrors FulfillmentBar's read of the same data — "needs attention" is
-  // any request with a genuinely stuck line, "fulfilled" is every
-  // remaining line sourced or delivered. Neither depends on
-  // approval_status, which nothing has moved since the approval ladder
-  // was retired.
   const stats = useMemo(() => ({
-    needsAttention: data.filter(o => o._blocked > 0).length,
+    needsAttention: data.filter(o => classifyOrder(o) === 'needs_attention').length,
     urgent:         data.filter(o => o.priority === 'urgent' || o.priority === 'critical').length,
     newItems:       data.filter(o => o.is_new_item || o._total === 0).length,
-    fulfilled:      data.filter(o => o.approval_status !== 'rejected' && o._total > 0 && o._blocked === 0 && o._fulfilled === o._total).length,
+    fulfilled:      data.filter(o => classifyOrder(o) === 'fulfilled').length,
   }), [data])
 
   async function handleDelete(id: string) {
@@ -256,10 +264,10 @@ export default function PurchaseRequestsPage() {
             className="w-full rounded-lg border dark:border-slate-600 bg-white dark:bg-slate-800 pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {APPROVAL_FILTERS.map(f => (
-            <button key={f.value} onClick={() => setApprovalFilter(f.value)}
+          {FULFILLMENT_FILTERS.map(f => (
+            <button key={f.value} onClick={() => setFulfillmentFilter(f.value)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                approvalFilter === f.value
+                fulfillmentFilter === f.value
                   ? 'bg-brand text-white'
                   : 'bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-brand'
               }`}>
@@ -275,8 +283,8 @@ export default function PurchaseRequestsPage() {
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed dark:border-slate-700 bg-white dark:bg-slate-800 py-16 text-center">
           <Package className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
-          <p className="text-sm text-slate-500">{search || approvalFilter !== 'all' ? 'No matching requests.' : 'No purchase requests yet.'}</p>
-          {!search && approvalFilter === 'all' && canCreate && (
+          <p className="text-sm text-slate-500">{search || fulfillmentFilter !== 'all' ? 'No matching requests.' : 'No purchase requests yet.'}</p>
+          {!search && fulfillmentFilter === 'all' && canCreate && (
             <Link to="/purchase-requests/new" className="mt-3 inline-flex items-center gap-1 text-sm text-brand font-medium hover:underline">
               <Plus className="h-3.5 w-3.5" /> Create first request
             </Link>
