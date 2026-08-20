@@ -2727,6 +2727,146 @@ export interface ScheduleTaskBoqItem {
   created_at: string
 }
 
+// PR 9a.5: BOQ frontend types, against the live boqs/boq_items schema
+// (PR 9a shipped these tables in migrations 209-215 but never a frontend).
+export type BoqStatus = 'draft' | 'internal_review' | 'approved' | 'superseded'
+export type BoqNodeType = 'section' | 'line_item' | 'lump_sum'
+
+export interface Boq {
+  id: string
+  project_id: string
+  version_number: number
+  parent_boq_id: string | null
+  title: string
+  status: BoqStatus
+  source_proforma_id: string | null
+  owner_pm_staff_id: string
+  total_direct_etb: number
+  total_lump_sum_etb: number
+  grand_total_etb: number
+  notes: string | null
+  approved_at: string | null
+  approved_by_staff_id: string | null
+  created_by_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BoqItem {
+  id: string
+  boq_id: string
+  parent_item_id: string | null
+  display_order: number
+  node_type: BoqNodeType
+  name: string
+  notes: string | null
+  unit: string | null
+  quantity: number | null
+  unit_rate_etb: number | null
+  total_etb: number | null
+  is_priced_elsewhere: boolean
+  absorbed_by_item_id: string | null
+  source_item_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+// PR 9a.5 group 2: change orders. All RPCs (submit/pm_approve/
+// finance_approve/exec_approve/record_client_signoff/reject/finalize)
+// already existed live from PR 9a -- only the frontend was missing.
+export type BoqChangeOrderStatus =
+  | 'pending_pm' | 'pending_finance' | 'pending_exec' | 'pending_client_signoff' | 'approved' | 'rejected'
+export type BoqApprovalLevel = 'pm_only' | 'pm_finance' | 'pm_finance_exec'
+export type BoqCoItemAction = 'add' | 'modify' | 'remove'
+
+export interface BoqChangeOrder {
+  id: string
+  boq_id: string
+  resulting_boq_id: string | null
+  title: string
+  description: string | null
+  requested_by_client: boolean
+  cost_delta_etb: number
+  approval_level_required: BoqApprovalLevel
+  status: BoqChangeOrderStatus
+  pm_reviewed_by: string | null
+  pm_reviewed_at: string | null
+  finance_reviewed_by: string | null
+  finance_reviewed_at: string | null
+  exec_reviewed_by: string | null
+  exec_reviewed_at: string | null
+  client_signoff_at: string | null
+  client_signoff_evidence: string | null
+  rejection_reason: string | null
+  created_by_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BoqChangeOrderItem {
+  id: string
+  change_order_id: string
+  action: BoqCoItemAction
+  existing_item_id: string | null
+  parent_item_id: string | null
+  new_name: string | null
+  new_unit: string | null
+  new_quantity: number | null
+  new_unit_rate_etb: number | null
+  new_notes: string | null
+  new_node_type: BoqNodeType | null
+  new_display_order: number | null
+  new_is_priced_elsewhere: boolean | null
+  created_at: string
+}
+
+// v_boq_items_flat / v_boq_procurement_spec (PR 9a, group 3 frontend)
+export interface BoqFlatRow {
+  item_id: string
+  boq_id: string
+  project_id: string
+  version_number: number
+  boq_title: string
+  room: string | null
+  category: string | null
+  sub_category: string | null
+  name: string
+  notes: string | null
+  node_type: BoqNodeType
+  unit: string | null
+  quantity: number | null
+  unit_rate_etb: number | null
+  total_etb: number
+  is_priced_elsewhere: boolean
+  absorbed_by_item_id: string | null
+}
+
+export interface BoqProcurementSpecRow extends BoqFlatRow {
+  absorbed_by_name: string | null
+}
+
+// v_boq_tree(p_boq_id) RPC row shape
+export interface BoqTreeRow {
+  id: string
+  boq_id: string
+  parent_item_id: string | null
+  display_order: number
+  node_type: BoqNodeType
+  name: string
+  notes: string | null
+  unit: string | null
+  quantity: number | null
+  unit_rate_etb: number | null
+  total_etb: number
+  is_priced_elsewhere: boolean
+  absorbed_by_item_id: string | null
+  source_item_id: string | null
+  depth: number
+  path: string
+  sort_path: number[]
+  weight_pct: number
+}
+
 export interface CalendarHoliday {
   id: string
   holiday_date: string

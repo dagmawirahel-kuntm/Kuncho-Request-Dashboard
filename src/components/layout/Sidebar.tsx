@@ -53,6 +53,7 @@ const navGroups: NavGroup[] = [
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'operations_manager'] },
       { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Site Petty Cash Requests', to: '/pm/site-petty-cash-requests', icon: Wallet, roles: ['project_manager'], showIfAssignedProjectManager: true },
+      { label: 'BOQ Change Orders', to: '/pm/boq-change-orders', icon: FileText, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
       { label: 'Stock', to: '/stock-manager-view', icon: Warehouse, roles: ['stock_manager'] },
       { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'] },
@@ -60,6 +61,7 @@ const navGroups: NavGroup[] = [
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2, roles: ['admin', 'operations_manager'] },
       { label: 'Executive View', to: '/exec', icon: BarChart3, roles: ['admin', 'executive'] },
+      { label: 'BOQ Change Orders', to: '/exec/boq-change-orders', icon: FileText, roles: ['admin', 'executive'] },
       { label: 'Departments', to: '/departments', icon: Network },
     ],
   },
@@ -146,6 +148,7 @@ const navGroups: NavGroup[] = [
       { label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },
+      { label: 'BOQ Change Orders', to: '/finance/boq-change-orders', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { label: 'Labor Expense Drafts', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       // Read-only for everyone (register + book value), actions gated
       // inside the page itself — no roles restriction here on purpose.

@@ -5,6 +5,7 @@ import LogAttendancePage from '@/pages/site-foreman/LogAttendancePage'
 import LogMaterialReceiptPage from '@/pages/site-foreman/LogMaterialReceiptPage'
 import SiteFloatRequestPage from '@/pages/site-foreman/SiteFloatRequestPage'
 import { FinanceSitePettyCashQueuePage, PMSitePettyCashQueuePage } from '@/pages/site-foreman/SitePettyCashQueue'
+import { PmBoqChangeOrderQueuePage, FinanceBoqChangeOrderQueuePage, ExecBoqChangeOrderQueuePage } from '@/pages/projects/BoqChangeOrderQueue'
 import { MaterialsRequestedPage, HseLogPage, WorkOrdersOnMySitesPage, MyProjectsPage } from '@/pages/site-foreman/ScopedListPages'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LandingRedirect } from './LandingRedirect'
@@ -430,6 +431,31 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
             children: [
               { path: 'pm/site-petty-cash-requests', element: <PMSitePettyCashQueuePage /> },
+            ],
+          },
+          {
+            // PR 9a.5 group 2 — matches each RPC's own role check
+            // (pm_approve_change_order: admin/PM; finance_approve: admin/
+            // finance; exec_approve: admin/executive). 'executive' is added
+            // to the PM route too since record_client_signoff and the PM
+            // approval step both allow admin/PM only, but boq_change_orders_select
+            // grants executive read — without it an exec's link would 404
+            // the same way the note above the site-petty-cash route flags.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            children: [
+              { path: 'pm/boq-change-orders', element: <PmBoqChangeOrderQueuePage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
+            children: [
+              { path: 'finance/boq-change-orders', element: <FinanceBoqChangeOrderQueuePage /> },
+            ],
+          },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive']} />,
+            children: [
+              { path: 'exec/boq-change-orders', element: <ExecBoqChangeOrderQueuePage /> },
             ],
           },
           {
