@@ -9,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { parseBankStatementCsv, type ParsedStatement } from '@/lib/bankStatementParser'
 import type { BankStatementImport, BankStatementLine } from '@/types/database'
-import { Upload, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight, RefreshCw, Link2 } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight, RefreshCw, Link2, Coins } from 'lucide-react'
 
 // A statement line joined to whichever side it matched — expense (debit,
 // money out) or sale (credit, money in). At most one of expenses/sales is
@@ -364,6 +364,11 @@ function LinesTable({ lines, committed = false }: { lines: JoinedLine[]; committ
                   </Link>
                 ) : committed && l.match_status === 'unmatched' ? (
                   <MatchLineCell lineId={l.id} direction={Number(l.credit_amount ?? 0) > 0 ? 'credit' : 'debit'} />
+                ) : l.credit_classification ? (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                    <Coins className="h-3 w-3" />
+                    {CREDIT_CLASSES.find(c => c.value === l.credit_classification)?.label ?? l.credit_classification} · booked
+                  </span>
                 ) : '—'}
               </td>
               <td className="px-4 py-2 text-right whitespace-nowrap"><VarianceCell line={l} /></td>
@@ -427,6 +432,14 @@ function VarianceCell({ line }: { line: BankStatementLine }) {
 // bank_ref, wrong currency of reference, etc.). Direction picks the
 // candidate table and RPC: debit (money out) → expenses / match_expense_to_
 // statement_line; credit (money in) → sales / match_sale_to_statement_line.
+const CREDIT_CLASSES: { value: string; label: string }[] = [
+  { value: 'other_income', label: 'Other income' },
+  { value: 'owner_injection', label: 'Owner injection (equity)' },
+  { value: 'loan_received', label: 'Loan received (liability)' },
+  { value: 'vendor_refund', label: 'Vendor refund' },
+  { value: 'inter_account_transfer', label: 'Inter-account transfer' },
+]
+
 function MatchLineCell({ lineId, direction }: { lineId: string; direction: 'debit' | 'credit' }) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -434,6 +447,35 @@ function MatchLineCell({ lineId, direction }: { lineId: string; direction: 'debi
   const [targetId, setTargetId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const isExpense = direction === 'debit'
+
+  // Credit-side classification: money in that isn't a sale, booked to the
+  // ledger via classify_bank_credit.
+  const { data: accounts = [] } = useAccounts()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const accountOptions = (accounts as any[]).map(a => ({ id: a.id as string, label: a.account_name as string }))
+  const [classifyOpen, setClassifyOpen] = useState(false)
+  const [classification, setClassification] = useState<string>('other_income')
+  const [counterAccountId, setCounterAccountId] = useState<string | null>(null)
+  const [classifyNotes, setClassifyNotes] = useState('')
+  const [classifying, setClassifying] = useState(false)
+
+  async function handleClassify() {
+    if (classification === 'inter_account_transfer' && !counterAccountId) {
+      toast('Pick the account the money came from', 'error'); return
+    }
+    setClassifying(true)
+    const { error } = await supabase.rpc('classify_bank_credit', {
+      p_line_id: lineId,
+      p_classification: classification,
+      p_counter_account_id: classification === 'inter_account_transfer' ? counterAccountId : null,
+      p_notes: classifyNotes.trim() || null,
+    })
+    setClassifying(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Classified and booked to the ledger', 'success')
+    setClassifyOpen(false); setClassifyNotes(''); setCounterAccountId(null)
+    qc.invalidateQueries({ queryKey: ['bank-statement-lines'] })
+  }
 
   const { data: candidates = [] } = useQuery({
     queryKey: ['unmatched-candidates-for-line', direction],
@@ -484,11 +526,49 @@ function MatchLineCell({ lineId, direction }: { lineId: string; direction: 'debi
     qc.invalidateQueries({ queryKey: ['sales'] })
   }
 
+  // Credit line classify form
+  if (classifyOpen) {
+    const needsCounter = classification === 'inter_account_transfer'
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <select
+            value={classification}
+            onChange={e => setClassification(e.target.value)}
+            className="rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+          >
+            {CREDIT_CLASSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+          {needsCounter && (
+            <div className="w-48">
+              <SearchableSelect value={counterAccountId} onChange={setCounterAccountId} options={accountOptions} placeholder="From account…" />
+            </div>
+          )}
+          <input
+            type="text" value={classifyNotes} onChange={e => setClassifyNotes(e.target.value)} placeholder="Note (optional)"
+            className="w-32 rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+          />
+          <button onClick={handleClassify} disabled={classifying} className="rounded-md bg-brand px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+            {classifying ? '…' : 'Book'}
+          </button>
+          <button onClick={() => setClassifyOpen(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-3.5 w-3.5" /></button>
+        </div>
+        <p className="text-[10px] text-slate-400">Posts a journal entry — debit the bank account, credit the classified account.</p>
+      </div>
+    )
+  }
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
-        <Link2 className="h-3 w-3" /> {isExpense ? 'Match to expense' : 'Match to sale'}
-      </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
+          <Link2 className="h-3 w-3" /> {isExpense ? 'Match to expense' : 'Match to sale'}
+        </button>
+        {!isExpense && (
+          <button onClick={() => setClassifyOpen(true)} className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:underline">
+            <Coins className="h-3 w-3" /> Classify income
+          </button>
+        )}
+      </div>
     )
   }
   return (

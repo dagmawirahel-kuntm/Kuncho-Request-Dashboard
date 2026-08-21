@@ -1022,9 +1022,13 @@ export interface BankStatementLine {
   // Statement line amount minus matched expense amount. Negative = the
   // line only partly offsets the expense, positive = it exceeds it.
   variance_amount: number | null
+  // Set when a non-sale incoming credit is classified and booked to the
+  // ledger (migration 233): owner_injection / loan_received /
+  // vendor_refund / inter_account_transfer / other_income.
+  credit_classification: string | null
   created_at: string
 }
-export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'matched_sale_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'matched_sale_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount' | 'credit_classification'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
