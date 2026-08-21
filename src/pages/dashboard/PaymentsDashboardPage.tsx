@@ -115,11 +115,12 @@ function CashTicker({ positions, loading }: { positions: AccountCashPositionRow[
 // Money already out the door with no goods confirmed — the single
 // biggest exposure finance carries. Promoted from a modest list to a
 // hero with the total, an aging breakdown, and the largest vendor.
-function AdvancesHero({ advances, canAct, onClose, closingId }: {
+function AdvancesHero({ advances, canAct, onClose, closingId, grnByBundle }: {
   advances: OpenVendorAdvanceRow[]
   canAct: boolean
   onClose: (id: string) => void
   closingId: string | null
+  grnByBundle: Record<string, { grn_code: string | null; received_at: string | null }>
 }) {
   const total = advances.reduce((s, a) => s + (a.amount_etb ?? 0), 0)
   const bucket = (d: number | null) => (d == null ? 'fresh' : d >= 14 ? 'aging' : d >= 7 ? 'watch' : 'fresh')
@@ -179,29 +180,43 @@ function AdvancesHero({ advances, canAct, onClose, closingId }: {
         )}
       </div>
       <div className="border-t border-amber-200 dark:border-amber-800/40">
-        {top.map(a => (
+        {top.map(a => {
+          const grn = a.sourcing_bundle_id ? grnByBundle[a.sourcing_bundle_id] : undefined
+          return (
           <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-amber-100 dark:border-slate-700/60 last:border-b-0">
             <div className="min-w-0">
               <Link to={`/expenses/${a.id}`} className="font-semibold text-sm text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
                 {a.vendor_name ?? a.item_service_description ?? a.expense_code}
               </Link>
-              <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <div className="mt-0.5 flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
                 <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px]">{a.bundle_code ?? '—'}</span>
                 {agePill(a.days_open)}
+                {grn ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="h-2.5 w-2.5" />
+                    {grn.grn_code ?? 'GRN'}{grn.received_at ? ` · ${formatDate(grn.received_at)}` : ''}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                    <Clock className="h-2.5 w-2.5" /> waiting on GRN
+                  </span>
+                )}
               </div>
             </div>
             <div className="ml-auto font-bold text-sm tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(a.amount_etb ?? 0)}</div>
             {canAct && (
               <button
                 onClick={() => onClose(a.id)}
-                disabled={closingId === a.id}
-                className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                disabled={closingId === a.id || !grn}
+                title={grn ? undefined : 'A GRN must be recorded for this PO before the advance can close'}
+                className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <CheckCircle2 className="h-3 w-3" /> {closingId === a.id ? 'Closing…' : 'Close on GRN'}
+                <CheckCircle2 className="h-3 w-3" /> {closingId === a.id ? 'Closing…' : grn ? 'Close on GRN' : 'Close'}
               </button>
             )}
           </div>
-        ))}
+          )
+        })}
         {rest.length > 0 && (
           <div className="px-4 py-2.5 text-center text-xs text-slate-500 dark:text-slate-400">
             + {rest.length} more open advance{rest.length !== 1 ? 's' : ''} · <b className="text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(restTotal)}</b>
@@ -275,6 +290,33 @@ export default function PaymentsDashboardPage() {
       if (error) throw error
       return data as OpenVendorAdvanceRow[]
     },
+  })
+
+  // The GRN is what closes an advance — link paid money to the receipt
+  // that clears it. An advance can only be closed once its PO has a GRN,
+  // so surfacing that status turns "waiting on a GRN" into a live cue and
+  // makes the Close button honest about whether it will actually work.
+  const advanceBundleIds = useMemo(
+    () => openAdvances.map(a => a.sourcing_bundle_id).filter((x): x is string => !!x),
+    [openAdvances]
+  )
+  const { data: grnByBundle = {} } = useQuery({
+    queryKey: ['advance-grns', advanceBundleIds],
+    queryFn: async () => {
+      if (advanceBundleIds.length === 0) return {} as Record<string, { grn_code: string | null; received_at: string | null }>
+      const { data, error } = await supabase
+        .from('goods_received_notes')
+        .select('sourcing_bundle_id, grn_code, received_at')
+        .in('sourcing_bundle_id', advanceBundleIds)
+        .order('received_at', { ascending: false })
+      if (error) throw error
+      const m: Record<string, { grn_code: string | null; received_at: string | null }> = {}
+      for (const g of (data ?? []) as { sourcing_bundle_id: string; grn_code: string | null; received_at: string | null }[]) {
+        if (!m[g.sourcing_bundle_id]) m[g.sourcing_bundle_id] = { grn_code: g.grn_code, received_at: g.received_at }
+      }
+      return m
+    },
+    enabled: advanceBundleIds.length > 0,
   })
 
   // Paid payments that levied WHT and still need a withholding receipt — a cue
@@ -415,7 +457,7 @@ export default function PaymentsDashboardPage() {
     toPayTotal: toPayQueue.reduce((s, r) => s + (r.net_payable ?? r.amount_etb ?? 0), 0),
     pendingCount: pendingApproval.length,
     advancesTotal: openAdvances.reduce((s, r) => s + (r.amount_etb ?? 0), 0),
-    paidThisWeek: recentPayments.filter(r => r.payment_state === 'paid').reduce((s, r) => s + (r.amount_etb ?? 0), 0),
+    paidThisWeek: recentPayments.filter(r => r.payment_state === 'paid').reduce((s, r) => s + (r.net_payable ?? r.amount_etb ?? 0), 0),
   }
 
   return (
@@ -443,11 +485,11 @@ export default function PaymentsDashboardPage() {
 
       {/* Vendor advances — the biggest exposure on the page, up top */}
       {openAdvances.length > 0 && (
-        <AdvancesHero advances={openAdvances} canAct={canAct} onClose={handleCloseAdvance} closingId={closingAdvanceId} />
+        <AdvancesHero advances={openAdvances} canAct={canAct} onClose={handleCloseAdvance} closingId={closingAdvanceId} grnByBundle={grnByBundle} />
       )}
 
       {/* ── 1. To-Pay Queue (headline) ───────────────────────────────── */}
-      <Section title="To-Pay Queue" sub="Finance-approved, awaiting payment. Pick the tunnel by method: a bank method (transfer/CPO/cheque/cash) settles by matching a bank line; choosing VRF hands it to the VRF badge holder to pay from a settled fund.">
+      <Section title="To-Pay Queue" sub="Finance-approved, awaiting payment. Amounts are the net that reaches the vendor (VAT in, WHT withheld) — the figure on the PO. A bank method settles by matching a bank line; VRF hands it to the VRF badge holder.">
 
         {canAct && toPayQueue.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-b bg-brand/5 dark:bg-brand/10 dark:border-slate-700 px-4 py-3">
@@ -514,7 +556,7 @@ export default function PaymentsDashboardPage() {
                     )}
                     <th className="px-4 py-2">Vendor</th>
                     <th className="px-4 py-2">Project / Cost Group</th>
-                    <th className="px-4 py-2 text-right">Net payable</th>
+                    <th className="px-4 py-2 text-right">To vendor (net)</th>
                     <th className="px-4 py-2 text-center">WHT</th>
                     <th className="px-4 py-2 text-right">Age</th>
                     <th className="px-4 py-2"></th>
@@ -818,7 +860,12 @@ export default function PaymentsDashboardPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
+                      <span className="text-right">
+                        <span className="block font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</span>
+                        <span className="block text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
+                          {(r.wht_amount ?? 0) > 0 ? `to vendor · gross ${formatCurrency(r.amount_etb ?? 0)}` : 'to vendor'}
+                        </span>
+                      </span>
                       <StatusBadge status={r.payment_state} />
                       {/* Bank statement match is the confirmation for bank
                           methods — the primary action, filled and prominent. */}

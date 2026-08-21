@@ -1439,6 +1439,8 @@ export interface RecentPaymentRow {
   vrf_id: string | null
   vrf_record_name: string | null
   batch_payment_id: string | null
+  net_payable: number | null
+  wht_amount: number | null
 }
 
 // ── Timesheet ─────────────────────────────────────────────────────
