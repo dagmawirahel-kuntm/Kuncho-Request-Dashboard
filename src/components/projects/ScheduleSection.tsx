@@ -14,7 +14,7 @@ import { ScheduleGanttChart } from './ScheduleGanttChart'
 import type { Schedule, ScheduleTask, StaleScheduleBoqLink, ProjectPhysicalProgress } from '@/types/database'
 import {
   CalendarRange, AlertTriangle, Plus, Link2, ClipboardList, Lock, RotateCcw, Pencil, ChevronRight,
-  Table2, GanttChartSquare,
+  Table2, GanttChartSquare, Maximize2, X,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -32,6 +32,7 @@ export function ScheduleSection({ projectId, projectName }: Props) {
   const navigate = useNavigate()
 
   const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table')
+  const [ganttFullscreen, setGanttFullscreen] = useState(false)
   const [building, setBuilding] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [editingTask, setEditingTask] = useState<ScheduleTask | null>(null)
@@ -312,6 +313,12 @@ export function ScheduleSection({ projectId, projectName }: Props) {
                   <GanttChartSquare className="h-3 w-3" /> Gantt
                 </button>
               </div>
+              {viewMode === 'gantt' && tasks.length > 0 && (
+                <button onClick={() => setGanttFullscreen(true)}
+                  className="flex items-center gap-1 rounded-md border dark:border-slate-600 px-2 py-1 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700">
+                  <Maximize2 className="h-3 w-3" /> Expand
+                </button>
+              )}
             </div>
             {canManage && (
               <button onClick={() => setShowAddTask(true)}
@@ -410,6 +417,25 @@ export function ScheduleSection({ projectId, projectName }: Props) {
             </div>
           )}
         </>
+      )}
+
+      {ganttFullscreen && schedule && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/50 p-3 sm:p-6">
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl bg-white dark:bg-slate-800 shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b dark:border-slate-700 shrink-0">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                <CalendarRange className="h-4 w-4" /> {schedule.title} — Gantt
+              </h3>
+              <button onClick={() => setGanttFullscreen(false)}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                <X className="h-4 w-4" /> Close
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 p-4">
+              <ScheduleGanttChart tasks={orderedTasks} onEditTask={t => { setGanttFullscreen(false); setEditingTask(t) }} fullscreen />
+            </div>
+          </div>
+        </div>
       )}
 
       {(showAddTask || editingTask) && schedule && (
