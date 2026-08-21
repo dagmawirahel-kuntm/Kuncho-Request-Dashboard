@@ -1422,6 +1422,43 @@ export interface AccountCashPositionRow {
   cash_position: number
 }
 
+// Every sent bank-method payment still awaiting a matched statement
+// line, at any age (migration 232) — the confirmation surface that
+// isn't time-boxed to the last 7 days.
+export interface AwaitingBankConfirmationRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  vendor_id: string | null
+  vendor_name: string | null
+  amount_etb: number | null
+  net_payable: number | null
+  payment_method: ExpensePaymentMethod | null
+  account_id: string | null
+  account_name: string | null
+  payment_state_changed_at: string | null
+  days_waiting: number | null
+  batch_payment_id: string | null
+}
+
+// Per-account statement reconciliation state (migration 232) — feeds
+// the cash board's expandable insight.
+export interface AccountStatementSummaryRow {
+  account_id: string
+  last_import_at: string | null
+  committed_lines: number
+  unmatched_lines: number
+  matched_lines: number
+}
+
+// The minimal shape MatchTransferModal needs — satisfied by both a
+// recent payment and an awaiting-confirmation row.
+export interface MatchableRow {
+  id: string
+  amount_etb: number | null
+  batch_payment_id: string | null
+}
+
 export interface RecentPaymentRow {
   id: string
   expense_code: string | null

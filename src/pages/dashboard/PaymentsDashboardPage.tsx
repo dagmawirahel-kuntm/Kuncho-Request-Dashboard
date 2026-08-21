@@ -14,10 +14,11 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import type {
   ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow, OpenVendorAdvanceRow,
-  ExpensePaymentMethod,
+  ExpensePaymentMethod, AwaitingBankConfirmationRow, AccountStatementSummaryRow, MatchableRow,
 } from '@/types/database'
 import {
   Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt, HandCoins,
+  ChevronDown, FileClock,
 } from 'lucide-react'
 
 const PAYMENT_METHODS: { value: ExpensePaymentMethod; label: string }[] = [
@@ -53,17 +54,24 @@ function Empty({ children }: { children: React.ReactNode }) {
 // dormant zeros; a table of them is a scroll wall. This shows only
 // accounts with statement activity as tiles, collapses the rest into a
 // single chip, and reads like a trading board pinned to the top.
-function CashTicker({ positions, loading }: { positions: AccountCashPositionRow[]; loading: boolean }) {
+function CashTicker({ positions, loading, summaries, awaiting }: {
+  positions: AccountCashPositionRow[]
+  loading: boolean
+  summaries: Record<string, AccountStatementSummaryRow>
+  awaiting: Record<string, { count: number; total: number }>
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
   const funded = positions.filter(p => p.total_credits !== 0 || p.total_debits !== 0)
   const dormant = positions.length - funded.length
   const total = positions.reduce((s, p) => s + p.cash_position, 0)
+  const openAcct = funded.find(a => a.account_id === expanded)
+  const openSummary = expanded ? summaries[expanded] : undefined
+  const openAwaiting = expanded ? awaiting[expanded] : undefined
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-slate-100 overflow-hidden">
       <div className="flex items-center gap-2 mb-3">
         <span className="h-1.5 w-1.5 rounded-full bg-teal-300 shadow-[0_0_0_3px_rgba(94,234,212,0.25)]" />
-        <span className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-400 flex items-center gap-2">
-          Cash position
-        </span>
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-400">Cash position</span>
         <div className="ml-auto text-right">
           <p className={`text-base font-bold tabular-nums ${total < 0 ? 'text-red-300' : ''}`}>{formatCurrency(total)}</p>
           <p className="text-[9.5px] uppercase tracking-[0.12em] text-slate-400">net across {positions.length} accounts</p>
@@ -77,11 +85,19 @@ function CashTicker({ positions, loading }: { positions: AccountCashPositionRow[
         <div className="flex gap-2.5 overflow-x-auto pb-0.5">
           {funded.map(a => {
             const neg = a.cash_position < 0
+            const summ = summaries[a.account_id]
+            const unmatched = summ?.unmatched_lines ?? 0
+            const isOpen = expanded === a.account_id
             return (
-              <div key={a.account_id} className="flex-shrink-0 min-w-[230px] rounded-[11px] border border-slate-700 bg-white/[0.03] px-3 py-2.5">
+              <button
+                key={a.account_id}
+                onClick={() => setExpanded(p => (p === a.account_id ? null : a.account_id))}
+                className={`flex-shrink-0 min-w-[230px] text-left rounded-[11px] border px-3 py-2.5 transition-colors ${isOpen ? 'border-teal-400/60 bg-white/[0.06]' : 'border-slate-700 bg-white/[0.03] hover:bg-white/[0.05]'}`}
+              >
                 <div className="flex items-center gap-1.5 text-xs font-medium">
                   <Landmark className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
                   <span className="truncate">{a.account_name}</span>
+                  <ChevronDown className={`ml-auto h-3.5 w-3.5 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
                 <div className={`mt-1.5 text-lg font-bold tabular-nums tracking-tight ${neg ? 'text-red-300' : ''}`}>
                   {formatCurrency(a.cash_position)}
@@ -90,13 +106,12 @@ function CashTicker({ positions, loading }: { positions: AccountCashPositionRow[
                   <span className="text-emerald-300">+{formatCurrency(a.total_credits)} in</span>
                   <span className="text-red-300">−{formatCurrency(a.total_debits)} out</span>
                 </div>
-                {neg && (
-                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-400/[0.13] px-1.5 py-1 text-[10px] text-amber-300">
-                    <AlertTriangle className="h-2.5 w-2.5 flex-shrink-0" />
-                    Net of imported lines only — check the opening balance
+                {unmatched > 0 && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-sky-400/[0.15] px-1.5 py-1 text-[10px] font-medium text-sky-300">
+                    <FileClock className="h-2.5 w-2.5 flex-shrink-0" />{unmatched} line{unmatched !== 1 ? 's' : ''} to reconcile
                   </div>
                 )}
-              </div>
+              </button>
             )
           })}
           {dormant > 0 && (
@@ -105,6 +120,33 @@ function CashTicker({ positions, loading }: { positions: AccountCashPositionRow[
               <div className="text-[10.5px] leading-tight">dormant accounts<br />no statement activity</div>
             </div>
           )}
+        </div>
+      )}
+
+      {openAcct && (
+        <div className="mt-3 rounded-[11px] border border-slate-700 bg-black/20 px-3.5 py-3">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <span className="text-xs font-semibold text-slate-200">{openAcct.account_name}</span>
+            <span className="text-[10px] text-slate-500">
+              {openSummary?.last_import_at ? `last import ${formatDate(openSummary.last_import_at)}` : 'never imported'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-slate-200">
+            <div><p className="text-[9.5px] uppercase tracking-wide text-slate-500">Statement lines</p><p className="text-sm font-bold tabular-nums">{openSummary?.committed_lines ?? 0}</p></div>
+            <div><p className="text-[9.5px] uppercase tracking-wide text-slate-500">Matched</p><p className="text-sm font-bold tabular-nums text-emerald-300">{openSummary?.matched_lines ?? 0}</p></div>
+            <div><p className="text-[9.5px] uppercase tracking-wide text-slate-500">Unmatched</p><p className={`text-sm font-bold tabular-nums ${(openSummary?.unmatched_lines ?? 0) > 0 ? 'text-sky-300' : ''}`}>{openSummary?.unmatched_lines ?? 0}</p></div>
+            <div><p className="text-[9.5px] uppercase tracking-wide text-slate-500">Payments waiting</p><p className={`text-sm font-bold tabular-nums ${(openAwaiting?.count ?? 0) > 0 ? 'text-amber-300' : ''}`}>{openAwaiting?.count ?? 0}</p></div>
+          </div>
+          <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+            {openAcct.cash_position < 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] text-amber-300">
+                <AlertTriangle className="h-2.5 w-2.5" /> Net of imported lines only — opening balance not loaded
+              </span>
+            )}
+            <Link to="/bank-statement-import" className="ml-auto inline-flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-sky-700">
+              <Landmark className="h-3 w-3" /> Reconcile in bank import
+            </Link>
+          </div>
         </div>
       )}
     </div>
@@ -274,6 +316,40 @@ export default function PaymentsDashboardPage() {
     },
   })
 
+  // Every sent bank payment still waiting on a matched statement line —
+  // any age, oldest first — so a statement imported weeks after payment
+  // can still reach them. Time-boxed "This Week" never could.
+  const { data: awaitingConfirmation = [] } = useQuery({
+    queryKey: ['v-awaiting-bank-confirmation'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_awaiting_bank_confirmation').select('*').order('payment_state_changed_at')
+      if (error) throw error
+      return data as AwaitingBankConfirmationRow[]
+    },
+  })
+
+  const { data: accountSummaries = [] } = useQuery({
+    queryKey: ['v-account-statement-summary'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_account_statement_summary').select('*')
+      if (error) throw error
+      return data as AccountStatementSummaryRow[]
+    },
+  })
+  const summaryByAccount = useMemo(
+    () => Object.fromEntries(accountSummaries.map(s => [s.account_id, s])) as Record<string, AccountStatementSummaryRow>,
+    [accountSummaries]
+  )
+  const awaitingByAccount = useMemo(() => {
+    const m: Record<string, { count: number; total: number }> = {}
+    for (const a of awaitingConfirmation) {
+      const k = a.account_id ?? '—'
+      if (!m[k]) m[k] = { count: 0, total: 0 }
+      m[k].count += 1; m[k].total += a.net_payable ?? a.amount_etb ?? 0
+    }
+    return m
+  }, [awaitingConfirmation])
+
   const { data: recentPayments = [], isLoading: loadingRecent } = useQuery({
     queryKey: ['v-recent-payments'],
     queryFn: async () => {
@@ -357,6 +433,8 @@ export default function PaymentsDashboardPage() {
     qc.invalidateQueries({ queryKey: ['v-account-cash-position'] })
     qc.invalidateQueries({ queryKey: ['v-recent-payments'] })
     qc.invalidateQueries({ queryKey: ['v-open-vendor-advances'] })
+    qc.invalidateQueries({ queryKey: ['v-awaiting-bank-confirmation'] })
+    qc.invalidateQueries({ queryKey: ['v-account-statement-summary'] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
   }
 
@@ -419,7 +497,7 @@ export default function PaymentsDashboardPage() {
   }
 
   // ── Recent Payments: match to bank line / VRF / confirm cash ────────
-  const [matching, setMatching] = useState<RecentPaymentRow | null>(null)
+  const [matching, setMatching] = useState<MatchableRow | null>(null)
   const [linkingVrf, setLinkingVrf] = useState<RecentPaymentRow | null>(null)
   const [confirmingCash, setConfirmingCash] = useState<string | null>(null)
   const [methodFilter, setMethodFilter] = useState<string>('all')
@@ -481,7 +559,7 @@ export default function PaymentsDashboardPage() {
       </div>
 
       {/* Cash board — replaces the old 34-row table; only funded accounts show */}
-      <CashTicker positions={cashPositions} loading={loadingCash} />
+      <CashTicker positions={cashPositions} loading={loadingCash} summaries={summaryByAccount} awaiting={awaitingByAccount} />
 
       {/* Vendor advances — the biggest exposure on the page, up top */}
       {openAdvances.length > 0 && (
@@ -821,6 +899,84 @@ export default function PaymentsDashboardPage() {
           </>
         )}
       </Section>
+
+      {/* ── Awaiting bank confirmation — all ages, not just this week ── */}
+      {awaitingConfirmation.length > 0 && (
+        <Section
+          title="Awaiting Bank Confirmation"
+          sub={`${awaitingConfirmation.length} sent bank payment${awaitingConfirmation.length !== 1 ? 's' : ''} with no matched statement line — any age, oldest first. Match them as statements are imported.`}
+        >
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="px-4 py-2">Vendor</th>
+                  <th className="px-4 py-2">Method · Account</th>
+                  <th className="px-4 py-2 text-right">To vendor (net)</th>
+                  <th className="px-4 py-2 text-right">Waiting</th>
+                  <th className="px-4 py-2 w-40"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y dark:divide-slate-700">
+                {awaitingConfirmation.map(r => {
+                  const stale = (r.days_waiting ?? 0) >= 14
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                      <td className="px-4 py-2.5">
+                        <Link to={`/expenses/${r.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                          {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                        </Link>
+                        {r.batch_payment_id && <span className="ml-1.5 text-[10px] text-slate-400">in a batch</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                        {r.payment_method ? (PAYMENT_METHOD_LABEL[r.payment_method] ?? r.payment_method) : '—'}
+                        {r.account_name ? ` · ${r.account_name}` : ''}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</td>
+                      <td className={`px-4 py-2.5 text-right text-xs tabular-nums ${stale ? 'font-semibold text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {r.days_waiting != null ? `${Math.floor(r.days_waiting)}d` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {canAct && (
+                          <button onClick={() => setMatching(r)} className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-700 ml-auto">
+                            <Landmark className="h-3 w-3" /> Match to bank line
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="sm:hidden divide-y dark:divide-slate-700">
+            {awaitingConfirmation.map(r => {
+              const stale = (r.days_waiting ?? 0) >= 14
+              return (
+                <div key={r.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <Link to={`/expenses/${r.id}`} className="min-w-0 font-medium text-slate-800 dark:text-slate-100 truncate">
+                      {r.vendor_name ?? r.item_service_description ?? r.expense_code}
+                    </Link>
+                    <span className="flex-shrink-0 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {r.payment_method ? (PAYMENT_METHOD_LABEL[r.payment_method] ?? r.payment_method) : '—'}
+                      {r.days_waiting != null && <span className={stale ? 'ml-2 font-semibold text-red-600 dark:text-red-400' : 'ml-2'}>· {Math.floor(r.days_waiting)}d</span>}
+                    </span>
+                    {canAct && (
+                      <button onClick={() => setMatching(r)} className="flex-shrink-0 flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-sky-700">
+                        <Landmark className="h-3 w-3" /> Match
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+      )}
 
       <div>
         {/* ── Recent Payments (cash position now lives in the top board) ── */}
@@ -1218,7 +1374,7 @@ function CreateBatchModal({
 function MatchTransferModal({
   row, onClose, onMatched, onError,
 }: {
-  row: RecentPaymentRow
+  row: MatchableRow
   onClose: () => void
   onMatched: () => void
   onError: (msg: string) => void
