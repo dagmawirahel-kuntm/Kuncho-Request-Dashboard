@@ -1379,6 +1379,10 @@ export interface ToPayQueueRow {
   days_since_approval: number | null
   sourcing_bundle_id: string | null
   payment_pattern: SourcingBundlePaymentPattern | null
+  // Net actually leaving the bank (VAT in, WHT withheld) — the figure on
+  // the PO. Equals amount_etb when there's no WHT. Added in migration 230.
+  net_payable: number | null
+  wht_amount: number | null
 }
 
 export interface OpenVendorAdvanceRow {
