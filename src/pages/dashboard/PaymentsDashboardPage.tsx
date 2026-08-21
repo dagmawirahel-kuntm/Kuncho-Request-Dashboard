@@ -17,7 +17,7 @@ import type {
   ExpensePaymentMethod,
 } from '@/types/database'
 import {
-  Wallet, Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt, HandCoins,
+  Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt, HandCoins,
 } from 'lucide-react'
 
 const PAYMENT_METHODS: { value: ExpensePaymentMethod; label: string }[] = [
@@ -46,6 +46,170 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">{children}</div>
+}
+
+// ── Cash ticker board ──────────────────────────────────────────────
+// Replaces the old 34-row Cash Position table. 33 of 34 accounts are
+// dormant zeros; a table of them is a scroll wall. This shows only
+// accounts with statement activity as tiles, collapses the rest into a
+// single chip, and reads like a trading board pinned to the top.
+function CashTicker({ positions, loading }: { positions: AccountCashPositionRow[]; loading: boolean }) {
+  const funded = positions.filter(p => p.total_credits !== 0 || p.total_debits !== 0)
+  const dormant = positions.length - funded.length
+  const total = positions.reduce((s, p) => s + p.cash_position, 0)
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-slate-100 overflow-hidden">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-1.5 w-1.5 rounded-full bg-teal-300 shadow-[0_0_0_3px_rgba(94,234,212,0.25)]" />
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-400 flex items-center gap-2">
+          Cash position
+        </span>
+        <div className="ml-auto text-right">
+          <p className={`text-base font-bold tabular-nums ${total < 0 ? 'text-red-300' : ''}`}>{formatCurrency(total)}</p>
+          <p className="text-[9.5px] uppercase tracking-[0.12em] text-slate-400">net across {positions.length} accounts</p>
+        </div>
+      </div>
+      {loading ? (
+        <p className="py-3 text-center text-xs text-slate-500">Loading…</p>
+      ) : positions.length === 0 ? (
+        <p className="py-3 text-center text-xs text-slate-500">No accounts with statement activity yet.</p>
+      ) : (
+        <div className="flex gap-2.5 overflow-x-auto pb-0.5">
+          {funded.map(a => {
+            const neg = a.cash_position < 0
+            return (
+              <div key={a.account_id} className="flex-shrink-0 min-w-[230px] rounded-[11px] border border-slate-700 bg-white/[0.03] px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <Landmark className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                  <span className="truncate">{a.account_name}</span>
+                </div>
+                <div className={`mt-1.5 text-lg font-bold tabular-nums tracking-tight ${neg ? 'text-red-300' : ''}`}>
+                  {formatCurrency(a.cash_position)}
+                </div>
+                <div className="mt-1 flex gap-3 text-[10.5px] tabular-nums">
+                  <span className="text-emerald-300">+{formatCurrency(a.total_credits)} in</span>
+                  <span className="text-red-300">−{formatCurrency(a.total_debits)} out</span>
+                </div>
+                {neg && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-400/[0.13] px-1.5 py-1 text-[10px] text-amber-300">
+                    <AlertTriangle className="h-2.5 w-2.5 flex-shrink-0" />
+                    Net of imported lines only — check the opening balance
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {dormant > 0 && (
+            <div className="flex-shrink-0 min-w-[130px] rounded-[11px] border border-dashed border-slate-700 px-3 py-2.5 flex flex-col justify-center text-slate-500">
+              <div className="text-2xl font-bold tabular-nums text-slate-400">{dormant}</div>
+              <div className="text-[10.5px] leading-tight">dormant accounts<br />no statement activity</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Vendor advances hero ───────────────────────────────────────────
+// Money already out the door with no goods confirmed — the single
+// biggest exposure finance carries. Promoted from a modest list to a
+// hero with the total, an aging breakdown, and the largest vendor.
+function AdvancesHero({ advances, canAct, onClose, closingId }: {
+  advances: OpenVendorAdvanceRow[]
+  canAct: boolean
+  onClose: (id: string) => void
+  closingId: string | null
+}) {
+  const total = advances.reduce((s, a) => s + (a.amount_etb ?? 0), 0)
+  const bucket = (d: number | null) => (d == null ? 'fresh' : d >= 14 ? 'aging' : d >= 7 ? 'watch' : 'fresh')
+  const sums = { fresh: 0, watch: 0, aging: 0 }
+  const counts = { fresh: 0, watch: 0, aging: 0 }
+  for (const a of advances) {
+    const b = bucket(a.days_open) as keyof typeof sums
+    sums[b] += a.amount_etb ?? 0; counts[b] += 1
+  }
+  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0)
+  const sorted = [...advances].sort((x, y) => (y.amount_etb ?? 0) - (x.amount_etb ?? 0))
+  const top = sorted.slice(0, 3)
+  const rest = sorted.slice(3)
+  const restTotal = rest.reduce((s, a) => s + (a.amount_etb ?? 0), 0)
+  const largest = sorted[0]
+  const agePill = (d: number | null) => {
+    if (d == null || d < 1) return <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">today</span>
+    const cls = d >= 14 ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+      : d >= 7 ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+      : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+    return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{Math.floor(d)}d open</span>
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 overflow-hidden bg-gradient-to-b from-amber-50 to-white dark:from-amber-900/15 dark:to-slate-800">
+      <div className="flex flex-wrap gap-4 items-start px-4 pt-4 pb-3">
+        <div className="flex-1 min-w-[220px]">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            <HandCoins className="h-3.5 w-3.5" /> Money out, goods not yet in
+          </div>
+          <div className="mt-1 text-3xl font-extrabold tracking-tight tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(total)}</div>
+          <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {advances.length} vendor advance{advances.length !== 1 ? 's' : ''} open — paid before delivery, waiting on a GRN to close
+          </div>
+          <div className="mt-3 flex h-2 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/40">
+            {sums.fresh > 0 && <span className="h-full bg-emerald-500" style={{ width: `${pct(sums.fresh)}%` }} />}
+            {sums.watch > 0 && <span className="h-full bg-amber-500" style={{ width: `${pct(sums.watch)}%` }} />}
+            {sums.aging > 0 && <span className="h-full bg-red-500" style={{ width: `${pct(sums.aging)}%` }} />}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-3.5 text-[10.5px] text-slate-500 dark:text-slate-400">
+            <span><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-1.5 align-middle" />Fresh &lt; 7d · <b className="text-slate-700 dark:text-slate-200">{counts.fresh}</b></span>
+            <span><span className="inline-block w-2 h-2 rounded-sm bg-amber-500 mr-1.5 align-middle" />Watch 7–13d · <b className="text-slate-700 dark:text-slate-200">{counts.watch}</b></span>
+            <span><span className="inline-block w-2 h-2 rounded-sm bg-red-500 mr-1.5 align-middle" />Aging 14d+ · <b className="text-slate-700 dark:text-slate-200">{counts.aging}</b></span>
+          </div>
+        </div>
+        {largest && (
+          <div className="w-[210px] flex-shrink-0">
+            <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">Largest exposure</div>
+            <div className="mt-0.5 font-bold text-slate-800 dark:text-slate-100 truncate">{largest.vendor_name ?? largest.expense_code ?? '—'}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{largest.bundle_code ?? '—'} · <span className="tabular-nums">{formatCurrency(largest.amount_etb ?? 0)}</span></div>
+            {total > 0 && (
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {Math.round(((largest.amount_etb ?? 0) / total) * 100)}% of all open advances sits with one vendor.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="border-t border-amber-200 dark:border-amber-800/40">
+        {top.map(a => (
+          <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-amber-100 dark:border-slate-700/60 last:border-b-0">
+            <div className="min-w-0">
+              <Link to={`/expenses/${a.id}`} className="font-semibold text-sm text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
+                {a.vendor_name ?? a.item_service_description ?? a.expense_code}
+              </Link>
+              <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px]">{a.bundle_code ?? '—'}</span>
+                {agePill(a.days_open)}
+              </div>
+            </div>
+            <div className="ml-auto font-bold text-sm tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(a.amount_etb ?? 0)}</div>
+            {canAct && (
+              <button
+                onClick={() => onClose(a.id)}
+                disabled={closingId === a.id}
+                className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-3 w-3" /> {closingId === a.id ? 'Closing…' : 'Close on GRN'}
+              </button>
+            )}
+          </div>
+        ))}
+        {rest.length > 0 && (
+          <div className="px-4 py-2.5 text-center text-xs text-slate-500 dark:text-slate-400">
+            + {rest.length} more open advance{rest.length !== 1 ? 's' : ''} · <b className="text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(restTotal)}</b>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function PaymentsDashboardPage() {
@@ -246,9 +410,11 @@ export default function PaymentsDashboardPage() {
   }
 
   const kpis = {
-    toPayTotal: toPayQueue.reduce((s, r) => s + (r.amount_etb ?? 0), 0),
+    // Net payable is what actually leaves the bank (VAT in, WHT withheld) —
+    // the figure on the PO. Falls back to gross when there's no net.
+    toPayTotal: toPayQueue.reduce((s, r) => s + (r.net_payable ?? r.amount_etb ?? 0), 0),
     pendingCount: pendingApproval.length,
-    cashTotal: cashPositions.reduce((s, r) => s + r.cash_position, 0),
+    advancesTotal: openAdvances.reduce((s, r) => s + (r.amount_etb ?? 0), 0),
     paidThisWeek: recentPayments.filter(r => r.payment_state === 'paid').reduce((s, r) => s + (r.amount_etb ?? 0), 0),
   }
 
@@ -256,7 +422,7 @@ export default function PaymentsDashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Payments</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Approval → to-pay → sent → paid, in one queue</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Approve → to-pay → sent → confirmed against the bank statement</p>
       </div>
 
       {/* This is the landing page for finance, and a finance user can
@@ -266,11 +432,19 @@ export default function PaymentsDashboardPage() {
 
       {/* KPI summary */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="To-Pay Queue" value={formatCurrency(kpis.toPayTotal)} sub={`${toPayQueue.length} approved, awaiting payment`} icon={Send} color="bg-amber-50 text-amber-500" />
+        <KpiCard label="To-Pay Queue" value={formatCurrency(kpis.toPayTotal)} sub={`${toPayQueue.length} approved · net payable`} icon={Send} color="bg-amber-50 text-amber-500" />
         <KpiCard label="Pending Approval" value={kpis.pendingCount} sub="awaiting finance sign-off" icon={Clock} color="bg-slate-100 text-slate-500" />
-        <KpiCard label="Cash Position" value={formatCurrency(kpis.cashTotal)} sub="across all accounts" icon={Wallet} color="bg-blue-50 text-blue-500" />
+        <KpiCard label="Vendor Advances" value={formatCurrency(kpis.advancesTotal)} sub={`${openAdvances.length} open · paid, goods not in`} icon={HandCoins} color="bg-amber-50 text-amber-600" />
         <KpiCard label="Paid This Week" value={formatCurrency(kpis.paidThisWeek)} sub="confirmed against bank statement" icon={CheckCircle2} color="bg-emerald-50 text-emerald-500" />
       </div>
+
+      {/* Cash board — replaces the old 34-row table; only funded accounts show */}
+      <CashTicker positions={cashPositions} loading={loadingCash} />
+
+      {/* Vendor advances — the biggest exposure on the page, up top */}
+      {openAdvances.length > 0 && (
+        <AdvancesHero advances={openAdvances} canAct={canAct} onClose={handleCloseAdvance} closingId={closingAdvanceId} />
+      )}
 
       {/* ── 1. To-Pay Queue (headline) ───────────────────────────────── */}
       <Section title="To-Pay Queue" sub="Finance-approved, awaiting payment. Pick the tunnel by method: a bank method (transfer/CPO/cheque/cash) settles by matching a bank line; choosing VRF hands it to the VRF badge holder to pay from a settled fund.">
@@ -340,7 +514,7 @@ export default function PaymentsDashboardPage() {
                     )}
                     <th className="px-4 py-2">Vendor</th>
                     <th className="px-4 py-2">Project / Cost Group</th>
-                    <th className="px-4 py-2 text-right">Amount</th>
+                    <th className="px-4 py-2 text-right">Net payable</th>
                     <th className="px-4 py-2 text-center">WHT</th>
                     <th className="px-4 py-2 text-right">Age</th>
                     <th className="px-4 py-2"></th>
@@ -369,8 +543,13 @@ export default function PaymentsDashboardPage() {
                       <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
                         {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">
-                        {formatCurrency(r.amount_etb ?? 0)}
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</div>
+                        {(r.wht_amount ?? 0) > 0 && (
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
+                            gross <span className="line-through">{formatCurrency(r.amount_etb ?? 0)}</span> · WHT −{formatCurrency(r.wht_amount ?? 0)}
+                          </div>
+                        )}
                         {canAct && (
                           <button onClick={() => setSplitting(r)} className="block ml-auto text-[10px] font-medium text-brand hover:underline">
                             pay part
@@ -426,7 +605,12 @@ export default function PaymentsDashboardPage() {
                   <Link to={`/expenses/${r.id}`} className="min-w-0 flex-1 py-2 pr-2">
                     <div className="flex items-start justify-between gap-2">
                       <span className="font-medium text-slate-800 dark:text-slate-100 truncate">{r.vendor_name ?? r.item_service_description ?? r.expense_code}</span>
-                      <span className="flex-shrink-0 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
+                      <span className="flex-shrink-0 text-right">
+                        <span className="block font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</span>
+                        {(r.wht_amount ?? 0) > 0 && (
+                          <span className="block text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">net · gross {formatCurrency(r.amount_etb ?? 0)}</span>
+                        )}
+                      </span>
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span className="truncate">{r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}</span>
@@ -455,44 +639,7 @@ export default function PaymentsDashboardPage() {
         )}
       </Section>
 
-      {/* ── 1b. Open Vendor Advances — money already sent, goods not yet
-          received. Not a silent gap; the exposure finance needs to chase. ── */}
-      {openAdvances.length > 0 && (
-        <Section title="Open Vendor Advances" sub="Paid before delivery — close once a GRN confirms the goods arrived">
-          <div className="divide-y dark:divide-slate-700">
-            {openAdvances.map(a => {
-              const aging = a.days_open != null && a.days_open >= 14
-              return (
-                <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <Link to={`/expenses/${a.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
-                      {a.vendor_name ?? a.item_service_description ?? a.expense_code}
-                    </Link>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span>{a.bundle_code ?? '—'}</span>
-                      <span className={aging ? 'font-medium text-red-600 dark:text-red-400' : ''}>
-                        {a.days_open != null ? `${Math.floor(a.days_open)}d open` : '—'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(a.amount_etb ?? 0)}</span>
-                    {canAct && (
-                      <button
-                        onClick={() => handleCloseAdvance(a.id)}
-                        disabled={closingAdvanceId === a.id}
-                        className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        <CheckCircle2 className="h-3 w-3" /> {closingAdvanceId === a.id ? 'Closing…' : 'Close'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Section>
-      )}
+      {/* Open Vendor Advances now render as the hero band near the top. */}
 
       {/* ── 1c. Withholding receipts to prepare ────────────────────── */}
       {whtToPrepare.length > 0 && (
@@ -633,37 +780,9 @@ export default function PaymentsDashboardPage() {
         )}
       </Section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* ── 3. Cash Position ─────────────────────────────────────── */}
-        <Section title="Cash Position" sub="Bank statement balance per account — credits minus debits, read-only">
-          {loadingCash ? (
-            <Empty>Loading…</Empty>
-          ) : cashPositions.length === 0 ? (
-            <Empty>No accounts with statement activity yet.</Empty>
-          ) : (
-            <div className="divide-y dark:divide-slate-700">
-              {cashPositions.map(a => (
-                <div key={a.account_id} className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Landmark className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{a.account_name}</span>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className={`font-bold tabular-nums ${a.cash_position < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
-                      {formatCurrency(a.cash_position)}
-                    </p>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">
-                      +{formatCurrency(a.total_credits)} / −{formatCurrency(a.total_debits)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
-
-        {/* ── 4. Recent Payments ───────────────────────────────────── */}
-        <Section title="This Week's Payments" sub="Sent or paid in the last 7 days">
+      <div>
+        {/* ── Recent Payments (cash position now lives in the top board) ── */}
+        <Section title="This Week's Payments" sub="Sent this week. A bank payment is confirmed only when it matches an imported statement line — cash and VRF are the two exceptions.">
           {loadingRecent ? (
             <Empty>Loading…</Empty>
           ) : recentPayments.length === 0 ? (
@@ -701,12 +820,14 @@ export default function PaymentsDashboardPage() {
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.amount_etb ?? 0)}</span>
                       <StatusBadge status={r.payment_state} />
+                      {/* Bank statement match is the confirmation for bank
+                          methods — the primary action, filled and prominent. */}
                       {canAct && r.payment_state === 'sent' && r.payment_method === 'transfer' && !r.transfer_id && (
                         <button
                           onClick={() => setMatching(r)}
-                          className="rounded-md border px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                          className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-700"
                         >
-                          Match to Bank Line
+                          <Landmark className="h-3 w-3" /> Match to bank line
                         </button>
                       )}
                       {/* A sent VRF payment is paid by the VRF Manager, who draws it from
