@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useMySiteForemanProjects, useMyStaffId } from '@/hooks/useMyStaff'
 import { useStaffDirectory } from '@/hooks/useLookups'
@@ -8,15 +8,16 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatCurrency } from '@/lib/utils'
 import type { WoAttendanceLog } from '@/types/database'
 import { YesterdayNudge } from './YesterdayNudge'
-import { ClipboardCheck, Plus, Trash2, HardHat, Ruler } from 'lucide-react'
+import { ClipboardCheck, Plus, Trash2, HardHat, Ruler, Users } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
 type CrewMember = { staff_id: string; role_on_wo: string | null; employee_name: string; employment_type: string | null }
 type WoWithCrew = { id: string; scope_of_work: string; work_type: string; crew: CrewMember[] }
-type VolumeInfo = { unitRate: number; unit: string; paymentModel: string }
+type VolumeInfo = { unitRate: number; unit: string; paymentModel: string; requisitionId: string; roleNeeded: string | null }
+const isGangLeaderRole = (role: string | null) => !!role && /gang.?leader/i.test(role)
 
-function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, onChanged }: {
+function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, gangSize, onChanged }: {
   workOrderId: string
   staffId: string
   employeeName: string
@@ -25,6 +26,7 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
   date: string
   myStaffId: string
   volumeInfo: VolumeInfo | null
+  gangSize?: number
   onChanged: () => void
 }) {
   const { toast } = useToast()
@@ -75,7 +77,9 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
           {isVolume && (
             <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <Ruler className="h-3 w-3" />
-              {volumeInfo!.paymentModel === 'gang_leader' ? 'Gang leader · paid by volume, via vendor' : `Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
+              {gangSize
+                ? `Gang total for ${gangSize} workers · paid by volume, via vendor`
+                : volumeInfo!.paymentModel === 'gang_leader' ? 'Gang leader · paid by volume, via vendor' : `Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
               {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
             </span>
           )}
@@ -162,7 +166,7 @@ export default function LogAttendancePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_allocations')
-        .select('staff_id, labor_requisitions:labor_requisition_id(payment_basis, unit_rate, volume_unit, payment_model)')
+        .select('staff_id, labor_requisition_id, labor_requisitions:labor_requisition_id(payment_basis, unit_rate, volume_unit, payment_model, role_needed)')
         .eq('project_id', projectId!)
         .eq('status', 'active')
       if (error) throw error
@@ -176,12 +180,20 @@ export default function LogAttendancePage() {
     const map = new Map<string, VolumeInfo>()
     for (const row of rawAllocations) {
       const req = row.labor_requisitions
-      if (req?.payment_basis === 'per_volume' && req.unit_rate != null) {
-        map.set(row.staff_id, { unitRate: req.unit_rate, unit: req.volume_unit ?? 'unit', paymentModel: req.payment_model })
+      if (req?.payment_basis === 'per_volume' && req.unit_rate != null && row.labor_requisition_id) {
+        map.set(row.staff_id, {
+          unitRate: req.unit_rate, unit: req.volume_unit ?? 'unit', paymentModel: req.payment_model,
+          requisitionId: row.labor_requisition_id, roleNeeded: req.role_needed ?? null,
+        })
       }
     }
     return map
   }, [rawAllocations])
+
+  // Per-requisition-group choice: log each gang member's own volume, or
+  // one shared total for the whole gang (paid to the gang leader/vendor
+  // regardless — this just controls how it's entered).
+  const [groupMode, setGroupMode] = useState<Record<string, 'individual' | 'gang'>>({})
 
   const { data: dayRows = [], refetch } = useQuery({
     queryKey: ['wo-attendance-day', projectId, date],
@@ -268,20 +280,112 @@ export default function LogAttendancePage() {
                   <p className="px-4 py-4 text-sm text-slate-400">No crew assigned to this work order yet.</p>
                 ) : (
                   <div className="divide-y dark:divide-slate-700">
-                    {wo.crew.map(c => (
-                      <CrewLogRow
-                        key={`${wo.id}:${c.staff_id}`}
-                        workOrderId={wo.id}
-                        staffId={c.staff_id}
-                        employeeName={c.employee_name}
-                        employmentType={c.employment_type}
-                        existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
-                        date={date}
-                        myStaffId={myStaffId ?? ''}
-                        volumeInfo={volumeInfoByStaff.get(c.staff_id) ?? null}
-                        onChanged={refreshAll}
-                      />
-                    ))}
+                    {(() => {
+                      const volumeGroups = new Map<string, CrewMember[]>()
+                      const soloRows: CrewMember[] = []
+                      for (const c of wo.crew) {
+                        const vi = volumeInfoByStaff.get(c.staff_id)
+                        if (!vi) { soloRows.push(c); continue }
+                        const arr = volumeGroups.get(vi.requisitionId) ?? []
+                        arr.push(c)
+                        volumeGroups.set(vi.requisitionId, arr)
+                      }
+                      const rendered: ReactNode[] = soloRows.map(c => (
+                        <CrewLogRow
+                          key={`${wo.id}:${c.staff_id}`}
+                          workOrderId={wo.id}
+                          staffId={c.staff_id}
+                          employeeName={c.employee_name}
+                          employmentType={c.employment_type}
+                          existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
+                          date={date}
+                          myStaffId={myStaffId ?? ''}
+                          volumeInfo={null}
+                          onChanged={refreshAll}
+                        />
+                      ))
+                      for (const [reqId, members] of volumeGroups) {
+                        const vi = volumeInfoByStaff.get(members[0].staff_id)!
+                        if (members.length === 1) {
+                          const c = members[0]
+                          rendered.push(
+                            <CrewLogRow
+                              key={`${wo.id}:${c.staff_id}`}
+                              workOrderId={wo.id}
+                              staffId={c.staff_id}
+                              employeeName={c.employee_name}
+                              employmentType={c.employment_type}
+                              existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
+                              date={date}
+                              myStaffId={myStaffId ?? ''}
+                              volumeInfo={vi}
+                              onChanged={refreshAll}
+                            />,
+                          )
+                          continue
+                        }
+                        const groupKey = `${wo.id}:${reqId}`
+                        const mode = groupMode[groupKey] ?? 'individual'
+                        const anchor = members.find(m => isGangLeaderRole(m.role_on_wo)) ?? members[0]
+                        rendered.push(
+                          <div key={groupKey} className="flex items-center justify-between gap-2 bg-slate-50 px-4 py-1.5 dark:bg-slate-900/40">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                              <Users className="h-3 w-3" /> {vi.roleNeeded ?? 'Gang'} · {members.length} workers
+                            </span>
+                            <div className="flex overflow-hidden rounded-md border text-[11px] dark:border-slate-600">
+                              <button
+                                onClick={() => setGroupMode(m => ({ ...m, [groupKey]: 'individual' }))}
+                                className={`px-2 py-1 ${mode === 'individual' ? 'bg-brand text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                              >Per worker</button>
+                              <button
+                                onClick={() => setGroupMode(m => ({ ...m, [groupKey]: 'gang' }))}
+                                className={`px-2 py-1 ${mode === 'gang' ? 'bg-brand text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                              >Gang total</button>
+                            </div>
+                          </div>,
+                        )
+                        if (mode === 'individual') {
+                          for (const c of members) {
+                            rendered.push(
+                              <CrewLogRow
+                                key={`${wo.id}:${c.staff_id}`}
+                                workOrderId={wo.id}
+                                staffId={c.staff_id}
+                                employeeName={c.employee_name}
+                                employmentType={c.employment_type}
+                                existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
+                                date={date}
+                                myStaffId={myStaffId ?? ''}
+                                volumeInfo={volumeInfoByStaff.get(c.staff_id) ?? null}
+                                onChanged={refreshAll}
+                              />,
+                            )
+                          }
+                        } else {
+                          rendered.push(
+                            <CrewLogRow
+                              key={`${wo.id}:${anchor.staff_id}:gang`}
+                              workOrderId={wo.id}
+                              staffId={anchor.staff_id}
+                              employeeName={`Gang total (via ${anchor.employee_name})`}
+                              employmentType={anchor.employment_type}
+                              existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === anchor.staff_id)}
+                              date={date}
+                              myStaffId={myStaffId ?? ''}
+                              volumeInfo={vi}
+                              gangSize={members.length}
+                              onChanged={refreshAll}
+                            />,
+                          )
+                          rendered.push(
+                            <p key={`${wo.id}:${reqId}:list`} className="px-4 pb-2 text-[11px] text-slate-400">
+                              Gang: {members.map(m => m.employee_name).join(', ')}
+                            </p>,
+                          )
+                        }
+                      }
+                      return rendered
+                    })()}
                   </div>
                 )}
               </div>
