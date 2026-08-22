@@ -1022,9 +1022,13 @@ export interface BankStatementLine {
   // Statement line amount minus matched expense amount. Negative = the
   // line only partly offsets the expense, positive = it exceeds it.
   variance_amount: number | null
+  // Set when a non-sale incoming credit is classified and booked to the
+  // ledger (migration 233): owner_injection / loan_received /
+  // vendor_refund / inter_account_transfer / other_income.
+  credit_classification: string | null
   created_at: string
 }
-export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'matched_sale_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount'>
+export type BankStatementLineInsert = Omit<BankStatementLine, 'id' | 'created_at' | 'matched_expense_id' | 'matched_sale_id' | 'transfer_id' | 'match_status' | 'matched_expense_amount' | 'variance_amount' | 'credit_classification'>
 
 // ── Sourcing Bundles ─────────────────────────────────────────────
 export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'ordered' | 'fulfilled' | 'cancelled'
@@ -1420,6 +1424,43 @@ export interface AccountCashPositionRow {
   total_credits: number
   total_debits: number
   cash_position: number
+}
+
+// Every sent bank-method payment still awaiting a matched statement
+// line, at any age (migration 232) — the confirmation surface that
+// isn't time-boxed to the last 7 days.
+export interface AwaitingBankConfirmationRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  vendor_id: string | null
+  vendor_name: string | null
+  amount_etb: number | null
+  net_payable: number | null
+  payment_method: ExpensePaymentMethod | null
+  account_id: string | null
+  account_name: string | null
+  payment_state_changed_at: string | null
+  days_waiting: number | null
+  batch_payment_id: string | null
+}
+
+// Per-account statement reconciliation state (migration 232) — feeds
+// the cash board's expandable insight.
+export interface AccountStatementSummaryRow {
+  account_id: string
+  last_import_at: string | null
+  committed_lines: number
+  unmatched_lines: number
+  matched_lines: number
+}
+
+// The minimal shape MatchTransferModal needs — satisfied by both a
+// recent payment and an awaiting-confirmation row.
+export interface MatchableRow {
+  id: string
+  amount_etb: number | null
+  batch_payment_id: string | null
 }
 
 export interface RecentPaymentRow {
