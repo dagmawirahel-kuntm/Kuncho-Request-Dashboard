@@ -12,12 +12,13 @@ import { FileUpload } from '@/components/shared/FileUpload'
 import { useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId, useMySiteForemanProjects } from '@/hooks/useMyStaff'
 import { useTradeRoster, useAllRolling } from '@/hooks/useTier2Workers'
+import { RosterRequestPickerModal } from '@/components/shared/RosterRequestPickerModal'
 import {
   useWorkOrderTeam, useWorkOrderRatings, useUpsertWorkOrderRating, useDeleteWorkOrderRating,
   type WorkOrderRatingRow,
 } from '@/hooks/useWorkOrderRatings'
 import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, WoProgressUpdate, SiteMaterialReceipt } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus, UserPlus2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus, UserPlus2, Send } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
@@ -669,6 +670,7 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
   const { data: mySelf } = useMyStaffId()
   const canManage = useCanWriteWoOps(projectId, canWrite)
   const [showAdd, setShowAdd] = useState(false)
+  const [showRosterPicker, setShowRosterPicker] = useState(false)
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null)
   const [roleOnWo, setRoleOnWo] = useState('')
   const [saving, setSaving] = useState(false)
@@ -743,12 +745,25 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
 
   return (
     <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
+      {showRosterPicker && (
+        <RosterRequestPickerModal
+          projectId={projectId} workOrderId={workOrderId}
+          excludeStaffIds={alreadyOnCrew}
+          onClose={() => setShowRosterPicker(false)}
+        />
+      )}
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Users className="h-4 w-4" /> Crew ({crew.length})</h2>
         {canManage && (
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowRosterPicker(true)}
+              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              <Send className="h-3.5 w-3.5" /> Request from Roster
+            </button>
             <Link to={`/labor-requisitions/new?project_id=${projectId}&work_order_id=${workOrderId}`} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <UserPlus2 className="h-3.5 w-3.5" /> Request Labor
+              <UserPlus2 className="h-3.5 w-3.5" /> Request New/Casual Labor
             </Link>
             <button
               onClick={() => {

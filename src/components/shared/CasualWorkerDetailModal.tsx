@@ -92,18 +92,37 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
               (data?.allocations.length ?? 0) === 0 ? <p className="text-sm text-slate-400">No project assignments yet.</p> :
               <div className="space-y-2">
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {(data?.allocations ?? []).map((a: any) => (
-                  <div key={a.id} className="rounded-lg border dark:border-slate-700 p-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-700 dark:text-slate-200">{a.projects?.project_name ?? '—'}</span>
-                      <span className="text-xs text-slate-400 capitalize">{a.status}</span>
+                {(data?.allocations ?? []).map((a: any) => {
+                  const overstayed = a.status === 'active' && a.labor_requisitions?.end_date
+                    && new Date(a.labor_requisitions.end_date) < new Date()
+                    && (!a.end_date || new Date(a.end_date) > new Date(a.labor_requisitions.end_date))
+                  return (
+                    <div key={a.id} className="rounded-lg border dark:border-slate-700 p-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-700 dark:text-slate-200">{a.projects?.project_name ?? '—'}</span>
+                        <span className="text-xs text-slate-400 capitalize">{a.status}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {formatDate(a.start_date)} → {a.end_date ? formatDate(a.end_date) : 'open'}
+                        {a.day_rate_snapshot ? ` · ${formatCurrency(a.day_rate_snapshot)}/day` : ''}
+                      </div>
+                      <div className="text-[11px] mt-1">
+                        {a.labor_requisitions?.id ? (
+                          <Link to={`/labor-requisitions/${a.labor_requisitions.id}`} className="text-brand hover:underline">
+                            Hired via requisition — {a.labor_requisitions.role_needed}
+                          </Link>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400">No requisition on record (pre-dates traceability)</span>
+                        )}
+                        {overstayed && (
+                          <span className="ml-2 rounded-full bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 text-red-600 dark:text-red-400 font-medium">
+                            Past requisition window
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      {formatDate(a.start_date)} → {a.end_date ? formatDate(a.end_date) : 'open'}
-                      {a.day_rate_snapshot ? ` · ${formatCurrency(a.day_rate_snapshot)}/day` : ''}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
