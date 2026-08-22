@@ -1,119 +1,16 @@
--- Site foremen log Tier 2 attendance through wo_attendance_log
--- (LogAttendancePage.tsx), which only ever accepted hours. A gang hired
--- under a `per_volume` labor_requisition (paid unit_rate × volume, often
--- routed to the gang leader as a vendor via payment_model='gang_leader')
--- had no way to log what they produced — the input was hours-only, and
--- the only place that already understood volume (TimesheetFormPage, at
--- /timesheet/new) is admin/HR/finance/exec-only, not reachable by a site
--- foreman doing daily attendance.
---
--- This adds volume_completed to wo_attendance_log alongside hours_logged
--- (exactly one of the two set, per row) and threads it through the sync
--- trigger into `timesheet.volume_completed`, the column the existing
--- per_volume rollup branch already reads.
---
--- Two more things needed fixing for that rollup to actually work once
--- fed real data:
---
--- 1. The per_volume branch still required
---    check_in_time/check_out_time IS NOT NULL on the `timesheet` row.
---    That gate matches the truly-legacy clock-in/out flow, but neither
---    entry point that's actually live today (this sync, or
---    TimesheetFormPage's volumetric form) reliably sets those — the
---    per_day branch already works around the same gap via the
---    timesheet_attendance union, but per_volume has no such fallback.
---    Confirmed live: with the gate in place, a synced per_volume day
---    would sit un-rollable forever. Dropped for the per_volume branch
---    only; per_day is untouched.
---
--- 2. rollup_labor_timesheets_to_expense's restoration in migration 214
---    (fixing the wrong-column INSERT) dropped the vendor_id/
---    paid_to_staff_id assignment migration 189 had — a real regression:
---    every gang_leader-model rollup since then created an expense with
---    no vendor_id, so the money was never routed to the gang leader.
---    Restored here.
+-- Migration 234's rewrite of rollup_labor_timesheets_to_expense() based
+-- its body on the pre-221 text and reintroduced the exact bug 221 had
+-- already fixed: `DELETE FROM _rollup_workers;` with no WHERE clause.
+-- The `authenticator` role this RPC runs under preloads `safeupdate`,
+-- which rejects any DELETE/UPDATE with no WHERE clause — including
+-- inside a PL/pgSQL function body run via SPI — so every rollup call
+-- (and now every volume-based "gang total" attendance save that leads
+-- to one) failed immediately with "DELETE requires a WHERE clause".
+-- `WHERE true` satisfies the syntactic check without changing behavior.
+-- No other change from migration 234's version.
 
 SET search_path TO public;
 
--- ── 1. wo_attendance_log: volume alongside hours ─────────────────────
-ALTER TABLE wo_attendance_log
-  ADD COLUMN IF NOT EXISTS volume_completed numeric(12,2);
-
-ALTER TABLE wo_attendance_log ALTER COLUMN hours_logged DROP NOT NULL;
-
-ALTER TABLE wo_attendance_log DROP CONSTRAINT IF EXISTS wo_attendance_hours_or_volume_chk;
-ALTER TABLE wo_attendance_log ADD CONSTRAINT wo_attendance_hours_or_volume_chk CHECK (
-  (is_unallocated = true
-    AND hours_logged IS NOT NULL AND hours_logged > 0 AND hours_logged <= 16
-    AND volume_completed IS NULL)
-  OR
-  (is_unallocated = false AND (
-    (hours_logged IS NOT NULL AND hours_logged > 0 AND hours_logged <= 16 AND volume_completed IS NULL)
-    OR
-    (volume_completed IS NOT NULL AND volume_completed > 0 AND hours_logged IS NULL)
-  ))
-);
-
-COMMENT ON COLUMN wo_attendance_log.volume_completed IS
-  'Piece-work day: units produced (m³, m², pcs…) for a crew member on a per_volume labor_requisition. Mutually exclusive with hours_logged.';
-
--- ── 2. sync_wo_attendance_before: carry volume into timesheet ────────
-CREATE OR REPLACE FUNCTION public.sync_wo_attendance_before()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $fn$
-DECLARE
-  v_emp_type text;
-  v_alloc    labor_allocations%ROWTYPE;
-  v_req      labor_requisitions%ROWTYPE;
-  v_day_rate numeric;
-  v_days     numeric;
-  v_tier     int;
-  v_ts_id    uuid;
-  v_note     text;
-BEGIN
-  SELECT employment_type INTO v_emp_type FROM staff WHERE id = NEW.staff_id;
-  v_tier := CASE WHEN v_emp_type = 'tier_2_casual' THEN 2 ELSE 1 END;
-
-  SELECT * INTO v_alloc FROM labor_allocations
-   WHERE staff_id = NEW.staff_id AND project_id = NEW.project_id AND status = 'active'
-   ORDER BY start_date DESC LIMIT 1;
-
-  IF v_alloc.labor_requisition_id IS NOT NULL THEN
-    SELECT * INTO v_req FROM labor_requisitions WHERE id = v_alloc.labor_requisition_id;
-  END IF;
-
-  v_day_rate := CASE WHEN v_req.payment_basis = 'per_volume' THEN v_req.unit_rate
-                     ELSE COALESCE(v_alloc.day_rate_snapshot, (SELECT day_rate FROM staff WHERE id = NEW.staff_id)) END;
-  v_days := CASE WHEN NEW.hours_logged IS NOT NULL THEN NEW.hours_logged / 8.0 ELSE NULL END;
-  v_note := CASE WHEN NEW.is_unallocated THEN 'Unallocated time' || COALESCE(' — ' || NEW.notes, '') ELSE NEW.notes END;
-
-  IF TG_OP = 'INSERT' THEN
-    INSERT INTO timesheet
-      (staff_id, project_id, date, labor_tier, labor_allocation_id, labor_requisition_id, day_rate, days_worked, volume_completed, notes)
-    VALUES
-      (NEW.staff_id, NEW.project_id, NEW.log_date, v_tier, v_alloc.id, v_alloc.labor_requisition_id, v_day_rate, v_days, NEW.volume_completed, v_note)
-    RETURNING id INTO v_ts_id;
-    NEW.synced_timesheet_id := v_ts_id;
-  ELSIF TG_OP = 'UPDATE' AND NEW.synced_timesheet_id IS NOT NULL THEN
-    IF EXISTS (SELECT 1 FROM timesheet WHERE id = NEW.synced_timesheet_id AND rolled_up_expense_id IS NOT NULL)
-       OR EXISTS (
-         SELECT 1 FROM timesheet_attendance
-         WHERE staff_id = NEW.staff_id AND project_id = NEW.project_id AND work_date = NEW.log_date
-           AND rolled_up_expense_id IS NOT NULL
-       )
-    THEN
-      RAISE EXCEPTION 'This attendance entry has already been rolled up into a paid labor expense and can no longer be edited';
-    END IF;
-    UPDATE timesheet SET
-      staff_id = NEW.staff_id, project_id = NEW.project_id, date = NEW.log_date,
-      labor_tier = v_tier, labor_allocation_id = v_alloc.id, labor_requisition_id = v_alloc.labor_requisition_id,
-      day_rate = v_day_rate, days_worked = v_days, volume_completed = NEW.volume_completed, notes = v_note, updated_at = now()
-    WHERE id = NEW.synced_timesheet_id;
-  END IF;
-
-  RETURN NEW;
-END $fn$;
-
--- ── 3. rollup_labor_timesheets_to_expense: drop dead gate, restore vendor routing ──
 CREATE OR REPLACE FUNCTION public.rollup_labor_timesheets_to_expense(p_labor_requisition_id uuid, p_period_start date, p_period_end date)
 RETURNS uuid LANGUAGE plpgsql SET search_path = 'public' AS $function$
 DECLARE
@@ -141,11 +38,6 @@ BEGIN
   DELETE FROM _rollup_workers WHERE true;
 
   IF v_req.payment_basis = 'per_volume' THEN
-    -- Piece-work: pay unit_rate × sum(volume_completed) per worker. No
-    -- check_in/check_out gate here — neither live entry path (the WO
-    -- attendance sync, or TimesheetFormPage's volumetric form) reliably
-    -- sets those, and unlike per_day there's no timesheet_attendance
-    -- fallback to catch what the gate excludes.
     INSERT INTO _rollup_workers (staff_id, days_worked, day_rate, subtotal)
     SELECT
       ts.staff_id,
@@ -163,8 +55,6 @@ BEGIN
     GROUP BY ts.staff_id
     HAVING SUM(COALESCE(ts.volume_completed, 0)) > 0;
   ELSE
-    -- per_day. Union: timesheet rows + attendance rows (days_worked=1 per row).
-    -- Both sources feed the same temp table; aggregate to one row per staff.
     INSERT INTO _rollup_workers (staff_id, days_worked, day_rate, subtotal)
     SELECT
       combined.staff_id,
@@ -236,10 +126,6 @@ BEGIN
   INSERT INTO labor_expense_workers (expense_id, staff_id, days_worked, day_rate, subtotal)
   SELECT v_expense_id, w.staff_id, w.days_worked, w.day_rate, w.subtotal FROM _rollup_workers w;
 
-  -- Mark exactly the rows that fed the total above as rolled up — matching
-  -- each branch's own filter, not just staff_id, so an incomplete row for
-  -- the same worker/period (e.g. per_day without a check-out) that wasn't
-  -- actually counted doesn't get silently marked paid alongside it.
   IF v_req.payment_basis = 'per_volume' THEN
     UPDATE timesheet SET rolled_up_expense_id = v_expense_id
      WHERE labor_requisition_id = p_labor_requisition_id
