@@ -17,7 +17,7 @@ type WoWithCrew = { id: string; scope_of_work: string; work_type: string; crew: 
 type VolumeInfo = { unitRate: number; unit: string; paymentModel: string; requisitionId: string; roleNeeded: string | null }
 const isGangLeaderRole = (role: string | null) => !!role && /gang.?leader/i.test(role)
 
-function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, gangSize, gangMemberNames, onChanged }: {
+function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, onChanged }: {
   workOrderId: string
   staffId: string
   employeeName: string
@@ -26,8 +26,6 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
   date: string
   myStaffId: string
   volumeInfo: VolumeInfo | null
-  gangSize?: number
-  gangMemberNames?: string[]
   onChanged: () => void
 }) {
   const { toast } = useToast()
@@ -39,15 +37,11 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
     const val = parseFloat(value)
     if (!val || val <= 0) return
     const prev = isVolume ? existing?.volume_completed : existing?.hours_logged
-    if (existing && val === prev && (existing.gang_size ?? null) === (gangSize ?? null)) return
+    if (existing && val === prev) return
     setSaving(true)
     const payload = isVolume
-      ? {
-          volume_completed: val, hours_logged: null,
-          gang_size: gangSize ?? null,
-          notes: gangSize && gangMemberNames ? `Gang: ${gangMemberNames.join(', ')}` : null,
-        }
-      : { hours_logged: val, volume_completed: null, gang_size: null }
+      ? { volume_completed: val, hours_logged: null, gang_size: null, gang_member_staff_ids: null, notes: null }
+      : { hours_logged: val, volume_completed: null, gang_size: null, gang_member_staff_ids: null }
     const op = existing
       ? supabase.from('wo_attendance_log').update(payload).eq('id', existing.id)
       : supabase.from('wo_attendance_log').insert([{
@@ -84,9 +78,7 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
           {isVolume && (
             <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <Ruler className="h-3 w-3" />
-              {gangSize
-                ? `Gang total for ${gangSize} workers · paid by volume, via vendor`
-                : volumeInfo!.paymentModel === 'gang_leader' ? 'Gang leader · paid by volume, via vendor' : `Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
+              {`Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
               {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
             </span>
           )}
@@ -106,6 +98,123 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
         {existing && (
           <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
         )}
+      </div>
+    </div>
+  )
+}
+
+// A gang_leader-model volume day: one shared total, paid to the
+// requisition's vendor regardless of which staff row anchors it — but
+// WHO was actually part of the gang that day has to be picked
+// explicitly, not assumed to be the whole active roster. Real case that
+// exposed the gap: volume logged only against Besufekad on a 5-person
+// Ceramic Workers gang, with zero record of who else was there.
+function GangTotalRow({ workOrderId, members, anchor, existing, date, myStaffId, volumeInfo, onChanged }: {
+  workOrderId: string
+  members: CrewMember[]
+  anchor: CrewMember
+  existing: WoAttendanceLog | undefined
+  date: string
+  myStaffId: string
+  volumeInfo: VolumeInfo
+  onChanged: () => void
+}) {
+  const { toast } = useToast()
+  const [value, setValue] = useState(String(existing?.volume_completed ?? ''))
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    if (existing?.gang_member_staff_ids?.length) return new Set(existing.gang_member_staff_ids)
+    return new Set(members.map(m => m.staff_id))
+  })
+  const [saving, setSaving] = useState(false)
+
+  async function saveWith(rawVal: string, ids: string[]) {
+    const val = parseFloat(rawVal)
+    if (!val || val <= 0) return
+    if (ids.length === 0) { toast('Select at least one worker for the gang', 'error'); return }
+    setSaving(true)
+    const names = members.filter(m => ids.includes(m.staff_id)).map(m => m.employee_name)
+    const payload = {
+      volume_completed: val, hours_logged: null,
+      gang_size: ids.length, gang_member_staff_ids: ids,
+      notes: `Gang: ${names.join(', ')}`,
+    }
+    const op = existing
+      ? supabase.from('wo_attendance_log').update(payload).eq('id', existing.id)
+      : supabase.from('wo_attendance_log').insert([{
+          work_order_id: workOrderId, staff_id: anchor.staff_id, log_date: date,
+          is_unallocated: false, ...payload, logged_by_staff_id: myStaffId,
+        }])
+    const { error } = await op
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    onChanged()
+  }
+
+  function toggleMember(staffId: string) {
+    setSelected(s => {
+      const o = new Set(s)
+      if (o.has(staffId)) o.delete(staffId); else o.add(staffId)
+      if (value && parseFloat(value) > 0) saveWith(value, Array.from(o))
+      return o
+    })
+  }
+
+  async function remove() {
+    if (!existing) return
+    setSaving(true)
+    const { error } = await supabase.from('wo_attendance_log').delete().eq('id', existing.id)
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    onChanged()
+  }
+
+  const parsedVal = parseFloat(value)
+  const preview = parsedVal > 0 ? parsedVal * volumeInfo.unitRate : null
+
+  return (
+    <div className="px-4 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm text-slate-700 dark:text-slate-200">Gang total <span className="text-xs text-slate-400">· via {anchor.employee_name}</span></p>
+          <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+            <Ruler className="h-3 w-3" />
+            {selected.size} of {members.length} working today · paid by volume, via vendor
+            {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number" step="0.01" min="0"
+            className="w-20 rounded-md border px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+            value={value}
+            disabled={saving}
+            placeholder="0.00"
+            onChange={e => setValue(e.target.value)}
+            onBlur={() => saveWith(value, Array.from(selected))}
+          />
+          <span className="text-xs text-slate-400">{volumeInfo.unit}</span>
+          {existing && (
+            <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <span className="self-center text-[10px] text-slate-400 mr-0.5">Who was working:</span>
+        {members.map(m => (
+          <button
+            key={m.staff_id}
+            type="button"
+            onClick={() => toggleMember(m.staff_id)}
+            disabled={saving}
+            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+              selected.has(m.staff_id)
+                ? 'border-brand bg-brand text-white'
+                : 'border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            {m.employee_name}
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -196,11 +305,6 @@ export default function LogAttendancePage() {
     }
     return map
   }, [rawAllocations])
-
-  // Per-requisition-group choice: log each gang member's own volume, or
-  // one shared total for the whole gang (paid to the gang leader/vendor
-  // regardless — this just controls how it's entered).
-  const [groupMode, setGroupMode] = useState<Record<string, 'individual' | 'gang'>>({})
 
   const { data: dayRows = [], refetch } = useQuery({
     queryKey: ['wo-attendance-day', projectId, date],
@@ -332,33 +436,15 @@ export default function LogAttendancePage() {
                           continue
                         }
                         const groupKey = `${wo.id}:${reqId}`
-                        const anchor = members.find(m => isGangLeaderRole(m.role_on_wo)) ?? members[0]
-                        // Default to whatever was actually saved (gang_size > 1
-                        // on the anchor's row means it was logged as a gang
-                        // total), not blindly to "Per worker" every reload —
-                        // otherwise a foreman revisiting a prior day would see
-                        // the other 4 gang members as if they never showed up.
-                        const anchorRow = allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === anchor.staff_id)
-                        const inferredMode: 'individual' | 'gang' = (anchorRow?.gang_size ?? 0) > 1 ? 'gang' : 'individual'
-                        const mode = groupMode[groupKey] ?? inferredMode
-                        rendered.push(
-                          <div key={groupKey} className="flex items-center justify-between gap-2 bg-slate-50 px-4 py-1.5 dark:bg-slate-900/40">
-                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                              <Users className="h-3 w-3" /> {vi.roleNeeded ?? 'Gang'} · {members.length} workers
-                            </span>
-                            <div className="flex overflow-hidden rounded-md border text-[11px] dark:border-slate-600">
-                              <button
-                                onClick={() => setGroupMode(m => ({ ...m, [groupKey]: 'individual' }))}
-                                className={`px-2 py-1 ${mode === 'individual' ? 'bg-brand text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                              >Per worker</button>
-                              <button
-                                onClick={() => setGroupMode(m => ({ ...m, [groupKey]: 'gang' }))}
-                                className={`px-2 py-1 ${mode === 'gang' ? 'bg-brand text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                              >Gang total</button>
-                            </div>
-                          </div>,
-                        )
-                        if (mode === 'individual') {
+                        if (vi.paymentModel !== 'gang_leader') {
+                          // Individual model: each person is paid their own
+                          // volume, so there's no "gang" to select — every
+                          // member always gets their own row.
+                          rendered.push(
+                            <div key={`${groupKey}:hdr`} className="flex items-center gap-1 bg-slate-50 px-4 py-1.5 text-[11px] text-slate-400 dark:bg-slate-900/40">
+                              <Users className="h-3 w-3" /> {vi.roleNeeded ?? 'Piece-work'} · {members.length} workers, paid individually
+                            </div>,
+                          )
                           for (const c of members) {
                             rendered.push(
                               <CrewLogRow
@@ -375,29 +461,31 @@ export default function LogAttendancePage() {
                               />,
                             )
                           }
-                        } else {
-                          rendered.push(
-                            <CrewLogRow
-                              key={`${wo.id}:${anchor.staff_id}:gang`}
-                              workOrderId={wo.id}
-                              staffId={anchor.staff_id}
-                              employeeName={`Gang total (via ${anchor.employee_name})`}
-                              employmentType={anchor.employment_type}
-                              existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === anchor.staff_id)}
-                              date={date}
-                              myStaffId={myStaffId ?? ''}
-                              volumeInfo={vi}
-                              gangSize={members.length}
-                              gangMemberNames={members.map(m => m.employee_name)}
-                              onChanged={refreshAll}
-                            />,
-                          )
-                          rendered.push(
-                            <p key={`${wo.id}:${reqId}:list`} className="px-4 pb-2 text-[11px] text-slate-400">
-                              Gang: {members.map(m => m.employee_name).join(', ')}
-                            </p>,
-                          )
+                          continue
                         }
+                        // gang_leader model: one shared total, paid to the
+                        // requisition's vendor no matter who anchors it — but
+                        // who was actually part of the gang today is picked
+                        // explicitly inside GangTotalRow, not assumed.
+                        const anchor = members.find(m => isGangLeaderRole(m.role_on_wo)) ?? members[0]
+                        rendered.push(
+                          <div key={`${groupKey}:hdr`} className="flex items-center gap-1 bg-slate-50 px-4 py-1.5 text-[11px] text-slate-400 dark:bg-slate-900/40">
+                            <Users className="h-3 w-3" /> {vi.roleNeeded ?? 'Gang'} · {members.length} on the roster
+                          </div>,
+                        )
+                        rendered.push(
+                          <GangTotalRow
+                            key={groupKey}
+                            workOrderId={wo.id}
+                            members={members}
+                            anchor={anchor}
+                            existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === anchor.staff_id)}
+                            date={date}
+                            myStaffId={myStaffId ?? ''}
+                            volumeInfo={vi}
+                            onChanged={refreshAll}
+                          />,
+                        )
                       }
                       return rendered
                     })()}

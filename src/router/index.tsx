@@ -96,6 +96,7 @@ import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
 import SalesReceiptFormPage from '@/pages/tax-receipts/SalesReceiptFormPage'
 import BatchPaymentsPage from '@/pages/batch-payments/BatchPaymentsPage'
 import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
+import BatchPaymentDetailPage from '@/pages/batch-payments/BatchPaymentDetailPage'
 import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
 import CpoBondFormPage from '@/pages/cpo-bonds/CpoBondFormPage'
 import ProductsPage from '@/pages/products/ProductsPage'
@@ -327,6 +328,7 @@ export const router = createBrowserRouter([
               { path: 'tax-summary', element: <TaxSummaryPage /> },
               { path: 'tax-management', element: <TaxManagementPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
+              { path: 'batch-payments/:id', element: <BatchPaymentDetailPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },

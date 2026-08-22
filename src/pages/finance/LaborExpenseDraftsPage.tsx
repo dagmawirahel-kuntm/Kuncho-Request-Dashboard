@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { HardHat, RefreshCw, ChevronRight, Play, Coins } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { HardHat, RefreshCw, ChevronRight, Play, Coins, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 
 interface RollupPreview {
   worker_count: number
@@ -50,6 +51,10 @@ interface RequisitionRow {
 export default function LaborExpenseDraftsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { session } = useAuth()
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batching, setBatching] = useState(false)
 
   const { data: drafts = [], isLoading } = useQuery({
     queryKey: ['labor-expense-drafts'],
@@ -92,6 +97,34 @@ export default function LaborExpenseDraftsPage() {
     toast(`Rollup complete → expense ${String(data).slice(0, 8)}`, 'success')
     qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
     qc.invalidateQueries({ queryKey: ['labor-rollup-preview', requisitionId] })
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds(s => { const o = new Set(s); if (o.has(id)) o.delete(id); else o.add(id); return o })
+  }
+
+  const selectedDrafts = useMemo(() => drafts.filter(d => selectedIds.has(d.id)), [drafts, selectedIds])
+  const selectedTotal = useMemo(() => selectedDrafts.reduce((sum, d) => sum + (d.amount_etb ?? 0), 0), [selectedDrafts])
+
+  async function createBatch() {
+    if (selectedDrafts.length === 0 || !session?.user.id) return
+    setBatching(true)
+    const projectNames = Array.from(new Set(selectedDrafts.map(d => d.projects?.project_name).filter(Boolean)))
+    const dates = selectedDrafts.map(d => d.rollup_period_end ?? d.date).filter(Boolean) as string[]
+    const scope = projectNames.length === 1 ? projectNames[0] : `${projectNames.length} projects`
+    const paymentCode = `Labor Batch — ${scope} — ${formatDate(dates.sort()[dates.length - 1] ?? new Date().toISOString())}`
+    const { data, error } = await supabase.rpc('create_batch_payment', {
+      p_expense_ids: Array.from(selectedIds),
+      p_assignee_id: session.user.id,
+      p_payment_code: paymentCode,
+      p_notes: null,
+    })
+    setBatching(false)
+    if (error) { toast(error.message, 'error'); return }
+    setSelectedIds(new Set())
+    qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
+    toast('Batch payment created', 'success')
+    navigate(`/batch-payments/${data}`)
   }
 
   const draftsByReq = useMemo(() => {
@@ -143,10 +176,32 @@ export default function LaborExpenseDraftsPage() {
         )}
       </div>
 
+      {/* Batch payment bar — combine several approved drafts (e.g. every
+          trade on one work order) into a single Payment Request. */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-10 flex items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-2 text-sm">
+            <Layers className="h-4 w-4 text-brand" />
+            <span className="font-medium text-slate-700 dark:text-slate-200">{selectedIds.size} draft{selectedIds.size === 1 ? '' : 's'} selected</span>
+            <span className="text-slate-400">· {formatCurrency(selectedTotal)} total</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-500 hover:underline">Clear</button>
+            <button
+              onClick={createBatch}
+              disabled={batching}
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60"
+            >
+              {batching ? 'Creating…' : 'Create Batch Payment'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Drafts list */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
         <div className="px-4 py-3 border-b dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Generated drafts ({drafts.length})
+          Generated drafts ({drafts.length}) <span className="font-normal text-slate-400">— select multiple approved drafts to combine into one Payment Request</span>
         </div>
         {isLoading ? (
           <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
@@ -160,7 +215,7 @@ export default function LaborExpenseDraftsPage() {
                   Requisition <span className="font-mono">{reqId.slice(0, 8)}</span> · {rows[0].projects?.project_name ?? '—'} · {rows.length} draft{rows.length === 1 ? '' : 's'}
                 </div>
                 {rows.map(d => (
-                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} />
+                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} />
                 ))}
               </div>
             ))}
@@ -222,8 +277,11 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
   )
 }
 
-function DraftRow({ draft, expanded, onToggle }: { draft: DraftRow; expanded: boolean; onToggle: () => void }) {
+function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
+  draft: DraftRow; expanded: boolean; onToggle: () => void; selected: boolean; onToggleSelect: () => void
+}) {
   const isVolume = draft.labor_requisitions?.payment_basis === 'per_volume'
+  const batchable = draft.payment_state === 'approved_to_pay'
   const unitLabel = isVolume ? (draft.labor_requisitions?.volume_unit ?? 'units') : 'days'
 
   const { data: workers = [] } = useQuery({
@@ -248,6 +306,13 @@ function DraftRow({ draft, expanded, onToggle }: { draft: DraftRow; expanded: bo
   return (
     <div>
       <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40 text-left">
+        {batchable ? (
+          <input
+            type="checkbox" checked={selected} onChange={onToggleSelect} onClick={e => e.stopPropagation()}
+            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+            title="Include in a batch payment"
+          />
+        ) : <span className="w-4" />}
         <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
         <div className="min-w-0 flex-1">
           <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{draft.item_service_description ?? '—'}</p>
