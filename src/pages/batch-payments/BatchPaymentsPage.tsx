@@ -35,7 +35,9 @@ export default function BatchPaymentsPage() {
   }
 
   const columns: ColumnDef<BatchPayment>[] = useMemo(() => [
-    { accessorKey: 'payment_code', header: 'Payment Code', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'payment_code', header: 'Payment Code', cell: ({ row, getValue }) => (
+      <Link to={`/batch-payments/${row.original.id}`} className="text-brand hover:underline">{(getValue() as string) ?? row.original.id.slice(0, 8)}</Link>
+    ) },
     { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => <span className="text-slate-400 truncate block max-w-sm">{(getValue() as string) ?? '—'}</span> },
     { accessorKey: 'created_at', header: 'Created', cell: ({ getValue }) => formatDate(getValue() as string) },
     { id: 'assignee_name', header: 'Assignee', cell: ({ row }) => (row.original as any).user_profiles?.full_name ?? '—' },

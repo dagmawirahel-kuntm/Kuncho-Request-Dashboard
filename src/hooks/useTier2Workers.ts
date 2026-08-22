@@ -107,7 +107,7 @@ export function useWorkerHistory(staffId: string | undefined) {
     queryFn: async () => {
       const [allocations, individual, gang, badges] = await Promise.all([
         supabase.from('labor_allocations')
-          .select('id, project_id, start_date, end_date, day_rate_snapshot, status, projects(project_name)')
+          .select('id, project_id, start_date, end_date, day_rate_snapshot, status, projects(project_name), labor_requisition_id, labor_requisitions(id, role_needed, end_date)')
           .eq('staff_id', staffId!).order('start_date', { ascending: false }),
         supabase.from('expenses')
           .select('id, amount_etb, date, project_id, payment_state, approval_status, projects(project_name)')

@@ -14,7 +14,7 @@ import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { ScheduleSection } from '@/components/projects/ScheduleSection'
 import { BoqSection } from '@/components/projects/BoqSection'
 import { resolveHint } from '@/lib/trainerHints'
-import { useStaff } from '@/hooks/useLookups'
+import { useStaff, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
 import type {
   Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
@@ -71,11 +71,19 @@ function LaborAllocationsSection({ projectId, canManage }: { projectId: string; 
   const { profile } = useAuth()
   const qc = useQueryClient()
   const { data: staff = [] } = useStaff()
+  // Tier 2 casuals are excluded below — this section is deliberately
+  // gate-free for Tier 1 ("as fast as a verbal assignment"), but that
+  // same lack of a gate let a Tier 2 hire slip in with no labor
+  // requisition behind it at all, untraceable to any HR approval. Tier
+  // 2 always goes through the requisition path (the "Request it" link
+  // below, or the roster picker on a work order) instead.
+  const { data: staffDirectory = [] } = useStaffDirectory()
+  const tier2Ids = useMemo(() => new Set(staffDirectory.filter((s: any) => s.employment_type === 'tier_2_casual').map((s: any) => s.id)), [staffDirectory])
   const [showAdd, setShowAdd] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<Partial<LaborAllocationInsert>>({ status: 'active' })
 
-  const staffOptions = staff.map((s: any) => ({ id: s.id, label: s.employee_name }))
+  const staffOptions = staff.filter((s: any) => !tier2Ids.has(s.id)).map((s: any) => ({ id: s.id, label: s.employee_name }))
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['project-labor-allocations', projectId],
@@ -134,7 +142,7 @@ function LaborAllocationsSection({ projectId, canManage }: { projectId: string; 
           {canManage && (
             <Link to={`/labor-requisitions/new?project_id=${projectId}`}
               className="text-xs text-slate-400 hover:text-brand transition-colors">
-              Need new/casual labor? Request it →
+              Need Tier 2 casual labor? Request it →
             </Link>
           )}
           {canManage && (

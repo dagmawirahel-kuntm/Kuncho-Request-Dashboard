@@ -10,6 +10,8 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 interface Props {
   worker: { id: string; employee_name: string; role?: string | null; day_rate?: number | null }
   onClose: () => void
+  workOrderId?: string
+  defaultProjectId?: string
 }
 
 // Roster-driven labor request: a PM picks a specific person off the roster
@@ -17,12 +19,15 @@ interface Props {
 // specific_staff_id — on HR approval the trigger auto-creates a planned
 // labor_allocation for that person on that project, so the timesheet →
 // rollup → payment pipeline picks them up without any extra manual step.
-export function RequestWorkerForProjectModal({ worker, onClose }: Props) {
+// When opened from a work order (workOrderId set), the requisition also
+// carries work_order_id so the same approval trigger (218's auto-crew)
+// lands them straight on that work order's crew, not just the project.
+export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, defaultProjectId }: Props) {
   const { toast } = useToast()
   const { user } = useAuth()
   const qc = useQueryClient()
   const { data: projects = [] } = useProjects()
-  const [projectId, setProjectId] = useState<string | null>(null)
+  const [projectId, setProjectId] = useState<string | null>(defaultProjectId ?? null)
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [endDate, setEndDate]     = useState<string>('')
   const [days, setDays]           = useState<string>('7')
@@ -41,6 +46,7 @@ export function RequestWorkerForProjectModal({ worker, onClose }: Props) {
     setSaving(true)
     const payload = {
       project_id: projectId,
+      work_order_id: workOrderId ?? null,
       specific_staff_id: worker.id,
       role_needed: worker.role ?? 'Worker',
       headcount: 1,
@@ -79,7 +85,13 @@ export function RequestWorkerForProjectModal({ worker, onClose }: Props) {
 
         <div>
           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Project *</label>
-          <SearchableSelect value={projectId} onChange={setProjectId} options={projectOptions} placeholder="Select project…" />
+          {workOrderId ? (
+            <p className="mt-1 rounded-md border bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 dark:border-slate-600">
+              {projectOptions.find(p => p.id === projectId)?.label ?? 'This work order\'s project'}
+            </p>
+          ) : (
+            <SearchableSelect value={projectId} onChange={setProjectId} options={projectOptions} placeholder="Select project…" />
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-2">
