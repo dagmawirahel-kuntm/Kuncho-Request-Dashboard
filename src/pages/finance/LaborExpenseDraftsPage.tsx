@@ -29,6 +29,7 @@ interface DraftRow {
   vendors: { vendor_name: string } | null
   paid_to_staff_id: string | null
   paid_to_staff: { employee_name: string } | null
+  labor_requisitions: { payment_basis: string; volume_unit: string | null } | null
 }
 
 interface RequisitionRow {
@@ -55,7 +56,7 @@ export default function LaborExpenseDraftsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, amount_etb, date, item_service_description, approval_status, payment_state, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end, project_id, projects(project_name), vendor_id, vendors(vendor_name), paid_to_staff_id, paid_to_staff:staff!expenses_paid_to_staff_id_fkey(employee_name)')
+        .select('id, amount_etb, date, item_service_description, approval_status, payment_state, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end, project_id, projects(project_name), vendor_id, vendors(vendor_name), paid_to_staff_id, paid_to_staff:staff!expenses_paid_to_staff_id_fkey(employee_name), labor_requisitions:rolled_up_from_requisition_id(payment_basis, volume_unit)')
         .not('rolled_up_from_requisition_id', 'is', null)
         .order('date', { ascending: false })
       if (error) throw error
@@ -222,18 +223,27 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
 }
 
 function DraftRow({ draft, expanded, onToggle }: { draft: DraftRow; expanded: boolean; onToggle: () => void }) {
+  const isVolume = draft.labor_requisitions?.payment_basis === 'per_volume'
+  const unitLabel = isVolume ? (draft.labor_requisitions?.volume_unit ?? 'units') : 'days'
+
   const { data: workers = [] } = useQuery({
     queryKey: ['labor-expense-workers', draft.id],
     enabled: expanded,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_expense_workers')
-        .select('id, staff_id, days_worked, day_rate, subtotal, staff(employee_name)')
+        .select('id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, staff(employee_name)')
         .eq('expense_id', draft.id)
       if (error) throw error
       return data ?? []
     },
   })
+
+  const totalHeadcount = useMemo(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    () => (workers as any[]).reduce((sum, w) => sum + Math.max(w.gang_size ?? 1, 1), 0),
+    [workers],
+  )
 
   return (
     <div>
@@ -262,7 +272,7 @@ function DraftRow({ draft, expanded, onToggle }: { draft: DraftRow; expanded: bo
               <thead className="bg-slate-50 dark:bg-slate-900/40">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-slate-500">Worker</th>
-                  <th className="text-right px-3 py-2 font-medium text-slate-500">Days</th>
+                  <th className="text-right px-3 py-2 font-medium text-slate-500 capitalize">{unitLabel}</th>
                   <th className="text-right px-3 py-2 font-medium text-slate-500">Rate</th>
                   <th className="text-right px-3 py-2 font-medium text-slate-500">Subtotal</th>
                 </tr>
@@ -271,7 +281,19 @@ function DraftRow({ draft, expanded, onToggle }: { draft: DraftRow; expanded: bo
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {(workers as any[]).map(w => (
                   <tr key={w.id}>
-                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{w.staff?.employee_name ?? '—'}</td>
+                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                      {w.staff?.employee_name ?? '—'}
+                      {w.gang_size > 1 && (
+                        <>
+                          <span className="ml-1.5 rounded-full bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                            Gang of {w.gang_size}
+                          </span>
+                          {w.gang_member_names && (
+                            <p className="mt-0.5 text-[10px] font-normal text-slate-400">{w.gang_member_names}</p>
+                          )}
+                        </>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{w.days_worked}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(w.day_rate)}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatCurrency(w.subtotal)}</td>
@@ -281,7 +303,7 @@ function DraftRow({ draft, expanded, onToggle }: { draft: DraftRow; expanded: bo
             </table>
           </div>
           <p className="text-[10px] text-slate-400 mt-2">
-            Timesheets covered by this draft have <span className="font-mono">rolled_up_expense_id = {draft.id.slice(0, 8)}</span> and won't roll up again.
+            {totalHeadcount} worker{totalHeadcount === 1 ? '' : 's'} covered · Timesheets covered by this draft have <span className="font-mono">rolled_up_expense_id = {draft.id.slice(0, 8)}</span> and won't roll up again.
           </p>
         </div>
       )}

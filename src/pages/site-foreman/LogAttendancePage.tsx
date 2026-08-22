@@ -17,7 +17,7 @@ type WoWithCrew = { id: string; scope_of_work: string; work_type: string; crew: 
 type VolumeInfo = { unitRate: number; unit: string; paymentModel: string; requisitionId: string; roleNeeded: string | null }
 const isGangLeaderRole = (role: string | null) => !!role && /gang.?leader/i.test(role)
 
-function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, gangSize, onChanged }: {
+function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, gangSize, gangMemberNames, onChanged }: {
   workOrderId: string
   staffId: string
   employeeName: string
@@ -27,6 +27,7 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
   myStaffId: string
   volumeInfo: VolumeInfo | null
   gangSize?: number
+  gangMemberNames?: string[]
   onChanged: () => void
 }) {
   const { toast } = useToast()
@@ -38,9 +39,15 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
     const val = parseFloat(value)
     if (!val || val <= 0) return
     const prev = isVolume ? existing?.volume_completed : existing?.hours_logged
-    if (existing && val === prev) return
+    if (existing && val === prev && (existing.gang_size ?? null) === (gangSize ?? null)) return
     setSaving(true)
-    const payload = isVolume ? { volume_completed: val, hours_logged: null } : { hours_logged: val, volume_completed: null }
+    const payload = isVolume
+      ? {
+          volume_completed: val, hours_logged: null,
+          gang_size: gangSize ?? null,
+          notes: gangSize && gangMemberNames ? `Gang: ${gangMemberNames.join(', ')}` : null,
+        }
+      : { hours_logged: val, volume_completed: null, gang_size: null }
     const op = existing
       ? supabase.from('wo_attendance_log').update(payload).eq('id', existing.id)
       : supabase.from('wo_attendance_log').insert([{
@@ -325,8 +332,15 @@ export default function LogAttendancePage() {
                           continue
                         }
                         const groupKey = `${wo.id}:${reqId}`
-                        const mode = groupMode[groupKey] ?? 'individual'
                         const anchor = members.find(m => isGangLeaderRole(m.role_on_wo)) ?? members[0]
+                        // Default to whatever was actually saved (gang_size > 1
+                        // on the anchor's row means it was logged as a gang
+                        // total), not blindly to "Per worker" every reload —
+                        // otherwise a foreman revisiting a prior day would see
+                        // the other 4 gang members as if they never showed up.
+                        const anchorRow = allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === anchor.staff_id)
+                        const inferredMode: 'individual' | 'gang' = (anchorRow?.gang_size ?? 0) > 1 ? 'gang' : 'individual'
+                        const mode = groupMode[groupKey] ?? inferredMode
                         rendered.push(
                           <div key={groupKey} className="flex items-center justify-between gap-2 bg-slate-50 px-4 py-1.5 dark:bg-slate-900/40">
                             <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
@@ -374,6 +388,7 @@ export default function LogAttendancePage() {
                               myStaffId={myStaffId ?? ''}
                               volumeInfo={vi}
                               gangSize={members.length}
+                              gangMemberNames={members.map(m => m.employee_name)}
                               onChanged={refreshAll}
                             />,
                           )

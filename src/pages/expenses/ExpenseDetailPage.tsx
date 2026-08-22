@@ -46,9 +46,15 @@ type ExpenseWithJoins = Expense & {
 
 // ── Print invoice component ───────────────────────────────────────────────────
 
-type LaborWorkerRow = { staff_id: string; employee_name: string; days_worked: number | null; day_rate: number | null; subtotal: number | null }
+type LaborWorkerRow = {
+  staff_id: string; employee_name: string; days_worked: number | null; day_rate: number | null; subtotal: number | null
+  gang_size: number | null; gang_member_names: string | null
+}
+type LaborRequisitionInfo = { role_needed: string; payment_basis: string; volume_unit: string | null } | null
 
-function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: ExpenseWithJoins; laborWorkers: LaborWorkerRow[]; paidToStaffName: string | null }) {
+function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo }: {
+  expense: ExpenseWithJoins; laborWorkers: LaborWorkerRow[]; paidToStaffName: string | null; requisitionInfo: LaborRequisitionInfo
+}) {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
   const vendorName = expense.vendors?.vendor_name ?? expense.vendors_name
   const vendorBank = expense.vendors?.bank_account ?? expense.vendors_bank_account
@@ -57,6 +63,17 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
   const categoryName = expense.categories?.category_name
   const managerName = (expense as any).manager_profile?.full_name ?? null
   const financeName = (expense as any).finance_profile?.full_name ?? null
+  const isVolume = requisitionInfo?.payment_basis === 'per_volume'
+  const unitLabel = isVolume ? (requisitionInfo?.volume_unit ?? 'units') : 'days'
+  const totalHeadcount = laborWorkers.reduce((sum, w) => sum + Math.max(w.gang_size ?? 1, 1), 0)
+  const hasPeriod = !!(expense.rollup_period_start && expense.rollup_period_end)
+
+  const metaFields: { label: string; value: string | null | undefined; mono?: boolean }[] = [
+    { label: 'Invoice Number', value: expense.expense_code ?? '—', mono: true },
+    { label: 'Date', value: expense.date ? formatDate(expense.date) : today },
+    { label: 'Type', value: TYPE_THEME[expense.expense_type ?? 'general']?.label },
+    ...(hasPeriod ? [{ label: 'Period Covered', value: `${formatDate(expense.rollup_period_start!)} → ${formatDate(expense.rollup_period_end!)}` }] : []),
+  ]
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a', maxWidth: '750px', margin: '0 auto', padding: '24px' }}>
@@ -86,12 +103,8 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
       </div>
 
       {/* Meta strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-        {[
-          { label: 'Invoice Number', value: expense.expense_code ?? '—', mono: true },
-          { label: 'Date', value: expense.date ? formatDate(expense.date) : today },
-          { label: 'Type', value: TYPE_THEME[expense.expense_type ?? 'general']?.label },
-        ].map(f => (
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${metaFields.length}, 1fr)`, gap: '10px', marginBottom: '20px' }}>
+        {metaFields.map(f => (
           <div key={f.label} style={{ background: '#f4f6f8', borderRadius: '5px', padding: '10px 12px' }}>
             <p style={{ margin: 0, fontSize: '9px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{f.label}</p>
             <p style={{ margin: '3px 0 0', fontWeight: 700, fontSize: '12px', ...(f.mono ? { fontFamily: 'monospace', color: '#1B3A5C' } : {}) }}>{f.value}</p>
@@ -125,13 +138,13 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
       {!vendorName && laborWorkers.length > 0 && (
         <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
           <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-            Labor Payment — Worker Breakdown
+            Labor Payment — Worker Breakdown{requisitionInfo?.role_needed ? ` (${requisitionInfo.role_needed})` : ''} · {totalHeadcount} worker{totalHeadcount === 1 ? '' : 's'}
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
             <thead>
               <tr style={{ background: '#f4f6f8' }}>
                 <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888' }}>Worker</th>
-                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '60px' }}>Days</th>
+                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '70px' }}>{unitLabel}</th>
                 <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '90px' }}>Rate</th>
                 <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '100px' }}>Subtotal</th>
               </tr>
@@ -139,7 +152,19 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName }: { expense: Exp
             <tbody>
               {laborWorkers.map(w => (
                 <tr key={w.staff_id} style={{ borderTop: '1px solid #e4e8ee' }}>
-                  <td style={{ padding: '6px 12px' }}>{w.employee_name}</td>
+                  <td style={{ padding: '6px 12px' }}>
+                    {w.employee_name}
+                    {(w.gang_size ?? 1) > 1 && (
+                      <>
+                        <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '9px', background: '#fffbeb', color: '#92400e', fontSize: '9px', fontWeight: 700 }}>
+                          Gang of {w.gang_size}
+                        </span>
+                        {w.gang_member_names && (
+                          <div style={{ marginTop: '2px', fontSize: '9px', color: '#999' }}>{w.gang_member_names}</div>
+                        )}
+                      </>
+                    )}
+                  </td>
                   <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.days_worked ?? '—'}</td>
                   <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.day_rate != null ? formatCurrency(w.day_rate) : '—'}</td>
                   <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600 }}>{w.subtotal != null ? formatCurrency(w.subtotal) : '—'}</td>
@@ -285,7 +310,7 @@ export default function ExpenseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_expense_workers')
-        .select('staff_id, days_worked, day_rate, subtotal')
+        .select('staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names')
         .eq('expense_id', id!)
       if (error) throw error
       return data ?? []
@@ -296,6 +321,20 @@ export default function ExpenseDetailPage() {
     ...w, employee_name: staffNameById.get(w.staff_id) ?? 'Unknown staff',
   })), [rawLaborWorkers, staffNameById])
   const paidToStaffName = expense?.paid_to_staff_id ? (staffNameById.get(expense.paid_to_staff_id) ?? null) : null
+
+  const { data: requisitionInfo = null } = useQuery({
+    queryKey: ['expense-labor-requisition', expense?.rolled_up_from_requisition_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_requisitions')
+        .select('role_needed, payment_basis, volume_unit')
+        .eq('id', expense!.rolled_up_from_requisition_id!)
+        .single()
+      if (error) throw error
+      return data
+    },
+    enabled: !!expense?.rolled_up_from_requisition_id,
+  })
 
   // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
   // (polymorphic — no real FK), so it can't ride along on the join above.
@@ -401,7 +440,7 @@ export default function ExpenseDetailPage() {
     <>
       {/* Print-only invoice */}
       <div className="hidden print:block">
-        <PrintInvoice expense={expense} laborWorkers={laborWorkers} paidToStaffName={paidToStaffName} />
+        <PrintInvoice expense={expense} laborWorkers={laborWorkers} paidToStaffName={paidToStaffName} requisitionInfo={requisitionInfo} />
       </div>
 
       {/* Screen view */}
