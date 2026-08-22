@@ -19,12 +19,14 @@ const DAY_MS = 86400000
 
 // Track (translucent) + fill (solid) per status, so progress reads as "how
 // much of the colored bar is filled" instead of a muddy dark overlay.
-const STATUS_STYLE: Record<ScheduleTaskStatus, { track: string; fill: string; label: string }> = {
-  not_started: { track: 'bg-slate-300/50 dark:bg-slate-600/50', fill: 'bg-slate-400 dark:bg-slate-500', label: 'Not started' },
-  in_progress: { track: 'bg-blue-500/25', fill: 'bg-blue-500', label: 'In progress' },
-  completed: { track: 'bg-green-500/25', fill: 'bg-green-500', label: 'Completed' },
-  blocked: { track: 'bg-red-500/25', fill: 'bg-red-500', label: 'Blocked' },
-  on_hold: { track: 'bg-amber-400/25', fill: 'bg-amber-400', label: 'On hold' },
+// `onFill` is the % label color to use when the fill has grown far enough
+// right to sit underneath the label.
+const STATUS_STYLE: Record<ScheduleTaskStatus, { track: string; fill: string; onFill: string; label: string }> = {
+  not_started: { track: 'bg-slate-200 dark:bg-slate-700', fill: 'bg-slate-400 dark:bg-slate-500', onFill: 'text-white', label: 'Not started' },
+  in_progress: { track: 'bg-blue-500/20', fill: 'bg-blue-500', onFill: 'text-white', label: 'In progress' },
+  completed: { track: 'bg-green-500/20', fill: 'bg-green-600', onFill: 'text-white', label: 'Completed' },
+  blocked: { track: 'bg-red-500/20', fill: 'bg-red-500', onFill: 'text-white', label: 'Blocked' },
+  on_hold: { track: 'bg-amber-400/25', fill: 'bg-amber-400', onFill: 'text-amber-950', label: 'On hold' },
 }
 
 type GanttTask = ScheduleTask & { depth: number }
@@ -145,8 +147,10 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
       </div>
 
       {/* Chart scroll area */}
+      {/* Sizes to its content and only scrolls past the cap — a fixed 100%
+          height left a mostly-empty box under the rows in the pop-up. */}
       <div ref={scrollRef} className="overflow-auto border rounded-md dark:border-slate-700 bg-white dark:bg-slate-800"
-        style={{ maxHeight, height: fullscreen ? '100%' : undefined }}>
+        style={{ maxHeight }}>
         <div style={{ width: LABEL_W + chartW, minWidth: '100%' }}>
           {/* HEADER (sticky top) */}
           <div className="flex sticky top-0 z-20" style={{ height: HEADER_H }}>
@@ -154,7 +158,7 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
               style={{ width: LABEL_W }}>
               <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Task</span>
             </div>
-            <div className="relative shrink-0 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700" style={{ width: chartW, height: HEADER_H }}>
+            <div className="relative flex-1 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700" style={{ minWidth: chartW, height: HEADER_H }}>
               {/* Month row */}
               {monthMarks.map(m => (
                 <div key={m.x} className="absolute top-0 h-1/2 flex items-center border-l dark:border-slate-700 pl-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap"
@@ -197,7 +201,7 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
             </div>
 
             {/* Timeline body */}
-            <div className="relative shrink-0" style={{ width: chartW, height: bodyH }}>
+            <div className="relative flex-1" style={{ minWidth: chartW, height: bodyH }}>
               {/* Weekend shading + week gridlines */}
               {days.map(d => (
                 <div key={d.i} className="absolute top-0 bottom-0" style={{ left: d.i * pxPerDay, width: pxPerDay }}>
@@ -247,7 +251,9 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
               {/* Bars */}
               {tasks.map((t, i) => {
                 const rowTop = i * ROW_H
-                const barTop = rowTop + 6
+                // Relative to the per-row wrapper below (which is already at
+                // `top: rowTop`) — adding rowTop here too would offset twice.
+                const barTop = 6
                 const isSummary = childParentIds.has(t.id)
                 const slip = daysSlipped(t)
                 const overdue = t.current_end_date < todayStr && t.status !== 'completed'
@@ -260,6 +266,11 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
                 const bLeft = hasBaseline ? dayOffset(t.planned_start_date!) * pxPerDay : 0
                 const bWidth = hasBaseline ? Math.max(4, (dayOffset(t.planned_end_date!) - dayOffset(t.planned_start_date!) + 1) * pxPerDay) : 0
 
+                // The % label is right-aligned inside the bar; once the fill
+                // reaches that zone it needs the on-fill color instead.
+                const LABEL_ZONE = 30
+                const labelOnFill = (t.progress_pct / 100) * width > width - LABEL_ZONE
+
                 const tip = `${t.title} — ${formatDateGC(t.current_start_date)} to ${formatDateGC(t.current_end_date)}`
                   + `${slip != null && slip !== 0 ? ` (${slip > 0 ? '+' : ''}${slip}d vs plan)` : ''}`
                   + ` — ${t.progress_pct}% ${t.progress_source === 'derived' ? '(from work orders)' : '(manual)'}`
@@ -271,8 +282,14 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
                       <button onClick={() => onEditTask(t)} title={tip}
                         className="absolute cursor-pointer group" style={{ left, width, top: barTop + 3, height: BAR_H - 6 }}>
                         <div className="absolute inset-0 rounded-sm bg-slate-700 dark:bg-slate-300 group-hover:brightness-110" />
-                        <div className="absolute -bottom-1 left-0 w-2 h-2 bg-slate-700 dark:bg-slate-300" style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }} />
-                        <div className="absolute -bottom-1 right-0 w-2 h-2 bg-slate-700 dark:bg-slate-300" style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
+                        {/* End caps need room — on a short phase bar the two 8px
+                            triangles would meet and read as a blob. */}
+                        {width >= 24 && (
+                          <>
+                            <div className="absolute -bottom-1 left-0 w-2 h-2 bg-slate-700 dark:bg-slate-300" style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }} />
+                            <div className="absolute -bottom-1 right-0 w-2 h-2 bg-slate-700 dark:bg-slate-300" style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }} />
+                          </>
+                        )}
                       </button>
                     </div>
                   )
@@ -280,18 +297,22 @@ export function ScheduleGanttChart({ tasks, onEditTask, fullscreen = false }: Pr
 
                 return (
                   <div key={t.id} className="absolute" style={{ top: rowTop, height: ROW_H, left: 0, right: 0 }}>
-                    {/* Baseline ghost (thin, under the main bar) */}
+                    {/* Baseline ghost: a flat rule under the bar. A 3px box with a
+                        dashed border on all four sides just renders as a smear, so
+                        this dashes only the top edge. */}
                     {hasBaseline && (
-                      <div className="absolute rounded-sm border border-dashed border-slate-400/70 dark:border-slate-500/70"
-                        style={{ left: bLeft, width: bWidth, top: barTop + BAR_H + 1, height: 3 }} title="Baseline (planned)" />
+                      <div className="absolute border-t-2 border-dashed border-slate-400/80 dark:border-slate-500/80"
+                        style={{ left: bLeft, width: bWidth, top: barTop + BAR_H + 3, height: 0 }} title="Baseline (planned)" />
                     )}
                     {/* Main bar: translucent track + solid progress fill */}
                     <button onClick={() => onEditTask(t)} title={tip}
-                      className={`absolute rounded-md cursor-pointer overflow-hidden ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm hover:brightness-105 ${st.track} ${overdue ? 'outline outline-2 outline-offset-1 outline-amber-500' : ''}`}
+                      className={`absolute rounded-md cursor-pointer overflow-hidden shadow-sm hover:brightness-105 ${st.track} ${overdue ? 'ring-2 ring-amber-500' : 'ring-1 ring-inset ring-black/10 dark:ring-white/15'}`}
                       style={{ left, width, top: barTop, height: BAR_H }}>
                       <span className={`absolute inset-y-0 left-0 ${st.fill}`} style={{ width: `${t.progress_pct}%` }} />
                       {width > 34 && (
-                        <span className="absolute inset-0 flex items-center justify-end pr-1 text-[10px] font-medium text-slate-700 dark:text-slate-100 mix-blend-luminosity">
+                        <span className={`absolute inset-0 flex items-center justify-end pr-1.5 text-[10px] font-semibold tabular-nums ${
+                          labelOnFill ? st.onFill : 'text-slate-700 dark:text-slate-200'
+                        }`}>
                           {t.progress_pct}%
                         </span>
                       )}
