@@ -1,10 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { HardHat, RefreshCw, ChevronRight, Play } from 'lucide-react'
+import { HardHat, RefreshCw, ChevronRight, Play, Coins } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
+
+interface RollupPreview {
+  worker_count: number
+  total_units: number
+  unit_label: string
+  total_amount: number
+}
 
 interface DraftRow {
   id: string
@@ -83,6 +90,7 @@ export default function LaborExpenseDraftsPage() {
     if (error) { toast(error.message, 'error'); return }
     toast(`Rollup complete → expense ${String(data).slice(0, 8)}`, 'success')
     qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
+    qc.invalidateQueries({ queryKey: ['labor-rollup-preview', requisitionId] })
   }
 
   const draftsByReq = useMemo(() => {
@@ -169,6 +177,21 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
   const [from, setFrom] = useState(defaultFrom)
   const [to, setTo]     = useState(defaultTo)
   const [busy, setBusy] = useState(false)
+
+  const { data: preview, isFetching: previewLoading } = useQuery({
+    queryKey: ['labor-rollup-preview', req.id, from, to],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('preview_labor_rollup', {
+        p_labor_requisition_id: req.id, p_period_start: from, p_period_end: to,
+      })
+      if (error) throw error
+      return (data?.[0] ?? null) as RollupPreview | null
+    },
+    enabled: !!from && !!to,
+  })
+
+  const owes = (preview?.total_amount ?? 0) > 0
+
   return (
     <div className="py-3 flex items-center gap-3 flex-wrap">
       <div className="min-w-0 flex-1">
@@ -179,10 +202,18 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
       </div>
       <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="text-xs rounded border dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 px-2 py-1" />
       <input type="date" value={to}   onChange={e => setTo(e.target.value)}   className="text-xs rounded border dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 px-2 py-1" />
+      <div className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium tabular-nums ${
+        previewLoading ? 'text-slate-400' : owes ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300' : 'text-slate-400'
+      }`}>
+        <Coins className="h-3 w-3" />
+        {previewLoading ? 'Checking…' : owes
+          ? <>Owes {formatCurrency(preview!.total_amount)} <span className="font-normal text-[10px] opacity-80">· {preview!.worker_count} worker{preview!.worker_count === 1 ? '' : 's'} · {preview!.total_units} {preview!.unit_label}</span></>
+          : 'Nothing owed in this window'}
+      </div>
       <button
         onClick={async () => { setBusy(true); try { await onRun(req.id, from, to) } finally { setBusy(false) } }}
-        disabled={busy}
-        className="flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60"
+        disabled={busy || previewLoading || !owes}
+        className="flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-40"
       >
         <Play className="h-3 w-3" /> {busy ? 'Rolling…' : 'Roll up'}
       </button>
