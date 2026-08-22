@@ -2346,7 +2346,8 @@ export interface WoAttendanceLog {
   project_id: string
   staff_id: string
   log_date: string
-  hours_logged: number
+  hours_logged: number | null
+  volume_completed: number | null
   is_unallocated: boolean
   notes: string | null
   logged_by_staff_id: string

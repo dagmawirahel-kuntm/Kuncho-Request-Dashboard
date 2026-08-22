@@ -5,16 +5,18 @@ import { useMySiteForemanProjects, useMyStaffId } from '@/hooks/useMyStaff'
 import { useStaffDirectory } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { formatCurrency } from '@/lib/utils'
 import type { WoAttendanceLog } from '@/types/database'
 import { YesterdayNudge } from './YesterdayNudge'
-import { ClipboardCheck, Plus, Trash2, HardHat } from 'lucide-react'
+import { ClipboardCheck, Plus, Trash2, HardHat, Ruler } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
 type CrewMember = { staff_id: string; role_on_wo: string | null; employee_name: string; employment_type: string | null }
 type WoWithCrew = { id: string; scope_of_work: string; work_type: string; crew: CrewMember[] }
+type VolumeInfo = { unitRate: number; unit: string; paymentModel: string }
 
-function CrewHoursRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, onChanged }: {
+function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, onChanged }: {
   workOrderId: string
   staffId: string
   employeeName: string
@@ -22,22 +24,26 @@ function CrewHoursRow({ workOrderId, staffId, employeeName, employmentType, exis
   existing: WoAttendanceLog | undefined
   date: string
   myStaffId: string
+  volumeInfo: VolumeInfo | null
   onChanged: () => void
 }) {
   const { toast } = useToast()
-  const [hours, setHours] = useState(String(existing?.hours_logged ?? 8))
+  const isVolume = !!volumeInfo
+  const [value, setValue] = useState(String(isVolume ? (existing?.volume_completed ?? '') : (existing?.hours_logged ?? 8)))
   const [saving, setSaving] = useState(false)
 
   async function save() {
-    const val = parseFloat(hours)
+    const val = parseFloat(value)
     if (!val || val <= 0) return
-    if (existing && val === existing.hours_logged) return
+    const prev = isVolume ? existing?.volume_completed : existing?.hours_logged
+    if (existing && val === prev) return
     setSaving(true)
+    const payload = isVolume ? { volume_completed: val, hours_logged: null } : { hours_logged: val, volume_completed: null }
     const op = existing
-      ? supabase.from('wo_attendance_log').update({ hours_logged: val }).eq('id', existing.id)
+      ? supabase.from('wo_attendance_log').update(payload).eq('id', existing.id)
       : supabase.from('wo_attendance_log').insert([{
           work_order_id: workOrderId, staff_id: staffId, log_date: date,
-          hours_logged: val, logged_by_staff_id: myStaffId,
+          is_unallocated: false, ...payload, logged_by_staff_id: myStaffId,
         }])
     const { error } = await op
     setSaving(false)
@@ -54,6 +60,9 @@ function CrewHoursRow({ workOrderId, staffId, employeeName, employmentType, exis
     onChanged()
   }
 
+  const parsedVal = parseFloat(value)
+  const preview = isVolume && parsedVal > 0 ? parsedVal * volumeInfo!.unitRate : null
+
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-2">
       <div className="min-w-0">
@@ -61,18 +70,28 @@ function CrewHoursRow({ workOrderId, staffId, employeeName, employmentType, exis
           {employmentType === 'tier_2_casual' && <span className="mr-1.5 text-[10px] font-bold text-brand">T2</span>}
           {employeeName}
         </p>
-        <p className="text-xs text-slate-400">{staffId === myStaffId ? 'You' : null}</p>
+        <p className="flex items-center gap-1 text-xs text-slate-400">
+          {staffId === myStaffId && <span>You</span>}
+          {isVolume && (
+            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+              <Ruler className="h-3 w-3" />
+              {volumeInfo!.paymentModel === 'gang_leader' ? 'Gang leader · paid by volume, via vendor' : `Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
+              {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
+            </span>
+          )}
+        </p>
       </div>
       <div className="flex items-center gap-2">
         <input
-          type="number" step="0.5" min="0" max="16"
+          type="number" step={isVolume ? '0.01' : '0.5'} min="0" max={isVolume ? undefined : '16'}
           className="w-20 rounded-md border px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-          value={hours}
+          value={value}
           disabled={saving}
-          onChange={e => setHours(e.target.value)}
+          placeholder={isVolume ? '0.00' : undefined}
+          onChange={e => setValue(e.target.value)}
           onBlur={save}
         />
-        <span className="text-xs text-slate-400">hrs</span>
+        <span className="text-xs text-slate-400">{isVolume ? volumeInfo!.unit : 'hrs'}</span>
         {existing && (
           <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
         )}
@@ -133,6 +152,36 @@ export default function LogAttendancePage() {
       }
     }),
   })) as WoWithCrew[], [rawActiveWOs, staffDirectoryById])
+
+  // Tier 2 workers hired under a `per_volume` requisition (piece-work,
+  // often paid to a gang leader vendor rather than split per person) log
+  // volume produced instead of hours — surfaced by joining each crew
+  // member's active allocation to its requisition's pay terms.
+  const { data: rawAllocations = [] } = useQuery({
+    queryKey: ['attendance-volume-info', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_allocations')
+        .select('staff_id, labor_requisitions:labor_requisition_id(payment_basis, unit_rate, volume_unit, payment_model)')
+        .eq('project_id', projectId!)
+        .eq('status', 'active')
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return data as any[]
+    },
+    enabled: !!projectId,
+  })
+
+  const volumeInfoByStaff = useMemo(() => {
+    const map = new Map<string, VolumeInfo>()
+    for (const row of rawAllocations) {
+      const req = row.labor_requisitions
+      if (req?.payment_basis === 'per_volume' && req.unit_rate != null) {
+        map.set(row.staff_id, { unitRate: req.unit_rate, unit: req.volume_unit ?? 'unit', paymentModel: req.payment_model })
+      }
+    }
+    return map
+  }, [rawAllocations])
 
   const { data: dayRows = [], refetch } = useQuery({
     queryKey: ['wo-attendance-day', projectId, date],
@@ -220,7 +269,7 @@ export default function LogAttendancePage() {
                 ) : (
                   <div className="divide-y dark:divide-slate-700">
                     {wo.crew.map(c => (
-                      <CrewHoursRow
+                      <CrewLogRow
                         key={`${wo.id}:${c.staff_id}`}
                         workOrderId={wo.id}
                         staffId={c.staff_id}
@@ -229,6 +278,7 @@ export default function LogAttendancePage() {
                         existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
                         date={date}
                         myStaffId={myStaffId ?? ''}
+                        volumeInfo={volumeInfoByStaff.get(c.staff_id) ?? null}
                         onChanged={refreshAll}
                       />
                     ))}
