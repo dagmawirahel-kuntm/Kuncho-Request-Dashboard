@@ -37,6 +37,8 @@ type WorkerLine = {
   unit_label: string
   gang_size: number | null
   gang_member_names: string | null
+  overtime_hours: number | null
+  overtime_amount: number | null
   vendor_name: string | null
   vendor_bank_account: string | null
 }
@@ -88,7 +90,7 @@ export default function BatchPaymentDetailPage() {
       if (expenseIds.length === 0) return []
       const { data, error } = await supabase
         .from('labor_expense_workers')
-        .select('id, expense_id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, staff(employee_name, bank_account)')
+        .select('id, expense_id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, overtime_hours, overtime_amount, staff(employee_name, bank_account)')
         .in('expense_id', expenseIds)
       if (error) throw error
       const byExpense = new Map(batchExpenses.map(e => [e.id, e]))
@@ -103,6 +105,7 @@ export default function BatchPaymentDetailPage() {
           units: w.days_worked, rate: w.day_rate, subtotal: w.subtotal,
           unit_label: isVolume ? (exp?.labor_requisitions?.volume_unit ?? 'units') : 'days',
           gang_size: w.gang_size, gang_member_names: w.gang_member_names,
+          overtime_hours: w.overtime_hours, overtime_amount: w.overtime_amount,
           vendor_name: exp?.vendors?.vendor_name ?? null,
           vendor_bank_account: exp?.vendors?.bank_account ?? null,
         } as WorkerLine
@@ -203,6 +206,9 @@ export default function BatchPaymentDetailPage() {
                       {(w.gang_size ?? 1) > 1
                         ? <>Gang of {w.gang_size} <span style={{ color: '#999', fontSize: '10px' }}>via {w.employee_name}</span>{w.gang_member_names && <div style={{ fontSize: '9px', color: '#999' }}>{w.gang_member_names}</div>}</>
                         : w.employee_name}
+                      {(w.overtime_amount ?? 0) > 0 && (
+                        <div style={{ fontSize: '9px', color: '#b45309' }}>+ OT {w.overtime_hours ? `${w.overtime_hours}h · ` : ''}{formatCurrency(w.overtime_amount!)}</div>
+                      )}
                     </td>
                     <td style={{ padding: '6px 10px', fontFamily: 'monospace' }}>
                       {(w.gang_size ?? 1) > 1 ? (w.vendor_bank_account ?? `Vendor: ${w.vendor_name ?? '—'}`) : (w.bank_account ?? '—')}
@@ -338,6 +344,9 @@ export default function BatchPaymentDetailPage() {
                           {w.gang_member_names && <p className="text-[11px] text-slate-400">{w.gang_member_names}</p>}
                         </>
                       ) : w.employee_name}
+                      {(w.overtime_amount ?? 0) > 0 && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">+ OT {w.overtime_hours ? `${w.overtime_hours}h · ` : ''}{formatCurrency(w.overtime_amount!)}</p>
+                      )}
                     </td>
                     <td className="px-4 py-2 font-mono text-xs text-slate-500">
                       {(w.gang_size ?? 1) > 1 ? (w.vendor_bank_account ?? `Vendor: ${w.vendor_name ?? '—'}`) : (w.bank_account ?? '—')}

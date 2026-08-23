@@ -314,7 +314,7 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_expense_workers')
-        .select('id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, staff(employee_name)')
+        .select('id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, overtime_hours, overtime_amount, staff(employee_name)')
         .eq('expense_id', draft.id)
       if (error) throw error
       return data ?? []
@@ -383,6 +383,11 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
                             <p className="mt-0.5 text-[10px] font-normal text-slate-400">{w.gang_member_names}</p>
                           )}
                         </>
+                      )}
+                      {(w.overtime_amount ?? 0) > 0 && (
+                        <p className="mt-0.5 text-[10px] font-normal text-amber-600 dark:text-amber-400">
+                          + OT {w.overtime_hours ? `${w.overtime_hours}h · ` : ''}{formatCurrency(w.overtime_amount)}
+                        </p>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{w.days_worked}</td>
