@@ -266,7 +266,9 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
     if (cleaned.payment_basis !== 'per_volume') {
       cleaned = { ...cleaned, volume_unit: null, unit_rate: null, estimated_total_volume: null }
     } else {
-      cleaned = { ...cleaned, estimated_days: null }
+      // Per-volume pay is driven by unit_rate — estimated_day_rate doesn't
+      // apply and is no longer required at the column level either.
+      cleaned = { ...cleaned, estimated_days: null, estimated_day_rate: null }
     }
     if (assignMode !== 'roster')   cleaned = { ...cleaned, specific_staff_id: null }
     // Legacy single candidate_id column: never write it from this form anymore.
@@ -455,20 +457,23 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         </Field>
       </div>
 
-      {/* Day-rate always shown (drives commit + payment). Per_volume also
-          uses it as fallback if unit_rate is missing at rollup time. */}
+      {/* Day rate is only meaningful for per_day pay -- per_volume is
+          driven entirely by its own Unit Rate field below, and no longer
+          forces a day rate to be filled in just to satisfy validation. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Estimated Day Rate (ETB) *">
-          <input type="number" step="0.01" min={0} className={inputCls} value={form.estimated_day_rate ?? ''} onChange={e => set('estimated_day_rate', e.target.value ? parseFloat(e.target.value) : undefined)} />
-        </Field>
         {form.payment_basis === 'per_volume' ? (
           <Field label={`Total Volume${form.volume_unit ? ' (' + form.volume_unit + ')' : ''} *`}>
             <input type="number" step="0.01" min={0} className={inputCls} value={form.estimated_total_volume ?? ''} onChange={e => set('estimated_total_volume', e.target.value ? parseFloat(e.target.value) : null)} />
           </Field>
         ) : (
-          <Field label="Estimated Days">
-            <input type="number" min={0} className={inputCls} value={form.estimated_days ?? ''} onChange={e => set('estimated_days', e.target.value ? parseInt(e.target.value, 10) : null)} />
-          </Field>
+          <>
+            <Field label="Estimated Day Rate (ETB) *">
+              <input type="number" step="0.01" min={0} className={inputCls} value={form.estimated_day_rate ?? ''} onChange={e => set('estimated_day_rate', e.target.value ? parseFloat(e.target.value) : undefined)} />
+            </Field>
+            <Field label="Estimated Days">
+              <input type="number" min={0} className={inputCls} value={form.estimated_days ?? ''} onChange={e => set('estimated_days', e.target.value ? parseInt(e.target.value, 10) : null)} />
+            </Field>
+          </>
         )}
       </div>
       <div className="rounded-md border border-brand/30 bg-brand/5 dark:bg-brand/10 px-3 py-2 text-xs text-slate-700 dark:text-slate-200">

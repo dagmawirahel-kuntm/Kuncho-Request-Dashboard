@@ -2036,7 +2036,7 @@ export interface LaborRequisition {
   is_casual_or_new: boolean
   start_date: string
   end_date: string | null
-  estimated_day_rate: number
+  estimated_day_rate: number | null
   estimated_days: number | null
   estimated_total_cost: number
   requested_by: string | null
