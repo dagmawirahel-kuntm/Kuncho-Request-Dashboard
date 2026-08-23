@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { COMPANY_NAME, COMPANY_ADDRESS, gradientCss } from '@/lib/documentTheme'
-import { ArrowLeft, Printer, Layers } from 'lucide-react'
+import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { ArrowLeft, Printer, Layers, CheckCircle2 } from 'lucide-react'
+import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { BatchPayment } from '@/types/database'
 
 type BatchExpense = {
@@ -12,6 +15,7 @@ type BatchExpense = {
   expense_code: string | null
   item_service_description: string | null
   amount_etb: number | null
+  payment_state: string
   rollup_period_start: string | null
   rollup_period_end: string | null
   projects: { project_name: string } | null
@@ -43,6 +47,11 @@ type WorkerLine = {
 export default function BatchPaymentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { toast } = useToast()
+  const { role } = useAuth()
+  const qc = useQueryClient()
+  const canConfirm = role === 'admin' || role === 'finance'
+  const [confirming, setConfirming] = useState(false)
 
   const { data: batch, isLoading: batchLoading } = useQuery({
     queryKey: ['batch-payment-detail', id],
@@ -63,7 +72,7 @@ export default function BatchPaymentDetailPage() {
       if (ids.length === 0) return []
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, expense_code, item_service_description, amount_etb, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit)')
+        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit)')
         .in('id', ids)
       if (error) throw error
       return (data ?? []) as unknown as BatchExpense[]
@@ -111,6 +120,17 @@ export default function BatchPaymentDetailPage() {
   }, [batchExpenses])
   const periodStart = batchExpenses.map(e => e.rollup_period_start).filter(Boolean).sort()[0]
   const periodEnd = batchExpenses.map(e => e.rollup_period_end).filter(Boolean).sort().slice(-1)[0]
+  const anySent = batchExpenses.some(e => e.payment_state === 'sent')
+
+  async function handleConfirm() {
+    if (!id) return
+    setConfirming(true)
+    const { error } = await supabase.rpc('confirm_batch_payment', { p_batch_payment_id: id })
+    setConfirming(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Batch payment confirmed as paid', 'success')
+    qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
+  }
 
   const isLoading = batchLoading || expensesLoading || workersLoading
 
@@ -243,9 +263,20 @@ export default function BatchPaymentDetailPage() {
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
             <ArrowLeft className="h-4 w-4" /> Batch Payments
           </button>
-          <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Printer className="h-3.5 w-3.5" /> Print Payment Request
-          </button>
+          <div className="flex items-center gap-2">
+            {canConfirm && anySent && (
+              <button
+                onClick={handleConfirm}
+                disabled={confirming}
+                className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" /> {confirming ? 'Confirming…' : 'Confirm Payment Sent'}
+              </button>
+            )}
+            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+              <Printer className="h-3.5 w-3.5" /> Print Payment Request
+            </button>
+          </div>
         </div>
 
         <div className="rounded-2xl overflow-hidden" style={{ background: '#1B3A5C' }}>
@@ -338,7 +369,10 @@ export default function BatchPaymentDetailPage() {
                   <Link to={`/expenses/${e.id}`} className="text-sm text-brand hover:underline truncate block">{e.expense_code ?? e.id.slice(0, 8)}</Link>
                   <p className="text-xs text-slate-400 truncate">{e.item_service_description}</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(e.amount_etb ?? 0)}</p>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <StatusBadge status={e.payment_state} />
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(e.amount_etb ?? 0)}</p>
+                </div>
               </div>
             ))}
           </div>
