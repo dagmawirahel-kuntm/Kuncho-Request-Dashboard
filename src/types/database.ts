@@ -2036,7 +2036,7 @@ export interface LaborRequisition {
   is_casual_or_new: boolean
   start_date: string
   end_date: string | null
-  estimated_day_rate: number
+  estimated_day_rate: number | null
   estimated_days: number | null
   estimated_total_cost: number
   requested_by: string | null
@@ -2352,6 +2352,7 @@ export interface WoAttendanceLog {
   gang_member_staff_ids: string[] | null
   overtime_hours: number | null
   overtime_amount: number | null
+  labor_requisition_id: string | null
   is_unallocated: boolean
   notes: string | null
   logged_by_staff_id: string
