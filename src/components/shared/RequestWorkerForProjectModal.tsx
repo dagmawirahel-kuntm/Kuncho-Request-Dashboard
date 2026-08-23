@@ -35,6 +35,7 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
   const [dayRate, setDayRate]     = useState<string>(worker.day_rate != null ? String(worker.day_rate) : '')
   const [volumeUnit, setVolumeUnit] = useState('m²')
   const [unitRate, setUnitRate]     = useState<string>('')
+  const [totalVolume, setTotalVolume] = useState<string>('')
   const [notes, setNotes]         = useState('')
   const [saving, setSaving]       = useState(false)
 
@@ -43,6 +44,9 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
 
   async function handleSave() {
     if (!projectId) { toast('Pick a project', 'error'); return }
+    if (basis === 'per_volume' && (!totalVolume || Number(totalVolume) <= 0)) {
+      toast('Enter the estimated total volume', 'error'); return
+    }
     setSaving(true)
     const payload = {
       project_id: projectId,
@@ -53,8 +57,9 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
       is_casual_or_new: false,
       start_date: startDate,
       end_date: endDate || null,
-      estimated_day_rate: basis === 'per_day' ? Number(dayRate) || 0 : Number(unitRate) || 0,
-      estimated_days: days ? Number(days) : null,
+      estimated_day_rate: basis === 'per_day' ? Number(dayRate) || 0 : null,
+      estimated_days: basis === 'per_day' ? (days ? Number(days) : null) : null,
+      estimated_total_volume: basis === 'per_volume' ? Number(totalVolume) : null,
       payment_basis: basis,
       payment_model: 'individual',
       pay_cycle: 'weekly',
@@ -94,7 +99,7 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid gap-2 ${basis === 'per_day' ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <div>
             <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Start *</label>
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} />
@@ -103,10 +108,12 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
             <label className="text-xs font-medium text-slate-600 dark:text-slate-400">End</label>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls} />
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Est. days</label>
-            <input type="number" min="0" value={days} onChange={e => setDays(e.target.value)} className={inputCls} />
-          </div>
+          {basis === 'per_day' && (
+            <div>
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Est. days</label>
+              <input type="number" min="0" value={days} onChange={e => setDays(e.target.value)} className={inputCls} />
+            </div>
+          )}
         </div>
 
         <div>
@@ -127,7 +134,7 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
             <input type="number" step="0.01" min="0" value={dayRate} onChange={e => setDayRate(e.target.value)} className={inputCls} />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Volume unit *</label>
               <input value={volumeUnit} onChange={e => setVolumeUnit(e.target.value)} placeholder="m² · pcs · lm" className={inputCls} />
@@ -135,6 +142,10 @@ export function RequestWorkerForProjectModal({ worker, onClose, workOrderId, def
             <div>
               <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Unit rate (ETB/{volumeUnit || 'unit'}) *</label>
               <input type="number" step="0.01" min="0" value={unitRate} onChange={e => setUnitRate(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total volume *</label>
+              <input type="number" step="0.01" min="0" value={totalVolume} onChange={e => setTotalVolume(e.target.value)} className={inputCls} />
             </div>
           </div>
         )}
