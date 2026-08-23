@@ -5,6 +5,8 @@ import { HardHat, RefreshCw, ChevronRight, Play, Coins, Layers } from 'lucide-re
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { useAccounts } from '@/hooks/useLookups'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 interface RollupPreview {
@@ -55,6 +57,11 @@ export default function LaborExpenseDraftsPage() {
   const { session } = useAuth()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batching, setBatching] = useState(false)
+  const [batchAccountId, setBatchAccountId] = useState<string | null>(null)
+  const [batchPaymentMethod, setBatchPaymentMethod] = useState<'batch_wire' | 'cash'>('batch_wire')
+  const { data: accounts = [] } = useAccounts()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
 
   const { data: drafts = [], isLoading } = useQuery({
     queryKey: ['labor-expense-drafts'],
@@ -108,6 +115,7 @@ export default function LaborExpenseDraftsPage() {
 
   async function createBatch() {
     if (selectedDrafts.length === 0 || !session?.user.id) return
+    if (!batchAccountId && batchPaymentMethod !== 'cash') { toast('Select which account is funding this batch payment', 'error'); return }
     setBatching(true)
     const projectNames = Array.from(new Set(selectedDrafts.map(d => d.projects?.project_name).filter(Boolean)))
     const dates = selectedDrafts.map(d => d.rollup_period_end ?? d.date).filter(Boolean) as string[]
@@ -116,12 +124,15 @@ export default function LaborExpenseDraftsPage() {
     const { data, error } = await supabase.rpc('create_batch_payment', {
       p_expense_ids: Array.from(selectedIds),
       p_assignee_id: session.user.id,
+      p_account_id: batchPaymentMethod === 'cash' ? null : batchAccountId,
+      p_payment_method: batchPaymentMethod,
       p_payment_code: paymentCode,
       p_notes: null,
     })
     setBatching(false)
     if (error) { toast(error.message, 'error'); return }
     setSelectedIds(new Set())
+    setBatchAccountId(null)
     qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
     toast('Batch payment created', 'success')
     navigate(`/batch-payments/${data}`)
@@ -179,17 +190,30 @@ export default function LaborExpenseDraftsPage() {
       {/* Batch payment bar — combine several approved drafts (e.g. every
           trade on one work order) into a single Payment Request. */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-2 z-10 flex items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 px-4 py-3 shadow-sm">
+        <div className="sticky top-2 z-10 flex items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 px-4 py-3 shadow-sm flex-wrap">
           <div className="flex items-center gap-2 text-sm">
             <Layers className="h-4 w-4 text-brand" />
             <span className="font-medium text-slate-700 dark:text-slate-200">{selectedIds.size} draft{selectedIds.size === 1 ? '' : 's'} selected</span>
             <span className="text-slate-400">· {formatCurrency(selectedTotal)} total</span>
           </div>
           <div className="flex items-center gap-2">
+            <select
+              value={batchPaymentMethod}
+              onChange={e => setBatchPaymentMethod(e.target.value as 'batch_wire' | 'cash')}
+              className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            >
+              <option value="batch_wire">Bank / Wire</option>
+              <option value="cash">Cash</option>
+            </select>
+            {batchPaymentMethod !== 'cash' && (
+              <div className="w-48">
+                <SearchableSelect value={batchAccountId} onChange={setBatchAccountId} options={accountOptions} placeholder="Funding account…" />
+              </div>
+            )}
             <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-500 hover:underline">Clear</button>
             <button
               onClick={createBatch}
-              disabled={batching}
+              disabled={batching || (batchPaymentMethod !== 'cash' && !batchAccountId)}
               className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60"
             >
               {batching ? 'Creating…' : 'Create Batch Payment'}
@@ -290,7 +314,7 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_expense_workers')
-        .select('id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, staff(employee_name)')
+        .select('id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, overtime_hours, overtime_amount, staff(employee_name)')
         .eq('expense_id', draft.id)
       if (error) throw error
       return data ?? []
@@ -359,6 +383,11 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
                             <p className="mt-0.5 text-[10px] font-normal text-slate-400">{w.gang_member_names}</p>
                           )}
                         </>
+                      )}
+                      {(w.overtime_amount ?? 0) > 0 && (
+                        <p className="mt-0.5 text-[10px] font-normal text-amber-600 dark:text-amber-400">
+                          + OT {w.overtime_hours ? `${w.overtime_hours}h · ` : ''}{formatCurrency(w.overtime_amount)}
+                        </p>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{w.days_worked}</td>

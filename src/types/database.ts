@@ -2350,6 +2350,8 @@ export interface WoAttendanceLog {
   volume_completed: number | null
   gang_size: number | null
   gang_member_staff_ids: string[] | null
+  overtime_hours: number | null
+  overtime_amount: number | null
   is_unallocated: boolean
   notes: string | null
   logged_by_staff_id: string

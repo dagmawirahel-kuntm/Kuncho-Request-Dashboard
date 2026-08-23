@@ -8,7 +8,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatCurrency } from '@/lib/utils'
 import type { WoAttendanceLog } from '@/types/database'
 import { YesterdayNudge } from './YesterdayNudge'
-import { ClipboardCheck, Plus, Trash2, HardHat, Ruler, Users } from 'lucide-react'
+import { ClipboardCheck, Plus, Trash2, HardHat, Ruler, Users, Clock3 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
@@ -17,7 +17,15 @@ type WoWithCrew = { id: string; scope_of_work: string; work_type: string; crew: 
 type VolumeInfo = { unitRate: number; unit: string; paymentModel: string; requisitionId: string; roleNeeded: string | null }
 const isGangLeaderRole = (role: string | null) => !!role && /gang.?leader/i.test(role)
 
-function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, onChanged }: {
+// 1.5x hourly rate x OT hours, purely as a starting point for the
+// amount field below — real overtime deals vary, so what actually gets
+// paid is whatever amount the person enters, not this formula.
+function suggestedOvertimeAmount(hours: number, dayRate: number | null): string {
+  if (!dayRate || !hours) return ''
+  return (hours * 1.5 * (dayRate / 8)).toFixed(2)
+}
+
+function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existing, date, myStaffId, volumeInfo, dayRate, onChanged }: {
   workOrderId: string
   staffId: string
   employeeName: string
@@ -26,22 +34,29 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
   date: string
   myStaffId: string
   volumeInfo: VolumeInfo | null
+  dayRate: number | null
   onChanged: () => void
 }) {
   const { toast } = useToast()
   const isVolume = !!volumeInfo
   const [value, setValue] = useState(String(isVolume ? (existing?.volume_completed ?? '') : (existing?.hours_logged ?? 8)))
+  const [showOT, setShowOT] = useState(!!(existing?.overtime_hours || existing?.overtime_amount))
+  const [otHours, setOtHours] = useState(String(existing?.overtime_hours ?? ''))
+  const [otAmount, setOtAmount] = useState(String(existing?.overtime_amount ?? ''))
   const [saving, setSaving] = useState(false)
 
-  async function save() {
+  async function save(overrides?: { otHoursVal?: string; otAmountVal?: string }) {
     const val = parseFloat(value)
     if (!val || val <= 0) return
-    const prev = isVolume ? existing?.volume_completed : existing?.hours_logged
-    if (existing && val === prev) return
+    const otH = overrides?.otHoursVal ?? otHours
+    const otA = overrides?.otAmountVal ?? otAmount
     setSaving(true)
     const payload = isVolume
-      ? { volume_completed: val, hours_logged: null, gang_size: null, gang_member_staff_ids: null, notes: null }
-      : { hours_logged: val, volume_completed: null, gang_size: null, gang_member_staff_ids: null }
+      ? { volume_completed: val, hours_logged: null, gang_size: null, gang_member_staff_ids: null, overtime_hours: null, overtime_amount: null, notes: null }
+      : {
+          hours_logged: val, volume_completed: null, gang_size: null, gang_member_staff_ids: null,
+          overtime_hours: otH ? parseFloat(otH) : null, overtime_amount: otA ? parseFloat(otA) : null,
+        }
     const op = existing
       ? supabase.from('wo_attendance_log').update(payload).eq('id', existing.id)
       : supabase.from('wo_attendance_log').insert([{
@@ -63,42 +78,87 @@ function CrewLogRow({ workOrderId, staffId, employeeName, employmentType, existi
     onChanged()
   }
 
+  function handleOtHoursChange(v: string) {
+    setOtHours(v)
+    const suggested = suggestedOvertimeAmount(parseFloat(v) || 0, dayRate)
+    setOtAmount(suggested)
+  }
+
   const parsedVal = parseFloat(value)
   const preview = isVolume && parsedVal > 0 ? parsedVal * volumeInfo!.unitRate : null
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2">
-      <div className="min-w-0">
-        <p className="truncate text-sm text-slate-700 dark:text-slate-200">
-          {employmentType === 'tier_2_casual' && <span className="mr-1.5 text-[10px] font-bold text-brand">T2</span>}
-          {employeeName}
-        </p>
-        <p className="flex items-center gap-1 text-xs text-slate-400">
-          {staffId === myStaffId && <span>You</span>}
-          {isVolume && (
-            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-              <Ruler className="h-3 w-3" />
-              {`Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
-              {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
-            </span>
+    <div className="px-4 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm text-slate-700 dark:text-slate-200">
+            {employmentType === 'tier_2_casual' && <span className="mr-1.5 text-[10px] font-bold text-brand">T2</span>}
+            {employeeName}
+          </p>
+          <p className="flex items-center gap-1 text-xs text-slate-400">
+            {staffId === myStaffId && <span>You</span>}
+            {isVolume && (
+              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <Ruler className="h-3 w-3" />
+                {`Piece-work · ${formatCurrency(volumeInfo!.unitRate)}/${volumeInfo!.unit}`}
+                {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number" step={isVolume ? '0.01' : '0.5'} min="0" max={isVolume ? undefined : '16'}
+            className="w-20 rounded-md border px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+            value={value}
+            disabled={saving}
+            placeholder={isVolume ? '0.00' : undefined}
+            onChange={e => setValue(e.target.value)}
+            onBlur={() => save()}
+          />
+          <span className="text-xs text-slate-400">{isVolume ? volumeInfo!.unit : 'hrs'}</span>
+          {!isVolume && !showOT && (
+            <button type="button" onClick={() => setShowOT(true)} className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-brand" title="Add overtime">
+              <Clock3 className="h-3 w-3" /> OT
+            </button>
           )}
-        </p>
+          {existing && (
+            <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="number" step={isVolume ? '0.01' : '0.5'} min="0" max={isVolume ? undefined : '16'}
-          className="w-20 rounded-md border px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-          value={value}
-          disabled={saving}
-          placeholder={isVolume ? '0.00' : undefined}
-          onChange={e => setValue(e.target.value)}
-          onBlur={save}
-        />
-        <span className="text-xs text-slate-400">{isVolume ? volumeInfo!.unit : 'hrs'}</span>
-        {existing && (
-          <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
-        )}
-      </div>
+      {!isVolume && showOT && (
+        <div className="mt-1.5 flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-900/10 px-2.5 py-1.5">
+          <Clock3 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-[11px] text-amber-700 dark:text-amber-400 shrink-0">Overtime</span>
+          <input
+            type="number" step="0.5" min="0" placeholder="hrs"
+            className="w-16 rounded-md border px-2 py-1 text-xs text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+            value={otHours}
+            disabled={saving}
+            onChange={e => handleOtHoursChange(e.target.value)}
+            onBlur={() => save()}
+          />
+          <span className="text-[11px] text-slate-400">hrs ·</span>
+          <input
+            type="number" step="0.01" min="0" placeholder="agreed amount"
+            className="w-28 rounded-md border px-2 py-1 text-xs text-right outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+            value={otAmount}
+            disabled={saving}
+            onChange={e => setOtAmount(e.target.value)}
+            onBlur={() => save()}
+          />
+          <span className="text-[11px] text-slate-400">ETB</span>
+          <button
+            type="button"
+            onClick={() => { setShowOT(false); setOtHours(''); setOtAmount(''); if (existing?.overtime_hours || existing?.overtime_amount) save({ otHoursVal: '', otAmountVal: '' }) }}
+            className="ml-auto text-slate-400 hover:text-red-500"
+            title="Remove overtime"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -282,7 +342,7 @@ export default function LogAttendancePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_allocations')
-        .select('staff_id, labor_requisition_id, labor_requisitions:labor_requisition_id(payment_basis, unit_rate, volume_unit, payment_model, role_needed)')
+        .select('staff_id, day_rate_snapshot, labor_requisition_id, labor_requisitions:labor_requisition_id(payment_basis, unit_rate, volume_unit, payment_model, role_needed, estimated_day_rate)')
         .eq('project_id', projectId!)
         .eq('status', 'active')
       if (error) throw error
@@ -302,6 +362,20 @@ export default function LogAttendancePage() {
           requisitionId: row.labor_requisition_id, roleNeeded: req.role_needed ?? null,
         })
       }
+    }
+    return map
+  }, [rawAllocations])
+
+  // Day rate for the overtime suggestion — same fallback chain the sync
+  // trigger uses (allocation snapshot, then the requisition's estimated
+  // day rate); staff.day_rate isn't readable here for most roles, so it's
+  // not part of this client-side fallback.
+  const dayRateByStaff = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of rawAllocations) {
+      const req = row.labor_requisitions
+      const rate = row.day_rate_snapshot ?? req?.estimated_day_rate ?? null
+      if (rate != null) map.set(row.staff_id, rate)
     }
     return map
   }, [rawAllocations])
@@ -412,6 +486,7 @@ export default function LogAttendancePage() {
                           date={date}
                           myStaffId={myStaffId ?? ''}
                           volumeInfo={null}
+                          dayRate={dayRateByStaff.get(c.staff_id) ?? null}
                           onChanged={refreshAll}
                         />
                       ))
@@ -430,6 +505,7 @@ export default function LogAttendancePage() {
                               date={date}
                               myStaffId={myStaffId ?? ''}
                               volumeInfo={vi}
+                              dayRate={dayRateByStaff.get(c.staff_id) ?? null}
                               onChanged={refreshAll}
                             />,
                           )
@@ -457,6 +533,7 @@ export default function LogAttendancePage() {
                                 date={date}
                                 myStaffId={myStaffId ?? ''}
                                 volumeInfo={volumeInfoByStaff.get(c.staff_id) ?? null}
+                                dayRate={dayRateByStaff.get(c.staff_id) ?? null}
                                 onChanged={refreshAll}
                               />,
                             )
