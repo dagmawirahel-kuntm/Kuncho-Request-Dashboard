@@ -133,17 +133,19 @@ export default function WorkOrderDetailPage() {
           <div>
             <p className="text-xs text-slate-400">Labor Cost</p>
             <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatCurrency(cost?.labor_cost ?? 0)}</p>
+            <p className="text-[11px] text-slate-400">Est. {formatCurrency(cost?.labor_cost_estimated ?? 0)}</p>
           </div>
           <div>
             <p className="text-xs text-slate-400">Materials Cost</p>
             <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatCurrency(cost?.materials_cost ?? 0)}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Total Cost</p>
+            <p className="text-xs text-slate-400">Total Cost (Actual)</p>
             <p className="text-lg font-bold text-brand">{formatCurrency(cost?.total_cost ?? 0)}</p>
+            <p className="text-[11px] text-slate-400">Est. {formatCurrency(cost?.total_cost_estimated ?? 0)}</p>
           </div>
         </div>
-        <p className="text-[11px] text-slate-400">Derived entirely from linked labor allocations and stock issues below — never entered directly.</p>
+        <p className="text-[11px] text-slate-400">Actual = real work logged in attendance below. Estimated = budget from the linked labor requisition(s). Materials derived entirely from linked stock issues — never entered directly.</p>
       </div>
 
       <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
@@ -647,14 +649,15 @@ function RatingRow({ label, value, onChange }: { label: string; value: number; o
 // ── Crew section: work_order_crew (Tier 1 + Tier 2 assignment layer) ──
 type CrewRow = WorkOrderCrew & { staff: { employee_name: string; employment_type: string | null; trade_tag: string | null; codename_amharic: string | null; codename_english: string | null } | null }
 
-function Tier2MiniBadge({ tradeTag, codenameAmharic, codenameEnglish, score }: { tradeTag: string | null; codenameAmharic: string | null; codenameEnglish: string | null; score: number | null }) {
+function Tier2MiniBadge({ employeeName, tradeTag, codenameAmharic, codenameEnglish, score }: { employeeName: string | null; tradeTag: string | null; codenameAmharic: string | null; codenameEnglish: string | null; score: number | null }) {
   const { data: roster = [] } = useTradeRoster()
   const trade = roster.find(t => t.trade_tag === tradeTag)
   const accent = trade?.color_accent ?? '#7a7f8c'
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] dark:border-slate-600" style={{ borderColor: accent }}>
       <span>{trade?.icon_emoji ?? '🛠️'}</span>
-      <span className="font-medium text-slate-700 dark:text-slate-200">{codenameAmharic ?? trade?.codename_amharic ?? codenameEnglish ?? 'Tier 2'}</span>
+      <span className="font-medium text-slate-700 dark:text-slate-200">{employeeName ?? codenameAmharic ?? trade?.codename_amharic ?? codenameEnglish ?? 'Tier 2'}</span>
+      <span className="text-slate-400">{codenameAmharic ?? trade?.codename_amharic ?? codenameEnglish ?? ''}</span>
       <span className="font-mono text-slate-400">{score != null ? `${score}/100` : '—'}</span>
     </span>
   )
@@ -797,6 +800,7 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
             <div key={c.id} className="flex items-center gap-2 rounded-full border px-2.5 py-1.5 dark:border-slate-600">
               {employmentType === 'tier_2_casual' ? (
                 <Tier2MiniBadge
+                  employeeName={c.staff?.employee_name ?? fallback?.employee_name ?? staffNameById.get(c.staff_id) ?? null}
                   tradeTag={c.staff?.trade_tag ?? fallback?.trade_tag ?? null}
                   codenameAmharic={c.staff?.codename_amharic ?? fallback?.codename_amharic ?? null}
                   codenameEnglish={c.staff?.codename_english ?? fallback?.codename_english ?? null}
