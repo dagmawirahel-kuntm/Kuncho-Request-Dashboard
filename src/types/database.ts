@@ -2352,6 +2352,7 @@ export interface WoAttendanceLog {
   gang_member_staff_ids: string[] | null
   overtime_hours: number | null
   overtime_amount: number | null
+  labor_requisition_id: string | null
   is_unallocated: boolean
   notes: string | null
   logged_by_staff_id: string
