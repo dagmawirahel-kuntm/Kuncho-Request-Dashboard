@@ -305,31 +305,33 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
 
   return (
     <div>
-      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40 text-left">
+      <div className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40">
         {batchable ? (
           <input
-            type="checkbox" checked={selected} onChange={onToggleSelect} onClick={e => e.stopPropagation()}
-            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+            type="checkbox" checked={selected} onChange={onToggleSelect}
+            className="h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand"
             title="Include in a batch payment"
           />
-        ) : <span className="w-4" />}
-        <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{draft.item_service_description ?? '—'}</p>
-          <p className="text-[11px] text-slate-400">
-            {draft.rollup_period_start} → {draft.rollup_period_end}
-            {draft.vendors?.vendor_name ? ` · Gang: ${draft.vendors.vendor_name}` : ''}
-            {draft.paid_to_staff?.employee_name ? ` · Payee: ${draft.paid_to_staff.employee_name}` : ''}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatCurrency(draft.amount_etb ?? 0)}</p>
-          <p className="text-[11px] text-slate-400 capitalize">{draft.approval_status} · {draft.payment_state}</p>
-        </div>
-        <Link to={`/expenses/${draft.id}`} className="text-[11px] text-brand hover:underline" onClick={e => e.stopPropagation()}>
+        ) : <span className="w-4 shrink-0" />}
+        <button onClick={onToggle} className="flex flex-1 min-w-0 items-center gap-3 text-left">
+          <ChevronRight className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{draft.item_service_description ?? '—'}</p>
+            <p className="text-[11px] text-slate-400">
+              {draft.rollup_period_start} → {draft.rollup_period_end}
+              {draft.vendors?.vendor_name ? ` · Gang: ${draft.vendors.vendor_name}` : ''}
+              {draft.paid_to_staff?.employee_name ? ` · Payee: ${draft.paid_to_staff.employee_name}` : ''}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatCurrency(draft.amount_etb ?? 0)}</p>
+            <p className="text-[11px] text-slate-400 capitalize">{draft.approval_status} · {draft.payment_state}</p>
+          </div>
+        </button>
+        <Link to={`/expenses/${draft.id}`} className="text-[11px] text-brand hover:underline shrink-0">
           Open expense →
         </Link>
-      </button>
+      </div>
       {expanded && (
         <div className="px-8 pb-3">
           <div className="rounded-lg border dark:border-slate-700 overflow-hidden">

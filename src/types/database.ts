@@ -2425,8 +2425,10 @@ export interface WorkOrderMaterial {
 export interface WorkOrderCostRow {
   work_order_id: string
   labor_cost: number
+  labor_cost_estimated: number
   materials_cost: number
   total_cost: number
+  total_cost_estimated: number
 }
 
 // ── FF&E job descriptions & computed skill levels ──────────────────
