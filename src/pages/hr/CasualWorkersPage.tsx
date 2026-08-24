@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useCasualWorkers, useTradeRoster, useAllRolling, useAllBadgeSummaries } from '@/hooks/useTier2Workers'
 import { Tier2WorkerCard } from '@/components/shared/Tier2WorkerCard'
+import { Tier2WorkerScanTile } from '@/components/shared/Tier2WorkerScanTile'
 import { CasualWorkerDetailModal } from '@/components/shared/CasualWorkerDetailModal'
 import type { CasualWorkerRow } from '@/hooks/useTier2Workers'
-import { HardHat, Search } from 'lucide-react'
+import { HardHat, Search, LayoutGrid, Grid3x3 } from 'lucide-react'
 
 type SortKey = 'score_desc' | 'name' | 'days_worked' | 'recent'
+type ViewMode = 'gallery' | 'scan'
+const VIEW_MODE_KEY = 'casual-workers-view-mode'
 
 export default function CasualWorkersPage() {
   const { data: workers = [], isLoading: workersLoading } = useCasualWorkers()
@@ -20,6 +23,14 @@ export default function CasualWorkersPage() {
   const [sort, setSort] = useState<SortKey>('score_desc')
   const [q, setQ] = useState('')
   const [openWorker, setOpenWorker] = useState<CasualWorkerRow | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem(VIEW_MODE_KEY)
+    return saved === 'scan' ? 'scan' : 'gallery'
+  })
+  function changeView(mode: ViewMode) {
+    setViewMode(mode)
+    localStorage.setItem(VIEW_MODE_KEY, mode)
+  }
 
   const tradeByTag  = useMemo(() => new Map(roster.map(r => [r.trade_tag, r])), [roster])
   const perfById    = useMemo(() => new Map(rolling.map(p => [p.staff_id, p])), [rolling])
@@ -53,13 +64,35 @@ export default function CasualWorkersPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <HardHat className="h-6 w-6 text-amber-500" /> Casual Workers
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Tier 2 workforce. Every card is a real person with a rolling performance score, badges, and payment history — built on the same rating engine as full-time staff.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <HardHat className="h-6 w-6 text-amber-500" /> Casual Workers
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Tier 2 workforce. Every card is a real person with a rolling performance score, badges, and payment history — built on the same rating engine as full-time staff.
+          </p>
+        </div>
+        <div className="flex items-center rounded-md border dark:border-slate-600 overflow-hidden shrink-0">
+          <button
+            onClick={() => changeView('gallery')}
+            title="Gallery — full performance cards"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'gallery' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+            }`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" /> Gallery
+          </button>
+          <button
+            onClick={() => changeView('scan')}
+            title="Scan — dense grid for a quick headcount check"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-l dark:border-slate-600 transition-colors ${
+              viewMode === 'scan' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+            }`}
+          >
+            <Grid3x3 className="h-3.5 w-3.5" /> Scan
+          </button>
+        </div>
       </div>
 
       {/* Filters strip */}
@@ -124,14 +157,26 @@ export default function CasualWorkersPage() {
               : 'Clear filters to see everyone.'}
           </p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      ) : viewMode === 'gallery' ? (
+        <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
           {filtered.map(w => (
             <Tier2WorkerCard
               key={w.id}
               worker={w}
               trade={tradeByTag.get(w.trade_tag ?? '')}
               perf={perfById.get(w.id)}
+              badges={badgesById.get(w.id)}
+              onOpen={() => setOpenWorker(w)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(96px,1fr))]">
+          {filtered.map(w => (
+            <Tier2WorkerScanTile
+              key={w.id}
+              worker={w}
+              trade={tradeByTag.get(w.trade_tag ?? '')}
               badges={badgesById.get(w.id)}
               onOpen={() => setOpenWorker(w)}
             />
