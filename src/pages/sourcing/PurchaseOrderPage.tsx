@@ -383,13 +383,13 @@ export default function PurchaseOrderPage() {
   const isOperationsManager = role === 'operations_manager'
 
   // The PO approval ladder, per Operations Manual v0.1 §6:
-  //   Procurement Officer -> 50,000 -> Operations Manager -> 500,000 -> CEO/MD
+  //   Procurement Officer -> 30,000 -> Operations Manager -> 500,000 -> CEO/MD
   // Both caps are enforced server-side in RLS off the same total_value
-  // column (ops_manager in 133, procurement_officer in 149); these
-  // constants only keep the buttons honest about what the database
-  // will actually allow. `executive` is the CEO/MD tier and admin
-  // remains uncapped.
-  const PROCUREMENT_APPROVAL_CAP = 50000
+  // column (ops_manager in 133, procurement_officer capped at 30,000 in
+  // 255, originally 50,000 in 149/163); these constants only keep the
+  // buttons honest about what the database will actually allow.
+  // `executive` is the CEO/MD tier and admin remains uncapped.
+  const PROCUREMENT_APPROVAL_CAP = 30000
   const OPS_MANAGER_APPROVAL_CAP = 500000
   const bundleValue = bundle.total_value ?? 0
   const isOpsManagerWithinCap = isOperationsManager && bundleValue <= OPS_MANAGER_APPROVAL_CAP
