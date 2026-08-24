@@ -10,6 +10,7 @@ const QUALITY_CLS: Record<GrnQualityStatus, string> = {
   accepted: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-300',
   damaged:  'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300',
   rejected: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-300',
+  partial:  'text-orange-700 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-300',
 }
 
 type Filter = 'all' | 'flagged'
