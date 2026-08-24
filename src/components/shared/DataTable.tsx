@@ -57,12 +57,16 @@ interface DataTableProps<TData> {
    */
   expandable?: { summaryColumnIds: string[] }
   /**
-   * Groups rows into date sections (newest first) instead of one flat
-   * list. The most recent date present is shown as a headline section,
-   * the next most recent as a secondary headline, and older dates get a
-   * plain group label. `columnId` must hold a 'YYYY-MM-DD'-prefixed date.
+   * Groups rows into sections instead of one flat list.
+   * `kind: 'date'` (default) buckets by the first 10 chars of an ISO
+   * date string, newest first — the most recent date is a headline
+   * section, the next most recent a secondary headline, older dates get
+   * a plain group label.
+   * `kind: 'text'` buckets by the raw string value of `columnId`,
+   * alphabetically, every group styled the same (no recency headline —
+   * there's no "most recent" concept for a category).
    */
-  groupBy?: { columnId: string }
+  groupBy?: { columnId: string; kind?: 'date' | 'text' }
 }
 
 function groupDateLabel(key: string): string {
@@ -221,7 +225,7 @@ export function DataTable<TData extends { id: string }>({
   const qc = useQueryClient()
 
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
-  const [sorting, setSorting] = useState<SortingState>(() => groupBy ? [{ id: groupBy.columnId, desc: true }] : [])
+  const [sorting, setSorting] = useState<SortingState>(() => groupBy ? [{ id: groupBy.columnId, desc: groupBy.kind !== 'text' }] : [])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '')
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
@@ -302,7 +306,7 @@ export function DataTable<TData extends { id: string }>({
   const groups = groupBy
     ? table.getSortedRowModel().rows.reduce<{ key: string; rows: Row<TData>[] }[]>((acc, row) => {
         const raw = row.getValue(groupBy.columnId)
-        const key = raw ? String(raw).slice(0, 10) : '—'
+        const key = raw ? (groupBy.kind === 'text' ? String(raw) : String(raw).slice(0, 10)) : '—'
         const last = acc[acc.length - 1]
         if (last && last.key === key) last.rows.push(row)
         else acc.push({ key, rows: [row] })
@@ -491,6 +495,23 @@ export function DataTable<TData extends { id: string }>({
                 </tr>
               ) : groups ? (
                 groups.map((group, idx) => {
+                  if (groupBy?.kind === 'text') {
+                    return (
+                      <Fragment key={group.key}>
+                        <tr className="border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                          <td colSpan={visibleHeaderCount} className="px-4 py-2">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{group.key}</span>
+                              <span className="text-xs text-slate-400 dark:text-slate-500">
+                                · {group.rows.length} record{group.rows.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {group.rows.map(renderRow)}
+                      </Fragment>
+                    )
+                  }
                   const label = groupDateLabel(group.key)
                   const absolute = group.key !== '—' ? formatDate(group.key) : null
                   const isHeadline = idx === 0 || idx === 1

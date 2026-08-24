@@ -53,7 +53,7 @@ export default function LaborRequisitionsPage() {
   }
 
   const columns: ColumnDef<LaborRequisitionRow>[] = useMemo(() => [
-    { id: 'project_name', header: 'Project', cell: ({ row }) => row.original.projects?.project_name ?? '—' },
+    { id: 'project_name', accessorFn: row => row.projects?.project_name ?? 'No project', header: 'Project' },
     { accessorKey: 'role_needed', header: 'Role Needed' },
     { accessorKey: 'headcount', header: 'Headcount' },
     {
@@ -109,7 +109,7 @@ export default function LaborRequisitionsPage() {
           </Link>
         )}
       </div>
-      {isLoading ? <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search labor requisitions…" persistKey="labor-requisitions" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName={canManage ? 'labor_requisitions' : undefined} queryKeys={['labor-requisitions']} />}
+      {isLoading ? <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search labor requisitions…" persistKey="labor-requisitions" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName={canManage ? 'labor_requisitions' : undefined} queryKeys={['labor-requisitions']} groupBy={{ columnId: 'project_name', kind: 'text' }} />}
     </div>
   )
 }

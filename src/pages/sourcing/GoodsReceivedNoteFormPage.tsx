@@ -42,19 +42,27 @@ type BundleForGrn = {
   }[]
 }
 
-type QualityStatus = 'accepted' | 'damaged' | 'rejected'
 type ItemDraft = {
   quantity_received: string
+  quantity_rejected: string
+  quantity_damaged: string
   condition_notes: string
   category_id: string | null
-  quality_status: QualityStatus
 }
 
-const QUALITY_OPTIONS: { value: QualityStatus; label: string; cls: string }[] = [
-  { value: 'accepted', label: 'Accepted', cls: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-300' },
-  { value: 'damaged',  label: 'Damaged',  cls: 'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300' },
-  { value: 'rejected', label: 'Rejected', cls: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-300' },
-]
+// A delivery can split three ways: accepted, damaged (kept anyway,
+// still billed — the flag is only for traceability), and rejected
+// (refused at the door, never enters stock, and reduces what's billed
+// on pay-on-delivery POs). Accepted is always delivered minus the other
+// two, computed here for display — the server derives the same figure
+// as a generated column.
+function accepted(draft: ItemDraft | undefined): number {
+  if (!draft) return 0
+  const d = parseFloat(draft.quantity_received) || 0
+  const rej = parseFloat(draft.quantity_rejected) || 0
+  const dmg = parseFloat(draft.quantity_damaged) || 0
+  return d - rej - dmg
+}
 
 // The stock_manager/logistics_officer gateway for recording a GRN — a
 // different role than whoever placed the order, verifying what actually
@@ -101,12 +109,13 @@ export default function GoodsReceivedNoteFormPage() {
     for (const it of bundle.sourcing_bundle_items) {
       init[it.id] = {
         quantity_received: it.quantity_actual != null ? String(it.quantity_actual) : '',
+        quantity_rejected: '0',
+        quantity_damaged: '0',
         condition_notes: '',
         // Pre-filled from the sub-ledger the PR line was already
         // classified under, so the receiver confirms rather than
         // re-derives it. Still editable per line.
         category_id: it.order_items?.sub_categories?.parent_category_id ?? null,
-        quality_status: 'accepted',
       }
     }
     setItems(init)
@@ -125,6 +134,12 @@ export default function GoodsReceivedNoteFormPage() {
     if (missingLedger.length > 0) {
       const names = missingLedger.map(it => it.order_items?.item_name ?? 'line').join(', ')
       setError(`Select a General Ledger for every line — still missing: ${names}`)
+      return
+    }
+    const overSplit = bundle.sourcing_bundle_items.filter(it => accepted(items[it.id]) < 0)
+    if (overSplit.length > 0) {
+      const names = overSplit.map(it => it.order_items?.item_name ?? 'line').join(', ')
+      setError(`Rejected + damaged can't exceed what was delivered — check: ${names}`)
       return
     }
     setError(''); setSaving(true)
@@ -152,9 +167,12 @@ export default function GoodsReceivedNoteFormPage() {
       grn_id: grnRow.id,
       sourcing_bundle_item_id: it.id,
       quantity_received: items[it.id]?.quantity_received ? parseFloat(items[it.id].quantity_received) : null,
+      quantity_rejected: parseFloat(items[it.id]?.quantity_rejected || '0') || 0,
+      quantity_damaged: parseFloat(items[it.id]?.quantity_damaged || '0') || 0,
       condition_notes: items[it.id]?.condition_notes || null,
       category_id: items[it.id]?.category_id ?? null,
-      quality_status: items[it.id]?.quality_status ?? 'accepted',
+      // quality_status is derived server-side (trigger) from the
+      // quantity split above — not sent here.
     }))
 
     const { error: itemsErr } = await supabase.from('goods_received_note_items').insert(itemRows)
@@ -191,7 +209,9 @@ export default function GoodsReceivedNoteFormPage() {
           <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Items Received</label>
           <p className="text-[11px] text-slate-400">
             Check each line as it comes off the truck. The General Ledger is set per line — one purchase order can mix
-            ledgers — and pre-fills from the sub-ledger the request was raised under. A rejected line does not enter stock.
+            ledgers — and pre-fills from the sub-ledger the request was raised under. Split what's rejected or damaged out
+            of Delivered — Accepted is calculated. Rejected never enters stock and isn't billed (unless this PO was paid
+            in advance); Damaged still enters stock and is still billed, just flagged for the record.
           </p>
         </div>
         <div className="rounded-lg border dark:border-slate-700 overflow-hidden overflow-x-auto">
@@ -200,18 +220,22 @@ export default function GoodsReceivedNoteFormPage() {
               <tr className="bg-slate-50 dark:bg-slate-700/40 border-b dark:border-slate-700">
                 <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Item</th>
                 <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Ordered</th>
-                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-28">Received *</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-48">General Ledger *</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-36">Quality *</th>
+                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-28">Delivered *</th>
+                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Rejected</th>
+                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Damaged</th>
+                <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Accepted</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-44">General Ledger *</th>
                 <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Note (optional)</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-slate-700">
               {bundle.sourcing_bundle_items.map(it => {
                 const draft = items[it.id]
-                const quality = draft?.quality_status ?? 'accepted'
+                const acceptedQty = accepted(draft)
+                const hasIssue = (parseFloat(draft?.quantity_rejected || '0') || 0) > 0 || (parseFloat(draft?.quantity_damaged || '0') || 0) > 0
+                const overSplit = acceptedQty < 0
                 return (
-                  <tr key={it.id} className={quality === 'rejected' ? 'bg-red-50/40 dark:bg-red-900/10' : undefined}>
+                  <tr key={it.id} className={overSplit ? 'bg-red-50/60 dark:bg-red-900/20' : hasIssue ? 'bg-amber-50/40 dark:bg-amber-900/10' : undefined}>
                     <td className="px-3 py-2 align-top">
                       <p className="font-medium text-slate-800 dark:text-slate-100">{it.order_items?.item_name ?? '—'}</p>
                       <p className="text-[11px] text-slate-400">{it.order_items?.unit ?? ''}</p>
@@ -222,11 +246,29 @@ export default function GoodsReceivedNoteFormPage() {
                     <td className="px-3 py-2 align-top">
                       <input
                         type="number" min={0} step="any"
-                        disabled={quality === 'rejected'}
-                        className="w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 disabled:opacity-40"
+                        className="w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
                         value={draft?.quantity_received ?? ''}
                         onChange={e => setItemField(it.id, 'quantity_received', e.target.value)}
                       />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <input
+                        type="number" min={0} step="any"
+                        className="w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-red-400 focus:border-red-400 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                        value={draft?.quantity_rejected ?? '0'}
+                        onChange={e => setItemField(it.id, 'quantity_rejected', e.target.value)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <input
+                        type="number" min={0} step="any"
+                        className="w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+                        value={draft?.quantity_damaged ?? '0'}
+                        onChange={e => setItemField(it.id, 'quantity_damaged', e.target.value)}
+                      />
+                    </td>
+                    <td className={`px-3 py-2 text-right tabular-nums align-top font-medium ${overSplit ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                      {acceptedQty}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <SearchableSelect
@@ -237,19 +279,10 @@ export default function GoodsReceivedNoteFormPage() {
                       />
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <select
-                        className={`w-full rounded-md border px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 ${QUALITY_OPTIONS.find(q => q.value === quality)?.cls ?? ''}`}
-                        value={quality}
-                        onChange={e => setItemField(it.id, 'quality_status', e.target.value as QualityStatus)}
-                      >
-                        {QUALITY_OPTIONS.map(q => <option key={q.value} value={q.value}>{q.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2 align-top">
                       <input
                         type="text"
                         className="w-full rounded-md border px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-                        placeholder={quality === 'accepted' ? 'Optional…' : 'What was wrong with it?'}
+                        placeholder={hasIssue ? 'What was wrong with it?' : 'Optional…'}
                         value={draft?.condition_notes ?? ''}
                         onChange={e => setItemField(it.id, 'condition_notes', e.target.value)}
                       />

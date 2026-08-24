@@ -1099,16 +1099,26 @@ export interface GoodsReceivedNote {
 }
 export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
 
-// Per-line quality verdict at receipt (migration 159). 'damaged' still
-// enters stock — the material is physically on site and has to be
-// accounted for; 'rejected' was refused at the door and does not.
-export type GrnQualityStatus = 'accepted' | 'damaged' | 'rejected'
+// Per-line quality verdict at receipt (migration 159, quantity split
+// added in 253). 'damaged' still enters stock and is still billed — the
+// material is physically on site and has to be accounted for, the flag
+// is for traceability only. 'rejected' was refused at the door: never
+// enters stock, and reduces vendor billing (except pay-in-advance POs).
+// 'partial' is a line with a real mix of accepted/rejected/damaged that
+// neither whole-line label can express. Auto-derived server-side from
+// the quantity_* split below — not something the client sets directly.
+export type GrnQualityStatus = 'accepted' | 'damaged' | 'rejected' | 'partial'
 
 export interface GoodsReceivedNoteItem {
   id: string
   grn_id: string
   sourcing_bundle_item_id: string
   quantity_received: number | null
+  // Carved out of quantity_received (migration 253). quantity_accepted
+  // is server-generated (received - rejected - damaged) — read-only.
+  quantity_rejected: number
+  quantity_damaged: number
+  quantity_accepted: number
   condition_notes: string | null
   // Per-line, because one bundle can mix ledgers. Supersedes the
   // header-level goods_received_notes.category_id.
@@ -1116,7 +1126,7 @@ export interface GoodsReceivedNoteItem {
   quality_status: GrnQualityStatus
   created_at: string
 }
-export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at'>
+export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at' | 'quantity_accepted' | 'quality_status'>
 
 // ── Tax Summary ───────────────────────────────────────────────────
 export interface TaxSummary {
@@ -1712,6 +1722,10 @@ export interface GrnRegisterRow {
   rejected_lines: number
   worst_quality: GrnQualityStatus
   ledgers: string | null
+  // Migration 253.
+  total_quantity_accepted: number
+  total_quantity_rejected: number
+  total_quantity_damaged: number
 }
 
 export type StockReturnRequestStatus = 'pending' | 'received' | 'rejected'

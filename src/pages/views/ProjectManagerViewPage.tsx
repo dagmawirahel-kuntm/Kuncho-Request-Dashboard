@@ -15,11 +15,14 @@ import type { Project, ProjectCostGroupBudget, Order, LaborAllocation, WorkOrder
 import { Wallet, Clock3, Receipt, TrendingUp, TrendingDown, AlertTriangle, ShoppingCart, HardHat, Hammer, Truck, CheckCircle2, PackageCheck } from 'lucide-react'
 
 // Shared with the GRN form's own palette so the same word looks the same
-// wherever material is checked in.
+// wherever material is checked in. 'partial' is a GRN-only state (site
+// transfer confirmations don't carry a quantity split) but the type is
+// shared, so it needs an entry here too even though it's never reached.
 const DELIVERY_QUALITY_CLS: Record<GrnQualityStatus, string> = {
   accepted: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-300',
   damaged:  'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300',
   rejected: 'text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-300',
+  partial:  'text-orange-700 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-300',
 }
 
 interface BudgetSummary {

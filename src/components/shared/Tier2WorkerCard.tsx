@@ -44,30 +44,30 @@ export function Tier2WorkerCard({ worker, trade, perf, badges, onOpen }: Props) 
     <button
       onClick={onOpen}
       className={`group relative w-full text-left rounded-[18px] overflow-hidden border transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-2xl ${tier === 'legendary' ? 'border-amber-400 border-2 shadow-[0_0_20px_rgba(212,162,74,0.4)]' : 'border-slate-200 dark:border-slate-700'} bg-slate-900`}
-      style={{ aspectRatio: '3 / 4.4' }}
+      style={{ aspectRatio: '3 / 4.5', containerType: 'inline-size' }}
     >
       {/* Trade-tinted band */}
       <div
-        className="absolute inset-x-0 top-0 h-[55%]"
-        style={{ background: `linear-gradient(160deg, ${accent} 0%, ${accent2} 100%)` }}
+        className="absolute inset-x-0 top-0"
+        style={{ height: '38%', background: `linear-gradient(160deg, ${accent} 0%, ${accent2} 100%)` }}
       >
         <div className="absolute inset-0" style={{
-          background: `radial-gradient(circle at 80% 20%, rgba(255,255,255,0.15) 0%, transparent 40%), linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.5) 100%)`,
+          background: `radial-gradient(circle at 80% 20%, rgba(255,255,255,0.15) 0%, transparent 40%), linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.55) 100%)`,
         }} />
       </div>
 
-      {/* Emblem top-left */}
-      <div className="absolute top-3.5 left-3.5 text-6xl opacity-40 group-hover:opacity-70 transition-all duration-300 select-none z-10" style={{ transform: 'rotate(-8deg)' }}>
+      {/* Emblem — a quiet flourish, not competing with the score */}
+      <div className="absolute top-[4%] left-[6%] text-[13cqw] opacity-25 group-hover:opacity-45 transition-opacity duration-300 select-none z-10" style={{ transform: 'rotate(-8deg)' }}>
         {emblem}
       </div>
 
-      {/* Score top-right */}
-      <div className="absolute top-3 right-3.5 text-right z-20 text-white">
-        <span className="block font-bold text-4xl leading-none tracking-tight" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.5)' }}>
+      {/* Score — the primary top-line figure */}
+      <div className="absolute top-[3.5%] right-[5%] text-right z-20 text-white">
+        <span className="block font-bold text-[9.5cqw] leading-none tracking-tight" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.5)' }}>
           {noData ? '—' : score}
         </span>
-        <span className="block text-[10px] tracking-[0.15em] text-white/70 font-mono">/ 100</span>
-        <span className={`inline-block mt-1.5 text-[9px] tracking-[0.2em] uppercase px-2 py-0.5 rounded-full border backdrop-blur-sm font-mono ${
+        <span className="block text-[2.3cqw] tracking-[0.15em] text-white/70 font-mono">/ 100</span>
+        <span className={`inline-block mt-[3%] text-[2.1cqw] tracking-[0.2em] uppercase px-2 py-0.5 rounded-full border backdrop-blur-sm font-mono whitespace-nowrap ${
           tier === 'legendary' ? 'bg-amber-500/95 border-amber-400 text-amber-950' :
           tier === 'rare'      ? 'bg-blue-500/95 border-blue-400 text-blue-950' :
           tier === 'standard'  ? 'bg-black/35 border-white/25 text-white' :
@@ -75,28 +75,30 @@ export function Tier2WorkerCard({ worker, trade, perf, badges, onOpen }: Props) 
         }`}>{tier}</span>
       </div>
 
-      {/* Portrait */}
-      <div className="absolute top-11 left-1/2 -translate-x-1/2 w-[118px] h-[118px] rounded-full border-4 border-white/90 flex items-center justify-center z-10 shadow-xl overflow-hidden" style={{ background: accent2 }}>
+      {/* Portrait — sits on the band/body seam, sized off container width so
+          it holds proportion at every column width instead of a fixed px */}
+      <div className="absolute top-[22%] left-1/2 -translate-x-1/2 w-[30%] aspect-square rounded-full border-4 border-white/90 flex items-center justify-center z-10 shadow-xl overflow-hidden" style={{ background: accent2 }}>
         {worker.photo_url ? (
           <img src={worker.photo_url} alt={worker.employee_name} className="w-full h-full object-cover" />
         ) : (
-          <span className="text-4xl font-black text-white select-none">{initial}</span>
+          <span className="text-[9cqw] font-black text-white select-none">{initial}</span>
         )}
       </div>
 
-      {/* Codename block */}
-      <div className="absolute top-[172px] inset-x-0 text-center px-4 z-10">
-        <div className="font-black text-2xl leading-tight text-white" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+      {/* Codename block — given real air below the portrait instead of a
+          cramped fixed offset */}
+      <div className="absolute top-[41.5%] inset-x-0 text-center px-4 z-10">
+        <div className="font-black text-[5.6cqw] leading-tight text-white" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
           {worker.codename_amharic ?? trade?.codename_amharic ?? '—'}
         </div>
-        <div className="text-[11px] font-medium tracking-[0.14em] uppercase text-white/75 mt-1">
+        <div className="text-[2.5cqw] font-medium tracking-[0.14em] uppercase text-white/75 mt-1">
           {worker.codename_english ?? trade?.codename_english ?? ''}
         </div>
-        <div className="text-[13px] text-white/55 mt-0.5 font-medium truncate">{worker.employee_name}</div>
+        <div className="text-[2.9cqw] text-white/55 mt-0.5 font-medium truncate">{worker.employee_name}</div>
       </div>
 
       {/* Below the band */}
-      <div className="absolute inset-x-0 bottom-0 top-[55%] p-4 flex flex-col gap-2.5 bg-slate-900">
+      <div className="absolute inset-x-0 bottom-0 top-[58%] px-[5%] pt-[4%] pb-[4.5%] flex flex-col gap-3 bg-slate-900">
         {noData ? (
           <div className="flex-1 flex items-center justify-center text-center px-5">
             <div>
@@ -106,18 +108,20 @@ export function Tier2WorkerCard({ worker, trade, perf, badges, onOpen }: Props) 
           </div>
         ) : (
           <>
-            <RatingRow label="Quality"    val={Number(perf!.score_quality    ?? 0)} accent={accent} />
-            <RatingRow label="Speed"      val={Number(perf!.score_timeliness ?? 0)} accent={accent} />
-            <RatingRow label="Safety"     val={Number(perf!.score_safety     ?? 0)} accent={accent} />
-            <RatingRow label="Team"       val={Number(perf!.score_teamwork   ?? 0)} accent={accent} />
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-dashed border-slate-700 mt-auto">
+            <div className="flex flex-col gap-2.5">
+              <RatingRow label="Quality"    val={Number(perf!.score_quality    ?? 0)} accent={accent} />
+              <RatingRow label="Speed"      val={Number(perf!.score_timeliness ?? 0)} accent={accent} />
+              <RatingRow label="Safety"     val={Number(perf!.score_safety     ?? 0)} accent={accent} />
+              <RatingRow label="Team"       val={Number(perf!.score_teamwork   ?? 0)} accent={accent} />
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-dashed border-slate-700 mt-auto">
               <MetaCell k="Day rate"     v={worker.day_rate != null ? `ETB ${Math.round(worker.day_rate)}` : '—'} />
               <MetaCell k="Ratings"      v={String(perf?.rating_count_all_time ?? 0)} />
               <MetaCell k="Last active"  v={fmtShort(worker.last_engaged_at)} />
             </div>
           </>
         )}
-        <div className="flex items-center justify-between pt-2 mt-1">
+        <div className="flex items-center justify-between pt-2.5 border-t border-dashed border-slate-800">
           <div className={`text-[10px] tracking-[0.1em] font-mono flex items-center gap-1.5 ${statusDotClass(worker.status)}`}>
             <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: statusDot(worker.status) }} />
             <span className="text-slate-400 uppercase">{(worker.status ?? 'active').replace('_',' ')}</span>
