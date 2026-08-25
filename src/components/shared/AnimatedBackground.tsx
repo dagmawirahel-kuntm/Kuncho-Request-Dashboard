@@ -55,9 +55,11 @@ export function AnimatedBackground() {
 
     function tick() {
       const isDark = document.documentElement.classList.contains('dark')
+      const isGold = document.documentElement.classList.contains('gold')
 
-      // Background fill — matches app bg (warm near-black, dense-black theme)
-      ctx!.fillStyle = isDark ? '#0c0a07' : '#f8fafc'
+      // Background fill — matches app bg for whichever of the three themes
+      // is active (light / dark / gold; gold is layered on top of dark).
+      ctx!.fillStyle = isGold ? '#0c0a07' : isDark ? '#0f172a' : '#f8fafc'
       ctx!.fillRect(0, 0, w, h)
 
       const numRGB  = isDark ? '212,175,55'  : '30,41,59'

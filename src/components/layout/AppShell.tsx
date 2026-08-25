@@ -7,7 +7,7 @@ import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { LogOut, ChevronRight, Menu, Sun, Moon, CalendarRange, Settings } from 'lucide-react'
+import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings } from 'lucide-react'
 
 function FiscalYearControl() {
   const { periods, current, value, setValue, canToggle } = useFiscalYear()
@@ -70,6 +70,9 @@ const roleBadgeColors: Record<string, string> = {
   project_manager: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
 }
 
+export type Theme = 'light' | 'dark' | 'gold'
+const THEME_ORDER: Theme[] = ['light', 'dark', 'gold']
+
 export function AppShell() {
   const { profile, role, signOut } = useAuth()
   const location = useLocation()
@@ -77,7 +80,12 @@ export function AppShell() {
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem('theme')
+    // Migrates the old binary 'dark'/'light' values transparently — anyone
+    // who had 'dark' saved keeps seeing Dark, not Gold, after this ships.
+    return saved === 'dark' || saved === 'gold' ? saved : 'light'
+  })
 
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0')
@@ -89,14 +97,17 @@ export function AppShell() {
 
   useEffect(() => {
     const root = document.documentElement
-    if (dark) { root.classList.add('dark') } else { root.classList.remove('dark') }
-    localStorage.setItem('theme', dark ? 'dark' : 'light')
-  }, [dark])
+    // Gold is layered on top of Dark (shares all dark: utility styling,
+    // adds its own warm near-black overrides) — so both classes apply.
+    root.classList.toggle('dark', theme === 'dark' || theme === 'gold')
+    root.classList.toggle('gold', theme === 'gold')
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
-  function toggleDark() {
+  function cycleTheme() {
     const root = document.documentElement
     root.classList.add('theme-transition')
-    setDark(d => !d)
+    setTheme(t => THEME_ORDER[(THEME_ORDER.indexOf(t) + 1) % THEME_ORDER.length])
     setTimeout(() => root.classList.remove('theme-transition'), 350)
   }
 
@@ -109,8 +120,8 @@ export function AppShell() {
         onToggleCollapse={() => setCollapsed(c => !c)}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
-        isDark={dark}
-        onToggleTheme={toggleDark}
+        theme={theme}
+        onToggleTheme={cycleTheme}
       />
       <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         {/* Header */}
@@ -143,11 +154,11 @@ export function AppShell() {
           <div className="flex items-center gap-2 sm:gap-3">
             <FiscalYearControl />
             <button
-              onClick={toggleDark}
-              title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+              onClick={cycleTheme}
+              title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to gold theme' : 'Switch to light mode'}
               className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
             >
-              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === 'light' ? <Moon className="h-4 w-4" /> : theme === 'dark' ? <Gem className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
             <NotificationsBell />
             {role && (
