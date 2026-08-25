@@ -56,8 +56,8 @@ export function AnimatedBackground() {
     function tick() {
       const isDark = document.documentElement.classList.contains('dark')
 
-      // Background fill — matches app bg
-      ctx!.fillStyle = isDark ? '#0f172a' : '#f8fafc'
+      // Background fill — matches app bg (warm near-black, dense-black theme)
+      ctx!.fillStyle = isDark ? '#0c0a07' : '#f8fafc'
       ctx!.fillRect(0, 0, w, h)
 
       const numRGB  = isDark ? '212,175,55'  : '30,41,59'

@@ -99,6 +99,16 @@ export function useAllRolling() {
 // Worker payments + work history for the card-detail modal. Payments come from
 // two shapes: individual model (expense.paid_to_staff_id = them) and gang-leader
 // model (labor_expense_workers row for them). Combined client-side for display.
+//
+// These two shapes overlap, not partition: rollup_labor_timesheets_to_expense
+// inserts a labor_expense_workers row for EVERY worker on a rollup regardless
+// of payment_model, and separately sets expenses.paid_to_staff_id whenever the
+// rollup is a single-worker "individual" model. So a solo worker's payment
+// satisfies both queries for the exact same expense — shown unfiltered, it
+// looked like they were paid twice for one real payment. Whenever an expense
+// id appears in both, `individual` (the direct, whole-expense record) is kept
+// and the redundant `gang` row for that same expense is dropped, since the
+// worker wasn't actually paid "via a gang leader" in that case.
 export function useWorkerHistory(staffId: string | undefined) {
   return useQuery({
     enabled: !!staffId,
@@ -121,10 +131,11 @@ export function useWorkerHistory(staffId: string | undefined) {
       if (individual.error) throw individual.error
       if (gang.error) throw gang.error
       if (badges.error) throw badges.error
+      const individualExpenseIds = new Set((individual.data ?? []).map(e => e.id))
       return {
         allocations: allocations.data ?? [],
         individual: individual.data ?? [],
-        gang: gang.data ?? [],
+        gang: (gang.data ?? []).filter(r => !individualExpenseIds.has(r.expense_id)),
         badges: (badges.data ?? []).map(b => b.badge_code),
       }
     },
