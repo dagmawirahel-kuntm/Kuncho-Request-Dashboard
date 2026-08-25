@@ -824,29 +824,86 @@ function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameB
 }
 
 // ── Today's activity: hours logged today + who logged in ────────────
+// Total work logged on this WO to date, not just today — the old
+// version only ever summed today's hours_logged, so a WO that had been
+// running for weeks still read as "0 hrs" the moment today ticked over
+// with nothing freshly logged, and never reflected volume-paid work
+// (volume_completed) at all. Today's activity is kept as a secondary
+// "+X today" detail rather than dropped, since it's still useful.
 function TodayActivitySection({ workOrderId, staffNameById }: { workOrderId: string; staffNameById: Map<string, string> }) {
   const today = new Date().toISOString().slice(0, 10)
   const { data: rows = [] } = useQuery({
-    queryKey: ['wo-attendance-today', workOrderId, today],
+    queryKey: ['wo-attendance-all', workOrderId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('wo_attendance_log').select('*, staff:staff_id(employee_name)').eq('work_order_id', workOrderId).eq('log_date', today)
+      const { data, error } = await supabase
+        .from('wo_attendance_log')
+        .select('*, staff:staff_id(employee_name), labor_requisitions(role_needed, volume_unit)')
+        .eq('work_order_id', workOrderId)
       if (error) throw error
-      return data as unknown as (WoAttendanceLog & { staff: { employee_name: string } | null })[]
+      return data as unknown as (WoAttendanceLog & { staff: { employee_name: string } | null; labor_requisitions: { role_needed: string; volume_unit: string | null } | null })[]
     },
   })
-  const totalHours = rows.reduce((sum, r) => sum + Number(r.hours_logged), 0)
+
+  const totalHours = rows.reduce((sum, r) => sum + Number(r.hours_logged ?? 0), 0)
+  const todayHours = rows.filter(r => r.log_date === today).reduce((sum, r) => sum + Number(r.hours_logged ?? 0), 0)
+
+  // Volume-paid work doesn't share a unit across tasks (m², pcs, lm…),
+  // so it's totalled per unit rather than lumped into one number.
+  const volumeByUnit = new Map<string, { total: number; today: number }>()
+  for (const r of rows) {
+    const vol = Number(r.volume_completed ?? 0)
+    if (vol <= 0) continue
+    const unit = r.labor_requisitions?.volume_unit ?? 'units'
+    const bucket = volumeByUnit.get(unit) ?? { total: 0, today: 0 }
+    bucket.total += vol
+    if (r.log_date === today) bucket.today += vol
+    volumeByUnit.set(unit, bucket)
+  }
+
+  // Per-worker cumulative totals — hours and/or volume, whichever this
+  // person actually logged, each with a "today" sub-figure alongside.
+  type WorkerTotal = { name: string; hours: number; hoursToday: number; volume: number; volumeToday: number; unit: string | null }
+  const byWorker = new Map<string, WorkerTotal>()
+  for (const r of rows) {
+    const name = r.staff?.employee_name ?? staffNameById.get(r.staff_id) ?? '—'
+    const w = byWorker.get(r.staff_id) ?? { name, hours: 0, hoursToday: 0, volume: 0, volumeToday: 0, unit: null }
+    const isToday = r.log_date === today
+    w.hours += Number(r.hours_logged ?? 0)
+    if (isToday) w.hoursToday += Number(r.hours_logged ?? 0)
+    const vol = Number(r.volume_completed ?? 0)
+    if (vol > 0) {
+      w.volume += vol
+      if (isToday) w.volumeToday += vol
+      w.unit = r.labor_requisitions?.volume_unit ?? w.unit ?? 'units'
+    }
+    byWorker.set(r.staff_id, w)
+  }
+
+  const hasAnyRows = rows.length > 0
 
   return (
     <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-2">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Clock className="h-4 w-4" /> Today's Activity</h2>
-      <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{totalHours} hrs <span className="text-xs font-normal text-slate-400">logged today</span></p>
-      {rows.length === 0 ? (
-        <p className="text-sm text-slate-400">No hours logged yet today.</p>
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Clock className="h-4 w-4" /> Work Logged</h2>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <p className="text-lg font-bold text-slate-800 dark:text-slate-100">
+          {totalHours} hrs <span className="text-xs font-normal text-slate-400">total{todayHours > 0 ? ` · +${todayHours}h today` : ''}</span>
+        </p>
+        {Array.from(volumeByUnit.entries()).map(([unit, v]) => (
+          <p key={unit} className="text-lg font-bold text-slate-800 dark:text-slate-100">
+            {v.total} {unit} <span className="text-xs font-normal text-slate-400">total{v.today > 0 ? ` · +${v.today} today` : ''}</span>
+          </p>
+        ))}
+      </div>
+      {!hasAnyRows ? (
+        <p className="text-sm text-slate-400">No work logged yet.</p>
       ) : (
         <div className="flex flex-wrap gap-1.5">
-          {rows.map(r => (
-            <span key={r.id} className="rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300">
-              {r.staff?.employee_name ?? staffNameById.get(r.staff_id) ?? '—'} · {r.hours_logged}h
+          {Array.from(byWorker.values()).map(w => (
+            <span key={w.name} className="rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300">
+              {w.name} ·{w.hours > 0 && ` ${w.hours}h`}{w.volume > 0 && ` ${w.volume} ${w.unit}`}
+              {(w.hoursToday > 0 || w.volumeToday > 0) && (
+                <span className="text-slate-400"> (+{w.hoursToday > 0 ? `${w.hoursToday}h` : `${w.volumeToday} ${w.unit}`} today)</span>
+              )}
             </span>
           ))}
         </div>
