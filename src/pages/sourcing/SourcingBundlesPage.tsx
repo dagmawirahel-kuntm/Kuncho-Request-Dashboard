@@ -12,6 +12,21 @@ type BundleRow = SourcingBundle & {
   vendors: { vendor_name: string } | null
   _itemCount: number
   _totalActual: number
+  _projectLabel: string
+  _projectTitle?: string
+  _requesterLabel: string
+  _requesterTitle?: string
+}
+
+// A bundle can consolidate purchase requests from more than one order —
+// and each order carries its own project + requester — so this is a
+// summary, not always a single authoritative value. Shows the one name
+// when every line agrees, otherwise a count (full list in the tooltip).
+function summarizeNames(names: (string | null | undefined)[], noneLabel: string): { label: string; title?: string } {
+  const unique = Array.from(new Set(names.filter((n): n is string => !!n)))
+  if (unique.length === 0) return { label: noneLabel }
+  if (unique.length === 1) return { label: unique[0] }
+  return { label: `${unique.length} — mixed`, title: unique.join(', ') }
 }
 
 const STATUS_CLS: Record<SourcingBundleStatus, string> = {
@@ -71,24 +86,46 @@ export default function SourcingBundlesPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sourcing_bundle_items')
-        .select('bundle_id, quantity_actual, unit_price_actual')
+        .select(`
+          bundle_id, quantity_actual, unit_price_actual,
+          order_items(
+            orders(
+              projects(project_name),
+              requester:user_profiles!orders_requested_by_user_id_fkey(full_name)
+            )
+          )
+        `)
       if (error) throw error
       return data ?? []
     },
   })
 
   const enriched: BundleRow[] = useMemo(() => {
-    const map: Record<string, { count: number; total: number }> = {}
+    const map: Record<string, { count: number; total: number; projects: (string | null)[]; requesters: (string | null)[] }> = {}
     for (const item of itemSummary) {
-      if (!map[item.bundle_id]) map[item.bundle_id] = { count: 0, total: 0 }
-      map[item.bundle_id].count++
-      map[item.bundle_id].total += (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+      if (!map[item.bundle_id]) map[item.bundle_id] = { count: 0, total: 0, projects: [], requesters: [] }
+      const bucket = map[item.bundle_id]
+      bucket.count++
+      bucket.total += (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const order = (item as any).order_items?.orders
+      bucket.projects.push(order?.projects?.project_name ?? null)
+      bucket.requesters.push(order?.requester?.full_name ?? null)
     }
-    return bundles.map(b => ({
-      ...b,
-      _itemCount:   map[b.id]?.count ?? 0,
-      _totalActual: map[b.id]?.total ?? 0,
-    }))
+    return bundles.map(b => {
+      const bucket = map[b.id]
+      const project = summarizeNames(bucket?.projects ?? [], 'No project')
+      const requester = summarizeNames(bucket?.requesters ?? [], '—')
+      return {
+        ...b,
+        _itemCount:   bucket?.count ?? 0,
+        _totalActual: bucket?.total ?? 0,
+        _projectLabel: project.label,
+        _projectTitle: project.title,
+        _requesterLabel: requester.label,
+        _requesterTitle: requester.title,
+      }
+    })
   }, [bundles, itemSummary])
 
   const stats = useMemo(() => ({
@@ -141,8 +178,9 @@ export default function SourcingBundlesPage() {
         </div>
       ) : (
         <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
-          <div className="hidden sm:grid grid-cols-[5rem_1fr_1fr_4rem_6rem_8rem_6rem_4rem] gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          <div className="hidden sm:grid grid-cols-[5rem_1fr_1fr_1fr_4rem_6rem_8rem_6rem_4rem] gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
             <span>PO Code</span>
+            <span>Project · PM</span>
             <span>Vendor</span>
             <span>Delivery</span>
             <span className="text-center">Items</span>
@@ -154,8 +192,16 @@ export default function SourcingBundlesPage() {
           {enriched.map((b, i) => (
             <div key={b.id}
               onClick={() => navigate(`/sourcing/${b.id}`)}
-              className={`sm:grid sm:grid-cols-[5rem_1fr_1fr_4rem_6rem_8rem_6rem_4rem] sm:gap-3 flex flex-col gap-1 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${i < enriched.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
+              className={`sm:grid sm:grid-cols-[5rem_1fr_1fr_1fr_4rem_6rem_8rem_6rem_4rem] sm:gap-3 flex flex-col gap-1 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${i < enriched.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
               <span className="font-mono text-xs font-bold text-brand">{b.bundle_code}</span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate" title={b._projectTitle}>
+                  {b._projectLabel}
+                </p>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate" title={b._requesterTitle}>
+                  PM: {b._requesterLabel}
+                </p>
+              </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
                   {(b as any).vendors?.vendor_name ?? b.vendor_name ?? '—'}
