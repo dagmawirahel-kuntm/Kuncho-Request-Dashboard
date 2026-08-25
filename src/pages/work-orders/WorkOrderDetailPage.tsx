@@ -1091,12 +1091,39 @@ function BlockersPanel({ projectId }: { projectId: string }) {
       return data as { id: string; incident_type: string; severity: string; description: string | null }[]
     },
   })
+  // A purchase request still blocks the WO only while its lines haven't
+  // actually arrived. orders.status is a vestigial column — set once at
+  // PR creation and never updated by anything, GRN included — so it
+  // can't tell "material arrived" from "material never even ordered".
+  // The real signal is the sourcing chain: an order_item still blocks
+  // if it isn't cancelled AND either hasn't been put into a PO yet, or
+  // its PO's linked bundle hasn't been marked fulfilled (which only
+  // happens once a GRN is actually recorded against it).
   const { data: pendingOrders = [] } = useQuery({
     queryKey: ['wo-blockers-orders', projectId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('orders').select('id, order_name, item_service_description').eq('project_id', projectId).eq('status', 'pending')
-      if (error) throw error
-      return data as { id: string; order_name: string | null; item_service_description: string | null }[]
+      const { data: orders, error: ordersErr } = await supabase
+        .from('orders')
+        .select('id, order_name, item_service_description')
+        .eq('project_id', projectId)
+      if (ordersErr) throw ordersErr
+      if (!orders || orders.length === 0) return []
+
+      const { data: items, error: itemsErr } = await supabase
+        .from('order_items')
+        .select('id, order_id, status, sourcing_bundle_items(sourcing_bundles(status))')
+        .in('order_id', orders.map(o => o.id))
+      if (itemsErr) throw itemsErr
+
+      const stillBlocking = new Set<string>()
+      for (const item of items ?? []) {
+        if (item.status === 'cancelled') continue
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bundleLinks = (item as any).sourcing_bundle_items as { sourcing_bundles: { status: string } | null }[]
+        const anyFulfilled = bundleLinks.some(l => l.sourcing_bundles?.status === 'fulfilled')
+        if (!anyFulfilled) stillBlocking.add(item.order_id)
+      }
+      return orders.filter(o => stillBlocking.has(o.id))
     },
   })
 
