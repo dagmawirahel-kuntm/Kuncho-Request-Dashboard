@@ -9,6 +9,7 @@ import {
   HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { Theme } from './AppShell'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
 import { useState, useRef } from 'react'
@@ -318,11 +319,11 @@ interface SidebarProps {
   onToggleCollapse: () => void
   mobileOpen: boolean
   onCloseMobile: () => void
-  isDark: boolean
+  theme: Theme
   onToggleTheme: () => void
 }
 
-export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, isDark, onToggleTheme }: SidebarProps) {
+export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, theme, onToggleTheme }: SidebarProps) {
   const logoRef = useRef<HTMLSpanElement>(null)
 
   function handleLogoClick() {
@@ -355,13 +356,13 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
         <div className={cn('flex h-14 shrink-0 items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
           <button
             onClick={handleLogoClick}
-            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to gold theme' : 'Switch to light mode'}
             className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             <span
               ref={logoRef}
               className="inline-block font-black leading-none select-none transition-colors duration-300"
-              style={{ fontSize: '2rem', color: isDark ? '#D4AF37' : 'white' }}
+              style={{ fontSize: '2rem', color: theme === 'light' ? 'white' : '#D4AF37' }}
             >
               ቁ
             </span>
