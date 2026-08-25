@@ -10,14 +10,15 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type {
   ChartOfAccounts, JournalEntry, JournalLine, OpeningBalance,
   LedgerPostingFailure, TrialBalanceRow, PlLedgerPreviewRow, BalanceSheetLedgerPreviewRow,
-  CashReconciliationCheckRow,
+  CashReconciliationCheckRow, SubLedgerBalanceRow,
 } from '@/types/database'
 import {
-  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight,
+  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight, Layers,
 } from 'lucide-react'
 
 const TABS = [
   { key: 'trial-balance', label: 'Trial Balance', icon: Scale },
+  { key: 'sub-ledgers', label: 'Sub Ledgers', icon: Layers },
   { key: 'journal', label: 'Journal Entries', icon: ScrollText },
   { key: 'opening-balances', label: 'Opening Balances', icon: FileSpreadsheet },
   { key: 'reconciliation', label: 'Reconciliation', icon: BookOpen },
@@ -81,6 +82,7 @@ export default function GeneralLedgerPage() {
       </div>
 
       {tab === 'trial-balance' && <TrialBalanceTab />}
+      {tab === 'sub-ledgers' && <SubLedgersTab />}
       {tab === 'journal' && <JournalEntriesTab />}
       {tab === 'opening-balances' && <OpeningBalancesTab canManage={canManage} />}
       {tab === 'reconciliation' && <ReconciliationTab />}
@@ -167,6 +169,132 @@ function TrialBalanceTab() {
             </div>
           )
         })
+      )}
+    </Section>
+  )
+}
+
+// ── Sub Ledgers ──────────────────────────────────────────────────────
+// A subsidiary ledger: posted purchase-order expenses are collapsed to a
+// single GL control account (often "Multiple") at posting time. This tab
+// reconstructs the per-sub-category detail behind that control total from
+// the PO bundle lines, grouped by each sub-ledger's true parent category —
+// read-only, and reconciling back to what's posted.
+function SubLedgersTab() {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['v-sub-ledger-balances'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_sub_ledger_balances').select('*')
+      if (error) throw error
+      return data as SubLedgerBalanceRow[]
+    },
+  })
+
+  // Group by true parent GL category, summing sub-ledgers across periods
+  // (the ledger is current-fiscal-year forward, effectively one period).
+  const groups = useMemo(() => {
+    const byParent = new Map<string, { parent: string; total: number; hidden: number; subs: Map<string, { name: string; amount: number; hidden: number }> }>()
+    for (const r of data) {
+      const key = r.parent_category_id ?? 'unclassified'
+      if (!byParent.has(key)) byParent.set(key, { parent: r.parent_category, total: 0, hidden: 0, subs: new Map() })
+      const g = byParent.get(key)!
+      g.total += r.amount
+      g.hidden += r.hidden_in_multiple
+      const subKey = r.sub_category_id ?? 'unassigned'
+      const existing = g.subs.get(subKey) ?? { name: r.sub_ledger, amount: 0, hidden: 0 }
+      existing.amount += r.amount
+      existing.hidden += r.hidden_in_multiple
+      g.subs.set(subKey, existing)
+    }
+    // Sort parents by total desc, but keep "Unclassified" last regardless.
+    return [...byParent.entries()]
+      .map(([key, g]) => ({ key, ...g, subs: [...g.subs.values()].sort((a, b) => b.amount - a.amount) }))
+      .sort((a, b) => {
+        if (a.key === 'unclassified') return 1
+        if (b.key === 'unclassified') return -1
+        return b.total - a.total
+      })
+  }, [data])
+
+  const grandTotal = groups.reduce((s, g) => s + g.total, 0)
+  const grandHidden = groups.reduce((s, g) => s + g.hidden, 0)
+
+  function toggle(key: string) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
+  return (
+    <Section
+      title="Sub Ledgers"
+      sub="Posted purchase-order spend broken down to the sub-ledger (sub-category) behind each GL control account — allocated across the bundle's lines by value. Read-only; reconciles to the posted ledger."
+    >
+      {isLoading ? (
+        <Empty>Loading…</Empty>
+      ) : groups.length === 0 ? (
+        <Empty>No posted purchase-order expenses to break down yet.</Empty>
+      ) : (
+        <>
+          {grandHidden > 0.01 && (
+            <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+              <span className="font-semibold">{formatCurrency(grandHidden)}</span> of this spend is posted to the GL under the single <span className="font-medium">“Multiple”</span> control account — the sub-ledgers below are where it actually belongs.
+            </div>
+          )}
+          <div className="divide-y dark:divide-slate-700">
+            {groups.map(g => {
+              const open = expanded.has(g.key)
+              return (
+                <div key={g.key}>
+                  <button
+                    onClick={() => toggle(g.key)}
+                    className="w-full flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40 text-left"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {open ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />}
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{g.parent}</span>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">· {g.subs.length} sub-ledger{g.subs.length === 1 ? '' : 's'}</span>
+                      {g.hidden > 0.01 && (
+                        <span className="hidden sm:inline text-[11px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 dark:bg-amber-900/30 dark:text-amber-300">
+                          {formatCurrency(g.hidden)} in Multiple
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 flex-shrink-0">{formatCurrency(g.total)}</span>
+                  </button>
+                  {open && (
+                    <div className="px-4 pb-3 pl-9">
+                      <table className="w-full text-sm">
+                        <tbody className="divide-y dark:divide-slate-700">
+                          {g.subs.map((s, i) => (
+                            <tr key={i}>
+                              <td className="py-1.5 text-slate-600 dark:text-slate-300">{s.name}</td>
+                              <td className="py-1.5 text-right w-40">
+                                {s.hidden > 0.01 && (
+                                  <span className="text-[11px] text-amber-600 dark:text-amber-400 mr-2" title="Portion currently posted to the Multiple control account">
+                                    {formatCurrency(s.hidden)} in Multiple
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums font-medium w-28">{formatCurrency(s.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex items-center justify-between px-4 py-3 border-t dark:border-slate-700 font-semibold text-sm">
+            <span className="text-slate-700 dark:text-slate-200">Total posted PO spend</span>
+            <span className="tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(grandTotal)}</span>
+          </div>
+        </>
       )}
     </Section>
   )

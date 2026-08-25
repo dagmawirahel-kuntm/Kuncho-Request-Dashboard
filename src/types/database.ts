@@ -2206,6 +2206,18 @@ export interface TrialBalanceRow {
   balance: number
 }
 
+export interface SubLedgerBalanceRow {
+  fiscal_period_id: string | null
+  fiscal_period_label: string | null
+  parent_category_id: string | null
+  parent_category: string
+  sub_category_id: string | null
+  sub_ledger: string
+  amount: number
+  hidden_in_multiple: number
+  entry_count: number
+}
+
 export interface PlLedgerPreviewRow {
   account_code: string
   account_name: string
