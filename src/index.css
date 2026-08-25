@@ -30,33 +30,33 @@
   --color-sidebar-foreground: hsl(210 40% 98%);
   --color-brand: #151a1f;
   --color-brand-foreground: #ffffff;
-  /* Dense, neutral near-black — overrides Tailwind's default (blue-tinted)
-     slate-900/800/700 everywhere those utilities are used directly
-     (dark:bg-slate-900, dark:border-slate-700, etc. — hundreds of call
-     sites across the app), so this one change covers all of them without
-     touching each file. Lighter slate shades (used for dark-mode text)
-     are left at Tailwind's defaults. */
-  --color-slate-900: #0a0a0a;
-  --color-slate-800: #141414;
-  --color-slate-700: #262626;
+  /* Dense, warm near-black (a whisper of gold undertone, not neutral gray —
+     ties the background to the existing gold brand accent) — overrides
+     Tailwind's default (blue-tinted) slate-900/800/700 everywhere those
+     utilities are used directly (dark:bg-slate-900, dark:border-slate-700,
+     etc. — hundreds of call sites across the app), so this one change
+     covers all of them without touching each file. Lighter slate shades
+     (used for dark-mode text) are left at Tailwind's defaults. */
+  --color-slate-900: #0c0a07;
+  --color-slate-800: #171310;
+  --color-slate-700: #2b241c;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
 }
 
-/* Dark mode CSS variable overrides — same dense near-black family as the
-   slate-900/800/700 overrides above, expressed here for the semantic
+/* Dark mode CSS variable overrides — same dense warm near-black family as
+   the slate-900/800/700 overrides above, expressed here for the semantic
    background/card/popover/muted/border tokens. Foreground (text) and
-   brand (gold accent) colors are unchanged — this is a background-only
-   change. */
+   brand (gold accent) colors are unchanged. */
 .dark {
-  --color-border: #262626;
-  --color-background: #0a0a0a;
+  --color-border: #2b241c;
+  --color-background: #0c0a07;
   --color-foreground: hsl(210 40% 96%);
-  --color-card: #141414;
-  --color-popover: #141414;
-  --color-muted: #1f1f1f;
+  --color-card: #171310;
+  --color-popover: #171310;
+  --color-muted: #201a13;
   --color-muted-foreground: hsl(215 20% 65%);
   --color-brand: #D4AF37;
   --color-brand-foreground: #1a1100;
@@ -155,7 +155,7 @@ html.theme-transition *::after {
 .dark input:not([type='checkbox']):not([type='radio']):not([type='range']),
 .dark textarea,
 .dark select {
-  background-color: #1f1f1f;
+  background-color: #201a13;
   color: hsl(210 40% 96%);
   color-scheme: dark;
 }
@@ -168,13 +168,13 @@ html.theme-transition *::after {
 
 /* ── Backgrounds ─────────────────────────────────────────────────────────── */
 .bg-white:not([class*="dark:bg"]):is(.dark *) {
-  background-color: #141414;
+  background-color: #171310;
 }
 .bg-slate-50:not([class*="dark:bg"]):is(.dark *) {
-  background-color: #0a0a0a;
+  background-color: #0c0a07;
 }
 .bg-slate-100:not([class*="dark:bg"]):is(.dark *) {
-  background-color: #1a1a1a;
+  background-color: #1c170f;
 }
 
 /* Coloured status/alert backgrounds */
@@ -223,13 +223,13 @@ html.theme-transition *::after {
 /* ── Borders ─────────────────────────────────────────────────────────────── */
 .border-slate-200:not([class*="dark:border"]):is(.dark *),
 .border-slate-100:not([class*="dark:border"]):is(.dark *) {
-  border-color: #262626;
+  border-color: #2b241c;
 }
 
 /* ── Hover backgrounds ───────────────────────────────────────────────────── */
 .hover\:bg-slate-50:not([class*="dark:hover"]):hover:is(.dark *),
 .hover\:bg-slate-100:not([class*="dark:hover"]):hover:is(.dark *) {
-  background-color: #1f1f1f;
+  background-color: #201a13;
 }
 .hover\:bg-red-50:not([class*="dark:hover"]):hover:is(.dark *) {
   background-color: hsl(0 60% 14%);
@@ -245,5 +245,5 @@ html.theme-transition *::after {
 /* ── Divide lines ────────────────────────────────────────────────────────── */
 .divide-slate-100:not([class*="dark:divide"]):is(.dark *) > * + *,
 .divide-slate-200:not([class*="dark:divide"]):is(.dark *) > * + * {
-  border-color: #262626;
+  border-color: #2b241c;
 }
