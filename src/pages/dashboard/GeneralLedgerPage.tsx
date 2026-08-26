@@ -175,16 +175,14 @@ function TrialBalanceTab() {
 }
 
 // ── Sub Ledgers ──────────────────────────────────────────────────────
-// A subsidiary ledger: posted purchase-order expenses are collapsed to a
-// single GL control account at posting time (a specific category, or
-// "Multiple" when the PO spans several). This tab reconstructs the REAL
-// category behind each posted amount from the goods_received_note_items —
-// the category the receiver actually tagged each line with, at the point
-// goods came in — and flags every amount currently posted under a
-// different GL category than what was really received. Read-only,
-// reconciles back to what's posted.
+// A subsidiary ledger: purchase-order expenses now post one debit line PER
+// real category — the category the receiver actually tagged each item with
+// on the GRN — instead of one lump line (which used to collapse to
+// "Multiple" for any multi-category PO, or land on the wrong single
+// category entirely). This tab shows the true category breakdown of posted
+// PO spend, and flags any amount that isn't (yet) posted under its own real
+// category — e.g. a PO paid before its GRN existed. Read-only.
 function SubLedgersTab() {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const { data = [], isLoading } = useQuery({
     queryKey: ['v-sub-ledger-balances'],
     queryFn: async () => {
@@ -194,24 +192,19 @@ function SubLedgersTab() {
     },
   })
 
-  // Group by the REAL (GRN-tagged) category, summing across fiscal periods
+  // Group by real (GRN-tagged) category, summing across fiscal periods
   // (the ledger is current-fiscal-year forward, effectively one period).
-  // Within each group, break down by what it was actually posted as.
   const groups = useMemo(() => {
-    const byReal = new Map<string, { name: string; total: number; misclassified: number; postedAs: Map<string, { name: string; amount: number; matches: boolean }> }>()
+    const byReal = new Map<string, { name: string; total: number; misclassified: number }>()
     for (const r of data) {
       const key = r.real_category_id ?? 'unclassified'
-      if (!byReal.has(key)) byReal.set(key, { name: r.real_category, total: 0, misclassified: 0, postedAs: new Map() })
-      const g = byReal.get(key)!
+      const g = byReal.get(key) ?? { name: r.real_category, total: 0, misclassified: 0 }
       g.total += r.amount
       g.misclassified += r.misclassified_amount
-      const postedKey = r.posted_category_id ?? 'uncategorized'
-      const existing = g.postedAs.get(postedKey) ?? { name: r.posted_category, amount: 0, matches: r.real_category_id === r.posted_category_id }
-      existing.amount += r.amount
-      g.postedAs.set(postedKey, existing)
+      byReal.set(key, g)
     }
     return [...byReal.entries()]
-      .map(([key, g]) => ({ key, ...g, postedAs: [...g.postedAs.values()].sort((a, b) => b.amount - a.amount) }))
+      .map(([key, g]) => ({ key, ...g }))
       .sort((a, b) => {
         if (a.key === 'unclassified') return 1
         if (b.key === 'unclassified') return -1
@@ -222,18 +215,10 @@ function SubLedgersTab() {
   const grandTotal = groups.reduce((s, g) => s + g.total, 0)
   const grandMisclassified = groups.reduce((s, g) => s + g.misclassified, 0)
 
-  function toggle(key: string) {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
-  }
-
   return (
     <Section
       title="Sub Ledgers"
-      sub="Posted purchase-order spend, reclassified by what the receiver actually tagged each item as on the GRN — the real category behind each GL posting. Read-only; reconciles to the posted ledger."
+      sub="Posted purchase-order spend, broken down by the category the receiver actually tagged each item as on the GRN. Read-only; reconciles to the posted ledger."
     >
       {isLoading ? (
         <Empty>Loading…</Empty>
@@ -241,52 +226,29 @@ function SubLedgersTab() {
         <Empty>No posted purchase-order expenses with GRN data to break down yet.</Empty>
       ) : (
         <>
-          {grandMisclassified > 0.01 && (
+          {grandMisclassified > 0.01 ? (
             <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
-              <span className="font-semibold">{formatCurrency(grandMisclassified)}</span> is posted to the GL under a different category than what the GRN says was actually received — including the “Multiple” collapse and any single-category mismatches.
+              <span className="font-semibold">{formatCurrency(grandMisclassified)}</span> is not yet posted under its real category — typically a PO paid before its GRN existed. It will self-correct once the GRN is recorded.
+            </div>
+          ) : (
+            <div className="mx-4 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300">
+              Every posted PO expense is currently classified under its real GRN category — nothing misfiled.
             </div>
           )}
           <div className="divide-y dark:divide-slate-700">
-            {groups.map(g => {
-              const open = expanded.has(g.key)
-              return (
-                <div key={g.key}>
-                  <button
-                    onClick={() => toggle(g.key)}
-                    className="w-full flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40 text-left"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {open ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />}
-                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{g.name}</span>
-                      {g.misclassified > 0.01 && (
-                        <span className="hidden sm:inline text-[11px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 dark:bg-amber-900/30 dark:text-amber-300">
-                          {formatCurrency(g.misclassified)} posted elsewhere
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 flex-shrink-0">{formatCurrency(g.total)}</span>
-                  </button>
-                  {open && (
-                    <div className="px-4 pb-3 pl-9">
-                      <table className="w-full text-sm">
-                        <tbody className="divide-y dark:divide-slate-700">
-                          {g.postedAs.map((p, i) => (
-                            <tr key={i}>
-                              <td className="py-1.5 text-slate-600 dark:text-slate-300">
-                                {p.matches ? 'Posted correctly' : (
-                                  <span className="text-amber-600 dark:text-amber-400">Posted as “{p.name}”</span>
-                                )}
-                              </td>
-                              <td className="py-1.5 text-right tabular-nums font-medium w-28">{formatCurrency(p.amount)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+            {groups.map(g => (
+              <div key={g.key} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{g.name}</span>
+                  {g.misclassified > 0.01 && (
+                    <span className="text-[11px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 dark:bg-amber-900/30 dark:text-amber-300">
+                      {formatCurrency(g.misclassified)} not yet posted here
+                    </span>
                   )}
                 </div>
-              )
-            })}
+                <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 flex-shrink-0">{formatCurrency(g.total)}</span>
+              </div>
+            ))}
           </div>
           <div className="flex items-center justify-between px-4 py-3 border-t dark:border-slate-700 font-semibold text-sm">
             <span className="text-slate-700 dark:text-slate-200">Total posted PO spend</span>

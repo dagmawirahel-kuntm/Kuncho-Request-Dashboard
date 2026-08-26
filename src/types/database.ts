@@ -2211,8 +2211,6 @@ export interface SubLedgerBalanceRow {
   fiscal_period_label: string | null
   real_category_id: string | null
   real_category: string
-  posted_category_id: string | null
-  posted_category: string
   amount: number
   misclassified_amount: number
   entry_count: number
