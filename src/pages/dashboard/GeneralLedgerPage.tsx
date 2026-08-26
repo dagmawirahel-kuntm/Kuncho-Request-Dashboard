@@ -10,14 +10,15 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type {
   ChartOfAccounts, JournalEntry, JournalLine, OpeningBalance,
   LedgerPostingFailure, TrialBalanceRow, PlLedgerPreviewRow, BalanceSheetLedgerPreviewRow,
-  CashReconciliationCheckRow,
+  CashReconciliationCheckRow, SubLedgerBalanceRow,
 } from '@/types/database'
 import {
-  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight,
+  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight, Layers,
 } from 'lucide-react'
 
 const TABS = [
   { key: 'trial-balance', label: 'Trial Balance', icon: Scale },
+  { key: 'sub-ledgers', label: 'Sub Ledgers', icon: Layers },
   { key: 'journal', label: 'Journal Entries', icon: ScrollText },
   { key: 'opening-balances', label: 'Opening Balances', icon: FileSpreadsheet },
   { key: 'reconciliation', label: 'Reconciliation', icon: BookOpen },
@@ -81,6 +82,7 @@ export default function GeneralLedgerPage() {
       </div>
 
       {tab === 'trial-balance' && <TrialBalanceTab />}
+      {tab === 'sub-ledgers' && <SubLedgersTab />}
       {tab === 'journal' && <JournalEntriesTab />}
       {tab === 'opening-balances' && <OpeningBalancesTab canManage={canManage} />}
       {tab === 'reconciliation' && <ReconciliationTab />}
@@ -167,6 +169,92 @@ function TrialBalanceTab() {
             </div>
           )
         })
+      )}
+    </Section>
+  )
+}
+
+// ── Sub Ledgers ──────────────────────────────────────────────────────
+// A subsidiary ledger: purchase-order expenses now post one debit line PER
+// real category — the category the receiver actually tagged each item with
+// on the GRN — instead of one lump line (which used to collapse to
+// "Multiple" for any multi-category PO, or land on the wrong single
+// category entirely). This tab shows the true category breakdown of posted
+// PO spend, and flags any amount that isn't (yet) posted under its own real
+// category — e.g. a PO paid before its GRN existed. Read-only.
+function SubLedgersTab() {
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['v-sub-ledger-balances'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_sub_ledger_balances').select('*')
+      if (error) throw error
+      return data as SubLedgerBalanceRow[]
+    },
+  })
+
+  // Group by real (GRN-tagged) category, summing across fiscal periods
+  // (the ledger is current-fiscal-year forward, effectively one period).
+  const groups = useMemo(() => {
+    const byReal = new Map<string, { name: string; total: number; misclassified: number }>()
+    for (const r of data) {
+      const key = r.real_category_id ?? 'unclassified'
+      const g = byReal.get(key) ?? { name: r.real_category, total: 0, misclassified: 0 }
+      g.total += r.amount
+      g.misclassified += r.misclassified_amount
+      byReal.set(key, g)
+    }
+    return [...byReal.entries()]
+      .map(([key, g]) => ({ key, ...g }))
+      .sort((a, b) => {
+        if (a.key === 'unclassified') return 1
+        if (b.key === 'unclassified') return -1
+        return b.total - a.total
+      })
+  }, [data])
+
+  const grandTotal = groups.reduce((s, g) => s + g.total, 0)
+  const grandMisclassified = groups.reduce((s, g) => s + g.misclassified, 0)
+
+  return (
+    <Section
+      title="Sub Ledgers"
+      sub="Posted purchase-order spend, broken down by the category the receiver actually tagged each item as on the GRN. Read-only; reconciles to the posted ledger."
+    >
+      {isLoading ? (
+        <Empty>Loading…</Empty>
+      ) : groups.length === 0 ? (
+        <Empty>No posted purchase-order expenses with GRN data to break down yet.</Empty>
+      ) : (
+        <>
+          {grandMisclassified > 0.01 ? (
+            <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+              <span className="font-semibold">{formatCurrency(grandMisclassified)}</span> is not yet posted under its real category — typically a PO paid before its GRN existed. It will self-correct once the GRN is recorded.
+            </div>
+          ) : (
+            <div className="mx-4 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300">
+              Every posted PO expense is currently classified under its real GRN category — nothing misfiled.
+            </div>
+          )}
+          <div className="divide-y dark:divide-slate-700">
+            {groups.map(g => (
+              <div key={g.key} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{g.name}</span>
+                  {g.misclassified > 0.01 && (
+                    <span className="text-[11px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 dark:bg-amber-900/30 dark:text-amber-300">
+                      {formatCurrency(g.misclassified)} not yet posted here
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 flex-shrink-0">{formatCurrency(g.total)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between px-4 py-3 border-t dark:border-slate-700 font-semibold text-sm">
+            <span className="text-slate-700 dark:text-slate-200">Total posted PO spend</span>
+            <span className="tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(grandTotal)}</span>
+          </div>
+        </>
       )}
     </Section>
   )

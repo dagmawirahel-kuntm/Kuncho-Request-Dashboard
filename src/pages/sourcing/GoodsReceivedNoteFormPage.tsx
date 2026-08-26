@@ -214,7 +214,10 @@ export default function GoodsReceivedNoteFormPage() {
             in advance); Damaged still enters stock and is still billed, just flagged for the record.
           </p>
         </div>
-        <div className="rounded-lg border dark:border-slate-700 overflow-hidden overflow-x-auto">
+        {/* overflow-x-auto only (not overflow-hidden) — the General Ledger
+            dropdown on the last row needs to render past this container's
+            bottom edge without being clipped. */}
+        <div className="rounded-lg border dark:border-slate-700 overflow-x-auto overflow-y-visible">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-700/40 border-b dark:border-slate-700">

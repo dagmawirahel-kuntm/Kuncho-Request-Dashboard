@@ -16,9 +16,14 @@ interface Props {
   disabled?: boolean
 }
 
+// Approximate rendered height of the open menu (search input + a few rows)
+// — used to decide whether it fits below the trigger or needs to flip up.
+const MENU_HEIGHT_ESTIMATE = 260
+
 export function SearchableSelect({ value, onChange, options, placeholder = 'Select…', className = '', disabled = false }: Props) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [openUpward, setOpenUpward] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const selected = useMemo(() => options.find(o => o.id === value) ?? null, [options, value])
@@ -46,7 +51,23 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
         <button
           type="button"
           disabled={disabled}
-          onClick={() => { setOpen(o => !o); setSearch('') }}
+          onClick={() => {
+            setOpen(o => {
+              const next = !o
+              if (next && containerRef.current) {
+                // Table rows near the bottom of a scroll/overflow-clipped
+                // container (e.g. the GRN item table) leave no room for a
+                // downward menu — it renders past the container's edge and
+                // becomes unclickable. Flip upward when that's the case.
+                const rect = containerRef.current.getBoundingClientRect()
+                const spaceBelow = window.innerHeight - rect.bottom
+                const spaceAbove = rect.top
+                setOpenUpward(spaceBelow < MENU_HEIGHT_ESTIMATE && spaceAbove > spaceBelow)
+              }
+              return next
+            })
+            setSearch('')
+          }}
           className="flex-1 flex items-center justify-between px-3 py-2 text-left min-w-0 disabled:cursor-not-allowed"
         >
           <span className={`truncate ${selected ? (disabled ? 'text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-slate-100') : 'text-slate-400 dark:text-slate-500'}`}>
@@ -66,7 +87,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
         )}
       </div>
       {open && !disabled && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg dark:bg-slate-800 dark:border-slate-700">
+        <div className={`absolute z-50 w-full rounded-md border bg-white shadow-lg dark:bg-slate-800 dark:border-slate-700 ${openUpward ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
           <div className="p-1.5 border-b dark:border-slate-700">
             <input
               autoFocus
