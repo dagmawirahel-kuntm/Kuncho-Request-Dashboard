@@ -176,10 +176,13 @@ function TrialBalanceTab() {
 
 // ── Sub Ledgers ──────────────────────────────────────────────────────
 // A subsidiary ledger: posted purchase-order expenses are collapsed to a
-// single GL control account (often "Multiple") at posting time. This tab
-// reconstructs the per-sub-category detail behind that control total from
-// the PO bundle lines, grouped by each sub-ledger's true parent category —
-// read-only, and reconciling back to what's posted.
+// single GL control account at posting time (a specific category, or
+// "Multiple" when the PO spans several). This tab reconstructs the REAL
+// category behind each posted amount from the goods_received_note_items —
+// the category the receiver actually tagged each line with, at the point
+// goods came in — and flags every amount currently posted under a
+// different GL category than what was really received. Read-only,
+// reconciles back to what's posted.
 function SubLedgersTab() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const { data = [], isLoading } = useQuery({
@@ -191,25 +194,24 @@ function SubLedgersTab() {
     },
   })
 
-  // Group by true parent GL category, summing sub-ledgers across periods
+  // Group by the REAL (GRN-tagged) category, summing across fiscal periods
   // (the ledger is current-fiscal-year forward, effectively one period).
+  // Within each group, break down by what it was actually posted as.
   const groups = useMemo(() => {
-    const byParent = new Map<string, { parent: string; total: number; hidden: number; subs: Map<string, { name: string; amount: number; hidden: number }> }>()
+    const byReal = new Map<string, { name: string; total: number; misclassified: number; postedAs: Map<string, { name: string; amount: number; matches: boolean }> }>()
     for (const r of data) {
-      const key = r.parent_category_id ?? 'unclassified'
-      if (!byParent.has(key)) byParent.set(key, { parent: r.parent_category, total: 0, hidden: 0, subs: new Map() })
-      const g = byParent.get(key)!
+      const key = r.real_category_id ?? 'unclassified'
+      if (!byReal.has(key)) byReal.set(key, { name: r.real_category, total: 0, misclassified: 0, postedAs: new Map() })
+      const g = byReal.get(key)!
       g.total += r.amount
-      g.hidden += r.hidden_in_multiple
-      const subKey = r.sub_category_id ?? 'unassigned'
-      const existing = g.subs.get(subKey) ?? { name: r.sub_ledger, amount: 0, hidden: 0 }
+      g.misclassified += r.misclassified_amount
+      const postedKey = r.posted_category_id ?? 'uncategorized'
+      const existing = g.postedAs.get(postedKey) ?? { name: r.posted_category, amount: 0, matches: r.real_category_id === r.posted_category_id }
       existing.amount += r.amount
-      existing.hidden += r.hidden_in_multiple
-      g.subs.set(subKey, existing)
+      g.postedAs.set(postedKey, existing)
     }
-    // Sort parents by total desc, but keep "Unclassified" last regardless.
-    return [...byParent.entries()]
-      .map(([key, g]) => ({ key, ...g, subs: [...g.subs.values()].sort((a, b) => b.amount - a.amount) }))
+    return [...byReal.entries()]
+      .map(([key, g]) => ({ key, ...g, postedAs: [...g.postedAs.values()].sort((a, b) => b.amount - a.amount) }))
       .sort((a, b) => {
         if (a.key === 'unclassified') return 1
         if (b.key === 'unclassified') return -1
@@ -218,7 +220,7 @@ function SubLedgersTab() {
   }, [data])
 
   const grandTotal = groups.reduce((s, g) => s + g.total, 0)
-  const grandHidden = groups.reduce((s, g) => s + g.hidden, 0)
+  const grandMisclassified = groups.reduce((s, g) => s + g.misclassified, 0)
 
   function toggle(key: string) {
     setExpanded(prev => {
@@ -231,17 +233,17 @@ function SubLedgersTab() {
   return (
     <Section
       title="Sub Ledgers"
-      sub="Posted purchase-order spend broken down to the sub-ledger (sub-category) behind each GL control account — allocated across the bundle's lines by value. Read-only; reconciles to the posted ledger."
+      sub="Posted purchase-order spend, reclassified by what the receiver actually tagged each item as on the GRN — the real category behind each GL posting. Read-only; reconciles to the posted ledger."
     >
       {isLoading ? (
         <Empty>Loading…</Empty>
       ) : groups.length === 0 ? (
-        <Empty>No posted purchase-order expenses to break down yet.</Empty>
+        <Empty>No posted purchase-order expenses with GRN data to break down yet.</Empty>
       ) : (
         <>
-          {grandHidden > 0.01 && (
+          {grandMisclassified > 0.01 && (
             <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
-              <span className="font-semibold">{formatCurrency(grandHidden)}</span> of this spend is posted to the GL under the single <span className="font-medium">“Multiple”</span> control account — the sub-ledgers below are where it actually belongs.
+              <span className="font-semibold">{formatCurrency(grandMisclassified)}</span> is posted to the GL under a different category than what the GRN says was actually received — including the “Multiple” collapse and any single-category mismatches.
             </div>
           )}
           <div className="divide-y dark:divide-slate-700">
@@ -255,11 +257,10 @@ function SubLedgersTab() {
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {open ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />}
-                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{g.parent}</span>
-                      <span className="text-xs text-slate-400 dark:text-slate-500">· {g.subs.length} sub-ledger{g.subs.length === 1 ? '' : 's'}</span>
-                      {g.hidden > 0.01 && (
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{g.name}</span>
+                      {g.misclassified > 0.01 && (
                         <span className="hidden sm:inline text-[11px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 dark:bg-amber-900/30 dark:text-amber-300">
-                          {formatCurrency(g.hidden)} in Multiple
+                          {formatCurrency(g.misclassified)} posted elsewhere
                         </span>
                       )}
                     </div>
@@ -269,17 +270,14 @@ function SubLedgersTab() {
                     <div className="px-4 pb-3 pl-9">
                       <table className="w-full text-sm">
                         <tbody className="divide-y dark:divide-slate-700">
-                          {g.subs.map((s, i) => (
+                          {g.postedAs.map((p, i) => (
                             <tr key={i}>
-                              <td className="py-1.5 text-slate-600 dark:text-slate-300">{s.name}</td>
-                              <td className="py-1.5 text-right w-40">
-                                {s.hidden > 0.01 && (
-                                  <span className="text-[11px] text-amber-600 dark:text-amber-400 mr-2" title="Portion currently posted to the Multiple control account">
-                                    {formatCurrency(s.hidden)} in Multiple
-                                  </span>
+                              <td className="py-1.5 text-slate-600 dark:text-slate-300">
+                                {p.matches ? 'Posted correctly' : (
+                                  <span className="text-amber-600 dark:text-amber-400">Posted as “{p.name}”</span>
                                 )}
                               </td>
-                              <td className="py-1.5 text-right tabular-nums font-medium w-28">{formatCurrency(s.amount)}</td>
+                              <td className="py-1.5 text-right tabular-nums font-medium w-28">{formatCurrency(p.amount)}</td>
                             </tr>
                           ))}
                         </tbody>

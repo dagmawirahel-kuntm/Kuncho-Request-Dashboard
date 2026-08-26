@@ -2209,12 +2209,12 @@ export interface TrialBalanceRow {
 export interface SubLedgerBalanceRow {
   fiscal_period_id: string | null
   fiscal_period_label: string | null
-  parent_category_id: string | null
-  parent_category: string
-  sub_category_id: string | null
-  sub_ledger: string
+  real_category_id: string | null
+  real_category: string
+  posted_category_id: string | null
+  posted_category: string
   amount: number
-  hidden_in_multiple: number
+  misclassified_amount: number
   entry_count: number
 }
 
