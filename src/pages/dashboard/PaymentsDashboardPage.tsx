@@ -18,7 +18,7 @@ import type {
 } from '@/types/database'
 import {
   Clock, CheckCircle2, Send, Landmark, Layers, X, AlertTriangle, Receipt, HandCoins,
-  ChevronDown, FileClock,
+  ChevronDown, FileClock, Tag,
 } from 'lucide-react'
 
 const PAYMENT_METHODS: { value: ExpensePaymentMethod; label: string }[] = [
@@ -157,12 +157,13 @@ function CashTicker({ positions, loading, summaries, awaiting }: {
 // Money already out the door with no goods confirmed — the single
 // biggest exposure finance carries. Promoted from a modest list to a
 // hero with the total, an aging breakdown, and the largest vendor.
-function AdvancesHero({ advances, canAct, onClose, closingId, grnByBundle }: {
+function AdvancesHero({ advances, canAct, onClose, closingId, grnByBundle, onRecordCredit }: {
   advances: OpenVendorAdvanceRow[]
   canAct: boolean
   onClose: (id: string) => void
   closingId: string | null
   grnByBundle: Record<string, { grn_code: string | null; received_at: string | null }>
+  onRecordCredit: (advance: OpenVendorAdvanceRow) => void
 }) {
   const total = advances.reduce((s, a) => s + (a.amount_etb ?? 0), 0)
   const bucket = (d: number | null) => (d == null ? 'fresh' : d >= 14 ? 'aging' : d >= 7 ? 'watch' : 'fresh')
@@ -247,14 +248,23 @@ function AdvancesHero({ advances, canAct, onClose, closingId, grnByBundle }: {
             </div>
             <div className="ml-auto font-bold text-sm tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(a.amount_etb ?? 0)}</div>
             {canAct && (
-              <button
-                onClick={() => onClose(a.id)}
-                disabled={closingId === a.id || !grn}
-                title={grn ? undefined : 'A GRN must be recorded for this PO before the advance can close'}
-                className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <CheckCircle2 className="h-3 w-3" /> {closingId === a.id ? 'Closing…' : grn ? 'Close on GRN' : 'Close'}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => onRecordCredit(a)}
+                  title="Reduce this advance for a vendor discount agreed after ordering — the difference stays as a credit with this vendor"
+                  className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  <Tag className="h-3 w-3" /> Credit
+                </button>
+                <button
+                  onClick={() => onClose(a.id)}
+                  disabled={closingId === a.id || !grn}
+                  title={grn ? undefined : 'A GRN must be recorded for this PO before the advance can close'}
+                  className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle2 className="h-3 w-3" /> {closingId === a.id ? 'Closing…' : grn ? 'Close on GRN' : 'Close'}
+                </button>
+              </div>
             )}
           </div>
           )
@@ -529,6 +539,8 @@ export default function PaymentsDashboardPage() {
     invalidateAll()
   }
 
+  const [creditingAdvance, setCreditingAdvance] = useState<OpenVendorAdvanceRow | null>(null)
+
   const kpis = {
     // Net payable is what actually leaves the bank (VAT in, WHT withheld) —
     // the figure on the PO. Falls back to gross when there's no net.
@@ -563,7 +575,7 @@ export default function PaymentsDashboardPage() {
 
       {/* Vendor advances — the biggest exposure on the page, up top */}
       {openAdvances.length > 0 && (
-        <AdvancesHero advances={openAdvances} canAct={canAct} onClose={handleCloseAdvance} closingId={closingAdvanceId} grnByBundle={grnByBundle} />
+        <AdvancesHero advances={openAdvances} canAct={canAct} onClose={handleCloseAdvance} closingId={closingAdvanceId} grnByBundle={grnByBundle} onRecordCredit={setCreditingAdvance} />
       )}
 
       {/* ── 1. To-Pay Queue (headline) ───────────────────────────────── */}
@@ -1095,6 +1107,20 @@ export default function PaymentsDashboardPage() {
         />
       )}
 
+      {creditingAdvance && (
+        <RecordVendorCreditModal
+          advance={creditingAdvance}
+          onClose={() => setCreditingAdvance(null)}
+          onRecorded={() => {
+            setCreditingAdvance(null)
+            toast('Vendor credit recorded', 'success')
+            invalidateAll()
+            qc.invalidateQueries({ queryKey: ['v-vendor-credits'] })
+          }}
+          onError={msg => toast(msg, 'error')}
+        />
+      )}
+
       {matching && (
         <MatchTransferModal
           row={matching}
@@ -1364,6 +1390,99 @@ function CreateBatchModal({
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
           <button onClick={handleCreate} disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
             {saving ? 'Creating…' : 'Create Batch'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Records a vendor discount/credit agreed after a PO was already ordered.
+// Only reachable while the advance is still open (payment_state=advance),
+// which is exactly when no ledger posting is needed: the money is already
+// sitting in Vendor Advances, so the credit is just subtracted from what
+// the advance will close for — the difference stays behind in that same
+// account as an unclaimed balance, applicable to a future order via the
+// Vendor Credits page.
+function RecordVendorCreditModal({
+  advance, onClose, onRecorded, onError,
+}: {
+  advance: OpenVendorAdvanceRow
+  onClose: () => void
+  onRecorded: () => void
+  onError: (msg: string) => void
+}) {
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const current = advance.amount_etb ?? 0
+  const parsedAmount = parseFloat(amount) || 0
+  const remainingAdvance = current - parsedAmount
+  const valid = parsedAmount > 0 && parsedAmount < current && reason.trim().length > 0
+
+  async function handleSave() {
+    if (!valid) return
+    setSaving(true)
+    const { error } = await supabase.rpc('create_vendor_credit', {
+      p_source_expense_id: advance.id,
+      p_amount_etb: parsedAmount,
+      p_reason: reason.trim(),
+      p_notes: notes.trim() || null,
+    })
+    setSaving(false)
+    if (error) { onError(error.message); return }
+    onRecorded()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between">
+          <h2 className="font-bold text-slate-800 dark:text-slate-100">Record Vendor Credit</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {advance.vendor_name ?? advance.expense_code} · {advance.bundle_code ?? '—'} · currently <b className="text-slate-700 dark:text-slate-200">{formatCurrency(current)}</b> open
+          </p>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Credit Amount (ETB) *</label>
+            <input
+              type="number" step="0.01" autoFocus
+              className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              value={amount} onChange={e => setAmount(e.target.value)}
+            />
+            {parsedAmount > 0 && (
+              <p className={`mt-1 text-xs ${remainingAdvance > 0 ? 'text-slate-500 dark:text-slate-400' : 'text-red-500'}`}>
+                {remainingAdvance > 0
+                  ? `Advance will close at ${formatCurrency(remainingAdvance)} once goods are received; ${formatCurrency(parsedAmount)} stays as an open credit with this vendor.`
+                  : 'Must be less than the current advance amount.'}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Reason *</label>
+            <input
+              type="text" placeholder="e.g. Vendor discount on wire pricing, agreed after ordering"
+              className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              value={reason} onChange={e => setReason(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes</label>
+            <textarea
+              rows={2}
+              className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              value={notes} onChange={e => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !valid} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+            {saving ? 'Recording…' : 'Record Credit'}
           </button>
         </div>
       </div>
