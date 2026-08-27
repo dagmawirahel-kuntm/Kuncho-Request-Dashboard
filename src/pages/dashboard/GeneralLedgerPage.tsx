@@ -175,13 +175,15 @@ function TrialBalanceTab() {
 }
 
 // ── Sub Ledgers ──────────────────────────────────────────────────────
-// A subsidiary ledger: purchase-order expenses now post one debit line PER
-// real category — the category the receiver actually tagged each item with
-// on the GRN — instead of one lump line (which used to collapse to
-// "Multiple" for any multi-category PO, or land on the wrong single
-// category entirely). This tab shows the true category breakdown of posted
-// PO spend, and flags any amount that isn't (yet) posted under its own real
-// category — e.g. a PO paid before its GRN existed. Read-only.
+// The subsidiary ledger behind the "Multiple" GL control account.
+// Purchase-order expenses still post as ONE line in the main ledger — the
+// real category when a PO is genuinely single-category (correcting any
+// PR-time misclassification), or the "Multiple" control account when it
+// genuinely spans several. This tab is the detail behind that control
+// account: the true per-category breakdown from the GRN, and a distinction
+// between money that's expectedly consolidated in "Multiple" (normal) vs.
+// money posted to neither its own category nor Multiple (a real anomaly).
+// Read-only; reconciles to the posted ledger.
 function SubLedgersTab() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['v-sub-ledger-balances'],
@@ -195,11 +197,12 @@ function SubLedgersTab() {
   // Group by real (GRN-tagged) category, summing across fiscal periods
   // (the ledger is current-fiscal-year forward, effectively one period).
   const groups = useMemo(() => {
-    const byReal = new Map<string, { name: string; total: number; misclassified: number }>()
+    const byReal = new Map<string, { name: string; total: number; inMultiple: number; misclassified: number }>()
     for (const r of data) {
       const key = r.real_category_id ?? 'unclassified'
-      const g = byReal.get(key) ?? { name: r.real_category, total: 0, misclassified: 0 }
+      const g = byReal.get(key) ?? { name: r.real_category, total: 0, inMultiple: 0, misclassified: 0 }
       g.total += r.amount
+      g.inMultiple += r.in_multiple_control
       g.misclassified += r.misclassified_amount
       byReal.set(key, g)
     }
@@ -213,12 +216,13 @@ function SubLedgersTab() {
   }, [data])
 
   const grandTotal = groups.reduce((s, g) => s + g.total, 0)
+  const grandInMultiple = groups.reduce((s, g) => s + g.inMultiple, 0)
   const grandMisclassified = groups.reduce((s, g) => s + g.misclassified, 0)
 
   return (
     <Section
       title="Sub Ledgers"
-      sub="Posted purchase-order spend, broken down by the category the receiver actually tagged each item as on the GRN. Read-only; reconciles to the posted ledger."
+      sub="The subsidiary ledger behind the “Multiple” GL control account — true per-category spend, sourced from what the receiver tagged each item as on the GRN. Read-only; reconciles to the posted ledger."
     >
       {isLoading ? (
         <Empty>Loading…</Empty>
@@ -226,23 +230,35 @@ function SubLedgersTab() {
         <Empty>No posted purchase-order expenses with GRN data to break down yet.</Empty>
       ) : (
         <>
-          {grandMisclassified > 0.01 ? (
-            <div className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
-              <span className="font-semibold">{formatCurrency(grandMisclassified)}</span> is not yet posted under its real category — typically a PO paid before its GRN existed. It will self-correct once the GRN is recorded.
-            </div>
-          ) : (
-            <div className="mx-4 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300">
-              Every posted PO expense is currently classified under its real GRN category — nothing misfiled.
-            </div>
-          )}
+          <div className="mx-4 mt-3 space-y-2">
+            {grandInMultiple > 0.01 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+                <span className="font-semibold">{formatCurrency(grandInMultiple)}</span> is consolidated under the “Multiple” control account in the main ledger — expected for any PO spanning more than one category. The breakdown below is its subsidiary detail.
+              </div>
+            )}
+            {grandMisclassified > 0.01 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+                <span className="font-semibold">{formatCurrency(grandMisclassified)}</span> is posted to neither its own category nor “Multiple” — a genuine anomaly worth checking.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300">
+                No genuine anomalies — every posted PO expense is either under its own real category or expectedly consolidated in “Multiple”.
+              </div>
+            )}
+          </div>
           <div className="divide-y dark:divide-slate-700">
             {groups.map(g => (
               <div key={g.key} className="flex items-center justify-between gap-2 px-4 py-2.5">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                   <span className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{g.name}</span>
+                  {g.inMultiple > 0.01 && (
+                    <span className="text-[11px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                      {formatCurrency(g.inMultiple)} in Multiple
+                    </span>
+                  )}
                   {g.misclassified > 0.01 && (
                     <span className="text-[11px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 dark:bg-amber-900/30 dark:text-amber-300">
-                      {formatCurrency(g.misclassified)} not yet posted here
+                      {formatCurrency(g.misclassified)} anomaly
                     </span>
                   )}
                 </div>
