@@ -2212,6 +2212,7 @@ export interface SubLedgerBalanceRow {
   real_category_id: string | null
   real_category: string
   amount: number
+  in_multiple_control: number
   misclassified_amount: number
   entry_count: number
 }
