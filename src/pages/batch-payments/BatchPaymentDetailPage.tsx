@@ -8,6 +8,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { ArrowLeft, Printer, Layers, CheckCircle2 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { useAccounts, useUserProfiles } from '@/hooks/useLookups'
 import type { BatchPayment } from '@/types/database'
 
 type BatchExpense = {
@@ -50,10 +52,31 @@ export default function BatchPaymentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const qc = useQueryClient()
   const canConfirm = role === 'admin' || role === 'finance'
   const [confirming, setConfirming] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const [payerId, setPayerId] = useState<string | null>(null)
+  const [approveAccountId, setApproveAccountId] = useState<string | null>(null)
+  const [approveMethod, setApproveMethod] = useState<'batch_wire' | 'cash'>('batch_wire')
+
+  // Only admin/finance may hold disbursed_by, and the lifecycle trigger
+  // rejects the approver paying their own approval — so the picker offers
+  // exactly the eligible people, minus the current user.
+  const { data: userProfiles = [] } = useUserProfiles()
+  const payerOptions = useMemo(
+    () => (userProfiles as { id: string; full_name: string; role: string }[])
+      .filter(u => (u.role === 'admin' || u.role === 'finance') && u.id !== user?.id)
+      .map(u => ({ id: u.id, label: u.full_name })),
+    [userProfiles, user?.id]
+  )
+  const { data: accounts = [] } = useAccounts()
+  const accountOptions = useMemo(
+    () => (accounts as { id: string; account_name: string; account_number: string | null }[])
+      .map(a => ({ id: a.id, label: a.account_name, sub: a.account_number ?? undefined })),
+    [accounts]
+  )
 
   const { data: batch, isLoading: batchLoading } = useQuery({
     queryKey: ['batch-payment-detail', id],
@@ -124,6 +147,9 @@ export default function BatchPaymentDetailPage() {
   const periodStart = batchExpenses.map(e => e.rollup_period_start).filter(Boolean).sort()[0]
   const periodEnd = batchExpenses.map(e => e.rollup_period_end).filter(Boolean).sort().slice(-1)[0]
   const anySent = batchExpenses.some(e => e.payment_state === 'sent')
+  // A batch assembled before approval (migration 265) sits here with its
+  // expenses still unpaid — approving releases the whole thing at once.
+  const awaitingApproval = batchExpenses.some(e => e.payment_state === 'unpaid')
 
   async function handleConfirm() {
     if (!id) return
@@ -133,6 +159,25 @@ export default function BatchPaymentDetailPage() {
     if (error) { toast(error.message, 'error'); return }
     toast('Batch payment confirmed as paid', 'success')
     qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
+  }
+
+  async function handleApproveBatch() {
+    if (!id || !payerId) { toast('Pick who is paying this batch', 'error'); return }
+    if (approveMethod !== 'cash' && !approveAccountId) { toast('Select the funding account', 'error'); return }
+    setApproving(true)
+    const { data, error } = await supabase.rpc('approve_batch_payment', {
+      p_batch_payment_id: id,
+      p_assignee_id: payerId,
+      p_account_id: approveMethod === 'cash' ? null : approveAccountId,
+      p_payment_method: approveMethod,
+    })
+    setApproving(false)
+    // The lifecycle trigger enforces that the approver and payer differ —
+    // surface its own message rather than second-guessing it here.
+    if (error) { toast(error.message, 'error'); return }
+    toast(String(data), 'success')
+    qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
+    qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
   }
 
   const isLoading = batchLoading || expensesLoading || workersLoading
@@ -265,6 +310,43 @@ export default function BatchPaymentDetailPage() {
 
       {/* Screen view */}
       <div className="space-y-5 print:hidden">
+        {canConfirm && awaitingApproval && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20 px-4 py-3 space-y-2">
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Awaiting approval</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                These drafts were grouped before approval. Approving here approves every one of them and releases the
+                whole batch for payment. The payer must be someone other than you.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-52">
+                <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Who is paying?" />
+              </div>
+              <select
+                value={approveMethod}
+                onChange={e => setApproveMethod(e.target.value as 'batch_wire' | 'cash')}
+                className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              >
+                <option value="batch_wire">Bank / Wire</option>
+                <option value="cash">Cash</option>
+              </select>
+              {approveMethod !== 'cash' && (
+                <div className="w-52">
+                  <SearchableSelect value={approveAccountId} onChange={setApproveAccountId} options={accountOptions} placeholder="Funding account…" />
+                </div>
+              )}
+              <button
+                onClick={handleApproveBatch}
+                disabled={approving || !payerId || (approveMethod !== 'cash' && !approveAccountId)}
+                className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" /> {approving ? 'Approving…' : 'Approve & Release Batch'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between flex-wrap gap-2">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
             <ArrowLeft className="h-4 w-4" /> Batch Payments
