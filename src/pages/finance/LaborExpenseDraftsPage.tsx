@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { HardHat, RefreshCw, ChevronRight, Play, Coins, Layers } from 'lucide-react'
+import { HardHat, RefreshCw, ChevronRight, Play, Coins, Layers, Undo2, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useAccounts } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import type { RollupIntegrityRow } from '@/types/database'
 
 interface RollupPreview {
   worker_count: number
@@ -23,6 +24,7 @@ interface DraftRow {
   item_service_description: string | null
   approval_status: string
   payment_state: string
+  is_archived: boolean
   rolled_up_from_requisition_id: string
   rollup_period_start: string | null
   rollup_period_end: string | null
@@ -63,16 +65,36 @@ export default function LaborExpenseDraftsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
 
+  // Settled rollups are archived rather than deleted (migration 263) — the
+  // queue is for what finance still has to act on, but the history stays
+  // reachable behind the toggle.
+  const [showArchived, setShowArchived] = useState(false)
+  const [projectFilter, setProjectFilter] = useState<string | null>(null)
+
   const { data: drafts = [], isLoading } = useQuery({
-    queryKey: ['labor-expense-drafts'],
+    queryKey: ['labor-expense-drafts', showArchived],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('expenses')
-        .select('id, amount_etb, date, item_service_description, approval_status, payment_state, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end, project_id, projects(project_name), vendor_id, vendors(vendor_name), paid_to_staff_id, paid_to_staff:staff!expenses_paid_to_staff_id_fkey(employee_name), labor_requisitions:rolled_up_from_requisition_id(payment_basis, volume_unit)')
+        .select('id, amount_etb, date, item_service_description, approval_status, payment_state, is_archived, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end, project_id, projects(project_name), vendor_id, vendors(vendor_name), paid_to_staff_id, paid_to_staff:staff!expenses_paid_to_staff_id_fkey(employee_name), labor_requisitions:rolled_up_from_requisition_id(payment_basis, volume_unit)')
         .not('rolled_up_from_requisition_id', 'is', null)
-        .order('date', { ascending: false })
+      if (!showArchived) q = q.eq('is_archived', false)
+      const { data, error } = await q.order('date', { ascending: false })
       if (error) throw error
       return (data ?? []) as unknown as DraftRow[]
+    },
+  })
+
+  // Standing check for the fan-out class of bug (migration 264): a rollup's
+  // recorded days must equal the attendance stamped to it. Empty is healthy,
+  // and it stays invisible in that case — this only appears when something
+  // is genuinely wrong, because that failure mode inflates money silently.
+  const { data: integrityIssues = [] } = useQuery({
+    queryKey: ['rollup-integrity-check'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_rollup_integrity_check').select('*')
+      if (error) throw error
+      return (data ?? []) as RollupIntegrityRow[]
     },
   })
 
@@ -104,6 +126,23 @@ export default function LaborExpenseDraftsPage() {
     toast(`Rollup complete → expense ${String(data).slice(0, 8)}`, 'success')
     qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
     qc.invalidateQueries({ queryKey: ['labor-rollup-preview', requisitionId] })
+  }
+
+  // Undo a draft rollup so the timesheets behind it can be corrected and
+  // rolled up again — the rollup itself is idempotent per requisition +
+  // period, so without this a bad draft can never be rebuilt.
+  async function undoRollup(draft: DraftRow) {
+    if (!window.confirm(
+      `Delete this rollup draft (${formatCurrency(draft.amount_etb ?? 0)}) and release its timesheets?\n\n` +
+      `Nothing is paid out by this — it removes the draft expense and its worker breakdown, so you can fix the ` +
+      `timesheet data and run the rollup for ${draft.rollup_period_start} → ${draft.rollup_period_end} again.`
+    )) return
+    const { data, error } = await supabase.rpc('undo_labor_rollup', { p_expense_id: draft.id })
+    if (error) { toast(error.message, 'error'); return }
+    toast(String(data), 'success')
+    setSelectedIds(s => { const o = new Set(s); o.delete(draft.id); return o })
+    qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
+    qc.invalidateQueries({ queryKey: ['labor-rollup-preview', draft.rolled_up_from_requisition_id] })
   }
 
   function toggleSelect(id: string) {
@@ -138,14 +177,32 @@ export default function LaborExpenseDraftsPage() {
     navigate(`/batch-payments/${data}`)
   }
 
+  // Project options come from what's actually on this page — drafts and
+  // approved requisitions — so the filter can never offer an empty project.
+  const projectOptions = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of drafts) if (d.project_id) m.set(d.project_id, d.projects?.project_name ?? '—')
+    for (const r of activeReqs) if (r.project_id) m.set(r.project_id, r.projects?.project_name ?? '—')
+    return [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label))
+  }, [drafts, activeReqs])
+
+  const visibleDrafts = useMemo(
+    () => projectFilter ? drafts.filter(d => d.project_id === projectFilter) : drafts,
+    [drafts, projectFilter]
+  )
+  const visibleReqs = useMemo(
+    () => projectFilter ? activeReqs.filter(r => r.project_id === projectFilter) : activeReqs,
+    [activeReqs, projectFilter]
+  )
+
   const draftsByReq = useMemo(() => {
     const m = new Map<string, DraftRow[]>()
-    for (const d of drafts) {
+    for (const d of visibleDrafts) {
       const arr = m.get(d.rolled_up_from_requisition_id) ?? []
       arr.push(d); m.set(d.rolled_up_from_requisition_id, arr)
     }
     return m
-  }, [drafts])
+  }, [visibleDrafts])
 
   // Default rollup window for the launcher — last week (Mon → Sun).
   const now = new Date()
@@ -166,6 +223,55 @@ export default function LaborExpenseDraftsPage() {
         </p>
       </div>
 
+      {integrityIssues.length > 0 && (
+        <div className="rounded-xl border border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 px-4 py-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
+            <AlertTriangle className="h-4 w-4" />
+            {integrityIssues.length} rollup{integrityIssues.length === 1 ? '' : 's'} do not match their timesheets
+          </p>
+          <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">
+            The days billed don't equal the attendance actually recorded against them — the rollup is overstated.
+            Undo and re-run it; if it's already paid, correct it as an adjustment.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {integrityIssues.map(i => (
+              <li key={i.expense_id} className="flex items-center justify-between gap-3 text-xs">
+                <Link to={`/expenses/${i.expense_id}`} className="text-red-700 dark:text-red-300 hover:underline truncate">
+                  {i.expense_code ?? i.expense_id.slice(0, 8)} · {i.project_name ?? '—'} · {i.rollup_period_start} → {i.rollup_period_end}
+                </Link>
+                <span className="shrink-0 tabular-nums font-medium text-red-700 dark:text-red-300">
+                  +{i.extra_days} day{i.extra_days === 1 ? '' : 's'} · {formatCurrency(i.overstated_etb)} over
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Filters — apply to both the rollup launcher and the drafts list, so
+          working one project at a time doesn't mean scrolling past the rest. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-3">
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Project</span>
+        <div className="w-64">
+          <SearchableSelect
+            value={projectFilter}
+            onChange={setProjectFilter}
+            options={projectOptions}
+            placeholder="All projects"
+          />
+        </div>
+        {projectFilter && (
+          <button onClick={() => setProjectFilter(null)} className="text-xs text-slate-500 hover:underline">Clear</button>
+        )}
+        <label className="ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <input
+            type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand"
+          />
+          Show archived (paid)
+        </label>
+      </div>
+
       {/* Launcher: manual rollup for any approved requisition */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between mb-3">
@@ -176,11 +282,13 @@ export default function LaborExpenseDraftsPage() {
             Default window: last week ({defaultFrom} → {defaultTo}). Scheduled runs need pg_cron enabled.
           </span>
         </div>
-        {activeReqs.length === 0 ? (
-          <p className="text-xs text-slate-400 py-4 text-center">No approved requisitions yet.</p>
+        {visibleReqs.length === 0 ? (
+          <p className="text-xs text-slate-400 py-4 text-center">
+            {projectFilter ? 'No approved requisitions on this project.' : 'No approved requisitions yet.'}
+          </p>
         ) : (
           <div className="divide-y dark:divide-slate-700">
-            {activeReqs.map(r => (
+            {visibleReqs.map(r => (
               <ReqRollupRow key={r.id} req={r} defaultFrom={defaultFrom} defaultTo={defaultTo} onRun={runRollup} />
             ))}
           </div>
@@ -225,12 +333,17 @@ export default function LaborExpenseDraftsPage() {
       {/* Drafts list */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
         <div className="px-4 py-3 border-b dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Generated drafts ({drafts.length}) <span className="font-normal text-slate-400">— select multiple approved drafts to combine into one Payment Request</span>
+          Generated drafts ({visibleDrafts.length}) <span className="font-normal text-slate-400">— select multiple approved drafts to combine into one Payment Request</span>
         </div>
         {isLoading ? (
           <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
-        ) : drafts.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">No rollup drafts yet. Run one above.</div>
+        ) : visibleDrafts.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-400">
+            {projectFilter
+              ? 'No rollup drafts on this project.'
+              : showArchived ? 'No rollup drafts yet. Run one above.'
+              : 'Nothing outstanding — every rollup draft is paid and archived. Tick "Show archived" to see them.'}
+          </div>
         ) : (
           <div>
             {[...draftsByReq.entries()].map(([reqId, rows]) => (
@@ -239,7 +352,7 @@ export default function LaborExpenseDraftsPage() {
                   Requisition <span className="font-mono">{reqId.slice(0, 8)}</span> · {rows[0].projects?.project_name ?? '—'} · {rows.length} draft{rows.length === 1 ? '' : 's'}
                 </div>
                 {rows.map(d => (
-                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} />
+                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} onUndo={undoRollup} />
                 ))}
               </div>
             ))}
@@ -301,12 +414,20 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
   )
 }
 
-function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
+function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo }: {
   draft: DraftRow; expanded: boolean; onToggle: () => void; selected: boolean; onToggleSelect: () => void
+  onUndo: (draft: DraftRow) => Promise<void>
 }) {
   const isVolume = draft.labor_requisitions?.payment_basis === 'per_volume'
   const batchable = draft.payment_state === 'approved_to_pay'
   const unitLabel = isVolume ? (draft.labor_requisitions?.volume_unit ?? 'units') : 'days'
+  // A rollup is idempotent on requisition + period, so "Roll up now" hands
+  // back this same expense forever — correcting the timesheets behind it
+  // means deleting the draft first. Only offered while it's genuinely a
+  // draft; the RPC re-checks (and also rejects bank-matched, ledger-posted
+  // and batched rollups) server-side.
+  const undoable = draft.payment_state === 'unpaid' || draft.payment_state === 'void'
+  const [undoing, setUndoing] = useState(false)
 
   const { data: workers = [] } = useQuery({
     queryKey: ['labor-expense-workers', draft.id],
@@ -349,9 +470,22 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
           </div>
           <div className="text-right">
             <p className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatCurrency(draft.amount_etb ?? 0)}</p>
-            <p className="text-[11px] text-slate-400 capitalize">{draft.approval_status} · {draft.payment_state}</p>
+            <p className="text-[11px] text-slate-400 capitalize">
+              {draft.approval_status} · {draft.payment_state}
+              {draft.is_archived && <span className="ml-1.5 normal-case rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-500 dark:text-slate-400">Archived</span>}
+            </p>
           </div>
         </button>
+        {undoable && (
+          <button
+            onClick={async () => { setUndoing(true); try { await onUndo(draft) } finally { setUndoing(false) } }}
+            disabled={undoing}
+            title="Delete this draft and release its timesheets, so you can fix the data and roll up again"
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 shrink-0"
+          >
+            <Undo2 className="h-3 w-3" /> {undoing ? 'Undoing…' : 'Undo'}
+          </button>
+        )}
         <Link to={`/expenses/${draft.id}`} className="text-[11px] text-brand hover:underline shrink-0">
           Open expense →
         </Link>
