@@ -53,6 +53,7 @@ import PayrollFormPage from '@/pages/payroll/PayrollFormPage'
 import VendorsPage from '@/pages/vendors/VendorsPage'
 import VendorFormPage from '@/pages/vendors/VendorFormPage'
 import VendorDetailPage from '@/pages/vendors/VendorDetailPage'
+import VendorCreditsPage from '@/pages/vendors/VendorCreditsPage'
 import VendorContractPage from '@/pages/vendors/VendorContractPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
@@ -311,6 +312,7 @@ export const router = createBrowserRouter([
               { path: 'finance', element: <FinanceDashboardPage /> },
               { path: 'finance/payments', element: <PaymentsDashboardPage /> },
               { path: 'finance/ledger', element: <GeneralLedgerPage /> },
+              { path: 'finance/vendor-credits', element: <VendorCreditsPage /> },
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'accounts/:id', element: <AccountDetailPage /> },
               { path: 'transfers', element: <TransfersPage /> },

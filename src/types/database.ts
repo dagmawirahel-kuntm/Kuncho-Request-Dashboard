@@ -1413,6 +1413,24 @@ export interface OpenVendorAdvanceRow {
   days_open: number | null
 }
 
+export interface VendorCreditRow {
+  id: string
+  vendor_id: string
+  vendor_name: string | null
+  amount_etb: number
+  source_expense_id: string
+  source_expense_code: string | null
+  source_sourcing_bundle_id: string | null
+  source_bundle_code: string | null
+  reason: string
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  applied_total: number
+  remaining_amount_etb: number
+  status: 'open' | 'partially_applied' | 'closed'
+}
+
 export interface FinancePendingApprovalRow {
   id: string
   expense_code: string | null

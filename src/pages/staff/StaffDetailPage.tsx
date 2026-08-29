@@ -1096,7 +1096,7 @@ export default function StaffDetailPage() {
       </div>
       {reqOpen && (
         <RequestWorkerForProjectModal
-          worker={{ id: staff.id, employee_name: staff.employee_name, role: staff.role, day_rate: staff.day_rate }}
+          workers={[{ id: staff.id, employee_name: staff.employee_name, role: staff.role, day_rate: staff.day_rate }]}
           onClose={() => setReqOpen(false)}
         />
       )}
