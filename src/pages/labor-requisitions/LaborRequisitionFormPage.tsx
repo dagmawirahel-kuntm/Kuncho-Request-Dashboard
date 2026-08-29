@@ -100,8 +100,26 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       return (data ?? []) as { candidate_id: string; promoted_staff_id: string | null }[]
     },
   })
+  // Roster workers attached via migration 261's join table. Same shape as
+  // the candidate join table above: many workers, one requisition. The
+  // backfill inserted a row for every legacy specific_staff_id, so this is
+  // the source of truth and specific_staff_id is only a denormalised
+  // "exactly one worker" pointer we keep writing for older readers.
+  const { data: attachedWorkers = [] } = useQuery({
+    queryKey: ['labor-requisition-workers', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_requisition_workers')
+        .select('staff_id, allocation_id')
+        .eq('requisition_id', id!)
+      if (error) throw error
+      return (data ?? []) as { staff_id: string; allocation_id: string | null }[]
+    },
+  })
+
   const initialAssignMode: AssignMode =
-    r?.specific_staff_id ? 'roster'
+    (r?.specific_staff_id || attachedWorkers.length > 0) ? 'roster'
     : (r?.candidate_id || attachedCands.length > 0) ? 'new_hire'
     : 'anonymous'
   const [assignMode, setAssignMode] = useState<AssignMode>(initialAssignMode)
@@ -126,6 +144,27 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachedSig])
+
+  // Multi-worker roster group, same pattern as candidateIds above. Falls
+  // back to the legacy single pointer for a requisition created before 261
+  // whose backfill row hasn't loaded yet.
+  const [staffIds, setStaffIds] = useState<string[]>([])
+  const workersSig = attachedWorkers.map(w => w.staff_id).sort().join(',')
+  useMemo(() => {
+    if (attachedWorkers.length > 0 && staffIds.length === 0) {
+      setStaffIds(attachedWorkers.map(w => w.staff_id))
+    } else if (attachedWorkers.length === 0 && staffIds.length === 0 && r?.specific_staff_id) {
+      setStaffIds([r.specific_staff_id])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workersSig])
+
+  // Workers whose allocation already exists — editing them off the
+  // requisition wouldn't undo the allocation, so they're locked.
+  const allocatedStaffIds = useMemo(
+    () => new Set(attachedWorkers.filter(w => w.allocation_id).map(w => w.staff_id)),
+    [attachedWorkers]
+  )
 
   const [form, setForm] = useState<FormState>(
     record
@@ -254,7 +293,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   // we don't send stale IDs on save.
   function switchAssignMode(m: AssignMode) {
     setAssignMode(m)
-    if (m !== 'roster')   set('specific_staff_id', null)
+    if (m !== 'roster')   { set('specific_staff_id', null); setStaffIds([]) }
     if (m !== 'new_hire') { set('candidate_id', null); setCandidateIds([]) }
   }
 
@@ -270,7 +309,21 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       // apply and is no longer required at the column level either.
       cleaned = { ...cleaned, estimated_days: null, estimated_day_rate: null }
     }
-    if (assignMode !== 'roster')   cleaned = { ...cleaned, specific_staff_id: null }
+    // Roster mode: the join table is authoritative. specific_staff_id is
+    // kept in sync only as the "exactly one worker" denormalised pointer
+    // (null for a group) so legacy readers and the assignment-mode CHECK
+    // keep behaving.
+    if (assignMode !== 'roster') {
+      cleaned = { ...cleaned, specific_staff_id: null }
+    } else {
+      cleaned = { ...cleaned, specific_staff_id: staffIds.length === 1 ? staffIds[0] : null }
+      if (staffIds.length === 0) {
+        setError('Pick at least one roster worker (or switch to Anonymous headcount)')
+        setSaving(false); return
+      }
+      // Headcount tracks the group size, same rule as new-hire mode.
+      cleaned = { ...cleaned, headcount: staffIds.length }
+    }
     // Legacy single candidate_id column: never write it from this form anymore.
     // The join table (labor_requisition_candidates) is authoritative.
     cleaned = { ...cleaned, candidate_id: null }
@@ -320,10 +373,30 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       await supabase.from('labor_requisition_candidates').delete().eq('requisition_id', reqId)
     }
 
+    // Same sync for the roster worker join table. Rows whose allocation
+    // already exists are never deleted — removing the link wouldn't undo
+    // the allocation, so it would only orphan it.
+    if (assignMode === 'roster' && reqId) {
+      const existing = attachedWorkers.map(w => w.staff_id)
+      const toInsert = staffIds.filter(x => !existing.includes(x))
+      const toDelete = existing.filter(x => !staffIds.includes(x) && !allocatedStaffIds.has(x))
+      if (toDelete.length > 0) {
+        await supabase.from('labor_requisition_workers').delete().eq('requisition_id', reqId).in('staff_id', toDelete)
+      }
+      if (toInsert.length > 0) {
+        const rows = toInsert.map(sid => ({ requisition_id: reqId, staff_id: sid }))
+        const { error: linkErr } = await supabase.from('labor_requisition_workers').insert(rows)
+        if (linkErr) { setError(linkErr.message); toast(linkErr.message, 'error'); setSaving(false); return }
+      }
+    } else if (reqId) {
+      await supabase.from('labor_requisition_workers').delete().eq('requisition_id', reqId).is('allocation_id', null)
+    }
+
     setSaving(false)
     dropRecordCache(qc, 'labor-requisition')
     qc.invalidateQueries({ queryKey: ['labor-requisitions'] })
     qc.invalidateQueries({ queryKey: ['labor-requisition-candidates', reqId] })
+    qc.invalidateQueries({ queryKey: ['labor-requisition-workers', reqId] })
     toast(isEdit ? 'Labor requisition updated' : 'Labor requisition created', 'success')
     navigate('/labor-requisitions')
   }
@@ -359,9 +432,25 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       </Field>
 
       {assignMode === 'roster' && (
-        <Field label="Casual worker *">
-          <SearchableSelect value={form.specific_staff_id ?? null} onChange={id => set('specific_staff_id', id)} options={staffOptions} placeholder="Search roster…" />
-          <p className="mt-1 text-[11px] text-slate-400">On approval, this person is allocated to the project.</p>
+        <Field label={`Casual workers * ${staffIds.length > 0 ? `(${staffIds.length} selected)` : ''}`}>
+          <MultiSelect
+            value={staffIds}
+            onChange={setStaffIds}
+            options={staffOptions}
+            placeholder="Search roster — pick one or more…"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            On approval, each selected worker is allocated to this project
+            {form.work_order_id ? " and added to the work order's crew" : ''}.
+            {staffIds.length > 0 && ` Headcount will be set to ${staffIds.length}.`}
+            {' '}Leave the day rate blank to pay each worker their own roster rate.
+          </p>
+          {allocatedStaffIds.size > 0 && (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+              {allocatedStaffIds.size} worker{allocatedStaffIds.size === 1 ? ' is' : 's are'} already allocated from this
+              requisition and can't be removed here — cancel the allocation instead.
+            </p>
+          )}
         </Field>
       )}
       {assignMode === 'new_hire' && (
@@ -406,7 +495,7 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
           <input type="number" min={1} className={inputCls}
             value={
               assignMode === 'new_hire' ? (candidateIds.length || '')
-              : assignMode === 'roster'  ? 1
+              : assignMode === 'roster'  ? (staffIds.length || '')
               : (form.headcount ?? '')
             }
             onChange={e => set('headcount', e.target.value ? parseInt(e.target.value, 10) : undefined)}

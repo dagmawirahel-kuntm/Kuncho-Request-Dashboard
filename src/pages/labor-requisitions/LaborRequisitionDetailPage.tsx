@@ -71,6 +71,26 @@ export default function LaborRequisitionDetailPage() {
     enabled: !!id,
   })
 
+  // Roster workers requested on this requisition (migration 261). Unlike
+  // allocations below, these exist from the moment it's raised — so a
+  // pending request shows who it's actually for instead of an empty panel.
+  const { data: rosterWorkers = [] } = useQuery({
+    queryKey: ['labor-requisition-workers', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_requisition_workers')
+        .select('staff_id, allocation_id, staff(employee_name, trade_tag, day_rate)')
+        .eq('requisition_id', id!)
+      if (error) throw error
+      return data as unknown as {
+        staff_id: string
+        allocation_id: string | null
+        staff: { employee_name: string; trade_tag: string | null; day_rate: number | null } | null
+      }[]
+    },
+    enabled: !!id,
+  })
+
   // Workers actually hired under this requisition — the traceable link
   // that's easy to lose track of once a roster request (specific_staff_id)
   // auto-creates the allocation on approval, with no candidate row at all.
@@ -131,6 +151,40 @@ export default function LaborRequisitionDetailPage() {
           <SlotProgressBar filled={req.slots_filled} total={req.headcount} />
         </div>
       </div>
+
+      {rosterWorkers.length > 0 && (
+        <div className="rounded-lg border bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <HardHat className="h-3.5 w-3.5" /> Roster Workers Requested ({rosterWorkers.length})
+          </h3>
+          <ul className="space-y-1.5">
+            {rosterWorkers.map(w => (
+              <li key={w.staff_id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm dark:border-slate-700">
+                <div>
+                  <Link to={`/staff/${w.staff_id}`} className="text-slate-700 dark:text-slate-200 hover:text-brand">
+                    {w.staff?.employee_name ?? '—'}
+                  </Link>
+                  <span className="ml-2 text-xs text-slate-400">
+                    {w.staff?.trade_tag ?? '—'}
+                    {/* Blank requisition-level rate means each worker is
+                        allocated at their own roster rate. */}
+                    {req.estimated_day_rate == null && w.staff?.day_rate != null && ` · own rate ${formatCurrency(w.staff.day_rate)}`}
+                  </span>
+                </div>
+                {w.allocation_id ? (
+                  <span className="flex items-center gap-1 rounded-full bg-green-50 dark:bg-green-900/20 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="h-3 w-3" /> Allocated
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                    <Clock className="h-3 w-3" /> Awaiting approval
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 rounded-lg border bg-white p-5 dark:border-slate-700 dark:bg-slate-800 sm:grid-cols-3">
         <CandidateListSection title="Pending HR Review" icon={<Clock className="h-3.5 w-3.5" />} candidates={pending} emptyLabel="No candidates awaiting review." />
