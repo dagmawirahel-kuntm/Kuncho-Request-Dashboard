@@ -23,6 +23,7 @@ interface DraftRow {
   item_service_description: string | null
   approval_status: string
   payment_state: string
+  is_archived: boolean
   rolled_up_from_requisition_id: string
   rollup_period_start: string | null
   rollup_period_end: string | null
@@ -63,14 +64,21 @@ export default function LaborExpenseDraftsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
 
+  // Settled rollups are archived rather than deleted (migration 263) — the
+  // queue is for what finance still has to act on, but the history stays
+  // reachable behind the toggle.
+  const [showArchived, setShowArchived] = useState(false)
+  const [projectFilter, setProjectFilter] = useState<string | null>(null)
+
   const { data: drafts = [], isLoading } = useQuery({
-    queryKey: ['labor-expense-drafts'],
+    queryKey: ['labor-expense-drafts', showArchived],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('expenses')
-        .select('id, amount_etb, date, item_service_description, approval_status, payment_state, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end, project_id, projects(project_name), vendor_id, vendors(vendor_name), paid_to_staff_id, paid_to_staff:staff!expenses_paid_to_staff_id_fkey(employee_name), labor_requisitions:rolled_up_from_requisition_id(payment_basis, volume_unit)')
+        .select('id, amount_etb, date, item_service_description, approval_status, payment_state, is_archived, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end, project_id, projects(project_name), vendor_id, vendors(vendor_name), paid_to_staff_id, paid_to_staff:staff!expenses_paid_to_staff_id_fkey(employee_name), labor_requisitions:rolled_up_from_requisition_id(payment_basis, volume_unit)')
         .not('rolled_up_from_requisition_id', 'is', null)
-        .order('date', { ascending: false })
+      if (!showArchived) q = q.eq('is_archived', false)
+      const { data, error } = await q.order('date', { ascending: false })
       if (error) throw error
       return (data ?? []) as unknown as DraftRow[]
     },
@@ -155,14 +163,32 @@ export default function LaborExpenseDraftsPage() {
     navigate(`/batch-payments/${data}`)
   }
 
+  // Project options come from what's actually on this page — drafts and
+  // approved requisitions — so the filter can never offer an empty project.
+  const projectOptions = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of drafts) if (d.project_id) m.set(d.project_id, d.projects?.project_name ?? '—')
+    for (const r of activeReqs) if (r.project_id) m.set(r.project_id, r.projects?.project_name ?? '—')
+    return [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label))
+  }, [drafts, activeReqs])
+
+  const visibleDrafts = useMemo(
+    () => projectFilter ? drafts.filter(d => d.project_id === projectFilter) : drafts,
+    [drafts, projectFilter]
+  )
+  const visibleReqs = useMemo(
+    () => projectFilter ? activeReqs.filter(r => r.project_id === projectFilter) : activeReqs,
+    [activeReqs, projectFilter]
+  )
+
   const draftsByReq = useMemo(() => {
     const m = new Map<string, DraftRow[]>()
-    for (const d of drafts) {
+    for (const d of visibleDrafts) {
       const arr = m.get(d.rolled_up_from_requisition_id) ?? []
       arr.push(d); m.set(d.rolled_up_from_requisition_id, arr)
     }
     return m
-  }, [drafts])
+  }, [visibleDrafts])
 
   // Default rollup window for the launcher — last week (Mon → Sun).
   const now = new Date()
@@ -183,6 +209,30 @@ export default function LaborExpenseDraftsPage() {
         </p>
       </div>
 
+      {/* Filters — apply to both the rollup launcher and the drafts list, so
+          working one project at a time doesn't mean scrolling past the rest. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-3">
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Project</span>
+        <div className="w-64">
+          <SearchableSelect
+            value={projectFilter}
+            onChange={setProjectFilter}
+            options={projectOptions}
+            placeholder="All projects"
+          />
+        </div>
+        {projectFilter && (
+          <button onClick={() => setProjectFilter(null)} className="text-xs text-slate-500 hover:underline">Clear</button>
+        )}
+        <label className="ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <input
+            type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand"
+          />
+          Show archived (paid)
+        </label>
+      </div>
+
       {/* Launcher: manual rollup for any approved requisition */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between mb-3">
@@ -193,11 +243,13 @@ export default function LaborExpenseDraftsPage() {
             Default window: last week ({defaultFrom} → {defaultTo}). Scheduled runs need pg_cron enabled.
           </span>
         </div>
-        {activeReqs.length === 0 ? (
-          <p className="text-xs text-slate-400 py-4 text-center">No approved requisitions yet.</p>
+        {visibleReqs.length === 0 ? (
+          <p className="text-xs text-slate-400 py-4 text-center">
+            {projectFilter ? 'No approved requisitions on this project.' : 'No approved requisitions yet.'}
+          </p>
         ) : (
           <div className="divide-y dark:divide-slate-700">
-            {activeReqs.map(r => (
+            {visibleReqs.map(r => (
               <ReqRollupRow key={r.id} req={r} defaultFrom={defaultFrom} defaultTo={defaultTo} onRun={runRollup} />
             ))}
           </div>
@@ -242,12 +294,17 @@ export default function LaborExpenseDraftsPage() {
       {/* Drafts list */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
         <div className="px-4 py-3 border-b dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Generated drafts ({drafts.length}) <span className="font-normal text-slate-400">— select multiple approved drafts to combine into one Payment Request</span>
+          Generated drafts ({visibleDrafts.length}) <span className="font-normal text-slate-400">— select multiple approved drafts to combine into one Payment Request</span>
         </div>
         {isLoading ? (
           <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
-        ) : drafts.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">No rollup drafts yet. Run one above.</div>
+        ) : visibleDrafts.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-400">
+            {projectFilter
+              ? 'No rollup drafts on this project.'
+              : showArchived ? 'No rollup drafts yet. Run one above.'
+              : 'Nothing outstanding — every rollup draft is paid and archived. Tick "Show archived" to see them.'}
+          </div>
         ) : (
           <div>
             {[...draftsByReq.entries()].map(([reqId, rows]) => (
@@ -374,7 +431,10 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo 
           </div>
           <div className="text-right">
             <p className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatCurrency(draft.amount_etb ?? 0)}</p>
-            <p className="text-[11px] text-slate-400 capitalize">{draft.approval_status} · {draft.payment_state}</p>
+            <p className="text-[11px] text-slate-400 capitalize">
+              {draft.approval_status} · {draft.payment_state}
+              {draft.is_archived && <span className="ml-1.5 normal-case rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-500 dark:text-slate-400">Archived</span>}
+            </p>
           </div>
         </button>
         {undoable && (
