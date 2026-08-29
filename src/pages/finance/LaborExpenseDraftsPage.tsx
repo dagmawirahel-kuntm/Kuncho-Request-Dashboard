@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { HardHat, RefreshCw, ChevronRight, Play, Coins, Layers } from 'lucide-react'
+import { HardHat, RefreshCw, ChevronRight, Play, Coins, Layers, Undo2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -104,6 +104,23 @@ export default function LaborExpenseDraftsPage() {
     toast(`Rollup complete → expense ${String(data).slice(0, 8)}`, 'success')
     qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
     qc.invalidateQueries({ queryKey: ['labor-rollup-preview', requisitionId] })
+  }
+
+  // Undo a draft rollup so the timesheets behind it can be corrected and
+  // rolled up again — the rollup itself is idempotent per requisition +
+  // period, so without this a bad draft can never be rebuilt.
+  async function undoRollup(draft: DraftRow) {
+    if (!window.confirm(
+      `Delete this rollup draft (${formatCurrency(draft.amount_etb ?? 0)}) and release its timesheets?\n\n` +
+      `Nothing is paid out by this — it removes the draft expense and its worker breakdown, so you can fix the ` +
+      `timesheet data and run the rollup for ${draft.rollup_period_start} → ${draft.rollup_period_end} again.`
+    )) return
+    const { data, error } = await supabase.rpc('undo_labor_rollup', { p_expense_id: draft.id })
+    if (error) { toast(error.message, 'error'); return }
+    toast(String(data), 'success')
+    setSelectedIds(s => { const o = new Set(s); o.delete(draft.id); return o })
+    qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
+    qc.invalidateQueries({ queryKey: ['labor-rollup-preview', draft.rolled_up_from_requisition_id] })
   }
 
   function toggleSelect(id: string) {
@@ -239,7 +256,7 @@ export default function LaborExpenseDraftsPage() {
                   Requisition <span className="font-mono">{reqId.slice(0, 8)}</span> · {rows[0].projects?.project_name ?? '—'} · {rows.length} draft{rows.length === 1 ? '' : 's'}
                 </div>
                 {rows.map(d => (
-                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} />
+                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} onUndo={undoRollup} />
                 ))}
               </div>
             ))}
@@ -301,12 +318,20 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
   )
 }
 
-function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
+function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo }: {
   draft: DraftRow; expanded: boolean; onToggle: () => void; selected: boolean; onToggleSelect: () => void
+  onUndo: (draft: DraftRow) => Promise<void>
 }) {
   const isVolume = draft.labor_requisitions?.payment_basis === 'per_volume'
   const batchable = draft.payment_state === 'approved_to_pay'
   const unitLabel = isVolume ? (draft.labor_requisitions?.volume_unit ?? 'units') : 'days'
+  // A rollup is idempotent on requisition + period, so "Roll up now" hands
+  // back this same expense forever — correcting the timesheets behind it
+  // means deleting the draft first. Only offered while it's genuinely a
+  // draft; the RPC re-checks (and also rejects bank-matched, ledger-posted
+  // and batched rollups) server-side.
+  const undoable = draft.payment_state === 'unpaid' || draft.payment_state === 'void'
+  const [undoing, setUndoing] = useState(false)
 
   const { data: workers = [] } = useQuery({
     queryKey: ['labor-expense-workers', draft.id],
@@ -352,6 +377,16 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect }: {
             <p className="text-[11px] text-slate-400 capitalize">{draft.approval_status} · {draft.payment_state}</p>
           </div>
         </button>
+        {undoable && (
+          <button
+            onClick={async () => { setUndoing(true); try { await onUndo(draft) } finally { setUndoing(false) } }}
+            disabled={undoing}
+            title="Delete this draft and release its timesheets, so you can fix the data and roll up again"
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 shrink-0"
+          >
+            <Undo2 className="h-3 w-3" /> {undoing ? 'Undoing…' : 'Undo'}
+          </button>
+        )}
         <Link to={`/expenses/${draft.id}`} className="text-[11px] text-brand hover:underline shrink-0">
           Open expense →
         </Link>
