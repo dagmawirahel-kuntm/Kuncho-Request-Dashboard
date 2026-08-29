@@ -2235,6 +2235,22 @@ export interface SubLedgerBalanceRow {
   entry_count: number
 }
 
+export interface RollupIntegrityRow {
+  expense_id: string
+  expense_code: string | null
+  project_name: string | null
+  project_id: string | null
+  rollup_period_start: string | null
+  rollup_period_end: string | null
+  amount_etb: number | null
+  payment_state: string
+  is_archived: boolean
+  recorded_days: number
+  source_days: number
+  extra_days: number
+  overstated_etb: number
+}
+
 export interface PlLedgerPreviewRow {
   account_code: string
   account_name: string
