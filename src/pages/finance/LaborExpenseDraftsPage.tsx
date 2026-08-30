@@ -145,16 +145,37 @@ export default function LaborExpenseDraftsPage() {
     qc.invalidateQueries({ queryKey: ['labor-rollup-preview', draft.rolled_up_from_requisition_id] })
   }
 
+  // Withdraw an approval that hasn't been paid — e.g. approved one draft
+  // individually, then decided to batch the whole week instead.
+  async function unapproveDraft(draft: DraftRow) {
+    const { data, error } = await supabase.rpc('unapprove_expense', { p_expense_id: draft.id })
+    if (error) { toast(error.message, 'error'); return }
+    toast(String(data), 'success')
+    qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
+  }
+
   function toggleSelect(id: string) {
     setSelectedIds(s => { const o = new Set(s); if (o.has(id)) o.delete(id); else o.add(id); return o })
   }
 
   const selectedDrafts = useMemo(() => drafts.filter(d => selectedIds.has(d.id)), [drafts, selectedIds])
   const selectedTotal = useMemo(() => selectedDrafts.reduce((sum, d) => sum + (d.amount_etb ?? 0), 0), [selectedDrafts])
+  // Any unapproved draft in the selection turns this into a pre-approval
+  // batch: it's parked rather than dispatched, so funding details are
+  // chosen later, at approval.
+  const pendingSelectedCount = useMemo(
+    () => selectedDrafts.filter(d => d.payment_state === 'unpaid').length,
+    [selectedDrafts]
+  )
 
   async function createBatch() {
     if (selectedDrafts.length === 0 || !session?.user.id) return
-    if (!batchAccountId && batchPaymentMethod !== 'cash') { toast('Select which account is funding this batch payment', 'error'); return }
+    const preApproval = pendingSelectedCount > 0
+    // A batch that dispatches immediately still needs its funding account
+    // up front; a pre-approval batch picks that at approval time.
+    if (!preApproval && !batchAccountId && batchPaymentMethod !== 'cash') {
+      toast('Select which account is funding this batch payment', 'error'); return
+    }
     setBatching(true)
     const projectNames = Array.from(new Set(selectedDrafts.map(d => d.projects?.project_name).filter(Boolean)))
     const dates = selectedDrafts.map(d => d.rollup_period_end ?? d.date).filter(Boolean) as string[]
@@ -163,7 +184,7 @@ export default function LaborExpenseDraftsPage() {
     const { data, error } = await supabase.rpc('create_batch_payment', {
       p_expense_ids: Array.from(selectedIds),
       p_assignee_id: session.user.id,
-      p_account_id: batchPaymentMethod === 'cash' ? null : batchAccountId,
+      p_account_id: preApproval ? null : (batchPaymentMethod === 'cash' ? null : batchAccountId),
       p_payment_method: batchPaymentMethod,
       p_payment_code: paymentCode,
       p_notes: null,
@@ -173,7 +194,7 @@ export default function LaborExpenseDraftsPage() {
     setSelectedIds(new Set())
     setBatchAccountId(null)
     qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
-    toast('Batch payment created', 'success')
+    toast(preApproval ? 'Batch created — approve it to release for payment' : 'Batch payment created', 'success')
     navigate(`/batch-payments/${data}`)
   }
 
@@ -295,36 +316,48 @@ export default function LaborExpenseDraftsPage() {
         )}
       </div>
 
-      {/* Batch payment bar — combine several approved drafts (e.g. every
-          trade on one work order) into a single Payment Request. */}
+      {/* Batch payment bar — combine several drafts (e.g. every trade on one
+          work order) into a single Payment Request. Drafts can be grouped
+          before approval; the batch is then approved as one total. */}
       {selectedIds.size > 0 && (
         <div className="sticky top-2 z-10 flex items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 px-4 py-3 shadow-sm flex-wrap">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm flex-wrap">
             <Layers className="h-4 w-4 text-brand" />
             <span className="font-medium text-slate-700 dark:text-slate-200">{selectedIds.size} draft{selectedIds.size === 1 ? '' : 's'} selected</span>
             <span className="text-slate-400">· {formatCurrency(selectedTotal)} total</span>
+            {pendingSelectedCount > 0 && (
+              <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5 text-[11px] font-medium">
+                {pendingSelectedCount} awaiting approval — approve the batch after creating it
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
-            <select
-              value={batchPaymentMethod}
-              onChange={e => setBatchPaymentMethod(e.target.value as 'batch_wire' | 'cash')}
-              className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="batch_wire">Bank / Wire</option>
-              <option value="cash">Cash</option>
-            </select>
-            {batchPaymentMethod !== 'cash' && (
-              <div className="w-48">
-                <SearchableSelect value={batchAccountId} onChange={setBatchAccountId} options={accountOptions} placeholder="Funding account…" />
-              </div>
+            {/* Funding details only matter when this batch dispatches now.
+                A pre-approval batch picks them at approval time instead. */}
+            {pendingSelectedCount === 0 && (
+              <>
+                <select
+                  value={batchPaymentMethod}
+                  onChange={e => setBatchPaymentMethod(e.target.value as 'batch_wire' | 'cash')}
+                  className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  <option value="batch_wire">Bank / Wire</option>
+                  <option value="cash">Cash</option>
+                </select>
+                {batchPaymentMethod !== 'cash' && (
+                  <div className="w-48">
+                    <SearchableSelect value={batchAccountId} onChange={setBatchAccountId} options={accountOptions} placeholder="Funding account…" />
+                  </div>
+                )}
+              </>
             )}
             <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-500 hover:underline">Clear</button>
             <button
               onClick={createBatch}
-              disabled={batching || (batchPaymentMethod !== 'cash' && !batchAccountId)}
+              disabled={batching || (pendingSelectedCount === 0 && batchPaymentMethod !== 'cash' && !batchAccountId)}
               className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60"
             >
-              {batching ? 'Creating…' : 'Create Batch Payment'}
+              {batching ? 'Creating…' : pendingSelectedCount > 0 ? 'Create Batch for Approval' : 'Create Batch Payment'}
             </button>
           </div>
         </div>
@@ -352,7 +385,7 @@ export default function LaborExpenseDraftsPage() {
                   Requisition <span className="font-mono">{reqId.slice(0, 8)}</span> · {rows[0].projects?.project_name ?? '—'} · {rows.length} draft{rows.length === 1 ? '' : 's'}
                 </div>
                 {rows.map(d => (
-                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} onUndo={undoRollup} />
+                  <DraftRow key={d.id} draft={d} expanded={expanded.has(d.id)} onToggle={() => toggle(d.id)} selected={selectedIds.has(d.id)} onToggleSelect={() => toggleSelect(d.id)} onUndo={undoRollup} onUnapprove={unapproveDraft} />
                 ))}
               </div>
             ))}
@@ -414,12 +447,17 @@ function ReqRollupRow({ req, defaultFrom, defaultTo, onRun }: {
   )
 }
 
-function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo }: {
+function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo, onUnapprove }: {
   draft: DraftRow; expanded: boolean; onToggle: () => void; selected: boolean; onToggleSelect: () => void
   onUndo: (draft: DraftRow) => Promise<void>
+  onUnapprove: (draft: DraftRow) => Promise<void>
 }) {
   const isVolume = draft.labor_requisitions?.payment_basis === 'per_volume'
-  const batchable = draft.payment_state === 'approved_to_pay'
+  // Batching no longer waits on approval (migration 265): a week's drafts
+  // can be assembled first and approved as one total. Already-approved
+  // drafts still batch exactly as before.
+  const batchable = draft.payment_state === 'approved_to_pay' || draft.payment_state === 'unpaid'
+  const awaitingApproval = draft.payment_state === 'unpaid'
   const unitLabel = isVolume ? (draft.labor_requisitions?.volume_unit ?? 'units') : 'days'
   // A rollup is idempotent on requisition + period, so "Roll up now" hands
   // back this same expense forever — correcting the timesheets behind it
@@ -428,6 +466,10 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo 
   // and batched rollups) server-side.
   const undoable = draft.payment_state === 'unpaid' || draft.payment_state === 'void'
   const [undoing, setUndoing] = useState(false)
+  // Approved but not yet dispatched — the approval can still be withdrawn,
+  // which is what you need to pull it back into a batch.
+  const unapprovable = draft.approval_status === 'finance_approved' && draft.payment_state === 'approved_to_pay'
+  const [unapproving, setUnapproving] = useState(false)
 
   const { data: workers = [] } = useQuery({
     queryKey: ['labor-expense-workers', draft.id],
@@ -472,10 +514,21 @@ function DraftRow({ draft, expanded, onToggle, selected, onToggleSelect, onUndo 
             <p className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatCurrency(draft.amount_etb ?? 0)}</p>
             <p className="text-[11px] text-slate-400 capitalize">
               {draft.approval_status} · {draft.payment_state}
+              {awaitingApproval && <span className="ml-1.5 normal-case rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1.5 py-0.5 text-[10px]">Can batch now</span>}
               {draft.is_archived && <span className="ml-1.5 normal-case rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-500 dark:text-slate-400">Archived</span>}
             </p>
           </div>
         </button>
+        {unapprovable && (
+          <button
+            onClick={async () => { setUnapproving(true); try { await onUnapprove(draft) } finally { setUnapproving(false) } }}
+            disabled={unapproving}
+            title="Withdraw this approval and return it to pending, so it can go into a batch instead"
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 shrink-0"
+          >
+            <Undo2 className="h-3 w-3" /> {unapproving ? 'Withdrawing…' : 'Un-approve'}
+          </button>
+        )}
         {undoable && (
           <button
             onClick={async () => { setUndoing(true); try { await onUndo(draft) } finally { setUndoing(false) } }}
