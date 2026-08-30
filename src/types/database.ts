@@ -2251,6 +2251,76 @@ export interface RollupIntegrityRow {
   overstated_etb: number
 }
 
+// ── Payment Requests (migration 268) ─────────────────────────────────────────
+
+export type PaymentRequestStatus = 'issued' | 'superseded' | 'void'
+export type PaymentRequestSource = 'expense' | 'batch_payment'
+
+/** Register row — v_payment_requests, which omits the stored document. */
+export interface PaymentRequestRow {
+  id: string
+  request_code: string | null
+  source_type: PaymentRequestSource
+  expense_id: string | null
+  batch_payment_id: string | null
+  source_code: string | null
+  title: string | null
+  total_amount: number | null
+  amount_in_words: string | null
+  worker_count: number
+  draft_count: number
+  period_start: string | null
+  period_end: string | null
+  project_names: string[] | null
+  status: PaymentRequestStatus
+  revision: number
+  supersedes_id: string | null
+  supersedes_code: string | null
+  issued_by: string | null
+  issued_by_name: string | null
+  issued_at: string
+  voided_by: string | null
+  voided_by_name: string | null
+  voided_at: string | null
+  void_reason: string | null
+  notes: string | null
+  /** Payment state of what the request authorises — rolled up for a batch. */
+  payment_state: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** The stored row itself, including the frozen document. */
+export interface PaymentRequestRecord {
+  id: string
+  request_code: string | null
+  source_type: PaymentRequestSource
+  expense_id: string | null
+  batch_payment_id: string | null
+  title: string | null
+  total_amount: number | null
+  amount_in_words: string | null
+  worker_count: number
+  draft_count: number
+  period_start: string | null
+  period_end: string | null
+  project_names: string[] | null
+  payee_lines: unknown
+  document_html: string
+  snapshot: unknown
+  status: PaymentRequestStatus
+  revision: number
+  supersedes_id: string | null
+  issued_by: string | null
+  issued_at: string
+  voided_by: string | null
+  voided_at: string | null
+  void_reason: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface PlLedgerPreviewRow {
   account_code: string
   account_name: string

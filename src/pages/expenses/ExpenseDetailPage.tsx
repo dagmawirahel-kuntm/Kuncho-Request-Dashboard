@@ -4,17 +4,17 @@ import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { canApproveAsFinance } from '@/lib/expenseAccess'
+import { canApproveAsFinance, canIssuePaymentRequest } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaffDirectory } from '@/hooks/useLookups'
-import { COMPANY_NAME, COMPANY_ADDRESS, gradientCss } from '@/lib/documentTheme'
 import {
-  ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
+  ArrowLeft, Pencil, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import type { Expense, ExpenseType } from '@/types/database'
 
@@ -44,222 +44,11 @@ type ExpenseWithJoins = Expense & {
   vendor_receipt_facilitation: { record_name: string | null } | null
 }
 
-// ── Print invoice component ───────────────────────────────────────────────────
-
-type LaborWorkerRow = {
-  staff_id: string; employee_name: string; days_worked: number | null; day_rate: number | null; subtotal: number | null
-  gang_size: number | null; gang_member_names: string | null
-}
-type LaborRequisitionInfo = { role_needed: string; payment_basis: string; volume_unit: string | null } | null
-
-function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo }: {
-  expense: ExpenseWithJoins; laborWorkers: LaborWorkerRow[]; paidToStaffName: string | null; requisitionInfo: LaborRequisitionInfo
-}) {
-  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-  const vendorName = expense.vendors?.vendor_name ?? expense.vendors_name
-  const vendorBank = expense.vendors?.bank_account ?? expense.vendors_bank_account
-  const vendorLocation = expense.vendors?.location ?? expense.vendors_location
-  const projectName = expense.projects?.project_name ?? expense.project_name
-  const categoryName = expense.categories?.category_name
-  const managerName = (expense as any).manager_profile?.full_name ?? null
-  const financeName = (expense as any).finance_profile?.full_name ?? null
-  const isVolume = requisitionInfo?.payment_basis === 'per_volume'
-  const unitLabel = isVolume ? (requisitionInfo?.volume_unit ?? 'units') : 'days'
-  const totalHeadcount = laborWorkers.reduce((sum, w) => sum + Math.max(w.gang_size ?? 1, 1), 0)
-  const hasPeriod = !!(expense.rollup_period_start && expense.rollup_period_end)
-
-  const metaFields: { label: string; value: string | null | undefined; mono?: boolean }[] = [
-    { label: 'Invoice Number', value: expense.expense_code ?? '—', mono: true },
-    { label: 'Date', value: expense.date ? formatDate(expense.date) : today },
-    { label: 'Type', value: TYPE_THEME[expense.expense_type ?? 'general']?.label },
-    ...(hasPeriod ? [{ label: 'Period Covered', value: `${formatDate(expense.rollup_period_start!)} → ${formatDate(expense.rollup_period_end!)}` }] : []),
-  ]
-
-  return (
-    <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a', maxWidth: '750px', margin: '0 auto', padding: '24px' }}>
-
-      {/* Company header */}
-      <div style={{ background: gradientCss('laborPayment'), borderRadius: '10px', padding: '18px 22px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-            <div style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.22)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#fff', fontWeight: 900, fontSize: '12px', letterSpacing: '-0.5px' }}>K</span>
-            </div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#fff', letterSpacing: '-0.3px' }}>
-              {COMPANY_NAME}
-            </h1>
-          </div>
-          <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.78)', lineHeight: 1.6 }}>
-            {COMPANY_ADDRESS}
-          </p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ margin: 0, fontSize: '9px', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '1.2px' }}>Document</p>
-          <p style={{ margin: '3px 0 0', fontSize: '20px', fontWeight: 800, color: '#fff' }}>PAYMENT REQUEST</p>
-          <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>
-            {expense.expense_code ?? '—'}
-          </p>
-        </div>
-      </div>
-
-      {/* Meta strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${metaFields.length}, 1fr)`, gap: '10px', marginBottom: '20px' }}>
-        {metaFields.map(f => (
-          <div key={f.label} style={{ background: '#f4f6f8', borderRadius: '5px', padding: '10px 12px' }}>
-            <p style={{ margin: 0, fontSize: '9px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{f.label}</p>
-            <p style={{ margin: '3px 0 0', fontWeight: 700, fontSize: '12px', ...(f.mono ? { fontFamily: 'monospace', color: '#1B3A5C' } : {}) }}>{f.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Payee */}
-      {vendorName && (
-        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
-          <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-            Payee / Vendor
-          </div>
-          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
-            <p style={{ margin: 0 }}><strong>Name:</strong> {vendorName}</p>
-            {vendorBank && <p style={{ margin: 0 }}><strong>Bank Account:</strong> {vendorBank}</p>}
-            {vendorLocation && <p style={{ margin: 0 }}><strong>Location:</strong> {vendorLocation}</p>}
-          </div>
-        </div>
-      )}
-      {!vendorName && laborWorkers.length === 0 && paidToStaffName && (
-        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
-          <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-            Payee / Staff
-          </div>
-          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
-            <p style={{ margin: 0 }}><strong>Name:</strong> {paidToStaffName}</p>
-          </div>
-        </div>
-      )}
-      {!vendorName && laborWorkers.length > 0 && (
-        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
-          <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-            Labor Payment — Worker Breakdown{requisitionInfo?.role_needed ? ` (${requisitionInfo.role_needed})` : ''} · {totalHeadcount} worker{totalHeadcount === 1 ? '' : 's'}
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ background: '#f4f6f8' }}>
-                <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888' }}>Worker</th>
-                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '70px' }}>{unitLabel}</th>
-                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '90px' }}>Rate</th>
-                <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '100px' }}>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {laborWorkers.map(w => (
-                <tr key={w.staff_id} style={{ borderTop: '1px solid #e4e8ee' }}>
-                  <td style={{ padding: '6px 12px' }}>
-                    {w.employee_name}
-                    {(w.gang_size ?? 1) > 1 && (
-                      <>
-                        <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '9px', background: '#fffbeb', color: '#92400e', fontSize: '9px', fontWeight: 700 }}>
-                          Gang of {w.gang_size}
-                        </span>
-                        {w.gang_member_names && (
-                          <div style={{ marginTop: '2px', fontSize: '9px', color: '#999' }}>{w.gang_member_names}</div>
-                        )}
-                      </>
-                    )}
-                  </td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.days_worked ?? '—'}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.day_rate != null ? formatCurrency(w.day_rate) : '—'}</td>
-                  <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600 }}>{w.subtotal != null ? formatCurrency(w.subtotal) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Items table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px', fontSize: '12px' }}>
-        <thead>
-          <tr style={{ background: '#1B3A5C', color: '#fff' }}>
-            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Description</th>
-            <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.6px', width: '50px' }}>Qty</th>
-            <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.6px', width: '55px' }}>UOM</th>
-            <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.6px', width: '130px' }}>Amount (ETB)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style={{ borderBottom: '1px solid #e4e8ee' }}>
-            <td style={{ padding: '10px 12px' }}>{expense.item_service_description ?? '—'}</td>
-            <td style={{ padding: '10px 10px', textAlign: 'center' }}>{expense.quantity ?? 1}</td>
-            <td style={{ padding: '10px 10px', textAlign: 'center' }}>{expense.uom ?? 'pcs'}</td>
-            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600 }}>
-              {expense.amount_etb != null ? formatCurrency(expense.amount_etb) : '—'}
-            </td>
-          </tr>
-        </tbody>
-        <tfoot>
-          <tr style={{ background: '#f4f6f8', borderTop: '2px solid #dde2ea' }}>
-            <td colSpan={3} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#555' }}>
-              Total
-            </td>
-            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, fontSize: '15px', color: '#1B3A5C' }}>
-              {expense.amount_etb != null ? formatCurrency(expense.amount_etb) : '—'}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-
-      {/* Supporting info */}
-      {(projectName || categoryName || expense.notes) && (
-        <div style={{ marginBottom: '18px', background: '#f8f9fb', borderRadius: '5px', padding: '10px 14px', fontSize: '11px', lineHeight: 1.8 }}>
-          {projectName && <p style={{ margin: 0 }}><strong>Project:</strong> {projectName}</p>}
-          {categoryName && <p style={{ margin: 0 }}><strong>Category:</strong> {categoryName}</p>}
-          {expense.notes && <p style={{ margin: 0 }}><strong>Notes:</strong> {expense.notes}</p>}
-        </div>
-      )}
-
-      {/* WHT notice */}
-      {expense.verify_wht && (
-        <div style={{ marginBottom: '18px', border: '1px solid #fbbf24', background: '#fffbeb', borderRadius: '5px', padding: '8px 12px', fontSize: '10px', color: '#92400e' }}>
-          <strong>Withholding Tax (WHT) Required</strong>
-          {expense.wht_handling_method && ` — ${expense.wht_handling_method}`}
-        </div>
-      )}
-
-      {/* Approval signatures */}
-      <div style={{ marginTop: '36px', borderTop: '2px solid #dde2ea', paddingTop: '20px' }}>
-        <p style={{ margin: '0 0 16px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#aaa', letterSpacing: '1px' }}>
-          Authorization & Approval Signatures
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-          {[
-            { label: 'Requested By', name: null },
-            { label: 'Manager Approved', name: managerName },
-            { label: 'Finance Approved', name: financeName },
-          ].map(block => (
-            <div key={block.label}>
-              <p style={{ margin: '0 0 2px', fontSize: '9px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{block.label}</p>
-              <div style={{ borderBottom: '1.5px solid #999', minHeight: '32px', marginBottom: '4px', display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
-                {block.name && (
-                  <span style={{ fontSize: '11px', fontStyle: 'italic', color: '#1B3A5C', fontWeight: 600 }}>{block.name}</span>
-                )}
-              </div>
-              <p style={{ margin: 0, fontSize: '9px', color: '#ccc' }}>Name &nbsp;/&nbsp; Signature &nbsp;/&nbsp; Date</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ marginTop: '44px', borderTop: '1px solid #e4e8ee', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <p style={{ margin: 0, fontSize: '9px', color: '#bbb' }}>
-          {COMPANY_NAME} &nbsp;·&nbsp; This is an official payment request document
-        </p>
-        <p style={{ margin: 0, fontSize: '9px', color: '#bbb' }}>
-          Generated {today} &nbsp;·&nbsp; Ref: {expense.expense_code ?? expense.id}
-        </p>
-      </div>
-    </div>
-  )
-}
+// The Payment Request document for a single labor draft used to live
+// here as a `hidden print:block` component. It has moved into the shared
+// template (lib/laborPaymentRequestDocument) that the batch view also
+// uses, so the two stopped drifting apart — and so the document can be
+// archived on issue rather than only printed.
 
 // ── Detail page ───────────────────────────────────────────────────────────────
 
@@ -310,16 +99,39 @@ export default function ExpenseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_expense_workers')
-        .select('staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names')
+        .select('id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, overtime_hours, overtime_amount')
         .eq('expense_id', id!)
       if (error) throw error
       return data ?? []
     },
     enabled: !!id && !!expense?.rolled_up_from_requisition_id,
   })
+
+  // Bank accounts are not in v_staff_directory, and widening that shared
+  // view would hand account numbers to every role that can merely view an
+  // expense. So they are fetched separately and only for the roles that
+  // can issue a Payment Request; without them the document prints "no
+  // account on file" rather than a wrong number.
+  const workerStaffIds = useMemo(
+    () => Array.from(new Set(rawLaborWorkers.map(w => w.staff_id))),
+    [rawLaborWorkers],
+  )
+  const { data: bankByStaffId = new Map<string, string | null>() } = useQuery({
+    queryKey: ['expense-labor-worker-banks', id, workerStaffIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff').select('id, bank_account').in('id', workerStaffIds)
+      if (error) throw error
+      return new Map((data ?? []).map(s => [s.id as string, (s.bank_account as string | null) ?? null]))
+    },
+    enabled: workerStaffIds.length > 0 && canIssuePaymentRequest(role),
+  })
+
   const laborWorkers = useMemo(() => rawLaborWorkers.map(w => ({
-    ...w, employee_name: staffNameById.get(w.staff_id) ?? 'Unknown staff',
-  })), [rawLaborWorkers, staffNameById])
+    ...w,
+    employee_name: staffNameById.get(w.staff_id) ?? 'Unknown staff',
+    bank_account: bankByStaffId.get(w.staff_id) ?? null,
+  })), [rawLaborWorkers, staffNameById, bankByStaffId])
   const paidToStaffName = expense?.paid_to_staff_id ? (staffNameById.get(expense.paid_to_staff_id) ?? null) : null
 
   const { data: requisitionInfo = null } = useQuery({
@@ -361,6 +173,86 @@ export default function ExpenseDetailPage() {
       isFinanceUser: canApproveAsFinance(role),
     })
   }, [expense, hasUnresolvedLedgerFailure, role])
+
+  // The Payment Request document, in the shape the shared template takes.
+  // A single expense is a one-draft request; everything else — the payee
+  // grouping, the totals, the amount in words — the template derives.
+  const prDocument = useMemo(() => {
+    if (!expense) return null
+    const isVolume = requisitionInfo?.payment_basis === 'per_volume'
+    const unitLabel = isVolume ? (requisitionInfo?.volume_unit ?? 'units') : 'days'
+    return {
+      kind: 'single' as const,
+      sourceCode: expense.expense_code ?? null,
+      issuedOn: new Date().toISOString().slice(0, 10),
+      issuedByName: null,
+      drafts: [{
+        id: expense.id,
+        code: expense.expense_code ?? null,
+        description: expense.item_service_description ?? null,
+        amount: expense.amount_etb ?? null,
+        projectName: expense.projects?.project_name ?? expense.project_name ?? null,
+        role: requisitionInfo?.role_needed ?? null,
+        periodStart: expense.rollup_period_start ?? null,
+        periodEnd: expense.rollup_period_end ?? null,
+      }],
+      // A labor rollup carries a per-worker breakdown. Anything else is a
+      // single payee, so the vendor (or the staff member being paid)
+      // stands in as the one line — otherwise the disbursement schedule
+      // would come out empty on exactly the documents finance prints most.
+      workers: laborWorkers.length > 0
+        ? laborWorkers.map(w => ({
+            id: w.id,
+            expenseId: expense.id,
+            staffId: w.staff_id,
+            name: w.employee_name,
+            bankAccount: w.bank_account,
+            units: w.days_worked,
+            unitLabel,
+            rate: w.day_rate,
+            subtotal: w.subtotal,
+            overtimeHours: w.overtime_hours,
+            overtimeAmount: w.overtime_amount,
+            gangSize: w.gang_size,
+            gangMemberNames: w.gang_member_names,
+            vendorName: expense.vendors?.vendor_name ?? expense.vendors_name ?? null,
+            vendorBankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
+          }))
+        : [{
+            id: expense.id,
+            expenseId: expense.id,
+            staffId: expense.paid_to_staff_id ?? expense.id,
+            name: (expense.vendors?.vendor_name ?? expense.vendors_name)
+              ?? paidToStaffName ?? (expense.item_service_description ?? 'Payee'),
+            bankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
+            units: expense.quantity ?? null,
+            unitLabel: expense.uom ?? 'pcs',
+            rate: null,
+            subtotal: expense.amount_etb ?? null,
+            overtimeHours: null,
+            overtimeAmount: null,
+            gangSize: null,
+            gangMemberNames: null,
+            vendorName: null,
+            vendorBankAccount: null,
+          }],
+      approvals: [
+        { label: 'Requested By', name: null, date: expense.created_at ?? null },
+        {
+          label: 'Finance Approved',
+          name: expense.finance_profile?.full_name ?? null,
+          date: expense.finance_approved_at ?? null,
+        },
+        { label: 'Disbursed By', name: null, date: null },
+      ],
+      total: expense.amount_etb ?? 0,
+      notes: expense.notes ?? null,
+      whtRequired: !!expense.verify_wht,
+      whtMethod: expense.wht_handling_method ?? null,
+      fundingAccount: expense.accounts?.account_name ?? null,
+      paymentMethod: expense.payment_method ?? null,
+    }
+  }, [expense, laborWorkers, requisitionInfo, paidToStaffName])
 
   if (isLoading) {
     return (
@@ -437,14 +329,7 @@ export default function ExpenseDetailPage() {
   ]
 
   return (
-    <>
-      {/* Print-only invoice */}
-      <div className="hidden print:block">
-        <PrintInvoice expense={expense} laborWorkers={laborWorkers} paidToStaffName={paidToStaffName} requisitionInfo={requisitionInfo} />
-      </div>
-
-      {/* Screen view */}
-      <div className="space-y-5 print:hidden">
+      <div className="space-y-5">
 
         {/* Back + actions */}
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -480,12 +365,9 @@ export default function ExpenseDetailPage() {
                 Resubmit
               </button>
             )}
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
-            >
-              <Printer className="h-3.5 w-3.5" /> Print Payment Request
-            </button>
+            {id && prDocument && (
+              <PaymentRequestActions sourceType="expense" sourceId={id} document={prDocument} />
+            )}
             {canEdit && (
               <Link
                 to={`/expenses/${id}/edit`}
@@ -696,6 +578,5 @@ export default function ExpenseDetailPage() {
         )}
 
       </div>
-    </>
   )
 }
