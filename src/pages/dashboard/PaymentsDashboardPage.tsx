@@ -32,6 +32,12 @@ const PAYMENT_METHODS: { value: ExpensePaymentMethod; label: string }[] = [
 
 const PAYMENT_METHOD_LABEL: Record<string, string> = Object.fromEntries(PAYMENT_METHODS.map(m => [m.value, m.label]))
 PAYMENT_METHOD_LABEL['batch_wire'] = 'Batch Wire'
+// Display-only, deliberately absent from PAYMENT_METHODS above: an expense
+// becomes 'vendor_credit' by going through settle_expense_with_vendor_credit(),
+// which draws down the credit and posts Dr expense / Cr Vendor Advances.
+// Offering it as a pickable method would let someone mark a payable paid
+// without either of those happening.
+PAYMENT_METHOD_LABEL['vendor_credit'] = 'Vendor Credit'
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
