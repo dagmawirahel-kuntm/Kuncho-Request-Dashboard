@@ -1417,6 +1417,30 @@ export interface OpenVendorAdvanceRow {
   days_open: number | null
 }
 
+/**
+ * v_credit_applicable_payables (migration 271) — approved-but-unpaid
+ * payables a vendor credit can still fund. `cash_payable` is what would
+ * actually be wired after WHT and any credit already applied; note that
+ * `amount_etb` is untouched, because funding a payable from a credit is
+ * not a discount on what the purchase cost.
+ */
+export interface CreditApplicablePayableRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  wht_amount: number | null
+  credit_applied_etb: number
+  cash_payable: number
+  vendor_id: string | null
+  vendor_name: string | null
+  payment_state: string
+  sourcing_bundle_id: string | null
+  bundle_code: string | null
+  payment_pattern: string | null
+  date: string | null
+}
+
 export interface VendorCreditRow {
   id: string
   vendor_id: string
