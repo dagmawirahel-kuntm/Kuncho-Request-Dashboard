@@ -4,12 +4,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAccounts } from '@/hooks/useLookups'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { parseBankStatementCsv, type ParsedStatement } from '@/lib/bankStatementParser'
 import type { BankStatementImport, BankStatementLine } from '@/types/database'
 import { Upload, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight, RefreshCw, Link2, Coins } from 'lucide-react'
+
+// Labels for the detected-column chips shown before an import is allowed.
+const FIELD_LABELS: Record<string, string> = {
+  valueDate: 'Date', debitAmount: 'Debit', creditAmount: 'Credit',
+  runningBalance: 'Balance', reference: 'Reference',
+}
 
 // A statement line joined to whichever side it matched — expense (debit,
 // money out) or sale (credit, money in). At most one of expenses/sales is
@@ -113,6 +119,9 @@ export default function BankStatementImportPage() {
   async function handleCreateImport() {
     if (!accountId || !parsed) { toast('Select an account and a CSV file first', 'error'); return }
     if (parsed.lines.length === 0) { toast('No transaction rows found in this file', 'error'); return }
+    // The button is disabled in this state; re-checked here so a stale
+    // render or a future caller cannot slip a rejected file through.
+    if (parsed.errors.length > 0) { toast(parsed.errors[0], 'error'); return }
     setCreating(true)
 
     const { data: importRow, error: importErr } = await supabase
@@ -180,10 +189,16 @@ export default function BankStatementImportPage() {
     const { data, error } = await supabase.rpc('rematch_committed_statement_lines', { p_import_id: importId ?? null }).select().single()
     setRematching(false)
     if (error) { toast(error.message, 'error'); return }
-    const r = data as { matched_count: number; skipped_count: number }
-    toast(r.matched_count > 0
-      ? `Rematched ${r.matched_count} line(s) — now show as paid`
-      : 'No new matches found', r.matched_count > 0 ? 'success' : 'info')
+    // reconciled_count are lines whose reference already belongs to a
+    // recorded transfer — accounted for, just never cleared out of the
+    // unmatched queue. Worth reporting separately from a real new match.
+    const r = data as { matched_count: number; reconciled_count: number; skipped_count: number }
+    const parts = [
+      r.matched_count > 0 ? `${r.matched_count} line(s) matched — now show as paid` : null,
+      r.reconciled_count > 0 ? `${r.reconciled_count} already reconciled, cleared from the queue` : null,
+    ].filter(Boolean)
+    toast(parts.length > 0 ? parts.join(' · ') : 'No new matches found',
+      parts.length > 0 ? 'success' : 'info')
     qc.invalidateQueries({ queryKey: ['bank-statement-lines'] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['sales'] })
@@ -202,7 +217,7 @@ export default function BankStatementImportPage() {
         </p>
       </div>
 
-      <Section title="New Import" sub="CSV only — columns: Value Date, Post Date, Transaction Type, Narration, Debit, Credit, Balance, Reference">
+      <Section title="New Import" sub="CSV only. Columns are matched by their header name, in any order — the file is rejected if Date, Debit, Credit and Balance cannot be found, or if the rows disagree with the statement's own running balance.">
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -226,11 +241,43 @@ export default function BankStatementImportPage() {
                 <div><p className="text-xs text-slate-400">Starting Balance</p><p className="font-semibold text-slate-800 dark:text-slate-100">{parsed.startingBalance != null ? formatCurrency(parsed.startingBalance) : '—'}</p></div>
                 <div><p className="text-xs text-slate-400">Ending Balance</p><p className="font-semibold text-slate-800 dark:text-slate-100">{parsed.endingBalance != null ? formatCurrency(parsed.endingBalance) : '—'}</p></div>
               </div>
+              {/* Which column each field was actually read from. Shown before
+                  import because a silent layout change is what previously put
+                  46 outgoing payments on the credit side. */}
+              {Object.keys(parsed.columnMap).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                  <span className="text-slate-400">Columns detected:</span>
+                  {(['valueDate', 'debitAmount', 'creditAmount', 'runningBalance', 'reference'] as const).map(f => (
+                    <span
+                      key={f}
+                      className={cn('rounded-full border px-2 py-0.5',
+                        parsed.columnMap[f]
+                          ? 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                          : 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-400')}
+                    >
+                      {FIELD_LABELS[f]}: <span className="font-mono">{parsed.columnMap[f] ?? 'not found'}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {parsed.errors.length > 0 && (
+                <div className="flex items-start gap-2 rounded-md bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800/50 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">This file cannot be imported.</p>
+                    <ul className="mt-1 list-disc list-inside space-y-0.5">
+                      {parsed.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               {parsed.balanceWarnings.length > 0 && (
                 <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-medium">{parsed.balanceWarnings.length} running-balance mismatch(es) — the file may be missing rows or a page.</p>
+                    <p className="font-medium">{parsed.balanceWarnings.length} warning(s) — worth a look before importing.</p>
                     <ul className="mt-1 list-disc list-inside space-y-0.5">
                       {parsed.balanceWarnings.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}
                     </ul>
@@ -239,7 +286,8 @@ export default function BankStatementImportPage() {
               )}
               <button
                 onClick={handleCreateImport}
-                disabled={creating || !accountId}
+                disabled={creating || !accountId || parsed.errors.length > 0}
+                title={parsed.errors.length > 0 ? 'Resolve the errors above before importing' : undefined}
                 className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {creating ? 'Importing…' : 'Create Import & Auto-Match'}
