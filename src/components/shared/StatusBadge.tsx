@@ -34,6 +34,9 @@ const statusVariantMap: Record<string, Variant> = {
   approved_to_pay: 'yellow',
   sent: 'blue',
   void: 'red',
+  // Payment Requests (268): an issued PR is the live authorisation;
+  // superseded already maps to slate below.
+  issued: 'green',
   not_started: 'slate',
   in_progress: 'blue',
   blocked: 'red',

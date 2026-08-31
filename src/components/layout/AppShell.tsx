@@ -45,6 +45,7 @@ const breadcrumbLabels: Record<string, string> = {
   'sub-ledgers': 'Sub Ledgers',
   'vendor-receipts': 'Vendor Receipts',
   'vendor-credits': 'Vendor Credits',
+  'payment-requests': 'Payment Requests',
   accounts: 'Accounts',
   sales: 'Sales',
   'tax-summary': 'Tax Summary',

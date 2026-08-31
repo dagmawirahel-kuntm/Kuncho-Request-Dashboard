@@ -33,3 +33,13 @@ export function canApproveAsExecutive(role: UserRole | null) {
 export function canApproveAsFinance(role: UserRole | null) {
   return role === 'admin' || role === 'finance'
 }
+
+// Who may issue a Payment Request. Mirrors the role check inside
+// save_payment_request() (migration 268) — the RPC is what actually
+// enforces it; this only decides whether the UI offers the action and
+// whether it bothers fetching payee bank accounts. Wider than
+// canApproveAsFinance because an executive signs off on disbursement
+// documents without holding the finance approval gate.
+export function canIssuePaymentRequest(role: UserRole | null) {
+  return role === 'admin' || role === 'executive' || role === 'finance'
+}
