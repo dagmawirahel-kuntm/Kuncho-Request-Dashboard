@@ -13,7 +13,11 @@ export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
-export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'other'
+// 'vendor_credit' is set only by settle_expense_with_vendor_credit()
+// (migration 276) — it is never a choice on a payment form, because
+// settling from a credit has to draw the credit down and post against
+// Vendor Advances rather than a bank account.
+export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'vendor_credit' | 'other'
 export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent' | 'labor_payment' | 'transportation'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
