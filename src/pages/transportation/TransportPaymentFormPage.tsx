@@ -91,7 +91,7 @@ export default function TransportPaymentFormPage() {
 
     setError(''); setSaving(true)
     const { data, error: err } = await supabase.from('expenses').insert([{
-      expense_type: 'general',
+      expense_type: 'transportation',
       item_service_description: `Transport: ${job.request_name ?? 'job'}`,
       amount_etb: amountNum,
       date,

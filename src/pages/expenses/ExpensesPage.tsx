@@ -245,6 +245,7 @@ const tableQuickFilters: QuickFilter[] = [
       { label: 'Purchase Order', value: 'purchase_order' },
       { label: 'VRF', value: 'vrf' },
       { label: 'CPO Bond', value: 'cpo_bond' },
+      { label: 'Transportation', value: 'transportation' },
     ],
   },
   { columnId: 'payment_status', label: 'Payment', options: [{ label: 'Paid', value: true }, { label: 'Pending', value: false }] },
@@ -397,10 +398,12 @@ export default function ExpensesPage() {
     maintenance:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
     property_rent:  'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300',
     labor_payment:  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+    transportation: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
   }
   const TYPE_LABEL: Record<ExpenseType, string> = {
     general: 'General', purchase_order: 'Purchase Order', vrf: 'VRF', cpo_bond: 'CPO Bond', fuel: 'Fuel',
     subcontract: 'Subcontract', maintenance: 'Maintenance', property_rent: 'Property Rent', labor_payment: 'Labor Payment',
+    transportation: 'Transportation',
   }
 
   const tableColumns: ColumnDef<Expense>[] = useMemo(() => [

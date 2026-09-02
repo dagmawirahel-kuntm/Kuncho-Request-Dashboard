@@ -9,7 +9,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaffDirectory } from '@/hooks/useLookups'
-import { COMPANY_NAME, COMPANY_ADDRESS, gradientCss } from '@/lib/documentTheme'
+import { COMPANY_NAME, COMPANY_ADDRESS } from '@/lib/documentTheme'
 import {
   ArrowLeft, Pencil, Printer, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Building2, FolderKanban, Tag,
@@ -30,6 +30,7 @@ const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string 
   maintenance:    { bg: '#78350F', label: 'Vehicle Maintenance', abbr: 'MNT' },
   property_rent:  { bg: '#365314', label: 'Property Rent',       abbr: 'RENT' },
   labor_payment:  { bg: '#0F766E', label: 'Labor Payment',       abbr: 'LBR' },
+  transportation: { bg: '#0369A1', label: 'Transportation',      abbr: 'TRSP' },
 }
 
 type ExpenseWithJoins = Expense & {
@@ -42,6 +43,8 @@ type ExpenseWithJoins = Expense & {
   finance_profile: { full_name: string } | null
   transfers: { transfer_id_code: string | null } | null
   vendor_receipt_facilitation: { record_name: string | null } | null
+  properties: { property_name: string; lease_start_date: string | null; lease_end_date: string | null } | null
+  cpo_bonds: { bond_id_ref: string | null; total_bond_amount: number | null; bond_status: string | null } | null
 }
 
 // ── Print invoice component ───────────────────────────────────────────────────
@@ -50,10 +53,18 @@ type LaborWorkerRow = {
   staff_id: string; employee_name: string; days_worked: number | null; day_rate: number | null; subtotal: number | null
   gang_size: number | null; gang_member_names: string | null
 }
-type LaborRequisitionInfo = { role_needed: string; payment_basis: string; volume_unit: string | null } | null
+type LaborRequisitionInfo = {
+  role_needed: string; payment_basis: string; volume_unit: string | null
+  scope_of_work: string | null; site_location: string | null
+} | null
+type TransportRouteInfo = {
+  pickup_location_text: string | null; dropoff_location_text: string | null
+  transport_mode: string | null; hired_vehicle_class: string | null; driver_name: string | null
+} | null
 
-function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo }: {
-  expense: ExpenseWithJoins; laborWorkers: LaborWorkerRow[]; paidToStaffName: string | null; requisitionInfo: LaborRequisitionInfo
+function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo, transportRoute }: {
+  expense: ExpenseWithJoins; laborWorkers: LaborWorkerRow[]; paidToStaffName: string | null
+  requisitionInfo: LaborRequisitionInfo; transportRoute: TransportRouteInfo
 }) {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
   const vendorName = expense.vendors?.vendor_name ?? expense.vendors_name
@@ -78,8 +89,9 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a', maxWidth: '750px', margin: '0 auto', padding: '24px' }}>
 
-      {/* Company header */}
-      <div style={{ background: gradientCss('laborPayment'), borderRadius: '10px', padding: '18px 22px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      {/* Company header — background follows expense_type so a rent,
+          transport, or CPO bond document doesn't read as a labor payslip. */}
+      <div style={{ background: TYPE_THEME[expense.expense_type ?? 'general']?.bg ?? TYPE_THEME.general.bg, borderRadius: '10px', padding: '18px 22px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
             <div style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.22)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -112,6 +124,60 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo 
         ))}
       </div>
 
+      {/* Type-specific detail — the fields a rent/transport/bond/VRF
+          payment actually needs to be presentable, not just the generic
+          description line every expense_type otherwise falls back to. */}
+      {expense.expense_type === 'transportation' && transportRoute && (
+        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{ background: TYPE_THEME.transportation.bg, color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            Route / Vehicle
+          </div>
+          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
+            <p style={{ margin: 0 }}><strong>Route:</strong> {transportRoute.pickup_location_text ?? '—'} → {transportRoute.dropoff_location_text ?? '—'}</p>
+            {transportRoute.transport_mode && <p style={{ margin: 0 }}><strong>Mode:</strong> {transportRoute.transport_mode}</p>}
+            {transportRoute.hired_vehicle_class && <p style={{ margin: 0 }}><strong>Vehicle Class:</strong> {transportRoute.hired_vehicle_class}</p>}
+            {transportRoute.driver_name && <p style={{ margin: 0 }}><strong>Driver:</strong> {transportRoute.driver_name}</p>}
+          </div>
+        </div>
+      )}
+      {expense.expense_type === 'property_rent' && expense.properties && (
+        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{ background: TYPE_THEME.property_rent.bg, color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            Property / Lease
+          </div>
+          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
+            <p style={{ margin: 0 }}><strong>Property:</strong> {expense.properties.property_name}</p>
+            {(expense.properties.lease_start_date || expense.properties.lease_end_date) && (
+              <p style={{ margin: 0 }}>
+                <strong>Lease Period:</strong> {expense.properties.lease_start_date ? formatDate(expense.properties.lease_start_date) : '—'} → {expense.properties.lease_end_date ? formatDate(expense.properties.lease_end_date) : '—'}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {expense.expense_type === 'cpo_bond' && expense.cpo_bonds && (
+        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{ background: TYPE_THEME.cpo_bond.bg, color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            CPO Bond
+          </div>
+          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
+            <p style={{ margin: 0 }}><strong>Bond Ref:</strong> {expense.cpo_bonds.bond_id_ref ?? '—'}</p>
+            {expense.cpo_bonds.total_bond_amount != null && <p style={{ margin: 0 }}><strong>Total Bond Amount:</strong> {formatCurrency(expense.cpo_bonds.total_bond_amount)}</p>}
+            {expense.cpo_bonds.bond_status && <p style={{ margin: 0 }}><strong>Status:</strong> {expense.cpo_bonds.bond_status}</p>}
+          </div>
+        </div>
+      )}
+      {expense.expense_type === 'vrf' && expense.vendor_receipt_facilitation && (
+        <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{ background: TYPE_THEME.vrf.bg, color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            Vendor Receipt Facilitation
+          </div>
+          <div style={{ padding: '10px 12px', fontSize: '12px', lineHeight: 1.7 }}>
+            <p style={{ margin: 0 }}><strong>Record:</strong> {expense.vendor_receipt_facilitation.record_name ?? '—'}</p>
+          </div>
+        </div>
+      )}
+
       {/* Payee */}
       {vendorName && (
         <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
@@ -140,6 +206,12 @@ function PrintInvoice({ expense, laborWorkers, paidToStaffName, requisitionInfo 
           <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
             Labor Payment — Worker Breakdown{requisitionInfo?.role_needed ? ` (${requisitionInfo.role_needed})` : ''} · {totalHeadcount} worker{totalHeadcount === 1 ? '' : 's'}
           </div>
+          {(requisitionInfo?.scope_of_work || requisitionInfo?.site_location) && (
+            <div style={{ padding: '8px 12px', fontSize: '11px', lineHeight: 1.6, background: '#f8f9fb', borderBottom: '1px solid #e4e8ee' }}>
+              {requisitionInfo?.scope_of_work && <p style={{ margin: 0 }}><strong>Work Done:</strong> {requisitionInfo.scope_of_work}</p>}
+              {requisitionInfo?.site_location && <p style={{ margin: 0 }}><strong>Site:</strong> {requisitionInfo.site_location}</p>}
+            </div>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
             <thead>
               <tr style={{ background: '#f4f6f8' }}>
@@ -288,7 +360,9 @@ export default function ExpenseDetailPage() {
           manager_profile:user_profiles!manager_approved_by ( full_name ),
           finance_profile:user_profiles!finance_approved_by ( full_name ),
           transfers:transfer_id ( transfer_id_code ),
-          vendor_receipt_facilitation:vrf_id ( record_name )
+          vendor_receipt_facilitation:vrf_id ( record_name ),
+          properties:property_id ( property_name, lease_start_date, lease_end_date ),
+          cpo_bonds:cpo_bond_id ( bond_id_ref, total_bond_amount, bond_status )
         `)
         .eq('id', id!)
         .single()
@@ -327,13 +401,30 @@ export default function ExpenseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_requisitions')
-        .select('role_needed, payment_basis, volume_unit')
+        .select('role_needed, payment_basis, volume_unit, scope_of_work, site_location')
         .eq('id', expense!.rolled_up_from_requisition_id!)
         .single()
       if (error) throw error
       return data
     },
     enabled: !!expense?.rolled_up_from_requisition_id,
+  })
+
+  // Transport payments have no forward column on expenses — the link runs
+  // the other way (transportation_requests.expense_id), same reverse
+  // lookup ExpenseFormPage already uses for its "linked source" banner.
+  const { data: transportRoute = null } = useQuery({
+    queryKey: ['expense-transport-route', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transportation_requests')
+        .select('pickup_location_text, dropoff_location_text, transport_mode, hired_vehicle_class, driver_name')
+        .eq('expense_id', id!)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+    enabled: !!id && expense?.expense_type === 'transportation',
   })
 
   // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
@@ -440,7 +531,7 @@ export default function ExpenseDetailPage() {
     <>
       {/* Print-only invoice */}
       <div className="hidden print:block">
-        <PrintInvoice expense={expense} laborWorkers={laborWorkers} paidToStaffName={paidToStaffName} requisitionInfo={requisitionInfo} />
+        <PrintInvoice expense={expense} laborWorkers={laborWorkers} paidToStaffName={paidToStaffName} requisitionInfo={requisitionInfo} transportRoute={transportRoute} />
       </div>
 
       {/* Screen view */}

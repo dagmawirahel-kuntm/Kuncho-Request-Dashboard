@@ -22,7 +22,7 @@ type BatchExpense = {
   vendor_id: string | null
   vendors: { vendor_name: string; bank_account: string | null } | null
   paid_to_staff_id: string | null
-  labor_requisitions: { role_needed: string; payment_basis: string; volume_unit: string | null } | null
+  labor_requisitions: { role_needed: string; payment_basis: string; volume_unit: string | null; scope_of_work: string | null } | null
 }
 
 type WorkerLine = {
@@ -74,7 +74,7 @@ export default function BatchPaymentDetailPage() {
       if (ids.length === 0) return []
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit)')
+        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit, scope_of_work)')
         .in('id', ids)
       if (error) throw error
       return (data ?? []) as unknown as BatchExpense[]
@@ -119,7 +119,8 @@ export default function BatchPaymentDetailPage() {
   const scopeLabel = useMemo(() => {
     const roles = Array.from(new Set(batchExpenses.map(e => e.labor_requisitions?.role_needed).filter(Boolean)))
     const projects = Array.from(new Set(batchExpenses.map(e => e.projects?.project_name).filter(Boolean)))
-    return { roles, projects }
+    const scopes = Array.from(new Set(batchExpenses.map(e => e.labor_requisitions?.scope_of_work).filter(Boolean)))
+    return { roles, projects, scopes }
   }, [batchExpenses])
   const periodStart = batchExpenses.map(e => e.rollup_period_start).filter(Boolean).sort()[0]
   const periodEnd = batchExpenses.map(e => e.rollup_period_end).filter(Boolean).sort().slice(-1)[0]
@@ -184,6 +185,13 @@ export default function BatchPaymentDetailPage() {
               </div>
             ))}
           </div>
+
+          {scopeLabel.scopes.length > 0 && (
+            <div style={{ marginBottom: '18px', background: '#f8f9fb', borderRadius: '5px', padding: '10px 14px', fontSize: '10px', lineHeight: 1.8 }}>
+              <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#888', textTransform: 'uppercase', fontSize: '9px' }}>Work Done</p>
+              {scopeLabel.scopes.map(s => <p key={s} style={{ margin: 0 }}>{s}</p>)}
+            </div>
+          )}
 
           <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
             <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
