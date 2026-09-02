@@ -15,6 +15,20 @@ const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:
 type CrewMember = { staff_id: string; role_on_wo: string | null; employee_name: string; employment_type: string | null }
 type WoWithCrew = { id: string; scope_of_work: string; work_type: string; crew: CrewMember[] }
 type VolumeInfo = { unitRate: number; unit: string; paymentModel: string; requisitionId: string; roleNeeded: string | null; workOrderId: string | null }
+// Any active requisition a crew member has on a work order — per_volume
+// (piece-work) or per_day. Used to detect when someone has more than one
+// distinct task on the same work order, regardless of pay basis mix, so
+// each gets its own loggable row instead of collapsing to whichever task
+// happened to claim the only row.
+type TaskInfo = {
+  kind: 'per_volume' | 'per_day'
+  requisitionId: string
+  roleNeeded: string | null
+  workOrderId: string | null
+  unitRate?: number
+  unit?: string
+  dayRate?: number
+}
 const isGangLeaderRole = (role: string | null) => !!role && /gang.?leader/i.test(role)
 
 // 1.5x hourly rate x OT hours, purely as a starting point for the
@@ -280,36 +294,33 @@ function GangTotalRow({ workOrderId, members, anchor, existing, date, myStaffId,
   )
 }
 
-// A worker with more than one active per_volume allocation on the same
-// work order (e.g. Solomon: Filler / Zecolo / Ceramic Wall, each its own
-// rate under one "Ceramic Work" WO). There's no way to infer which task
-// a given day's volume belongs to, so the foreman picks it explicitly —
-// the choice is stored as labor_requisition_id on the attendance row,
-// which the sync trigger uses ahead of its usual inference.
-function MultiTaskVolumeRow({ workOrderId, staffId, employeeName, tasks, existing, date, myStaffId, onChanged }: {
+// One task's own input within MultiTaskRow — an hours field for a
+// per_day task, a volume field for per_volume, each saving to its own
+// wo_attendance_log row keyed by labor_requisition_id so it doesn't
+// collide with the person's other tasks on the same work order/day.
+function TaskInputRow({ workOrderId, staffId, task, existing, date, myStaffId, onChanged }: {
   workOrderId: string
   staffId: string
-  employeeName: string
-  tasks: VolumeInfo[]
+  task: TaskInfo
   existing: WoAttendanceLog | undefined
   date: string
   myStaffId: string
   onChanged: () => void
 }) {
   const { toast } = useToast()
-  const [taskId, setTaskId] = useState<string | null>(existing?.labor_requisition_id ?? null)
-  const [value, setValue] = useState(String(existing?.volume_completed ?? ''))
+  const isVolume = task.kind === 'per_volume'
+  const [value, setValue] = useState(String(isVolume ? (existing?.volume_completed ?? '') : (existing?.hours_logged ?? '')))
   const [saving, setSaving] = useState(false)
-  const selectedTask = tasks.find(t => t.requisitionId === taskId) ?? null
 
   async function save() {
-    if (!taskId) { toast('Pick which task this is for', 'error'); return }
     const val = parseFloat(value)
     if (!val || val <= 0) return
     setSaving(true)
     const payload = {
-      volume_completed: val, hours_logged: null, gang_size: null, gang_member_staff_ids: null,
-      overtime_hours: null, overtime_amount: null, labor_requisition_id: taskId, notes: null,
+      volume_completed: isVolume ? val : null,
+      hours_logged: isVolume ? null : val,
+      labor_requisition_id: task.requisitionId,
+      gang_size: null, gang_member_staff_ids: null, overtime_hours: null, overtime_amount: null, notes: null,
     }
     const op = existing
       ? supabase.from('wo_attendance_log').update(payload).eq('id', existing.id)
@@ -333,49 +344,74 @@ function MultiTaskVolumeRow({ workOrderId, staffId, employeeName, tasks, existin
   }
 
   const parsedVal = parseFloat(value)
-  const preview = selectedTask && parsedVal > 0 ? parsedVal * selectedTask.unitRate : null
+  const preview = isVolume && parsedVal > 0 && task.unitRate != null ? parsedVal * task.unitRate : null
 
   return (
-    <div className="px-4 py-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm text-slate-700 dark:text-slate-200">{employeeName}</p>
-          <p className="flex items-center gap-1 text-xs text-slate-400">
-            {staffId === myStaffId && <span>You</span>}
-            {selectedTask && (
-              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                <Ruler className="h-3 w-3" />
-                {formatCurrency(selectedTask.unitRate)}/{selectedTask.unit}
-                {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={taskId ?? ''}
-            onChange={e => setTaskId(e.target.value || null)}
-            disabled={saving}
-            className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-          >
-            <option value="">Which task?</option>
-            {tasks.map(t => <option key={t.requisitionId} value={t.requisitionId}>{t.roleNeeded ?? 'Task'}</option>)}
-          </select>
-          <input
-            type="number" step="0.01" min="0"
-            className="w-20 rounded-md border px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-            value={value}
-            disabled={saving || !taskId}
-            placeholder="0.00"
-            onChange={e => setValue(e.target.value)}
-            onBlur={save}
-          />
-          <span className="text-xs text-slate-400">{selectedTask?.unit ?? 'unit'}</span>
-          {existing && (
-            <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
-          )}
-        </div>
+    <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 dark:bg-slate-900/40">
+      <div className="min-w-0">
+        <p className="truncate text-xs text-slate-600 dark:text-slate-300">{task.roleNeeded ?? (isVolume ? 'Piece-work' : 'Day rate')}</p>
+        <p className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+          {isVolume
+            ? <><Ruler className="h-3 w-3" />{formatCurrency(task.unitRate ?? 0)}/{task.unit}</>
+            : (task.dayRate != null ? <span>{formatCurrency(task.dayRate)}/day</span> : null)}
+          {preview != null && <span className="font-medium">· ≈ {formatCurrency(preview)}</span>}
+        </p>
       </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number" step={isVolume ? '0.01' : '0.5'} min="0"
+          className="w-20 rounded-md border px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+          value={value}
+          disabled={saving}
+          placeholder="0.00"
+          onChange={e => setValue(e.target.value)}
+          onBlur={save}
+        />
+        <span className="text-xs text-slate-400">{isVolume ? task.unit : 'hrs'}</span>
+        {existing && (
+          <button onClick={remove} disabled={saving} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// A worker with more than one active task on the same work order — any
+// mix of per_volume (Solomon: Filler / Zecolo / Ceramic Wall) and per_day
+// (Besufekad: a lump-sum Ceramic Works day, a Silcon Works day rate, and
+// a per_volume Worker task, all under one "Ceramic Works" WO). Nothing in
+// the schema limits one person to one wo_attendance_log row per work
+// order per day — that was purely this page's assumption — so each task
+// gets its own always-visible row instead of a "pick one" selector that
+// could only ever record one of them.
+function MultiTaskRow({ workOrderId, staffId, employeeName, tasks, existingRows, date, myStaffId, onChanged }: {
+  workOrderId: string
+  staffId: string
+  employeeName: string
+  tasks: TaskInfo[]
+  existingRows: WoAttendanceLog[]
+  date: string
+  myStaffId: string
+  onChanged: () => void
+}) {
+  return (
+    <div className="px-4 py-2 space-y-1.5">
+      <p className="truncate text-sm text-slate-700 dark:text-slate-200">
+        {staffId === myStaffId && <span className="mr-1.5 text-xs text-slate-400">(You)</span>}
+        {employeeName}
+      </p>
+      {tasks.map(t => (
+        <TaskInputRow
+          key={t.requisitionId}
+          workOrderId={workOrderId}
+          staffId={staffId}
+          task={t}
+          existing={existingRows.find(r => r.labor_requisition_id === t.requisitionId)}
+          date={date}
+          myStaffId={myStaffId}
+          onChanged={onChanged}
+        />
+      ))}
     </div>
   )
 }
@@ -488,6 +524,35 @@ export default function LogAttendancePage() {
     return map
   }, [rawAllocations])
 
+  // Every active task a crew member holds, of either pay basis — used only
+  // to detect "this person has more than one distinct task on this work
+  // order" so MultiTaskRow renders one input per task instead of one
+  // person having a single per_volume task quietly hide their other
+  // per_day tasks (or vice versa).
+  const allTasksByStaff = useMemo(() => {
+    const map = new Map<string, TaskInfo[]>()
+    for (const row of rawAllocations) {
+      const req = row.labor_requisitions
+      if (!req || !row.labor_requisition_id) continue
+      const arr = map.get(row.staff_id) ?? []
+      if (req.payment_basis === 'per_volume' && req.unit_rate != null) {
+        arr.push({
+          kind: 'per_volume', requisitionId: row.labor_requisition_id,
+          roleNeeded: req.role_needed ?? null, workOrderId: req.work_order_id ?? null,
+          unitRate: req.unit_rate, unit: req.volume_unit ?? 'unit',
+        })
+      } else {
+        arr.push({
+          kind: 'per_day', requisitionId: row.labor_requisition_id,
+          roleNeeded: req.role_needed ?? null, workOrderId: req.work_order_id ?? null,
+          dayRate: row.day_rate_snapshot ?? req.estimated_day_rate ?? undefined,
+        })
+      }
+      map.set(row.staff_id, arr)
+    }
+    return map
+  }, [rawAllocations])
+
   const { data: dayRows = [], refetch } = useQuery({
     queryKey: ['wo-attendance-day', projectId, date],
     queryFn: async () => {
@@ -576,13 +641,20 @@ export default function LogAttendancePage() {
                     {(() => {
                       const infosForWo = (staffId: string) =>
                         (volumeInfoByStaff.get(staffId) ?? []).filter(v => v.workOrderId === wo.id || v.workOrderId === null)
+                      const tasksForWo = (staffId: string) =>
+                        (allTasksByStaff.get(staffId) ?? []).filter(t => t.workOrderId === wo.id || t.workOrderId === null)
                       const volumeGroups = new Map<string, CrewMember[]>()
                       const soloRows: CrewMember[] = []
                       const multiTaskRows: CrewMember[] = []
                       for (const c of wo.crew) {
                         const infos = infosForWo(c.staff_id)
+                        const allTasks = tasksForWo(c.staff_id)
+                        // More than one task total (any mix of per_volume/per_day)
+                        // needs its own row per task — checked before the
+                        // single-per_volume-task grouping below, since that
+                        // grouping assumes exactly one task for this person.
+                        if (allTasks.length > 1) { multiTaskRows.push(c); continue }
                         if (infos.length === 0) { soloRows.push(c); continue }
-                        if (infos.length > 1) { multiTaskRows.push(c); continue }
                         const vi = infos[0]
                         const arr = volumeGroups.get(vi.requisitionId) ?? []
                         arr.push(c)
@@ -605,13 +677,13 @@ export default function LogAttendancePage() {
                       ))
                       for (const c of multiTaskRows) {
                         rendered.push(
-                          <MultiTaskVolumeRow
+                          <MultiTaskRow
                             key={`${wo.id}:${c.staff_id}`}
                             workOrderId={wo.id}
                             staffId={c.staff_id}
                             employeeName={c.employee_name}
-                            tasks={infosForWo(c.staff_id)}
-                            existing={allocatedRows.find(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
+                            tasks={tasksForWo(c.staff_id)}
+                            existingRows={allocatedRows.filter(r => r.work_order_id === wo.id && r.staff_id === c.staff_id)}
                             date={date}
                             myStaffId={myStaffId ?? ''}
                             onChanged={refreshAll}
