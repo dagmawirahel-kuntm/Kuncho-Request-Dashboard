@@ -24,8 +24,8 @@ export const DOCUMENT_GRADIENTS: Record<DocumentGradientKey, { from: string; to:
   bdContract:          { from: '#92400E', to: '#D97706' }, // amber -> gold: sales-side legal
 }
 
-export function gradientCss(key: DocumentGradientKey, angle = 135): string {
-  const { from, to } = DOCUMENT_GRADIENTS[key]
+export function gradientCss(key: DocumentGradientKey | { from: string; to: string }, angle = 135): string {
+  const { from, to } = typeof key === 'string' ? DOCUMENT_GRADIENTS[key] : key
   return `linear-gradient(${angle}deg, ${from}, ${to})`
 }
 
@@ -54,7 +54,7 @@ body{font-family:${DOC_FONT}}
 // Left logo+company, right doc title/meta — the "invoice" letterhead
 // used by Purchase Order, Proforma Invoice, and the client Payment
 // Request letter (mirrors ExpenseDetailPage's PrintInvoice header).
-export function renderLetterhead(p: { docTitle: string; docCode?: string; metaLines?: string[]; gradient: DocumentGradientKey }): string {
+export function renderLetterhead(p: { docTitle: string; docCode?: string; metaLines?: string[]; gradient: DocumentGradientKey | { from: string; to: string } }): string {
   return `
 <div class="doc-letterhead" style="background:${gradientCss(p.gradient)}">
   <div class="doc-brand">

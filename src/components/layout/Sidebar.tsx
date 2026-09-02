@@ -6,7 +6,7 @@ import {
   Layers, Archive, Shield, ChevronDown, ChevronLeft, ChevronRight, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings
+  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Theme } from './AppShell'
@@ -136,6 +136,8 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Payments', to: '/finance/payments', icon: Send, roles: ['admin', 'executive', 'finance'] },
       { label: 'Ledger & Journal', to: '/finance/ledger', icon: Scale, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Vendor Credits', to: '/finance/vendor-credits', icon: Tag, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Payment Requests', to: '/finance/payment-requests', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'executive', 'finance'] },
       { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'executive', 'finance'] },
       { label: 'Bank Statement Import', to: '/bank-statement-import', icon: Upload, roles: ['admin', 'finance'] },

@@ -161,7 +161,7 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
       </div>
       {reqOpen && (
         <RequestWorkerForProjectModal
-          worker={{ id: worker.id, employee_name: worker.employee_name, role: trade?.codename_english ?? worker.trade_tag, day_rate: worker.day_rate }}
+          workers={[{ id: worker.id, employee_name: worker.employee_name, role: trade?.codename_english ?? worker.trade_tag, day_rate: worker.day_rate }]}
           onClose={() => setReqOpen(false)}
         />
       )}

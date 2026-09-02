@@ -2,12 +2,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { COMPANY_NAME, COMPANY_ADDRESS, gradientCss } from '@/lib/documentTheme'
+import { formatCurrency } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { ArrowLeft, Printer, Layers, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Layers, CheckCircle2 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
+import { useAccounts, useUserProfiles } from '@/hooks/useLookups'
 import type { BatchPayment } from '@/types/database'
 
 type BatchExpense = {
@@ -22,7 +24,9 @@ type BatchExpense = {
   vendor_id: string | null
   vendors: { vendor_name: string; bank_account: string | null } | null
   paid_to_staff_id: string | null
-  labor_requisitions: { role_needed: string; payment_basis: string; volume_unit: string | null; scope_of_work: string | null } | null
+  finance_approved_by: string | null
+  finance_approved_at: string | null
+  labor_requisitions: { role_needed: string; payment_basis: string; volume_unit: string | null; scope_of_work: string | null; site_location: string | null } | null
 }
 
 type WorkerLine = {
@@ -50,10 +54,31 @@ export default function BatchPaymentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const qc = useQueryClient()
   const canConfirm = role === 'admin' || role === 'finance'
   const [confirming, setConfirming] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const [payerId, setPayerId] = useState<string | null>(null)
+  const [approveAccountId, setApproveAccountId] = useState<string | null>(null)
+  const [approveMethod, setApproveMethod] = useState<'batch_wire' | 'cash'>('batch_wire')
+
+  // Only admin/finance may hold disbursed_by, and the lifecycle trigger
+  // rejects the approver paying their own approval — so the picker offers
+  // exactly the eligible people, minus the current user.
+  const { data: userProfiles = [] } = useUserProfiles()
+  const payerOptions = useMemo(
+    () => (userProfiles as { id: string; full_name: string; role: string }[])
+      .filter(u => (u.role === 'admin' || u.role === 'finance') && u.id !== user?.id)
+      .map(u => ({ id: u.id, label: u.full_name })),
+    [userProfiles, user?.id]
+  )
+  const { data: accounts = [] } = useAccounts()
+  const accountOptions = useMemo(
+    () => (accounts as { id: string; account_name: string; account_number: string | null }[])
+      .map(a => ({ id: a.id, label: a.account_name, sub: a.account_number ?? undefined })),
+    [accounts]
+  )
 
   const { data: batch, isLoading: batchLoading } = useQuery({
     queryKey: ['batch-payment-detail', id],
@@ -74,7 +99,7 @@ export default function BatchPaymentDetailPage() {
       if (ids.length === 0) return []
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit, scope_of_work)')
+        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, finance_approved_by, finance_approved_at, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit, scope_of_work, site_location)')
         .in('id', ids)
       if (error) throw error
       return (data ?? []) as unknown as BatchExpense[]
@@ -119,12 +144,12 @@ export default function BatchPaymentDetailPage() {
   const scopeLabel = useMemo(() => {
     const roles = Array.from(new Set(batchExpenses.map(e => e.labor_requisitions?.role_needed).filter(Boolean)))
     const projects = Array.from(new Set(batchExpenses.map(e => e.projects?.project_name).filter(Boolean)))
-    const scopes = Array.from(new Set(batchExpenses.map(e => e.labor_requisitions?.scope_of_work).filter(Boolean)))
-    return { roles, projects, scopes }
+    return { roles, projects }
   }, [batchExpenses])
-  const periodStart = batchExpenses.map(e => e.rollup_period_start).filter(Boolean).sort()[0]
-  const periodEnd = batchExpenses.map(e => e.rollup_period_end).filter(Boolean).sort().slice(-1)[0]
   const anySent = batchExpenses.some(e => e.payment_state === 'sent')
+  // A batch assembled before approval (migration 265) sits here with its
+  // expenses still unpaid — approving releases the whole thing at once.
+  const awaitingApproval = batchExpenses.some(e => e.payment_state === 'unpaid')
 
   async function handleConfirm() {
     if (!id) return
@@ -135,6 +160,88 @@ export default function BatchPaymentDetailPage() {
     toast('Batch payment confirmed as paid', 'success')
     qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
   }
+
+  async function handleApproveBatch() {
+    if (!id || !payerId) { toast('Pick who is paying this batch', 'error'); return }
+    if (approveMethod !== 'cash' && !approveAccountId) { toast('Select the funding account', 'error'); return }
+    setApproving(true)
+    const { data, error } = await supabase.rpc('approve_batch_payment', {
+      p_batch_payment_id: id,
+      p_assignee_id: payerId,
+      p_account_id: approveMethod === 'cash' ? null : approveAccountId,
+      p_payment_method: approveMethod,
+    })
+    setApproving(false)
+    // The lifecycle trigger enforces that the approver and payer differ —
+    // surface its own message rather than second-guessing it here.
+    if (error) { toast(error.message, 'error'); return }
+    toast(String(data), 'success')
+    qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
+    qc.invalidateQueries({ queryKey: ['labor-expense-drafts'] })
+  }
+
+  // Everything the Payment Request document needs. Built here rather than
+  // inside the component so the batch and single-expense call sites feed
+  // the same shape into the same template.
+  const profileNameById = useMemo(
+    () => new Map((userProfiles as { id: string; full_name: string }[]).map(u => [u.id, u.full_name])),
+    [userProfiles],
+  )
+  const financeApproval = useMemo(
+    () => batchExpenses.find(e => e.finance_approved_by || e.finance_approved_at) ?? null,
+    [batchExpenses],
+  )
+
+  const prDocument = useMemo(() => ({
+    kind: 'batch' as const,
+    sourceCode: batch?.payment_code ?? null,
+    issuedOn: new Date().toISOString().slice(0, 10),
+    issuedByName: user?.id ? (profileNameById.get(user.id) ?? null) : null,
+    drafts: batchExpenses.map(e => ({
+      id: e.id,
+      code: e.expense_code,
+      description: e.item_service_description,
+      amount: e.amount_etb,
+      projectName: e.projects?.project_name ?? null,
+      role: e.labor_requisitions?.role_needed ?? null,
+      periodStart: e.rollup_period_start,
+      periodEnd: e.rollup_period_end,
+      scopeOfWork: e.labor_requisitions?.scope_of_work ?? null,
+      siteLocation: e.labor_requisitions?.site_location ?? null,
+    })),
+    workers: workerLines.map(w => ({
+      id: w.id,
+      expenseId: w.expense_id,
+      staffId: w.staff_id,
+      name: w.employee_name,
+      bankAccount: w.bank_account,
+      units: w.units,
+      unitLabel: w.unit_label,
+      rate: w.rate,
+      subtotal: w.subtotal,
+      overtimeHours: w.overtime_hours,
+      overtimeAmount: w.overtime_amount,
+      gangSize: w.gang_size,
+      gangMemberNames: w.gang_member_names,
+      vendorName: w.vendor_name,
+      vendorBankAccount: w.vendor_bank_account,
+    })),
+    approvals: [
+      { label: 'Prepared By', name: user?.id ? (profileNameById.get(user.id) ?? null) : null, date: null },
+      {
+        label: 'Finance Approved',
+        name: financeApproval?.finance_approved_by ? (profileNameById.get(financeApproval.finance_approved_by) ?? null) : null,
+        date: financeApproval?.finance_approved_at ?? null,
+      },
+      {
+        label: 'Disbursed By',
+        name: batch?.assignee_id ? (profileNameById.get(batch.assignee_id) ?? null) : null,
+        date: null,
+      },
+    ],
+    total: grandTotal,
+    notes: batch?.notes ?? null,
+  }), [batch, batchExpenses, workerLines, grandTotal, user, profileNameById, financeApproval])
 
   const isLoading = batchLoading || expensesLoading || workersLoading
 
@@ -150,129 +257,48 @@ export default function BatchPaymentDetailPage() {
     )
   }
 
+  // The document itself no longer lives in this page as a `print:block`
+  // twin of the screen view — PaymentRequestActions renders and prints it
+  // from the shared template, which is also what gets archived on issue.
   return (
-    <>
-      {/* Print-only combined Payment Request */}
-      <div className="hidden print:block">
-        <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a', maxWidth: '750px', margin: '0 auto', padding: '24px' }}>
-          <div style={{ background: gradientCss('laborPayment'), borderRadius: '10px', padding: '18px 22px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="space-y-5">
+        {canConfirm && awaitingApproval && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20 px-4 py-3 space-y-2">
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                <div style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.22)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontWeight: 900, fontSize: '12px', letterSpacing: '-0.5px' }}>K</span>
-                </div>
-                <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#fff', letterSpacing: '-0.3px' }}>{COMPANY_NAME}</h1>
-              </div>
-              <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.78)', lineHeight: 1.6 }}>{COMPANY_ADDRESS}</p>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ margin: 0, fontSize: '9px', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '1.2px' }}>Document</p>
-              <p style={{ margin: '3px 0 0', fontSize: '20px', fontWeight: 800, color: '#fff' }}>PAYMENT REQUEST — BATCH</p>
-              <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>{batch.payment_code ?? batch.id.slice(0, 8)}</p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
-            {[
-              { label: 'Scope', value: scopeLabel.projects.length === 1 ? scopeLabel.projects[0] : `${scopeLabel.projects.length} projects` },
-              { label: 'Trades', value: scopeLabel.roles.join(', ') || '—' },
-              { label: 'Period Covered', value: periodStart && periodEnd ? `${formatDate(periodStart)} → ${formatDate(periodEnd)}` : '—' },
-              { label: 'Underlying Drafts', value: String(batchExpenses.length) },
-            ].map(f => (
-              <div key={f.label} style={{ background: '#f4f6f8', borderRadius: '5px', padding: '10px 12px' }}>
-                <p style={{ margin: 0, fontSize: '9px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{f.label}</p>
-                <p style={{ margin: '3px 0 0', fontWeight: 700, fontSize: '11px' }}>{f.value}</p>
-              </div>
-            ))}
-          </div>
-
-          {scopeLabel.scopes.length > 0 && (
-            <div style={{ marginBottom: '18px', background: '#f8f9fb', borderRadius: '5px', padding: '10px 14px', fontSize: '10px', lineHeight: 1.8 }}>
-              <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#888', textTransform: 'uppercase', fontSize: '9px' }}>Work Done</p>
-              {scopeLabel.scopes.map(s => <p key={s} style={{ margin: 0 }}>{s}</p>)}
-            </div>
-          )}
-
-          <div style={{ marginBottom: '18px', border: '1px solid #dde2ea', borderRadius: '5px', overflow: 'hidden' }}>
-            <div style={{ background: '#1B3A5C', color: '#fff', padding: '7px 12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-              Worker Breakdown · {totalHeadcount} worker{totalHeadcount === 1 ? '' : 's'} covered
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-              <thead>
-                <tr style={{ background: '#f4f6f8' }}>
-                  <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888' }}>Worker</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888' }}>Bank Account</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '70px' }}>Duration/Vol.</th>
-                  <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '90px' }}>Rate</th>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, fontSize: '9px', textTransform: 'uppercase', color: '#888', width: '100px' }}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {workerLines.map(w => (
-                  <tr key={w.id} style={{ borderTop: '1px solid #e4e8ee' }}>
-                    <td style={{ padding: '6px 12px' }}>
-                      {(w.gang_size ?? 1) > 1
-                        ? <>Gang of {w.gang_size} <span style={{ color: '#999', fontSize: '10px' }}>via {w.employee_name}</span>{w.gang_member_names && <div style={{ fontSize: '9px', color: '#999' }}>{w.gang_member_names}</div>}</>
-                        : w.employee_name}
-                      {(w.overtime_amount ?? 0) > 0 && (
-                        <div style={{ fontSize: '9px', color: '#b45309' }}>+ OT {w.overtime_hours ? `${w.overtime_hours}h · ` : ''}{formatCurrency(w.overtime_amount!)}</div>
-                      )}
-                    </td>
-                    <td style={{ padding: '6px 10px', fontFamily: 'monospace' }}>
-                      {(w.gang_size ?? 1) > 1 ? (w.vendor_bank_account ?? `Vendor: ${w.vendor_name ?? '—'}`) : (w.bank_account ?? '—')}
-                    </td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.units ?? '—'} {w.unit_label}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'right' }}>{w.rate != null ? formatCurrency(w.rate) : '—'}</td>
-                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600 }}>{w.subtotal != null ? formatCurrency(w.subtotal) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ background: '#f4f6f8', borderTop: '2px solid #dde2ea' }}>
-                  <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#555' }}>Total</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, fontSize: '15px', color: '#1B3A5C' }}>{formatCurrency(grandTotal)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          <div style={{ marginBottom: '18px', background: '#f8f9fb', borderRadius: '5px', padding: '10px 14px', fontSize: '10px', lineHeight: 1.8 }}>
-            <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#888', textTransform: 'uppercase', fontSize: '9px' }}>Underlying Drafts</p>
-            {batchExpenses.map(e => (
-              <p key={e.id} style={{ margin: 0 }}>
-                {e.expense_code ?? e.id.slice(0, 8)} — {e.item_service_description ?? '—'} — {formatCurrency(e.amount_etb ?? 0)}
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Awaiting approval</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                These drafts were grouped before approval. Approving here approves every one of them and releases the
+                whole batch for payment. The payer must be someone other than you.
               </p>
-            ))}
-          </div>
-
-          {batch.notes && (
-            <div style={{ marginBottom: '18px', background: '#f8f9fb', borderRadius: '5px', padding: '10px 14px', fontSize: '11px' }}>
-              <strong>Notes:</strong> {batch.notes}
             </div>
-          )}
-
-          <div style={{ marginTop: '36px', borderTop: '2px solid #dde2ea', paddingTop: '20px' }}>
-            <p style={{ margin: '0 0 16px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#aaa', letterSpacing: '1px' }}>Authorization & Approval Signatures</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-              {['Prepared By', 'Finance Approved', 'Disbursed By'].map(label => (
-                <div key={label}>
-                  <p style={{ margin: '0 0 2px', fontSize: '9px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{label}</p>
-                  <div style={{ borderBottom: '1.5px solid #999', minHeight: '32px', marginBottom: '4px' }} />
-                  <p style={{ margin: 0, fontSize: '9px', color: '#ccc' }}>Name &nbsp;/&nbsp; Signature &nbsp;/&nbsp; Date</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-52">
+                <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Who is paying?" />
+              </div>
+              <select
+                value={approveMethod}
+                onChange={e => setApproveMethod(e.target.value as 'batch_wire' | 'cash')}
+                className="rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              >
+                <option value="batch_wire">Bank / Wire</option>
+                <option value="cash">Cash</option>
+              </select>
+              {approveMethod !== 'cash' && (
+                <div className="w-52">
+                  <SearchableSelect value={approveAccountId} onChange={setApproveAccountId} options={accountOptions} placeholder="Funding account…" />
                 </div>
-              ))}
+              )}
+              <button
+                onClick={handleApproveBatch}
+                disabled={approving || !payerId || (approveMethod !== 'cash' && !approveAccountId)}
+                className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" /> {approving ? 'Approving…' : 'Approve & Release Batch'}
+              </button>
             </div>
           </div>
+        )}
 
-          <div style={{ marginTop: '44px', borderTop: '1px solid #e4e8ee', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p style={{ margin: 0, fontSize: '9px', color: '#bbb' }}>{COMPANY_NAME} · This is an official payment request document</p>
-            <p style={{ margin: 0, fontSize: '9px', color: '#bbb' }}>Ref: {batch.payment_code ?? batch.id}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Screen view */}
-      <div className="space-y-5 print:hidden">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
             <ArrowLeft className="h-4 w-4" /> Batch Payments
@@ -287,9 +313,7 @@ export default function BatchPaymentDetailPage() {
                 <CheckCircle2 className="h-3.5 w-3.5" /> {confirming ? 'Confirming…' : 'Confirm Payment Sent'}
               </button>
             )}
-            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <Printer className="h-3.5 w-3.5" /> Print Payment Request
-            </button>
+            {id && <PaymentRequestActions sourceType="batch_payment" sourceId={id} document={prDocument} />}
           </div>
         </div>
 
@@ -395,6 +419,5 @@ export default function BatchPaymentDetailPage() {
           </div>
         </div>
       </div>
-    </>
   )
 }
