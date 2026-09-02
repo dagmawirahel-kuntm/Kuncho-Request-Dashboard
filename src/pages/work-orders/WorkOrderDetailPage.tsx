@@ -184,6 +184,31 @@ function useCanWriteWoOps(projectId: string, canWrite: boolean): boolean {
 }
 
 // ── Linked labor allocations ─────────────────────────────────────────
+type LinkedLaborAllocation = LaborAllocation & {
+  labor_requisitions: {
+    headcount: number
+    payment_basis: string
+    estimated_day_rate: number | null
+    estimated_days: number | null
+    unit_rate: number | null
+    estimated_total_volume: number | null
+    estimated_total_cost: number
+  } | null
+}
+
+// Mirrors v_work_order_cost's own estimate formula, so the "Linked Labor"
+// line and the work order's cost card agree. Without this, a lump-sum
+// per_day requisition (e.g. 1 day @ 3,000) got multiplied by however many
+// calendar days its allocation happened to span, and a per_volume
+// requisition's day_rate_snapshot (really a unit_rate) got multiplied by
+// days instead of volume — both wrong in different directions.
+function requisitionCost(req: LinkedLaborAllocation['labor_requisitions']): number {
+  if (!req) return 0
+  if (req.estimated_total_cost) return req.estimated_total_cost
+  if (req.payment_basis === 'per_volume') return (req.unit_rate ?? 0) * (req.estimated_total_volume ?? 0)
+  return (req.estimated_day_rate ?? 0) * (req.estimated_days ?? 0) * (req.headcount ?? 1)
+}
+
 function LinkedLabor({ workOrderId, projectId, canWrite, staffNameById }: { workOrderId: string; projectId: string; canWrite: boolean; staffNameById: Map<string, string> }) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -196,10 +221,16 @@ function LinkedLabor({ workOrderId, projectId, canWrite, staffNameById }: { work
     queryFn: async () => {
       const { data, error } = await supabase
         .from('work_order_labor')
-        .select('id, labor_allocation_id, labor_allocations(id, staff_id, start_date, end_date, day_rate_snapshot)')
+        .select(`
+          id, labor_allocation_id,
+          labor_allocations(
+            id, staff_id, start_date, end_date, day_rate_snapshot, labor_requisition_id,
+            labor_requisitions(headcount, payment_basis, estimated_day_rate, estimated_days, unit_rate, estimated_total_volume, estimated_total_cost)
+          )
+        `)
         .eq('work_order_id', workOrderId)
       if (error) throw error
-      return data as unknown as { id: string; labor_allocation_id: string; labor_allocations: LaborAllocation | null }[]
+      return data as unknown as { id: string; labor_allocation_id: string; labor_allocations: LinkedLaborAllocation | null }[]
     },
   })
 
@@ -284,8 +315,16 @@ function LinkedLabor({ workOrderId, projectId, canWrite, staffNameById }: { work
         <div className="divide-y dark:divide-slate-700">
           {data.map(row => {
             const la = row.labor_allocations
-            const days = la ? Math.max(1, (new Date(la.end_date ?? new Date().toISOString()).getTime() - new Date(la.start_date).getTime()) / 86400000 + 1) : 0
-            const lineCost = la ? days * (la.day_rate_snapshot ?? 0) : 0
+            // Prefer the linked requisition's actual committed estimate; only
+            // fall back to calendar-days × snapshot rate when an allocation
+            // isn't tied to a requisition (e.g. a manually-added time block).
+            let lineCost = 0
+            if (la?.labor_requisitions) {
+              lineCost = requisitionCost(la.labor_requisitions)
+            } else if (la) {
+              const days = Math.max(1, (new Date(la.end_date ?? new Date().toISOString()).getTime() - new Date(la.start_date).getTime()) / 86400000 + 1)
+              lineCost = days * (la.day_rate_snapshot ?? 0)
+            }
             return (
               <div key={row.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <div>
