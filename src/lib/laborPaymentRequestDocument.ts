@@ -62,11 +62,24 @@ export type PrDraft = {
   role: string | null
   periodStart: string | null
   periodEnd: string | null
+  /** What the work actually was — from labor_requisitions.scope_of_work.
+   *  Without it the document showed worker/days/rate with no description
+   *  of the task itself. */
+  scopeOfWork: string | null
+  /** Where it happened, when it can differ from the project's own location. */
+  siteLocation: string | null
 }
 
 export type PrApproval = { label: string; name: string | null; date: string | null }
 
 export type PrStatus = 'draft' | 'issued' | 'superseded' | 'void'
+
+/** A labeled block of extra fields for expense types this document's
+ *  disbursement-schedule/worker-breakdown shape doesn't otherwise carry —
+ *  e.g. a transport job's route, a lease's period, a CPO bond's ref. Kept
+ *  generic (label + rows) rather than one variant per type so adding a
+ *  new expense_type's detail doesn't require touching the renderer. */
+export type PrTypeDetail = { label: string; rows: { label: string; value: string }[] }
 
 export type LaborPaymentRequestInput = {
   kind: 'single' | 'batch'
@@ -87,6 +100,10 @@ export type LaborPaymentRequestInput = {
   whtMethod?: string | null
   fundingAccount?: string | null
   paymentMethod?: string | null
+  typeDetail?: PrTypeDetail | null
+  /** Letterhead color — defaults to the labor navy/sky gradient when unset,
+   *  so a rent/transport/bond document doesn't read as a labor payslip. */
+  accentColor?: string | null
 }
 
 // ── Disbursement schedule ────────────────────────────────────────────────────
@@ -216,7 +233,7 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const {
     kind, documentCode, sourceCode, issuedOn, issuedByName, status, revision,
     drafts, workers, approvals, total, notes, whtRequired, whtMethod,
-    fundingAccount, paymentMethod,
+    fundingAccount, paymentMethod, typeDetail, accentColor,
   } = input
 
   const isBatch = kind === 'batch'
@@ -245,6 +262,12 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     { label: 'Workers', value: String(heads) },
     ...(isBatch ? [{ label: 'Drafts Covered', value: String(drafts.length) }] : []),
   ]
+
+  // What the work was, not just who did it and for how much. Multiple
+  // drafts (a batch) can each carry their own scope/site, so both are
+  // deduplicated the same way projects/roles are above.
+  const scopes = Array.from(new Set(drafts.map(d => d.scopeOfWork).filter(Boolean))) as string[]
+  const sites = Array.from(new Set(drafts.map(d => d.siteLocation).filter(Boolean))) as string[]
 
   // The disbursement schedule is the operative half of the document, so
   // it comes before the evidence that justifies it rather than after.
@@ -357,12 +380,26 @@ ${renderLetterhead({
     docTitle,
     docCode: documentCode ?? undefined,
     metaLines,
-    gradient: 'laborPayment',
+    gradient: accentColor ? { from: accentColor, to: accentColor } : 'laborPayment',
   })}
 
 <div class="meta">
 ${metaCells.map(c => `  <div><div class="k">${esc(c.label)}</div><div class="v">${esc(c.value)}</div></div>`).join('\n')}
 </div>
+
+${(scopes.length > 0 || sites.length > 0) ? `
+<div class="note">
+  ${scopes.length > 0 ? `<p style="margin:0"><b>Work Done:</b> ${scopes.map(esc).join('; ')}</p>` : ''}
+  ${sites.length > 0 ? `<p style="margin:0"><b>Site:</b> ${sites.map(esc).join('; ')}</p>` : ''}
+</div>` : ''}
+
+${typeDetail ? `
+<div style="margin-bottom:10px;border:1px solid #dde2ea;border-radius:5px;overflow:hidden">
+  <div style="background:${esc(accentColor ?? BRAND_NAVY)};color:#fff;padding:7px 12px;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.09em">${esc(typeDetail.label)}</div>
+  <div style="padding:9px 12px;font-size:9pt;line-height:1.7">
+    ${typeDetail.rows.map(r => `<p style="margin:0"><b>${esc(r.label)}:</b> ${esc(r.value)}</p>`).join('')}
+  </div>
+</div>` : ''}
 
 <h2>Disbursement Schedule <span class="count">— ${payees.length} payee${payees.length === 1 ? '' : 's'}</span></h2>
 <table>
@@ -427,5 +464,6 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     wht_required: input.whtRequired ?? false,
     wht_method: input.whtMethod ?? null,
     notes: input.notes ?? null,
+    type_detail: input.typeDetail ?? null,
   }
 }

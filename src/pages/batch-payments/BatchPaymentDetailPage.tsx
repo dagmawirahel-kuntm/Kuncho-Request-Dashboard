@@ -26,7 +26,7 @@ type BatchExpense = {
   paid_to_staff_id: string | null
   finance_approved_by: string | null
   finance_approved_at: string | null
-  labor_requisitions: { role_needed: string; payment_basis: string; volume_unit: string | null } | null
+  labor_requisitions: { role_needed: string; payment_basis: string; volume_unit: string | null; scope_of_work: string | null; site_location: string | null } | null
 }
 
 type WorkerLine = {
@@ -99,7 +99,7 @@ export default function BatchPaymentDetailPage() {
       if (ids.length === 0) return []
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, finance_approved_by, finance_approved_at, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit)')
+        .select('id, expense_code, item_service_description, amount_etb, payment_state, rollup_period_start, rollup_period_end, projects(project_name), vendor_id, vendors(vendor_name, bank_account), paid_to_staff_id, finance_approved_by, finance_approved_at, labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit, scope_of_work, site_location)')
         .in('id', ids)
       if (error) throw error
       return (data ?? []) as unknown as BatchExpense[]
@@ -206,6 +206,8 @@ export default function BatchPaymentDetailPage() {
       role: e.labor_requisitions?.role_needed ?? null,
       periodStart: e.rollup_period_start,
       periodEnd: e.rollup_period_end,
+      scopeOfWork: e.labor_requisitions?.scope_of_work ?? null,
+      siteLocation: e.labor_requisitions?.site_location ?? null,
     })),
     workers: workerLines.map(w => ({
       id: w.id,

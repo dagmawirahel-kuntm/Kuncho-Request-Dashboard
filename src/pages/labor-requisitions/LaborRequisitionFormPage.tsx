@@ -192,12 +192,15 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
         proposed_trade_english: r?.proposed_trade_english ?? null,
         estimated_total_volume: r?.estimated_total_volume ?? null,
         work_order_id: record.work_order_id,
+        scope_of_work: record.scope_of_work,
+        site_location: record.site_location,
       }
       : {
         is_casual_or_new: true, headcount: 1,
         project_id: prefillProjectId ?? undefined,
         work_order_id: prefillWorkOrderId ?? null,
         payment_model: 'individual', pay_cycle: 'weekly', payment_basis: 'per_day',
+        scope_of_work: null, site_location: null,
       }
   )
 
@@ -500,6 +503,18 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
             }
             onChange={e => set('headcount', e.target.value ? parseInt(e.target.value, 10) : undefined)}
             disabled={assignMode !== 'anonymous'} />
+        </Field>
+      </div>
+
+      {/* Feeds the labor Payment Request document — without this the
+          printed document shows worker/days/rate with no description of
+          what the work actually was. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Scope of Work">
+          <textarea rows={2} className={inputCls} value={form.scope_of_work ?? ''} onChange={e => set('scope_of_work', e.target.value || null)} placeholder="e.g. Rebar tying, 3rd floor slab" />
+        </Field>
+        <Field label="Site / Location">
+          <input type="text" className={inputCls} value={form.site_location ?? ''} onChange={e => set('site_location', e.target.value || null)} placeholder="Leave blank if same as project" />
         </Field>
       </div>
 

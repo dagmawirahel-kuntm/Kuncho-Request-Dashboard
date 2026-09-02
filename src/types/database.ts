@@ -14,7 +14,7 @@ export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
 export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'other'
-export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent' | 'labor_payment'
+export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent' | 'labor_payment' | 'transportation'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type PayrollApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -2091,6 +2091,8 @@ export interface LaborRequisition {
   slots_filled: number
   slots_status: RequisitionSlotsStatus
   work_order_id: string | null
+  scope_of_work: string | null
+  site_location: string | null
   created_at: string
 }
 export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'slots_filled' | 'slots_status' | 'created_at'>

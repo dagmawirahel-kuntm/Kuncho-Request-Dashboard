@@ -30,6 +30,7 @@ const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string 
   maintenance:    { bg: '#78350F', label: 'Vehicle Maintenance', abbr: 'MNT' },
   property_rent:  { bg: '#365314', label: 'Property Rent',       abbr: 'RENT' },
   labor_payment:  { bg: '#0F766E', label: 'Labor Payment',       abbr: 'LBR' },
+  transportation: { bg: '#0369A1', label: 'Transportation',      abbr: 'TRSP' },
 }
 
 type ExpenseWithJoins = Expense & {
@@ -42,6 +43,8 @@ type ExpenseWithJoins = Expense & {
   finance_profile: { full_name: string } | null
   transfers: { transfer_id_code: string | null } | null
   vendor_receipt_facilitation: { record_name: string | null } | null
+  properties: { property_name: string; lease_start_date: string | null; lease_end_date: string | null } | null
+  cpo_bonds: { bond_id_ref: string | null; total_bond_amount: number | null; bond_status: string | null } | null
 }
 
 // The Payment Request document for a single labor draft used to live
@@ -77,7 +80,9 @@ export default function ExpenseDetailPage() {
           manager_profile:user_profiles!manager_approved_by ( full_name ),
           finance_profile:user_profiles!finance_approved_by ( full_name ),
           transfers:transfer_id ( transfer_id_code ),
-          vendor_receipt_facilitation:vrf_id ( record_name )
+          vendor_receipt_facilitation:vrf_id ( record_name ),
+          properties:property_id ( property_name, lease_start_date, lease_end_date ),
+          cpo_bonds:cpo_bond_id ( bond_id_ref, total_bond_amount, bond_status )
         `)
         .eq('id', id!)
         .single()
@@ -139,13 +144,31 @@ export default function ExpenseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('labor_requisitions')
-        .select('role_needed, payment_basis, volume_unit')
+        .select('role_needed, payment_basis, volume_unit, scope_of_work, site_location')
         .eq('id', expense!.rolled_up_from_requisition_id!)
         .single()
       if (error) throw error
       return data
     },
     enabled: !!expense?.rolled_up_from_requisition_id,
+  })
+
+  // Transport payments have no forward column on expenses — the link runs
+  // the other way (transportation_requests.expense_id) — so the route,
+  // vehicle and driver the Payment Request document needs are a reverse
+  // lookup, same pattern ExpenseFormPage uses for its "linked source" banner.
+  const { data: transportRoute = null } = useQuery({
+    queryKey: ['expense-transport-route', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transportation_requests')
+        .select('pickup_location_text, dropoff_location_text, transport_mode, hired_vehicle_class, driver_name')
+        .eq('expense_id', id!)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+    enabled: !!id && expense?.expense_type === 'transportation',
   })
 
   // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
@@ -181,6 +204,52 @@ export default function ExpenseDetailPage() {
     if (!expense) return null
     const isVolume = requisitionInfo?.payment_basis === 'per_volume'
     const unitLabel = isVolume ? (requisitionInfo?.volume_unit ?? 'units') : 'days'
+
+    // The fields a rent/transport/bond/VRF payment actually needs to be
+    // presentable — without this every non-labor expense_type fell back
+    // to the same worker-shaped document with nothing type-specific to show.
+    const typeDetail = (() => {
+      switch (expense.expense_type) {
+        case 'transportation':
+          return transportRoute ? {
+            label: 'Route / Vehicle',
+            rows: [
+              { label: 'Route', value: `${transportRoute.pickup_location_text ?? '—'} → ${transportRoute.dropoff_location_text ?? '—'}` },
+              ...(transportRoute.transport_mode ? [{ label: 'Mode', value: transportRoute.transport_mode }] : []),
+              ...(transportRoute.hired_vehicle_class ? [{ label: 'Vehicle Class', value: transportRoute.hired_vehicle_class }] : []),
+              ...(transportRoute.driver_name ? [{ label: 'Driver', value: transportRoute.driver_name }] : []),
+            ],
+          } : null
+        case 'property_rent':
+          return expense.properties ? {
+            label: 'Property / Lease',
+            rows: [
+              { label: 'Property', value: expense.properties.property_name },
+              ...(expense.properties.lease_start_date || expense.properties.lease_end_date ? [{
+                label: 'Lease Period',
+                value: `${expense.properties.lease_start_date ? formatDate(expense.properties.lease_start_date) : '—'} → ${expense.properties.lease_end_date ? formatDate(expense.properties.lease_end_date) : '—'}`,
+              }] : []),
+            ],
+          } : null
+        case 'cpo_bond':
+          return expense.cpo_bonds ? {
+            label: 'CPO Bond',
+            rows: [
+              { label: 'Bond Ref', value: expense.cpo_bonds.bond_id_ref ?? '—' },
+              ...(expense.cpo_bonds.total_bond_amount != null ? [{ label: 'Total Bond Amount', value: formatCurrency(expense.cpo_bonds.total_bond_amount) }] : []),
+              ...(expense.cpo_bonds.bond_status ? [{ label: 'Status', value: expense.cpo_bonds.bond_status }] : []),
+            ],
+          } : null
+        case 'vrf':
+          return expense.vendor_receipt_facilitation ? {
+            label: 'Vendor Receipt Facilitation',
+            rows: [{ label: 'Record', value: expense.vendor_receipt_facilitation.record_name ?? '—' }],
+          } : null
+        default:
+          return null
+      }
+    })()
+
     return {
       kind: 'single' as const,
       sourceCode: expense.expense_code ?? null,
@@ -195,6 +264,8 @@ export default function ExpenseDetailPage() {
         role: requisitionInfo?.role_needed ?? null,
         periodStart: expense.rollup_period_start ?? null,
         periodEnd: expense.rollup_period_end ?? null,
+        scopeOfWork: requisitionInfo?.scope_of_work ?? null,
+        siteLocation: requisitionInfo?.site_location ?? null,
       }],
       // A labor rollup carries a per-worker breakdown. Anything else is a
       // single payee, so the vendor (or the staff member being paid)
@@ -251,8 +322,10 @@ export default function ExpenseDetailPage() {
       whtMethod: expense.wht_handling_method ?? null,
       fundingAccount: expense.accounts?.account_name ?? null,
       paymentMethod: expense.payment_method ?? null,
+      typeDetail,
+      accentColor: TYPE_THEME[expense.expense_type ?? 'general']?.bg ?? null,
     }
-  }, [expense, laborWorkers, requisitionInfo, paidToStaffName])
+  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, transportRoute])
 
   if (isLoading) {
     return (
