@@ -125,37 +125,57 @@ export type PrPayeeLine = {
  * three drafts in the same batch is one transfer, not three. Getting that
  * wrong is how a batch ends up over-disbursing, so the grouping lives here
  * with the document rather than being re-derived per call site.
+ *
+ * Routing is decided by whether the row carries a vendor at all
+ * (`rollup_labor_timesheets_to_expense` only ever stamps one on when the
+ * requisition's payment_model is 'gang_leader'), not by that row's own
+ * gang_size — a gang whose rollup produced one labor_expense_workers row
+ * per crew member (each with gang_size left null) still owes its whole
+ * headcount to the vendor, not to four individual staff accounts, three of
+ * which may have no bank account on file at all.
  */
 export function buildPayeeLines(workers: PrWorkerLine[]): PrPayeeLine[] {
-  const byPayee = new Map<string, PrPayeeLine>()
+  type DraftGroup = { key: string; payee: string; kind: 'worker' | 'vendor'; bankAccount: string | null; heads: number; amount: number }
 
+  // First pass: collapse to one row per (payee, draft) — several rows for
+  // the same payee within a single draft are different real heads (or an
+  // OT line split out), so their headcounts and amounts add here.
+  const byDraftPayee = new Map<string, DraftGroup>()
   for (const w of workers) {
-    const isGang = (w.gangSize ?? 1) > 1
-    // Fall back to the worker when a gang has no vendor recorded: paying
-    // the lead is wrong, but silently dropping the line is worse, and the
-    // missing account shows as "—" for finance to chase.
-    const useVendor = isGang && !!w.vendorName
+    const useVendor = !!w.vendorName
     const kind: 'worker' | 'vendor' = useVendor ? 'vendor' : 'worker'
     const payee = useVendor ? w.vendorName! : w.name
     const bankAccount = useVendor ? w.vendorBankAccount : w.bankAccount
-    const key = `${kind}:${useVendor ? w.vendorName : w.staffId}`
+    const payeeKey = `${kind}:${useVendor ? w.vendorName : w.staffId}`
+    const draftKey = `${payeeKey}|${w.expenseId}`
 
     const amount = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
     const heads = Math.max(w.gangSize ?? 1, 1)
 
-    const existing = byPayee.get(key)
+    const existing = byDraftPayee.get(draftKey)
     if (existing) {
       existing.amount += amount
-      // The key is the person (or gang lead)'s own identity, so a second
-      // merged row is the same headcount appearing in another draft period,
-      // not additional people — summing turned "Kedir in 2 drafts" into
-      // "2 workers". Take the largest headcount any single draft recorded
-      // for this payee instead.
-      existing.workerCount = Math.max(existing.workerCount, heads)
-      // Prefer any account we have over a blank one already recorded.
+      existing.heads += heads
       existing.bankAccount = existing.bankAccount ?? bankAccount
     } else {
-      byPayee.set(key, { key, payee, kind, bankAccount, workerCount: heads, amount })
+      byDraftPayee.set(draftKey, { key: payeeKey, payee, kind, bankAccount, heads, amount })
+    }
+  }
+
+  // Second pass: collapse across drafts. The amount is genuinely additional
+  // money (another period's earnings), so it sums; the headcount is the
+  // same crew showing up again, so it takes the largest single-draft
+  // figure instead of multiplying by however many drafts got merged —
+  // summing here is what turned "Kedir in 2 drafts" into "2 workers".
+  const byPayee = new Map<string, PrPayeeLine>()
+  for (const g of byDraftPayee.values()) {
+    const existing = byPayee.get(g.key)
+    if (existing) {
+      existing.amount += g.amount
+      existing.workerCount = Math.max(existing.workerCount, g.heads)
+      existing.bankAccount = existing.bankAccount ?? g.bankAccount
+    } else {
+      byPayee.set(g.key, { key: g.key, payee: g.payee, kind: g.kind, bankAccount: g.bankAccount, workerCount: g.heads, amount: g.amount })
     }
   }
 
