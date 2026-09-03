@@ -146,7 +146,12 @@ export function buildPayeeLines(workers: PrWorkerLine[]): PrPayeeLine[] {
     const existing = byPayee.get(key)
     if (existing) {
       existing.amount += amount
-      existing.workerCount += heads
+      // The key is the person (or gang lead)'s own identity, so a second
+      // merged row is the same headcount appearing in another draft period,
+      // not additional people — summing turned "Kedir in 2 drafts" into
+      // "2 workers". Take the largest headcount any single draft recorded
+      // for this payee instead.
+      existing.workerCount = Math.max(existing.workerCount, heads)
       // Prefer any account we have over a blank one already recorded.
       existing.bankAccount = existing.bankAccount ?? bankAccount
     } else {
