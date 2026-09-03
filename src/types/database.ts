@@ -1401,6 +1401,12 @@ export interface ToPayQueueRow {
   // the PO. Equals amount_etb when there's no WHT. Added in migration 230.
   net_payable: number | null
   wht_amount: number | null
+  // Migration 272. cash_to_send is amount_etb net of WHT AND any vendor
+  // credit already applied (fund_payable_from_vendor_credit, 271) — the
+  // number a payment-execution screen should show and use. net_payable
+  // alone ignores the credit and overstates what still needs to move.
+  credit_applied_etb: number
+  cash_to_send: number
 }
 
 export interface OpenVendorAdvanceRow {

@@ -548,9 +548,10 @@ export default function PaymentsDashboardPage() {
   const [creditingAdvance, setCreditingAdvance] = useState<OpenVendorAdvanceRow | null>(null)
 
   const kpis = {
-    // Net payable is what actually leaves the bank (VAT in, WHT withheld) —
-    // the figure on the PO. Falls back to gross when there's no net.
-    toPayTotal: toPayQueue.reduce((s, r) => s + (r.net_payable ?? r.amount_etb ?? 0), 0),
+    // cash_to_send is net_payable further reduced by any vendor credit
+    // already applied (272) — the true amount still to move. Falls back
+    // through net_payable to gross for older rows without either.
+    toPayTotal: toPayQueue.reduce((s, r) => s + (r.cash_to_send ?? r.net_payable ?? r.amount_etb ?? 0), 0),
     pendingCount: pendingApproval.length,
     advancesTotal: openAdvances.reduce((s, r) => s + (r.amount_etb ?? 0), 0),
     paidThisWeek: recentPayments.filter(r => r.payment_state === 'paid').reduce((s, r) => s + (r.net_payable ?? r.amount_etb ?? 0), 0),
@@ -682,10 +683,15 @@ export default function PaymentsDashboardPage() {
                         {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</div>
+                        <div className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.cash_to_send ?? r.net_payable ?? r.amount_etb ?? 0)}</div>
                         {(r.wht_amount ?? 0) > 0 && (
                           <div className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
                             gross <span className="line-through">{formatCurrency(r.amount_etb ?? 0)}</span> · WHT −{formatCurrency(r.wht_amount ?? 0)}
+                          </div>
+                        )}
+                        {(r.credit_applied_etb ?? 0) > 0 && (
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums">
+                            −{formatCurrency(r.credit_applied_etb)} vendor credit applied
                           </div>
                         )}
                         {canAct && (
@@ -744,9 +750,12 @@ export default function PaymentsDashboardPage() {
                     <div className="flex items-start justify-between gap-2">
                       <span className="font-medium text-slate-800 dark:text-slate-100 truncate">{r.vendor_name ?? r.item_service_description ?? r.expense_code}</span>
                       <span className="flex-shrink-0 text-right">
-                        <span className="block font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.net_payable ?? r.amount_etb ?? 0)}</span>
+                        <span className="block font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.cash_to_send ?? r.net_payable ?? r.amount_etb ?? 0)}</span>
                         {(r.wht_amount ?? 0) > 0 && (
                           <span className="block text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">net · gross {formatCurrency(r.amount_etb ?? 0)}</span>
+                        )}
+                        {(r.credit_applied_etb ?? 0) > 0 && (
+                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums">−{formatCurrency(r.credit_applied_etb)} credit</span>
                         )}
                       </span>
                     </div>
@@ -1195,18 +1204,24 @@ function RecordAdvanceModal({
   const [method, setMethod] = useState<ExpensePaymentMethod>(defaultMethod)
   const [saving, setSaving] = useState(false)
 
-  // The approved expense already carries the paying account, method, and amount
-  // — pull them so the form opens filled in rather than blank.
+  // The approved expense already carries the paying account, method, and
+  // amount — pull them fresh so the form opens filled in rather than blank,
+  // and so a vendor credit applied after `row` was loaded into the queue
+  // (e.g. by someone else, moments ago) still shows up. This is the number
+  // that gets wired, so it is re-fetched rather than trusted from the list.
   const { data: exp } = useQuery({
     queryKey: ['advance-expense-prefill', row.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
-        .select('account_id, payment_method, amount_etb')
+        .select('account_id, payment_method, amount_etb, wht_amount, credit_applied_etb')
         .eq('id', row.id)
         .single()
       if (error) throw error
-      return data as { account_id: string | null; payment_method: ExpensePaymentMethod | null; amount_etb: number | null }
+      return data as {
+        account_id: string | null; payment_method: ExpensePaymentMethod | null
+        amount_etb: number | null; wht_amount: number | null; credit_applied_etb: number | null
+      }
     },
   })
 
@@ -1218,7 +1233,13 @@ function RecordAdvanceModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exp])
 
-  const amount = exp?.amount_etb ?? row.amount_etb ?? 0
+  const grossAmount = exp?.amount_etb ?? row.amount_etb ?? 0
+  const whtAmount = exp?.wht_amount ?? row.wht_amount ?? 0
+  const creditApplied = exp?.credit_applied_etb ?? row.credit_applied_etb ?? 0
+  // What actually gets wired. amount_etb never changes when a credit is
+  // applied (271) — the purchase still cost what it cost — so this is
+  // computed here rather than read off a single column.
+  const cashToSend = grossAmount - whtAmount - creditApplied
 
   async function confirm() {
     if (!payerId) { onError('Select who is sending this advance'); return }
@@ -1265,8 +1286,17 @@ function RecordAdvanceModal({
             </select>
           </div>
           <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Advance amount (full approved)</p>
-            <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(amount)}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Wire this amount</p>
+            <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(cashToSend)}</p>
+            {(whtAmount > 0 || creditApplied > 0) && (
+              <div className="mt-1 space-y-0.5 text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">
+                <p>Approved amount {formatCurrency(grossAmount)}</p>
+                {whtAmount > 0 && <p>WHT withheld −{formatCurrency(whtAmount)}</p>}
+                {creditApplied > 0 && (
+                  <p className="text-emerald-600 dark:text-emerald-400">Vendor credit applied −{formatCurrency(creditApplied)}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
