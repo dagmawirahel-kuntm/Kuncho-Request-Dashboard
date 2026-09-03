@@ -95,10 +95,19 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
         p_document_html: html,
         p_snapshot: buildPaymentRequestSnapshot(input),
         p_payee_lines: payees,
-        p_title: doc.kind === 'batch' ? 'Batch Labor Payment Request' : 'Labor Payment Request',
+        // The register row is titled after what the request actually is: a
+        // fuel or rent request filed as a "Labor Payment Request" is the
+        // same mislabelling as the worker-shaped document it came from.
+        p_title: doc.kind === 'batch'
+          ? 'Batch Labor Payment Request'
+          : doc.breakdownKind === 'line_items'
+            ? `${doc.typeLabel ?? 'Expense'} Payment Request`
+            : 'Labor Payment Request',
         p_total_amount: doc.total,
         p_amount_in_words: amountInWords(doc.total),
-        p_worker_count: heads,
+        // A vendor billing line items has no workers behind it; the stand-in
+        // payee line would otherwise register as a headcount of 1.
+        p_worker_count: doc.breakdownKind === 'line_items' ? 0 : heads,
         p_draft_count: doc.drafts.length || 1,
         p_period_start: doc.drafts.map(d => d.periodStart).filter(Boolean).sort()[0] ?? null,
         p_period_end: doc.drafts.map(d => d.periodEnd).filter(Boolean).sort().slice(-1)[0] ?? null,

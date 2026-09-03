@@ -295,6 +295,9 @@ export default function ExpenseDetailPage() {
             staffId: expense.paid_to_staff_id ?? expense.id,
             name: (expense.vendors?.vendor_name ?? expense.vendors_name)
               ?? paidToStaffName ?? (expense.item_service_description ?? 'Payee'),
+            // The payee names who the bank pays; the breakdown row says what
+            // was bought. Same string in both columns tells a reader nothing.
+            description: expense.item_service_description ?? null,
             bankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
             units: expense.quantity ?? null,
             unitLabel: expense.uom ?? 'pcs',
@@ -324,6 +327,11 @@ export default function ExpenseDetailPage() {
       paymentMethod: expense.payment_method ?? null,
       typeDetail,
       accentColor: TYPE_THEME[expense.expense_type ?? 'general']?.bg ?? null,
+      // A labor rollup is the only kind that has real workers behind it.
+      // Everything else is a vendor billing line items, and saying so keeps
+      // the document from printing it as a one-person payslip.
+      breakdownKind: laborWorkers.length > 0 ? ('labor' as const) : ('line_items' as const),
+      typeLabel: TYPE_THEME[expense.expense_type ?? 'general']?.label ?? null,
     }
   }, [expense, laborWorkers, requisitionInfo, paidToStaffName, transportRoute])
 

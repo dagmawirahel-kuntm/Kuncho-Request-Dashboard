@@ -39,6 +39,12 @@ export type PrWorkerLine = {
   expenseId: string
   staffId: string
   name: string
+  /** What the line is for, when the payment isn't labor — a fuel purchase's
+   *  "Fuel — IVECO (100 L)" rather than the fuel station's name. Without it
+   *  a non-labor breakdown row only repeats the payee the disbursement
+   *  schedule already named. Ignored for labor, where the person *is* the
+   *  line. */
+  description?: string | null
   bankAccount: string | null
   units: number | null
   unitLabel: string
@@ -104,6 +110,16 @@ export type LaborPaymentRequestInput = {
   /** Letterhead color — defaults to the labor navy/sky gradient when unset,
    *  so a rent/transport/bond document doesn't read as a labor payslip. */
   accentColor?: string | null
+  /** Whether the breakdown table describes labor (people, days, day rates)
+   *  or a non-labor payment (items billed by a vendor). Labor is the
+   *  default because that's what this document was built for — but the
+   *  other expense types were being printed as "Worker Breakdown — 1
+   *  worker" with the vendor cast as the worker and "— pcs" standing in
+   *  for a quantity, which is most of what made them read as payslips. */
+  breakdownKind?: 'labor' | 'line_items'
+  /** Names the kind of payment (Fuel, Purchase Order, …) in the meta strip,
+   *  standing in for the labor-only Trade and Workers cells. */
+  typeLabel?: string | null
 }
 
 // ── Disbursement schedule ────────────────────────────────────────────────────
@@ -230,24 +246,31 @@ function paymentMethodLabel(method: string | null | undefined): string {
   return PAYMENT_METHOD_LABELS[method] ?? method.replace(/_/g, ' ')
 }
 
-function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftCodeById: Map<string, string>): string {
+function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftCodeById: Map<string, string>, isLabor: boolean): string {
+  // Draft? + Who + Qty + Rate + Amount.
+  const cols = showDraftCol ? 5 : 4
   if (workers.length === 0) {
-    return `<tr><td colspan="${showDraftCol ? 6 : 5}" class="empty">No worker breakdown recorded for this request.</td></tr>`
+    return `<tr><td colspan="${cols}" class="empty">No ${isLabor ? 'worker breakdown' : 'line items'} recorded for this request.</td></tr>`
   }
   return workers.map(w => {
     const isGang = (w.gangSize ?? 1) > 1
-    const who = isGang
-      ? `<b>Gang of ${esc(w.gangSize)}</b> <span class="muted">via ${esc(w.name)}</span>${
-          w.gangMemberNames ? `<div class="sub">${esc(w.gangMemberNames)}</div>` : ''}`
-      : esc(w.name)
+    const who = isLabor
+      ? (isGang
+        ? `<b>Gang of ${esc(w.gangSize)}</b> <span class="muted">via ${esc(w.name)}</span>${
+            w.gangMemberNames ? `<div class="sub">${esc(w.gangMemberNames)}</div>` : ''}`
+        : esc(w.name))
+      : esc(w.description || w.name)
     const ot = (w.overtimeAmount ?? 0) > 0
       ? `<div class="ot">+ overtime ${w.overtimeHours ? `${esc(w.overtimeHours)}h · ` : ''}${money(w.overtimeAmount)}</div>`
       : ''
     const lineTotal = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
+    // A null quantity means "not recorded", so it prints as a bare dash.
+    // Pairing it with the unit — "— pcs" — reads as a real measurement.
+    const qty = w.units == null ? '—' : `${esc(w.units)} ${esc(w.unitLabel)}`
     return `<tr>
   ${showDraftCol ? `<td class="mono nowrap">${esc(draftCodeById.get(w.expenseId) ?? '—')}</td>` : ''}
   <td>${who}${ot}</td>
-  <td class="r nowrap">${w.units ?? '—'} ${esc(w.unitLabel)}</td>
+  <td class="r nowrap">${qty}</td>
   <td class="r nowrap">${money(w.rate)}</td>
   <td class="r nowrap b">${money(lineTotal)}</td>
 </tr>`
@@ -258,10 +281,11 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const {
     kind, documentCode, sourceCode, issuedOn, issuedByName, status, revision,
     drafts, workers, approvals, total, notes, whtRequired, whtMethod,
-    fundingAccount, paymentMethod, typeDetail, accentColor,
+    fundingAccount, paymentMethod, typeDetail, accentColor, breakdownKind, typeLabel,
   } = input
 
   const isBatch = kind === 'batch'
+  const isLabor = breakdownKind !== 'line_items'
   const payees = buildPayeeLines(workers)
   const heads = totalHeadcount(workers)
   const words = amountInWords(total)
@@ -275,16 +299,25 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const periodStart = starts[0]
   const periodEnd = ends[ends.length - 1]
 
+  // Trade, Period Covered and Workers are labor's own vocabulary, all three
+  // sourced from a labor requisition. On a fuel or purchase-order request
+  // they have nothing behind them, and printing "—", "—" and "1" is what
+  // left those documents looking like a payslip with the fields blanked.
+  // Such a request names its payment type instead.
   const metaCells: { label: string; value: string }[] = [
     { label: 'Project', value: projects.length === 1 ? projects[0] : projects.length ? `${projects.length} projects` : '—' },
-    { label: 'Trade', value: roles.join(', ') || '—' },
-    {
-      label: 'Period Covered',
-      value: periodStart && periodEnd
-        ? `${formatDateGC(periodStart)} → ${formatDateGC(periodEnd)}`
-        : (periodStart ? formatDateGC(periodStart) : '—'),
-    },
-    { label: 'Workers', value: String(heads) },
+    ...(isLabor
+      ? [{ label: 'Trade', value: roles.join(', ') || '—' }]
+      : (typeLabel ? [{ label: 'Type', value: typeLabel }] : [])),
+    ...(isLabor || periodStart
+      ? [{
+          label: 'Period Covered',
+          value: periodStart && periodEnd
+            ? `${formatDateGC(periodStart)} → ${formatDateGC(periodEnd)}`
+            : (periodStart ? formatDateGC(periodStart) : '—'),
+        }]
+      : []),
+    ...(isLabor ? [{ label: 'Workers', value: String(heads) }] : []),
     ...(isBatch ? [{ label: 'Drafts Covered', value: String(drafts.length) }] : []),
   ]
 
@@ -434,13 +467,15 @@ ${typeDetail ? `
 </table>
 ${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement schedule totals ${money(payeeTotal)} but the request total is ${money(total)}. Resolve the difference before releasing payment.</div>` : ''}
 
-<h2>Worker Breakdown <span class="count">— ${heads} worker${heads === 1 ? '' : 's'}</span></h2>
+<h2>${isLabor
+    ? `Worker Breakdown <span class="count">— ${heads} worker${heads === 1 ? '' : 's'}</span>`
+    : `Payment Detail${workers.length > 1 ? ` <span class="count">— ${workers.length} line items</span>` : ''}`}</h2>
 <table>
   <thead><tr>
     ${isBatch ? '<th>Draft</th>' : ''}
-    <th>Worker</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th>
+    <th>${isLabor ? 'Worker' : 'Description'}</th><th class="r">Qty</th><th class="r">${isLabor ? 'Rate' : 'Unit Price'}</th><th class="r">Amount</th>
   </tr></thead>
-  <tbody>${renderWorkerRows(workers, isBatch, draftCodeById)}</tbody>
+  <tbody>${renderWorkerRows(workers, isBatch, draftCodeById, isLabor)}</tbody>
 </table>
 
 ${isBatch && drafts.length > 0 ? `
@@ -490,5 +525,9 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     wht_method: input.whtMethod ?? null,
     notes: input.notes ?? null,
     type_detail: input.typeDetail ?? null,
+    // Recorded so the register can tell a labor request from a vendor one
+    // without re-deriving it from the worker rows.
+    breakdown_kind: input.breakdownKind ?? 'labor',
+    type_label: input.typeLabel ?? null,
   }
 }
