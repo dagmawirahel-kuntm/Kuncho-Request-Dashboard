@@ -77,6 +77,11 @@ export default function ExpenseDetailPage() {
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense-detail', id],
     queryFn: async () => {
+      // Every embed names its foreign key explicitly. That matters most for
+      // vendor_receipt_facilitation, which expenses reaches through two of
+      // them: vrf_id, set on no rows, and vendor_receipt_facilitation_id,
+      // which carries all 13. This embedded the dead one, so the VRF detail
+      // block and the "Matched VRF" field never rendered for any expense.
       const { data, error } = await supabase
         .from('expenses')
         .select(`
@@ -89,7 +94,7 @@ export default function ExpenseDetailPage() {
           manager_profile:user_profiles!manager_approved_by ( full_name ),
           finance_profile:user_profiles!finance_approved_by ( full_name ),
           transfers:transfer_id ( transfer_id_code ),
-          vendor_receipt_facilitation:vrf_id ( record_name ),
+          vendor_receipt_facilitation:vendor_receipt_facilitation_id ( record_name ),
           properties:property_id ( property_name, lease_start_date, lease_end_date ),
           cpo_bonds:cpo_bond_id ( bond_id_ref, total_bond_amount, bond_status ),
           vehicles:vehicle_id ( name, plate_number, vehicle_type ),
