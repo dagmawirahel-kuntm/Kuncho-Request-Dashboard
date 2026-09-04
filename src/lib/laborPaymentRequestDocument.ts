@@ -150,7 +150,11 @@ export type PrPayeeLine = {
  * headcount to the vendor, not to four individual staff accounts, three of
  * which may have no bank account on file at all.
  */
-export function buildPayeeLines(workers: PrWorkerLine[]): PrPayeeLine[] {
+export function buildPayeeLines(workers: PrWorkerLine[], opts?: { isLabor?: boolean }): PrPayeeLine[] {
+  // Headcount only means something when the lines are people. A purchase
+  // order's items all share one payee, and counting them would put
+  // "2 workers" under a vendor being paid for two boxes of sockets.
+  const countsHeads = opts?.isLabor !== false
   type DraftGroup = { key: string; payee: string; kind: 'worker' | 'vendor'; bankAccount: string | null; heads: number; amount: number }
 
   // First pass: collapse to one row per (payee, draft) — several rows for
@@ -166,7 +170,7 @@ export function buildPayeeLines(workers: PrWorkerLine[]): PrPayeeLine[] {
     const draftKey = `${payeeKey}|${w.expenseId}`
 
     const amount = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
-    const heads = Math.max(w.gangSize ?? 1, 1)
+    const heads = countsHeads ? Math.max(w.gangSize ?? 1, 1) : 0
 
     const existing = byDraftPayee.get(draftKey)
     if (existing) {
@@ -286,7 +290,7 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
 
   const isBatch = kind === 'batch'
   const isLabor = breakdownKind !== 'line_items'
-  const payees = buildPayeeLines(workers)
+  const payees = buildPayeeLines(workers, { isLabor })
   const heads = totalHeadcount(workers)
   const words = amountInWords(total)
   const banner = STATUS_BANNER[status]

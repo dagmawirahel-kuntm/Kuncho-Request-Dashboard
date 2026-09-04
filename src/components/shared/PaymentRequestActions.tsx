@@ -84,7 +84,10 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
   }), [doc, live])
 
   const html = useMemo(() => buildLaborPaymentRequestHtml(input), [input])
-  const payees = useMemo(() => buildPayeeLines(doc.workers), [doc.workers])
+  const payees = useMemo(
+    () => buildPayeeLines(doc.workers, { isLabor: doc.breakdownKind !== 'line_items' }),
+    [doc.workers, doc.breakdownKind],
+  )
   const heads = useMemo(() => totalHeadcount(doc.workers), [doc.workers])
 
   const issue = useMutation({
