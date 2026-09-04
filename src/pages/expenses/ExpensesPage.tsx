@@ -32,6 +32,82 @@ function useRoleAccess() {
   return { role, profile, isSuperRole, isProcurement, isPM, showBundles, showCPO, showVRF, filterOwn, canCreate, canSeeTable }
 }
 
+// Shared by the records table and the approvals queue, so a type reads the
+// same in both. Module scope because the queue builds before the table does.
+const TYPE_CLS: Record<ExpenseType, string> = {
+  general:        'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+  purchase_order: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  vrf:            'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  cpo_bond:       'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+  fuel:           'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  subcontract:    'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  maintenance:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  property_rent:  'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300',
+  labor_payment:  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+  transportation: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
+}
+const TYPE_LABEL: Record<ExpenseType, string> = {
+  general: 'General', purchase_order: 'Purchase Order', vrf: 'VRF', cpo_bond: 'CPO Bond', fuel: 'Fuel',
+  subcontract: 'Subcontract', maintenance: 'Maintenance', property_rent: 'Property Rent', labor_payment: 'Labor Payment',
+  transportation: 'Transportation',
+}
+
+// ── Approvals queue ──────────────────────────────────────────────────────────
+
+type QueueItem = {
+  id: string
+  kind: 'expense' | 'batch' | 'bundle' | 'labor_req'
+  badge: string
+  badgeCls: string
+  code: string
+  title: string
+  meta: string | null
+  amount: number
+  /** When it started waiting — drives the age chip. */
+  since: string | null
+  to: string
+}
+
+/** How long something has been waiting. A backlog is invisible when every row
+ *  looks equally fresh, so anything past a week is coloured. */
+function AgeChip({ since }: { since: string | null }) {
+  if (!since) return null
+  const days = Math.floor((Date.now() - new Date(since).getTime()) / 86_400_000)
+  if (!Number.isFinite(days) || days < 0) return null
+  const cls = days >= 14
+    ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300'
+    : days >= 7
+      ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300'
+      : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+  return (
+    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${cls}`}>
+      {days === 0 ? 'today' : `${days}d`}
+    </span>
+  )
+}
+
+function QueueRow({ item }: { item: QueueItem }) {
+  return (
+    <Link
+      to={item.to}
+      className="flex items-center gap-3 px-5 py-3 border-b last:border-0 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors"
+    >
+      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.badgeCls}`}>{item.badge}</span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-slate-700 dark:text-slate-200">{item.title}</p>
+        <p className="truncate text-[11px] text-slate-400">
+          <span className="font-mono">{item.code}</span>{item.meta ? ` · ${item.meta}` : ''}
+        </p>
+      </div>
+      <AgeChip since={item.since} />
+      <span className="shrink-0 text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">
+        {formatCurrency(item.amount)}
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600" />
+    </Link>
+  )
+}
+
 // ── Pipeline strip ───────────────────────────────────────────────────────────
 
 type Stage = { label: string; count: number; cls: string; icon?: React.ReactNode }
@@ -268,7 +344,7 @@ export default function ExpensesPage() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { role, profile, showBundles, showCPO, showVRF, filterOwn, canCreate, canSeeTable } = useRoleAccess()
+  const { role, profile, isSuperRole, showBundles, showCPO, showVRF, filterOwn, canCreate, canSeeTable } = useRoleAccess()
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'records'>('dashboard')
 
@@ -335,6 +411,86 @@ export default function ExpensesPage() {
     enabled: showVRF,
   })
 
+  // ── Unified approvals queue ────────────────────────────────────────────────
+  // Every section on this page covers one slice, and the pipeline strip counts
+  // only expense_type 'general' — 17 of 237 unarchived expenses, and 1 of the
+  // 59 actually awaiting approval. Labor rollups, purchase orders, transport,
+  // fuel, whole batch payments and submitted sourcing bundles had no screen
+  // showing they were waiting at all. This is that screen: one queue, every
+  // source, largest money first.
+
+  // Batches are fetched with their member expenses so a draft sitting inside
+  // one is counted under the batch rather than listed twice — 15 of the 59
+  // pending expenses are in a batch, and the batch is the thing approved.
+  const { data: queueBatches = [] } = useQuery({
+    queryKey: ['approval-queue-batches'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('batch_payments')
+        .select('id, payment_code, created_at, transfer_id, batch_payment_expenses(expense_id, expenses(amount_etb, payment_state))')
+        .is('transfer_id', null)
+      if (error) throw error
+      return (data ?? []) as unknown as {
+        id: string; payment_code: string | null; created_at: string | null
+        batch_payment_expenses: { expense_id: string; expenses: { amount_etb: number | null; payment_state: string | null } | null }[]
+      }[]
+    },
+    enabled: isSuperRole,
+  })
+
+  const { data: queueBundles = [] } = useQuery({
+    queryKey: ['approval-queue-bundles'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sourcing_bundles')
+        .select('id, bundle_code, vendor_name, total_value, submitted_at, vendors(vendor_name)')
+        .eq('status', 'submitted')
+      if (error) throw error
+      return (data ?? []) as unknown as {
+        id: string; bundle_code: string | null; vendor_name: string | null
+        total_value: number | null; submitted_at: string | null
+        vendors: { vendor_name: string } | null
+      }[]
+    },
+    enabled: isSuperRole,
+  })
+
+  const { data: queueLaborReqs = [] } = useQuery({
+    queryKey: ['approval-queue-labor-reqs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('labor_requisitions')
+        .select('id, role_needed, estimated_total_cost, payment_basis, headcount, estimated_day_rate, estimated_days, unit_rate, estimated_total_volume, created_at, projects(project_name)')
+        .eq('status', 'pending')
+      if (error) throw error
+      return (data ?? []) as unknown as {
+        id: string; role_needed: string | null; estimated_total_cost: number | null
+        payment_basis: string | null; headcount: number | null
+        estimated_day_rate: number | null; estimated_days: number | null
+        unit_rate: number | null; estimated_total_volume: number | null
+        created_at: string | null; projects: { project_name: string } | null
+      }[]
+    },
+    enabled: isSuperRole,
+  })
+
+  // Purchase requests are item-level asks with their own page and their own
+  // volume (an order of magnitude more rows than everything else here), so
+  // they're surfaced as a count to click through to rather than inlined.
+  const { data: pendingOrderCount = 0 } = useQuery({
+    queryKey: ['approval-queue-order-count'],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('approval_status', 'pending')
+        .eq('is_archived', false)
+      if (error) throw error
+      return count ?? 0
+    },
+    enabled: isSuperRole,
+  })
+
   // Full expense list for Records tab — the one query on this page that's a
   // "browse history" list rather than active approval work, so it's the only
   // one that gets the fresh-platform current-FY default. The pipeline/
@@ -371,6 +527,98 @@ export default function ExpensesPage() {
   const generalExpenses = useMemo(() => expenses.filter(e => (e.expense_type ?? 'general') === 'general'), [expenses])
   const recentGeneral   = useMemo(() => generalExpenses.slice(0, 5), [generalExpenses])
 
+  // Everything awaiting a decision, from every source, in one list. Sorted by
+  // amount because the question an approver is answering is "what is the
+  // biggest thing I'm holding up", not "what came in last".
+  const approvalQueue: QueueItem[] = useMemo(() => {
+    const batchable = queueBatches
+      .map(b => {
+        const lines = b.batch_payment_expenses ?? []
+        const unpaid = lines.filter(l => l.expenses?.payment_state === 'unpaid')
+        return { b, lines, unpaid }
+      })
+      .filter(x => x.unpaid.length > 0)
+
+    // Expense ids covered by a batch that is itself still awaiting approval.
+    const inBatch = new Set(batchable.flatMap(x => x.lines.map(l => l.expense_id)))
+
+    const items: QueueItem[] = []
+
+    for (const e of expenses) {
+      if (e.approval_status !== 'pending' || inBatch.has(e.id)) continue
+      const t = (e.expense_type ?? 'general') as ExpenseType
+      items.push({
+        id: e.id,
+        kind: 'expense',
+        badge: TYPE_LABEL[t] ?? 'Expense',
+        badgeCls: TYPE_CLS[t] ?? TYPE_CLS.general,
+        code: e.expense_code ?? '—',
+        title: e.item_service_description ?? '—',
+        meta: [(e as any).projects?.project_name, (e as any).vendors?.vendor_name ?? e.vendors_name].filter(Boolean).join(' · ') || null,
+        amount: Number(e.amount_etb ?? 0),
+        since: e.date ?? e.created_at ?? null,
+        to: `/expenses/${e.id}`,
+      })
+    }
+
+    for (const { b, lines } of batchable) {
+      items.push({
+        id: b.id,
+        kind: 'batch',
+        badge: 'Batch',
+        badgeCls: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+        code: 'BATCH',
+        title: b.payment_code ?? 'Batch payment',
+        meta: `${lines.length} draft${lines.length === 1 ? '' : 's'} approved as one total`,
+        amount: lines.reduce((s, l) => s + Number(l.expenses?.amount_etb ?? 0), 0),
+        since: b.created_at,
+        to: `/batch-payments/${b.id}`,
+      })
+    }
+
+    for (const b of queueBundles) {
+      items.push({
+        id: b.id,
+        kind: 'bundle',
+        badge: 'Sourcing PO',
+        badgeCls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+        code: b.bundle_code ?? '—',
+        title: b.vendors?.vendor_name ?? b.vendor_name ?? 'Sourcing bundle',
+        meta: 'Submitted for finance approval',
+        amount: Number(b.total_value ?? 0),
+        since: b.submitted_at,
+        to: '/sourcing',
+      })
+    }
+
+    for (const r of queueLaborReqs) {
+      items.push({
+        id: r.id,
+        kind: 'labor_req',
+        badge: 'Labor Req',
+        badgeCls: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+        code: '—',
+        title: r.role_needed ?? 'Labor requisition',
+        meta: r.projects?.project_name ?? null,
+        // estimated_total_cost is a generated column that only knows how to
+        // multiply a day rate by days, so every per_volume requisition stores
+        // 0.00 — a 250,000 birr painting job would sort to the bottom of the
+        // queue reading "ETB 0.00". Same fallback v_work_order_cost uses.
+        amount: Number(r.estimated_total_cost) ||
+          (r.payment_basis === 'per_volume'
+            ? Number(r.unit_rate ?? 0) * Number(r.estimated_total_volume ?? 0)
+            : Number(r.estimated_day_rate ?? 0) * Number(r.estimated_days ?? 0) * Number(r.headcount ?? 1)),
+        since: r.created_at,
+        to: `/labor-requisitions/${r.id}`,
+      })
+    }
+
+    return items.sort((a, b) => b.amount - a.amount)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, queueBatches, queueBundles, queueLaborReqs])
+
+  const queueTotal = useMemo(() => approvalQueue.reduce((s, i) => s + i.amount, 0), [approvalQueue])
+
   const expensePipeline: Stage[] = useMemo(() => [
     { label: 'Pending',          count: generalExpenses.filter(e => e.approval_status === 'pending').length,          cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', icon: <Clock className="h-3 w-3" /> },
     { label: 'Mgr Approved',     count: generalExpenses.filter(e => e.approval_status === 'manager_approved').length, cls: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20',                   icon: <CheckCircle2 className="h-3 w-3" /> },
@@ -387,24 +635,6 @@ export default function ExpensesPage() {
   ], [bundles])
 
   // ── Records tab columns ───────────────────────────────────────────────────
-
-  const TYPE_CLS: Record<ExpenseType, string> = {
-    general:        'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
-    purchase_order: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    vrf:            'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
-    cpo_bond:       'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-    fuel:           'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    subcontract:    'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
-    maintenance:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-    property_rent:  'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300',
-    labor_payment:  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
-    transportation: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
-  }
-  const TYPE_LABEL: Record<ExpenseType, string> = {
-    general: 'General', purchase_order: 'Purchase Order', vrf: 'VRF', cpo_bond: 'CPO Bond', fuel: 'Fuel',
-    subcontract: 'Subcontract', maintenance: 'Maintenance', property_rent: 'Property Rent', labor_payment: 'Labor Payment',
-    transportation: 'Transportation',
-  }
 
   const tableColumns: ColumnDef<Expense>[] = useMemo(() => [
     { accessorKey: 'expense_code', header: 'ID', cell: ({ getValue }) => <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100">{(getValue() as string) ?? '—'}</span> },
@@ -494,6 +724,47 @@ export default function ExpensesPage() {
 
           {!isLoading && (
             <>
+              {/* Everything awaiting a decision, across every source. The
+                  sections below each cover one slice; this covers the lot. */}
+              {isSuperRole && (
+                <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3 border-b dark:border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-amber-500" />
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Awaiting Approval</h2>
+                        <p className="text-[11px] text-slate-400">
+                          Expenses, batch payments, sourcing bundles and labor requisitions — largest first
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(queueTotal)}</p>
+                      <p className="text-[11px] text-slate-400">{approvalQueue.length} item{approvalQueue.length === 1 ? '' : 's'}</p>
+                    </div>
+                  </div>
+
+                  {approvalQueue.length === 0
+                    ? <EmptyState message="Nothing is waiting on an approval decision." />
+                    : approvalQueue.map(item => <QueueRow key={`${item.kind}:${item.id}`} item={item} />)
+                  }
+
+                  {pendingOrderCount > 0 && (
+                    <Link
+                      to="/purchase-requests"
+                      className="flex items-center justify-between gap-2 px-5 py-3 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-700/20 hover:bg-slate-100 dark:hover:bg-slate-700/40"
+                    >
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">{pendingOrderCount}</span> purchase requests also awaiting approval
+                      </span>
+                      <span className="flex items-center gap-1 text-xs font-medium text-brand">
+                        Review <ExternalLink className="h-3 w-3" />
+                      </span>
+                    </Link>
+                  )}
+                </div>
+              )}
+
               {/* General Expenses */}
               <Section
                 icon={<Receipt className="h-4 w-4 text-slate-500" />}

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { DateGroupHeader, groupByDay } from '@/components/shared/DateGroupHeader'
 import type { SourcingBundle, SourcingBundleStatus } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -99,6 +100,11 @@ export default function SourcingBundlesPage() {
     fulfilled: enriched.filter(b => b.status === 'fulfilled').length,
   }), [enriched])
 
+  // 148 bundles over ~30 days runs as one undifferentiated wall. Grouping by
+  // the day they were raised gives it the shape procurement actually works
+  // in, and puts each day's committed value in the band header.
+  const bundleGroups = useMemo(() => groupByDay(enriched, b => b.created_at), [enriched])
+
   async function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation()
     if (!window.confirm('Delete this sourcing bundle? This cannot be undone.')) return
@@ -151,10 +157,18 @@ export default function SourcingBundlesPage() {
             <span>Created</span>
             <span />
           </div>
-          {enriched.map((b, i) => (
+          {bundleGroups.map(group => (
+            <div key={group.key}>
+              <DateGroupHeader
+                dateKey={group.key}
+                count={group.rows.length}
+                total={group.rows.reduce((sum, b) => sum + (b._totalActual ?? 0), 0)}
+                noun="bundle"
+              />
+              {group.rows.map(b => (
             <div key={b.id}
               onClick={() => navigate(`/sourcing/${b.id}`)}
-              className={`sm:grid sm:grid-cols-[5rem_1fr_1fr_4rem_6rem_8rem_6rem_4rem] sm:gap-3 flex flex-col gap-1 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${i < enriched.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
+              className="sm:grid sm:grid-cols-[5rem_1fr_1fr_4rem_6rem_8rem_6rem_4rem] sm:gap-3 flex flex-col gap-1 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors border-b last:border-0 dark:border-slate-700">
               <span className="font-mono text-xs font-bold text-brand">{b.bundle_code}</span>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
@@ -186,6 +200,8 @@ export default function SourcingBundlesPage() {
                   </button>
                 )}
               </div>
+            </div>
+              ))}
             </div>
           ))}
         </div>

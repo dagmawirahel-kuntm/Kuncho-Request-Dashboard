@@ -15,6 +15,7 @@ import { FileText, Search, Layers, Receipt, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDateTime, formatDateGC } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { DateGroupHeader, groupByDay } from '@/components/shared/DateGroupHeader'
 import type { PaymentRequestRow } from '@/types/database'
 
 const STATUS_FILTERS = ['all', 'issued', 'superseded', 'void'] as const
@@ -53,6 +54,11 @@ export default function PaymentRequestsPage() {
         .filter(Boolean).some(v => String(v).toLowerCase().includes(q))
     })
   }, [rows, search, status, project])
+
+  // The register is read as "what did we issue, and when" — so it's banded by
+  // the day of issue rather than running as one flat list. Filters apply
+  // first, so the day totals describe what's actually on screen.
+  const issuedGroups = useMemo(() => groupByDay(visible, r => r.issued_at), [visible])
 
   const liveTotal = useMemo(
     () => visible.filter(r => r.status === 'issued').reduce((s, r) => s + (r.total_amount ?? 0), 0),
@@ -150,8 +156,19 @@ export default function PaymentRequestsPage() {
                   <th className="text-left px-4 py-2 font-medium text-xs text-slate-500">Issued</th>
                 </tr>
               </thead>
-              <tbody className="divide-y dark:divide-slate-700">
-                {visible.map(r => (
+              {issuedGroups.map(group => (
+              <tbody key={group.key} className="divide-y dark:divide-slate-700">
+                <tr>
+                  <td colSpan={7} className="p-0">
+                    <DateGroupHeader
+                      dateKey={group.key}
+                      count={group.rows.length}
+                      total={group.rows.reduce((sum, r) => sum + Number(r.total_amount ?? 0), 0)}
+                      noun="request"
+                    />
+                  </td>
+                </tr>
+                {group.rows.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
                     <td className="px-4 py-2.5 whitespace-nowrap">
                       <Link to={`/finance/payment-requests/${r.id}`} className="font-mono text-xs text-brand hover:underline">
@@ -192,6 +209,7 @@ export default function PaymentRequestsPage() {
                   </tr>
                 ))}
               </tbody>
+              ))}
             </table>
           </div>
         )}

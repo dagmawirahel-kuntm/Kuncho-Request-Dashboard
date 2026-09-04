@@ -120,6 +120,12 @@ export type LaborPaymentRequestInput = {
   /** Names the kind of payment (Fuel, Purchase Order, …) in the meta strip,
    *  standing in for the labor-only Trade and Workers cells. */
   typeLabel?: string | null
+  /** Withholding tax deducted from `total` before the money leaves. The
+   *  document previously printed only a "WHT required" flag with no figure,
+   *  while the disbursement schedule and the grand total both showed the
+   *  gross — so a request for a PO with WHT told the bank to send the full
+   *  amount and hand the vendor what should have gone to the tax authority. */
+  whtAmount?: number | null
 }
 
 // ── Disbursement schedule ────────────────────────────────────────────────────
@@ -288,13 +294,20 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     kind, documentCode, sourceCode, issuedOn, issuedByName, status, revision,
     drafts, workers, approvals, total, notes, whtRequired, whtMethod,
     fundingAccount, paymentMethod, typeDetail, accentColor, breakdownKind, typeLabel,
+    whtAmount,
   } = input
 
   const isBatch = kind === 'batch'
   const isLabor = breakdownKind !== 'line_items'
   const payees = buildPayeeLines(workers, { isLabor })
   const heads = totalHeadcount(workers)
-  const words = amountInWords(total)
+  // What actually leaves the account. WHT is withheld from the total and
+  // remitted separately, so it is the net — not the total — that the bank
+  // acts on and that the amount in words has to state.
+  const wht = Number(whtAmount ?? 0)
+  const hasWht = Math.abs(wht) > 0.005
+  const netPayable = total - wht
+  const words = amountInWords(hasWht ? netPayable : total)
   const banner = STATUS_BANNER[status]
   const draftCodeById = new Map(drafts.map(d => [d.id, d.code ?? d.id.slice(0, 8)]))
 
@@ -469,7 +482,11 @@ ${typeDetail ? `
 <table>
   <thead><tr><th>Pay To</th><th>Bank Account</th><th class="r">Amount</th></tr></thead>
   <tbody>${payeeRows}</tbody>
-  <tfoot><tr><td colspan="2" class="r">Total to disburse</td><td class="r">${money(payeeTotal)}</td></tr></tfoot>
+  <tfoot>
+    <tr><td colspan="2" class="r">${hasWht ? 'Total' : 'Total to disburse'}</td><td class="r">${money(payeeTotal)}</td></tr>
+    ${hasWht ? `<tr><td colspan="2" class="r" style="font-weight:600">Less withholding tax</td><td class="r" style="font-weight:600">(${money(wht)})</td></tr>
+    <tr><td colspan="2" class="r">Net to disburse</td><td class="r">${money(payeeTotal - wht)}</td></tr>` : ''}
+  </tfoot>
 </table>
 ${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement schedule totals ${money(payeeTotal)} but the request total is ${money(total)}. Resolve the difference before releasing payment.</div>` : ''}
 
@@ -493,11 +510,12 @@ ${isBatch && drafts.length > 0 ? `
 
 <div class="grand">
   <div class="w">${words ? esc(words) : ''}</div>
-  <div class="n">${money(total)}</div>
+  <div class="n">${money(hasWht ? netPayable : total)}</div>
 </div>
+${hasWht ? `<div class="note"><b>Withholding tax:</b> total ${money(total)} · less WHT withheld ${money(wht)} · <b>net to disburse ${money(netPayable)}</b>. The withheld amount is remitted to the tax authority, not paid to the payee.</div>` : ''}
 
 ${(fundingAccount || paymentMethod) ? `<div class="note"><b>Funding:</b> ${esc(paymentMethodLabel(paymentMethod)) || '—'}${fundingAccount ? ` · ${esc(fundingAccount)}` : ''}</div>` : ''}
-${whtRequired ? `<div class="flag"><b>Withholding Tax (WHT) required</b> — ${whtMethod ? esc(whtMethod) : 'deduct before disbursement'}.</div>` : ''}
+${whtRequired && !hasWht ? `<div class="flag"><b>Withholding Tax (WHT) required</b> — ${whtMethod ? esc(whtMethod) : 'deduct before disbursement'}. No WHT amount has been recorded on this request; calculate it before releasing payment.</div>` : ''}
 ${notes ? `<div class="note"><b>Notes:</b> ${esc(notes)}</div>` : ''}
 
 <div class="sigs">${approvalBlocks}</div>
@@ -535,5 +553,7 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     // without re-deriving it from the worker rows.
     breakdown_kind: input.breakdownKind ?? 'labor',
     type_label: input.typeLabel ?? null,
+    wht_amount: input.whtAmount ?? null,
+    net_payable: input.total - Number(input.whtAmount ?? 0),
   }
 }
