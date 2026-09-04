@@ -85,13 +85,19 @@ const RECORD_DIMENSIONS = {
 type RecordDim = keyof typeof RECORD_DIMENSIONS
 
 /** Totals for the selected cut, so the tab answers "how much, by what" without
- *  anyone exporting to a spreadsheet to find out. Scoped to the fiscal year the
- *  table itself is scoped to. */
-function RecordsSummary({ rows, dim, onDim }: {
+ *  anyone exporting to a spreadsheet to find out.
+ *
+ *  `rows` are the ones the table is actually showing, filters and search
+ *  applied — a panel that ignored them would quietly contradict the list
+ *  directly beneath it. `totalCount` is the unfiltered size, only so the
+ *  header can say when the view is narrowed. */
+function RecordsSummary({ rows, totalCount, dim, onDim }: {
   rows: Expense[]
+  totalCount: number
   dim: RecordDim
   onDim: (d: RecordDim) => void
 }) {
+  const isFiltered = rows.length !== totalCount
   const buckets = useMemo(() => {
     const key = RECORD_DIMENSIONS[dim].key
     const map = new Map<string, { count: number; total: number }>()
@@ -129,7 +135,10 @@ function RecordsSummary({ rows, dim, onDim }: {
         </div>
         <div className="text-right">
           <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(grand)}</p>
-          <p className="text-[11px] text-slate-400">{rows.length} records · this fiscal year</p>
+          <p className="text-[11px] text-slate-400">
+            {rows.length} record{rows.length === 1 ? '' : 's'}
+            {isFiltered ? ` · filtered from ${totalCount}` : ' · this fiscal year'}
+          </p>
         </div>
       </div>
 
@@ -478,6 +487,10 @@ export default function ExpensesPage() {
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'records'>('dashboard')
   const [recordDim, setRecordDim] = useState<RecordDim>('date')
+  // What the Records table is actually showing after its own search and
+  // filters. Null until the table first reports, so the panel falls back to
+  // the full set rather than flashing an empty total on mount.
+  const [filteredRecords, setFilteredRecords] = useState<Expense[] | null>(null)
   // Pinned once per mount: ages are quoted in whole days, and reading the
   // clock during render would make them shift on unrelated re-renders.
   const [now] = useState(() => Date.now())
@@ -880,7 +893,12 @@ export default function ExpensesPage() {
         allLoading
           ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
           : <div className="space-y-4">
-            <RecordsSummary rows={allExpenses} dim={recordDim} onDim={setRecordDim} />
+            <RecordsSummary
+              rows={filteredRecords ?? allExpenses}
+              totalCount={allExpenses.length}
+              dim={recordDim}
+              onDim={setRecordDim}
+            />
             <DataTable
               columns={tableColumns}
               data={allExpenses}
@@ -891,7 +909,8 @@ export default function ExpensesPage() {
               queryKeys={['expenses-all']}
               quickFilters={tableQuickFilters}
               expandable={{ summaryColumnIds: ['expense_code', 'expense_type', 'amount_etb', 'date', 'approval_status', 'payment_state'] }}
-              groupBy={RECORD_DIMENSIONS[recordDim].groupBy}
+      groupBy={RECORD_DIMENSIONS[recordDim].groupBy}
+              onFilteredRowsChange={setFilteredRecords}
             />
           </div>
       )}
