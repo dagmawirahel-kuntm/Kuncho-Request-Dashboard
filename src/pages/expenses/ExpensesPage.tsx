@@ -98,6 +98,10 @@ function RecordsSummary({ rows, totalCount, dim, onDim }: {
   onDim: (d: RecordDim) => void
 }) {
   const isFiltered = rows.length !== totalCount
+  // Rows with no date carry no fiscal period, so they sit outside the year
+  // this list is scoped to. They are shown rather than hidden, and counted
+  // here so the scope line stays true instead of claiming they are the year.
+  const unassigned = rows.filter(r => !r.fiscal_period_id).length
   const buckets = useMemo(() => {
     const key = RECORD_DIMENSIONS[dim].key
     const map = new Map<string, { count: number; total: number }>()
@@ -138,6 +142,7 @@ function RecordsSummary({ rows, totalCount, dim, onDim }: {
           <p className="text-[11px] text-slate-400">
             {rows.length} record{rows.length === 1 ? '' : 's'}
             {isFiltered ? ` · filtered from ${totalCount}` : ' · this fiscal year'}
+            {unassigned > 0 ? ` · incl. ${unassigned} undated` : ''}
           </p>
         </div>
       </div>
@@ -649,10 +654,25 @@ export default function ExpensesPage() {
     queryFn: async () => {
       let q = supabase
         .from('expenses')
-        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation(record_name), transfers(transfer_id_code), tax_summary(month), locations(location_name)')
+        // vendor_receipt_facilitation is embedded through an explicit foreign
+        // key because expenses has two of them to that table — vrf_id and
+        // vendor_receipt_facilitation_id. An unqualified embed is ambiguous,
+        // so PostgREST rejected the whole request (PGRST201) and the tab
+        // rendered "No records found" for every row rather than for none.
+        // vendor_receipt_facilitation_id is the live column: it is set on 13
+        // rows, vrf_id on none.
+        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation:vendor_receipt_facilitation_id(record_name), transfers(transfer_id_code), tax_summary(month), locations(location_name)')
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
-      if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
+      // fiscal_period_id is stamped by trg_set_fiscal_period as
+      // fiscal_period_for_date(date), so an expense with no date gets no
+      // fiscal period — and filtering on the period alone made it invisible
+      // here with nothing to explain why. That is how a 3,000 ETB
+      // finance-approved, unpaid fuel expense (GEN-FUEL-20260805-01) came to
+      // be missing from a list titled "All Records". Unassigned rows are
+      // included alongside the selected year rather than silently dropped;
+      // they are flagged in the summary so they are not mistaken for it.
+      if (fiscalPeriodId) q = q.or(`fiscal_period_id.eq.${fiscalPeriodId},fiscal_period_id.is.null`)
       const { data, error } = await q
       if (error) throw error
       return data as Expense[]

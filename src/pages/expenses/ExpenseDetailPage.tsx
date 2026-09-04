@@ -11,7 +11,7 @@ import { resolveHint } from '@/lib/trainerHints'
 import { useStaffDirectory } from '@/hooks/useLookups'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle,
-  DollarSign, FileText, Building2, FolderKanban, Tag,
+  DollarSign, FileText, Building2, FolderKanban, Tag, Wallet,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
@@ -77,6 +77,11 @@ export default function ExpenseDetailPage() {
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense-detail', id],
     queryFn: async () => {
+      // Every embed names its foreign key explicitly. That matters most for
+      // vendor_receipt_facilitation, which expenses reaches through two of
+      // them: vrf_id, set on no rows, and vendor_receipt_facilitation_id,
+      // which carries all 13. This embedded the dead one, so the VRF detail
+      // block and the "Matched VRF" field never rendered for any expense.
       const { data, error } = await supabase
         .from('expenses')
         .select(`
@@ -89,7 +94,7 @@ export default function ExpenseDetailPage() {
           manager_profile:user_profiles!manager_approved_by ( full_name ),
           finance_profile:user_profiles!finance_approved_by ( full_name ),
           transfers:transfer_id ( transfer_id_code ),
-          vendor_receipt_facilitation:vrf_id ( record_name ),
+          vendor_receipt_facilitation:vendor_receipt_facilitation_id ( record_name ),
           properties:property_id ( property_name, lease_start_date, lease_end_date ),
           cpo_bonds:cpo_bond_id ( bond_id_ref, total_bond_amount, bond_status ),
           vehicles:vehicle_id ( name, plate_number, vehicle_type ),
@@ -239,6 +244,51 @@ export default function ExpenseDetailPage() {
     },
     enabled: !!expense?.subcontractor_engagement_id && expense?.expense_type === 'subcontract',
   })
+
+  // A vendor credit settles part of a payable with money the vendor already
+  // holds — an overpaid advance, or a discount agreed after the order. The
+  // amount lives on the expense itself (credit_applied_etb), which anyone who
+  // can see the expense can read; this query is only for *where the credit
+  // came from*, and vendor_credits is admin/executive/finance-only, so it
+  // degrades to no provenance rather than to a wrong number.
+  const creditApplied = Number(expense?.credit_applied_etb ?? 0)
+  const { data: creditApplications = [] } = useQuery({
+    queryKey: ['expense-vendor-credits', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vendor_credit_applications')
+        .select(`
+          id, amount_etb, applied_at, notes,
+          vendor_credits:vendor_credit_id (
+            reason,
+            source_sourcing_bundle:source_sourcing_bundle_id ( bundle_code ),
+            source_expense:source_expense_id ( expense_code )
+          )
+        `)
+        .eq('applied_to_expense_id', id!)
+        .order('applied_at')
+      if (error) throw error
+      return (data ?? []) as unknown as {
+        id: string; amount_etb: number | null; applied_at: string | null; notes: string | null
+        vendor_credits: {
+          reason: string | null
+          source_sourcing_bundle: { bundle_code: string | null } | null
+          source_expense: { expense_code: string | null } | null
+        } | null
+      }[]
+    },
+    enabled: !!id && creditApplied > 0,
+  })
+
+  // One line naming the origin of each credit, for the Payment Request note.
+  const creditNote = useMemo(() => {
+    const parts = creditApplications.map(a => {
+      const c = a.vendor_credits
+      const src = c?.source_sourcing_bundle?.bundle_code ?? c?.source_expense?.expense_code ?? null
+      return [src, c?.reason].filter(Boolean).join(' · ')
+    }).filter(Boolean)
+    return parts.length > 0 ? Array.from(new Set(parts)).join('; ') : null
+  }, [creditApplications])
 
   // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
   // (polymorphic — no real FK), so it can't ride along on the join above.
@@ -519,6 +569,10 @@ export default function ExpenseDetailPage() {
       // never printed — the document showed the gross as the amount to
       // disburse even where net_payable was already lower.
       whtAmount: expense.wht_amount ?? null,
+      // amount_etb is unchanged by a credit, so without this the document
+      // authorises the gross while the To Pay queue expects cash_to_send.
+      creditApplied: creditApplied > 0 ? creditApplied : null,
+      creditNote,
       fundingAccount: expense.accounts?.account_name ?? null,
       paymentMethod: expense.payment_method ?? null,
       typeDetail,
@@ -530,7 +584,8 @@ export default function ExpenseDetailPage() {
       typeLabel: TYPE_THEME[expense.expense_type ?? 'general']?.label ?? null,
     }
   }, [expense, laborWorkers, requisitionInfo, paidToStaffName, transportRoute,
-      bundleItems, maintenanceRequest, subcontractClaimedElsewhere])
+      bundleItems, maintenanceRequest, subcontractClaimedElsewhere,
+      creditApplied, creditNote])
 
   if (isLoading) {
     return (
@@ -800,6 +855,68 @@ export default function ExpenseDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Settlement — only shown when the cash actually leaving differs from
+            the invoice amount. The stat strip and the Details grid both show
+            amount_etb, which is right (the purchase cost that) but is not
+            what gets wired once WHT is withheld or a vendor credit is
+            applied. Without this the discount on a PO was invisible
+            everywhere except the To Pay queue. */}
+        {(creditApplied > 0 || Number(expense.wht_amount ?? 0) > 0) && (
+          <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b dark:border-slate-700 flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-slate-400" />
+              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Settlement</h2>
+            </div>
+            <div className="p-5 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Invoice total</span>
+                <span className="tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(expense.amount_etb ?? 0)}</span>
+              </div>
+              {Number(expense.wht_amount ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">Less withholding tax</span>
+                  <span className="tabular-nums text-slate-600 dark:text-slate-300">({formatCurrency(Number(expense.wht_amount))})</span>
+                </div>
+              )}
+              {creditApplied > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">Less vendor credit applied</span>
+                  <span className="tabular-nums text-emerald-600 dark:text-emerald-400">({formatCurrency(creditApplied)})</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t dark:border-slate-700 pt-2 font-semibold">
+                <span className="text-slate-700 dark:text-slate-200">Cash to send</span>
+                <span className="tabular-nums text-slate-900 dark:text-slate-50">
+                  {formatCurrency(Number(expense.amount_etb ?? 0) - Number(expense.wht_amount ?? 0) - creditApplied)}
+                </span>
+              </div>
+              {creditApplications.length > 0 && (
+                <div className="pt-2 space-y-1">
+                  {creditApplications.map(a => {
+                    const c = a.vendor_credits
+                    const src = c?.source_sourcing_bundle?.bundle_code ?? c?.source_expense?.expense_code ?? null
+                    return (
+                      <p key={a.id} className="text-xs text-slate-500 dark:text-slate-400">
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          {formatCurrency(Number(a.amount_etb ?? 0))}
+                        </span>
+                        {src ? ` from ${src}` : ' from vendor credit'}
+                        {c?.reason ? ` — ${c.reason}` : ''}
+                        {a.applied_at ? ` · applied ${formatDate(a.applied_at)}` : ''}
+                      </p>
+                    )
+                  })}
+                </div>
+              )}
+              {creditApplied > 0 && creditApplications.length === 0 && (
+                <p className="pt-2 text-xs text-slate-400">
+                  Credit provenance is visible to finance and admin only.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Details grid */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
