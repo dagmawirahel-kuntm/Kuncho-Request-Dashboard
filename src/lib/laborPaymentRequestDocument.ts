@@ -126,6 +126,17 @@ export type LaborPaymentRequestInput = {
    *  gross — so a request for a PO with WHT told the bank to send the full
    *  amount and hand the vendor what should have gone to the tax authority. */
   whtAmount?: number | null
+  /** Vendor credit already applied to this payable. A credit is money the
+   *  vendor is already holding — an overpaid advance, or a discount agreed
+   *  after the order was placed — so it settles part of the bill without
+   *  any cash moving. `amount_etb` deliberately does not change when one is
+   *  applied (the purchase still cost what it cost), which meant the
+   *  document told the bank to send the gross while the To Pay queue,
+   *  working off cash_to_send, expected the smaller figure. */
+  creditApplied?: number | null
+  /** Where the credit came from, printed under the schedule so an approver
+   *  can see why the disbursement is short of the invoice. */
+  creditNote?: string | null
 }
 
 // ── Disbursement schedule ────────────────────────────────────────────────────
@@ -294,7 +305,7 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     kind, documentCode, sourceCode, issuedOn, issuedByName, status, revision,
     drafts, workers, approvals, total, notes, whtRequired, whtMethod,
     fundingAccount, paymentMethod, typeDetail, accentColor, breakdownKind, typeLabel,
-    whtAmount,
+    whtAmount, creditApplied, creditNote,
   } = input
 
   const isBatch = kind === 'batch'
@@ -302,12 +313,18 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const payees = buildPayeeLines(workers, { isLabor })
   const heads = totalHeadcount(workers)
   // What actually leaves the account. WHT is withheld from the total and
-  // remitted separately, so it is the net — not the total — that the bank
-  // acts on and that the amount in words has to state.
+  // remitted separately; a vendor credit settles part of the bill with money
+  // the vendor already holds. Neither one is cash, so it is what remains
+  // after both — not the total — that the bank acts on and that the amount
+  // in words has to state.
   const wht = Number(whtAmount ?? 0)
+  const credit = Number(creditApplied ?? 0)
   const hasWht = Math.abs(wht) > 0.005
+  const hasCredit = Math.abs(credit) > 0.005
   const netPayable = total - wht
-  const words = amountInWords(hasWht ? netPayable : total)
+  const cashToSend = netPayable - credit
+  const isReduced = hasWht || hasCredit
+  const words = amountInWords(isReduced ? cashToSend : total)
   const banner = STATUS_BANNER[status]
   const draftCodeById = new Map(drafts.map(d => [d.id, d.code ?? d.id.slice(0, 8)]))
 
@@ -483,9 +500,10 @@ ${typeDetail ? `
   <thead><tr><th>Pay To</th><th>Bank Account</th><th class="r">Amount</th></tr></thead>
   <tbody>${payeeRows}</tbody>
   <tfoot>
-    <tr><td colspan="2" class="r">${hasWht ? 'Total' : 'Total to disburse'}</td><td class="r">${money(payeeTotal)}</td></tr>
-    ${hasWht ? `<tr><td colspan="2" class="r" style="font-weight:600">Less withholding tax</td><td class="r" style="font-weight:600">(${money(wht)})</td></tr>
-    <tr><td colspan="2" class="r">Net to disburse</td><td class="r">${money(payeeTotal - wht)}</td></tr>` : ''}
+    <tr><td colspan="2" class="r">${isReduced ? 'Total' : 'Total to disburse'}</td><td class="r">${money(payeeTotal)}</td></tr>
+    ${hasWht ? `<tr><td colspan="2" class="r" style="font-weight:600">Less withholding tax</td><td class="r" style="font-weight:600">(${money(wht)})</td></tr>` : ''}
+    ${hasCredit ? `<tr><td colspan="2" class="r" style="font-weight:600">Less vendor credit applied</td><td class="r" style="font-weight:600">(${money(credit)})</td></tr>` : ''}
+    ${isReduced ? `<tr><td colspan="2" class="r">Net to disburse</td><td class="r">${money(payeeTotal - wht - credit)}</td></tr>` : ''}
   </tfoot>
 </table>
 ${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement schedule totals ${money(payeeTotal)} but the request total is ${money(total)}. Resolve the difference before releasing payment.</div>` : ''}
@@ -510,9 +528,10 @@ ${isBatch && drafts.length > 0 ? `
 
 <div class="grand">
   <div class="w">${words ? esc(words) : ''}</div>
-  <div class="n">${money(hasWht ? netPayable : total)}</div>
+  <div class="n">${money(isReduced ? cashToSend : total)}</div>
 </div>
-${hasWht ? `<div class="note"><b>Withholding tax:</b> total ${money(total)} · less WHT withheld ${money(wht)} · <b>net to disburse ${money(netPayable)}</b>. The withheld amount is remitted to the tax authority, not paid to the payee.</div>` : ''}
+${hasWht ? `<div class="note"><b>Withholding tax:</b> total ${money(total)} · less WHT withheld ${money(wht)}${hasCredit ? '' : ` · <b>net to disburse ${money(netPayable)}</b>`}. The withheld amount is remitted to the tax authority, not paid to the payee.</div>` : ''}
+${hasCredit ? `<div class="note"><b>Vendor credit applied:</b> ${money(credit)} of this ${hasWht ? `${money(netPayable)} net` : `${money(total)}`} is settled from credit the vendor already holds${creditNote ? ` — ${esc(creditNote)}` : ''} · <b>cash to send ${money(cashToSend)}</b>. Release only the cash figure; the credit balance needs no transfer.</div>` : ''}
 
 ${(fundingAccount || paymentMethod) ? `<div class="note"><b>Funding:</b> ${esc(paymentMethodLabel(paymentMethod)) || '—'}${fundingAccount ? ` · ${esc(fundingAccount)}` : ''}</div>` : ''}
 ${whtRequired && !hasWht ? `<div class="flag"><b>Withholding Tax (WHT) required</b> — ${whtMethod ? esc(whtMethod) : 'deduct before disbursement'}. No WHT amount has been recorded on this request; calculate it before releasing payment.</div>` : ''}
@@ -555,5 +574,8 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     type_label: input.typeLabel ?? null,
     wht_amount: input.whtAmount ?? null,
     net_payable: input.total - Number(input.whtAmount ?? 0),
+    credit_applied: input.creditApplied ?? null,
+    // What the bank was actually told to move, after WHT and any credit.
+    cash_to_send: input.total - Number(input.whtAmount ?? 0) - Number(input.creditApplied ?? 0),
   }
 }
