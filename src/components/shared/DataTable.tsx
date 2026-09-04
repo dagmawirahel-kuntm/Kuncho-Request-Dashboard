@@ -67,6 +67,17 @@ interface DataTableProps<TData> {
    * there's no "most recent" concept for a category).
    */
   groupBy?: { columnId: string; kind?: 'date' | 'text' }
+  /**
+   * Reports the rows surviving the active search and filters, so a caller can
+   * total or summarise exactly what the user is looking at rather than the
+   * unfiltered set. Filter state stays inside the table — this hands out the
+   * result, not the controls.
+   *
+   * Pass a stable function (a `useState` setter, or `useCallback`): it is
+   * called from an effect keyed on the filtered row model, and an identity
+   * that changes every render would loop.
+   */
+  onFilteredRowsChange?: (rows: TData[]) => void
 }
 
 function groupDateLabel(key: string): string {
@@ -220,6 +231,7 @@ export function DataTable<TData extends { id: string }>({
   queryKeys,
   expandable,
   groupBy,
+  onFilteredRowsChange,
 }: DataTableProps<TData>) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -302,6 +314,15 @@ export function DataTable<TData extends { id: string }>({
     table.getHeaderGroups()[0].headers.filter(
       header => !expandable || expandable.summaryColumnIds.includes(header.column.id) || header.column.id === 'select' || header.column.id === 'actions',
     ).length
+
+  // TanStack memoises the filtered row model, so this array keeps its identity
+  // between renders until the data or the filters actually change — which is
+  // what makes it safe to key an effect on, and what stops a caller storing
+  // the result in state from re-triggering itself.
+  const filteredRows = table.getFilteredRowModel().rows
+  useEffect(() => {
+    onFilteredRowsChange?.(filteredRows.map(r => r.original))
+  }, [filteredRows, onFilteredRowsChange])
 
   // Keyed by value rather than by merging adjacent runs. The old form assumed
   // the table was always sorted by the grouped column, which held while
