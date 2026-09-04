@@ -242,6 +242,8 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cheque: 'Cheque',
   check: 'Cheque',
   cpo: 'CPO',
+  vrf: 'Vendor receipt facilitation',
+  vendor_credit: 'Vendor credit (no cash movement)',
   mobile_money: 'Mobile money',
 }
 

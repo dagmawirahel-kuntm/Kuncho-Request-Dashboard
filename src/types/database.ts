@@ -13,7 +13,11 @@ export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
-export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'other'
+// 'vendor_credit' is set only by settle_expense_with_vendor_credit()
+// (migration 276) — it is never a choice on a payment form, because
+// settling from a credit has to draw the credit down and post against
+// Vendor Advances rather than a bank account.
+export type ExpensePaymentMethod = 'transfer' | 'batch_wire' | 'cpo' | 'cheque' | 'cash' | 'vrf' | 'vendor_credit' | 'other'
 export type ExpenseType = 'general' | 'purchase_order' | 'vrf' | 'cpo_bond' | 'fuel' | 'subcontract' | 'maintenance' | 'property_rent' | 'labor_payment' | 'transportation'
 export type OrderApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
@@ -1397,6 +1401,12 @@ export interface ToPayQueueRow {
   // the PO. Equals amount_etb when there's no WHT. Added in migration 230.
   net_payable: number | null
   wht_amount: number | null
+  // Migration 278. cash_to_send is amount_etb net of WHT AND any vendor
+  // credit already applied (fund_payable_from_vendor_credit, 277) — the
+  // number a payment-execution screen should show and use. net_payable
+  // alone ignores the credit and overstates what still needs to move.
+  credit_applied_etb: number
+  cash_to_send: number
 }
 
 export interface OpenVendorAdvanceRow {
@@ -1411,6 +1421,30 @@ export interface OpenVendorAdvanceRow {
   disbursed_by: string | null
   payment_state_changed_at: string | null
   days_open: number | null
+}
+
+/**
+ * v_credit_applicable_payables (migration 277) — approved-but-unpaid
+ * payables a vendor credit can still fund. `cash_payable` is what would
+ * actually be wired after WHT and any credit already applied; note that
+ * `amount_etb` is untouched, because funding a payable from a credit is
+ * not a discount on what the purchase cost.
+ */
+export interface CreditApplicablePayableRow {
+  id: string
+  expense_code: string | null
+  item_service_description: string | null
+  amount_etb: number | null
+  wht_amount: number | null
+  credit_applied_etb: number
+  cash_payable: number
+  vendor_id: string | null
+  vendor_name: string | null
+  payment_state: string
+  sourcing_bundle_id: string | null
+  bundle_code: string | null
+  payment_pattern: string | null
+  date: string | null
 }
 
 export interface VendorCreditRow {
