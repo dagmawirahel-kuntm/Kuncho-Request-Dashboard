@@ -106,8 +106,11 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
           : doc.breakdownKind === 'line_items'
             ? `${doc.typeLabel ?? 'Expense'} Payment Request`
             : 'Labor Payment Request',
-        p_total_amount: doc.total,
-        p_amount_in_words: amountInWords(doc.total),
+        // The register records what actually leaves the account: WHT is
+        // withheld from the total and remitted separately, so a request
+        // carrying it is not a request to send the gross.
+        p_total_amount: doc.total - Number(doc.whtAmount ?? 0),
+        p_amount_in_words: amountInWords(doc.total - Number(doc.whtAmount ?? 0)),
         // A vendor billing line items has no workers behind it; the stand-in
         // payee line would otherwise register as a headcount of 1.
         p_worker_count: doc.breakdownKind === 'line_items' ? 0 : heads,

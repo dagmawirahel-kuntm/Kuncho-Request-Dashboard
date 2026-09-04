@@ -302,11 +302,17 @@ export default function ExpenseDetailPage() {
     })
     const poItemsTotal = poItemLines.reduce((sum, l) => sum + (l.subtotal ?? 0), 0)
     const poDelta = Number(expense.amount_etb ?? 0) - poItemsTotal
+    // A positive difference is the VAT the expense is booked gross of (the
+    // items are net); a negative one is a discount agreed after the bundle
+    // was priced. Naming it matters on a document finance signs.
+    const poVatRate = poItemsTotal > 0 ? Math.round((poDelta / poItemsTotal) * 100) : 0
     const poLines = poItemLines.length > 0 && Math.abs(poDelta) > 0.005
       ? [...poItemLines, {
           ...blankLine,
           id: `${expense.id}-adj`,
-          description: 'Tax / adjustment',
+          description: poDelta > 0
+            ? (poVatRate > 0 ? `VAT (${poVatRate}%)` : 'VAT')
+            : 'Discount / adjustment',
           units: null, unitLabel: '', rate: null, subtotal: poDelta,
         }]
       : poItemLines
@@ -509,6 +515,10 @@ export default function ExpenseDetailPage() {
       notes: expense.notes ?? null,
       whtRequired: !!expense.verify_wht,
       whtMethod: expense.wht_handling_method ?? null,
+      // Stored on the expense (3% of the VAT-exclusive base) and, until now,
+      // never printed — the document showed the gross as the amount to
+      // disburse even where net_payable was already lower.
+      whtAmount: expense.wht_amount ?? null,
       fundingAccount: expense.accounts?.account_name ?? null,
       paymentMethod: expense.payment_method ?? null,
       typeDetail,
