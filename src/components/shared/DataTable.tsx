@@ -303,15 +303,24 @@ export function DataTable<TData extends { id: string }>({
       header => !expandable || expandable.summaryColumnIds.includes(header.column.id) || header.column.id === 'select' || header.column.id === 'actions',
     ).length
 
+  // Keyed by value rather than by merging adjacent runs. The old form assumed
+  // the table was always sorted by the grouped column, which held while
+  // grouping was a fixed date — but the moment you group by project and sort
+  // by amount, adjacent-run grouping shatters each project into a fragment per
+  // row. A Map keeps every row of a group together and orders groups by first
+  // appearance, so sorting inside a group works as expected.
   const groups = groupBy
-    ? table.getSortedRowModel().rows.reduce<{ key: string; rows: Row<TData>[] }[]>((acc, row) => {
-        const raw = row.getValue(groupBy.columnId)
-        const key = raw ? (groupBy.kind === 'text' ? String(raw) : String(raw).slice(0, 10)) : '—'
-        const last = acc[acc.length - 1]
-        if (last && last.key === key) last.rows.push(row)
-        else acc.push({ key, rows: [row] })
-        return acc
-      }, [])
+    ? (() => {
+        const buckets = new Map<string, Row<TData>[]>()
+        for (const row of table.getSortedRowModel().rows) {
+          const raw = row.getValue(groupBy.columnId)
+          const key = raw ? (groupBy.kind === 'text' ? String(raw) : String(raw).slice(0, 10)) : '—'
+          const bucket = buckets.get(key)
+          if (bucket) bucket.push(row)
+          else buckets.set(key, [row])
+        }
+        return Array.from(buckets, ([key, rows]) => ({ key, rows }))
+      })()
     : null
 
   function renderRow(row: Row<TData>) {

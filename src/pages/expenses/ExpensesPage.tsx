@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { Expense, ExpenseType, CpoBond } from '@/types/database'
+import type { Expense, ExpenseType, CpoBond, ExpensePaymentState } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
@@ -52,6 +52,127 @@ const TYPE_LABEL: Record<ExpenseType, string> = {
   transportation: 'Transportation',
 }
 
+// The states money actually moves through. 'void' is deliberately absent from
+// the filter list — nothing is in it, and offering a filter that always
+// returns nothing is worse than not offering it.
+const PAYMENT_STATE_LABEL: Record<Exclude<ExpensePaymentState, 'void'>, string> = {
+  unpaid:          'Unpaid',
+  approved_to_pay: 'Approved to pay',
+  sent:            'Sent',
+  advance:         'Advance',
+  paid:            'Paid',
+}
+const PAYMENT_STATE_CLS: Record<Exclude<ExpensePaymentState, 'void'>, string> = {
+  unpaid:          'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+  approved_to_pay: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  sent:            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  advance:         'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+  paid:            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+}
+
+const vendorOf = (e: Expense) => (e as any).vendors?.vendor_name ?? e.vendors_name ?? '—'
+const projectOf = (e: Expense) => (e as any).projects?.project_name ?? '—'
+
+// The cuts the Records tab can be analysed by. One selector drives both the
+// summary panel and the table's own grouping, so the totals above and the
+// rows below are always the same cut of the same data.
+const RECORD_DIMENSIONS = {
+  date:    { label: 'Date',    groupBy: { columnId: 'date' },                          key: (e: Expense) => (e.date ? String(e.date).slice(0, 10) : '—') },
+  project: { label: 'Project', groupBy: { columnId: 'project', kind: 'text' as const }, key: projectOf },
+  vendor:  { label: 'Vendor',  groupBy: { columnId: 'vendor', kind: 'text' as const },  key: vendorOf },
+  type:    { label: 'Type',    groupBy: { columnId: 'expense_type', kind: 'text' as const }, key: (e: Expense) => TYPE_LABEL[(e.expense_type ?? 'general') as ExpenseType] ?? 'General' },
+} as const
+type RecordDim = keyof typeof RECORD_DIMENSIONS
+
+/** Totals for the selected cut, so the tab answers "how much, by what" without
+ *  anyone exporting to a spreadsheet to find out. Scoped to the fiscal year the
+ *  table itself is scoped to. */
+function RecordsSummary({ rows, dim, onDim }: {
+  rows: Expense[]
+  dim: RecordDim
+  onDim: (d: RecordDim) => void
+}) {
+  const buckets = useMemo(() => {
+    const key = RECORD_DIMENSIONS[dim].key
+    const map = new Map<string, { count: number; total: number }>()
+    for (const r of rows) {
+      const k = key(r) || '—'
+      const b = map.get(k) ?? { count: 0, total: 0 }
+      b.count++; b.total += Number(r.amount_etb ?? 0)
+      map.set(k, b)
+    }
+    return Array.from(map, ([label, v]) => ({ label, ...v })).sort((a, b) => b.total - a.total)
+  }, [rows, dim])
+
+  const grand = useMemo(() => buckets.reduce((s, b) => s + b.total, 0), [buckets])
+  const top = buckets.slice(0, 8)
+  const rest = buckets.slice(8)
+  const restTotal = rest.reduce((s, b) => s + b.total, 0)
+
+  return (
+    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b dark:border-slate-700">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Totals by</span>
+          <div className="flex items-center gap-1">
+            {(Object.keys(RECORD_DIMENSIONS) as RecordDim[]).map(d => (
+              <button key={d} onClick={() => onDim(d)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  d === dim
+                    ? 'bg-brand text-white'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}>
+                {RECORD_DIMENSIONS[d].label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(grand)}</p>
+          <p className="text-[11px] text-slate-400">{rows.length} records · this fiscal year</p>
+        </div>
+      </div>
+
+      {buckets.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-slate-400">Nothing to total.</p>
+      ) : (
+        <div className="divide-y dark:divide-slate-700">
+          {top.map(b => (
+            <div key={b.label} className="flex items-center gap-3 px-4 py-2">
+              <span className={`min-w-0 flex-1 truncate text-sm ${b.label === '—' ? 'italic text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                {/* An unassigned bucket is a finding, not a rendering gap —
+                    72% of spend by value currently carries no project — so it
+                    says what it is rather than showing a bare dash. */}
+                {b.label === '—'
+                  ? `No ${RECORD_DIMENSIONS[dim].label.toLowerCase()}`
+                  : dim === 'date' ? formatDate(b.label) : b.label}
+              </span>
+              {/* Share of the total, so a long list still reads at a glance. */}
+              <span className="hidden sm:block h-1.5 w-24 shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                <span className="block h-full rounded-full bg-brand" style={{ width: `${grand > 0 ? Math.max(2, (b.total / grand) * 100) : 0}%` }} />
+              </span>
+              <span className="w-14 shrink-0 text-right text-[11px] tabular-nums text-slate-400">{b.count}</span>
+              <span className="w-32 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
+                {formatCurrency(b.total)}
+              </span>
+            </div>
+          ))}
+          {rest.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 dark:bg-slate-900/30">
+              <span className="min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400">
+                {rest.length} more {RECORD_DIMENSIONS[dim].label.toLowerCase()}{rest.length === 1 ? '' : 's'}
+              </span>
+              <span className="w-32 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                {formatCurrency(restTotal)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Approvals queue ──────────────────────────────────────────────────────────
 
 type QueueItem = {
@@ -69,10 +190,14 @@ type QueueItem = {
 }
 
 /** How long something has been waiting. A backlog is invisible when every row
- *  looks equally fresh, so anything past a week is coloured. */
-function AgeChip({ since }: { since: string | null }) {
+ *  looks equally fresh, so anything past a week is coloured.
+ *
+ *  `now` is passed in rather than read here: reading the clock during render
+ *  makes the output depend on when React happens to re-render. The page pins
+ *  it once per mount, which is ample for a figure quoted in whole days. */
+function AgeChip({ since, now }: { since: string | null; now: number }) {
   if (!since) return null
-  const days = Math.floor((Date.now() - new Date(since).getTime()) / 86_400_000)
+  const days = Math.floor((now - new Date(since).getTime()) / 86_400_000)
   if (!Number.isFinite(days) || days < 0) return null
   const cls = days >= 14
     ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300'
@@ -86,7 +211,7 @@ function AgeChip({ since }: { since: string | null }) {
   )
 }
 
-function QueueRow({ item }: { item: QueueItem }) {
+function QueueRow({ item, now }: { item: QueueItem; now: number }) {
   return (
     <Link
       to={item.to}
@@ -99,7 +224,7 @@ function QueueRow({ item }: { item: QueueItem }) {
           <span className="font-mono">{item.code}</span>{item.meta ? ` · ${item.meta}` : ''}
         </p>
       </div>
-      <AgeChip since={item.since} />
+      <AgeChip since={item.since} now={now} />
       <span className="shrink-0 text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">
         {formatCurrency(item.amount)}
       </span>
@@ -315,16 +440,21 @@ function EmptyState({ message }: { message: string }) {
 const tableQuickFilters: QuickFilter[] = [
   {
     columnId: 'expense_type',
+    // Every type, not the five this listed: labor_payment alone is 57 rows
+    // that could not be filtered to at all, and fuel, subcontract,
+    // maintenance and property_rent were equally unreachable.
     label: 'Type',
-    options: [
-      { label: 'General', value: 'general' },
-      { label: 'Purchase Order', value: 'purchase_order' },
-      { label: 'VRF', value: 'vrf' },
-      { label: 'CPO Bond', value: 'cpo_bond' },
-      { label: 'Transportation', value: 'transportation' },
-    ],
+    options: (Object.keys(TYPE_LABEL) as ExpenseType[]).map(t => ({ label: TYPE_LABEL[t], value: t })),
   },
-  { columnId: 'payment_status', label: 'Payment', options: [{ label: 'Paid', value: true }, { label: 'Pending', value: false }] },
+  {
+    // payment_status is a boolean that is only true for 'paid', so filtering
+    // on it put 158 rows and 19.2M ETB into one "Pending" bucket — money
+    // already sent looked identical to money nothing had happened to.
+    columnId: 'payment_state',
+    label: 'Payment',
+    options: (Object.keys(PAYMENT_STATE_LABEL) as (keyof typeof PAYMENT_STATE_LABEL)[])
+      .map(s => ({ label: PAYMENT_STATE_LABEL[s], value: s })),
+  },
   {
     columnId: 'approval_status',
     label: 'Approval',
@@ -347,6 +477,10 @@ export default function ExpensesPage() {
   const { role, profile, isSuperRole, showBundles, showCPO, showVRF, filterOwn, canCreate, canSeeTable } = useRoleAccess()
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'records'>('dashboard')
+  const [recordDim, setRecordDim] = useState<RecordDim>('date')
+  // Pinned once per mount: ages are quoted in whole days, and reading the
+  // clock during render would make them shift on unrelated re-renders.
+  const [now] = useState(() => Date.now())
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -619,6 +753,40 @@ export default function ExpensesPage() {
 
   const queueTotal = useMemo(() => approvalQueue.reduce((s, i) => s + i.amount, 0), [approvalQueue])
 
+  // Where the money stands, by the state it is actually in. The pipeline strip
+  // above this counts approval status for one expense type; this counts birr
+  // across all of them, which is the question the page title implies.
+  const moneyStates = useMemo(() => {
+    const order: (keyof typeof PAYMENT_STATE_LABEL)[] = ['unpaid', 'approved_to_pay', 'sent', 'advance', 'paid']
+    return order.map(state => {
+      const rows = expenses.filter(e => e.payment_state === state)
+      return {
+        state,
+        label: PAYMENT_STATE_LABEL[state],
+        cls: PAYMENT_STATE_CLS[state],
+        count: rows.length,
+        total: rows.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0),
+      }
+    }).filter(s => s.count > 0)
+  }, [expenses])
+
+  // Money that left the account and was never confirmed as paid. It is the one
+  // state on this page where the risk grows with age rather than shrinking:
+  // an unpaid bill is a decision outstanding, an unconfirmed send is cash gone
+  // with no landing recorded.
+  const unconfirmedSends = useMemo(() => {
+    const cutoff = now - 30 * 86_400_000
+    return expenses
+      .filter(e => e.payment_state === 'sent')
+      .map(e => ({ e, at: new Date(e.date ?? e.created_at ?? now).getTime() }))
+      .filter(x => Number.isFinite(x.at) && x.at < cutoff)
+      .sort((a, b) => a.at - b.at)
+  }, [expenses, now])
+  const unconfirmedTotal = useMemo(
+    () => unconfirmedSends.reduce((s, x) => s + Number(x.e.amount_etb ?? 0), 0),
+    [unconfirmedSends],
+  )
+
   const expensePipeline: Stage[] = useMemo(() => [
     { label: 'Pending',          count: generalExpenses.filter(e => e.approval_status === 'pending').length,          cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', icon: <Clock className="h-3 w-3" /> },
     { label: 'Mgr Approved',     count: generalExpenses.filter(e => e.approval_status === 'manager_approved').length, cls: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20',                   icon: <CheckCircle2 className="h-3 w-3" /> },
@@ -645,10 +813,18 @@ export default function ExpensesPage() {
     }},
     { accessorKey: 'amount_etb', header: 'Amount', cell: ({ getValue }) => <span className="tabular-nums font-semibold">{formatCurrency(getValue() as number)}</span> },
     { accessorKey: 'date', header: 'Date', cell: ({ getValue }) => formatDate(getValue() as string) },
-    { id: 'vendor', header: 'Vendor', cell: ({ row }) => (row.original as any).vendors?.vendor_name ?? row.original.vendors_name ?? '—' },
-    { id: 'project', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
+    // accessorFn rather than a cell-only column: without a value the table
+    // cannot group or sort by these, and grouping by vendor/project is half
+    // the point of the Records tab.
+    { id: 'vendor', header: 'Vendor', accessorFn: (r: Expense) => vendorOf(r), cell: ({ getValue }) => (getValue() as string) },
+    { id: 'project', header: 'Project', accessorFn: (r: Expense) => projectOf(r), cell: ({ getValue }) => (getValue() as string) },
     { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={(getValue() as string) ?? 'pending'} /> },
-    { accessorKey: 'payment_status', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() ? 'paid' : 'pending'} /> },
+    { accessorKey: 'payment_state', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => {
+      const s = getValue() as keyof typeof PAYMENT_STATE_LABEL
+      const label = PAYMENT_STATE_LABEL[s]
+      if (!label) return <span className="text-slate-400">—</span>
+      return <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAYMENT_STATE_CLS[s]}`}>{label}</span>
+    }},
     { id: 'actions', header: '', cell: ({ row }) => (
       <div className="flex items-center gap-1">
         <Link to={`/expenses/${row.original.id}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700"><Pencil className="h-3.5 w-3.5" /></Link>
@@ -703,7 +879,9 @@ export default function ExpensesPage() {
       {activeTab === 'records' && canSeeTable && (
         allLoading
           ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
-          : <DataTable
+          : <div className="space-y-4">
+            <RecordsSummary rows={allExpenses} dim={recordDim} onDim={setRecordDim} />
+            <DataTable
               columns={tableColumns}
               data={allExpenses}
               searchPlaceholder="Search expenses…"
@@ -712,9 +890,10 @@ export default function ExpensesPage() {
               tableName="expenses"
               queryKeys={['expenses-all']}
               quickFilters={tableQuickFilters}
-              expandable={{ summaryColumnIds: ['expense_code', 'expense_type', 'amount_etb', 'date', 'approval_status', 'payment_status'] }}
-              groupBy={{ columnId: 'date' }}
+              expandable={{ summaryColumnIds: ['expense_code', 'expense_type', 'amount_etb', 'date', 'approval_status', 'payment_state'] }}
+              groupBy={RECORD_DIMENSIONS[recordDim].groupBy}
             />
+          </div>
       )}
 
       {/* ── DASHBOARD TAB ────────────────────────────────────────────────── */}
@@ -724,6 +903,58 @@ export default function ExpensesPage() {
 
           {!isLoading && (
             <>
+              {/* Where the money stands. The queue below is what needs a
+                  decision; this is what has already been decided and where it
+                  has got to. */}
+              {isSuperRole && moneyStates.length > 0 && (
+                <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+                  <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center gap-2">
+                    <Banknote className="h-4 w-4 text-slate-500" />
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Where the money is</h2>
+                      <p className="text-[11px] text-slate-400">Every expense by the state it is actually in</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y sm:divide-y-0 dark:divide-slate-700">
+                    {moneyStates.map(s => (
+                      <div key={s.state} className="px-4 py-3">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${s.cls}`}>{s.label}</span>
+                        <p className="mt-1.5 text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(s.total)}</p>
+                        <p className="text-[11px] text-slate-400">{s.count} record{s.count === 1 ? '' : 's'}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {unconfirmedSends.length > 0 && (
+                    <div className="border-t dark:border-slate-700 bg-amber-50/60 dark:bg-amber-900/10">
+                      <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-2.5">
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                          {formatCurrency(unconfirmedTotal)} sent over 30 days ago and never confirmed paid
+                        </p>
+                        <span className="text-[11px] text-amber-600/80 dark:text-amber-400/80">
+                          {unconfirmedSends.length} payment{unconfirmedSends.length === 1 ? '' : 's'} · oldest first
+                        </span>
+                      </div>
+                      {unconfirmedSends.slice(0, 5).map(({ e, at }) => (
+                        <Link key={e.id} to={`/expenses/${e.id}`}
+                          className="flex items-center gap-3 px-5 py-2 border-t border-amber-100 dark:border-amber-900/30 hover:bg-amber-100/50 dark:hover:bg-amber-900/20">
+                          <span className="min-w-0 flex-1 truncate text-xs text-slate-700 dark:text-slate-200">
+                            <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">{e.expense_code ?? '—'}</span>
+                            {' · '}{e.item_service_description ?? '—'}
+                          </span>
+                          <span className="shrink-0 text-[11px] tabular-nums text-amber-600 dark:text-amber-400">
+                            {Math.floor((now - at) / 86_400_000)}d
+                          </span>
+                          <span className="shrink-0 text-xs font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                            {formatCurrency(e.amount_etb ?? 0)}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Everything awaiting a decision, across every source. The
                   sections below each cover one slice; this covers the lot. */}
               {isSuperRole && (
@@ -746,7 +977,7 @@ export default function ExpensesPage() {
 
                   {approvalQueue.length === 0
                     ? <EmptyState message="Nothing is waiting on an approval decision." />
-                    : approvalQueue.map(item => <QueueRow key={`${item.kind}:${item.id}`} item={item} />)
+                    : approvalQueue.map(item => <QueueRow key={`${item.kind}:${item.id}`} item={item} now={now} />)
                   }
 
                   {pendingOrderCount > 0 && (

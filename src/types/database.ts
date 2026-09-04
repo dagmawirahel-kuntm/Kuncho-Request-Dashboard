@@ -12,7 +12,9 @@ export type StaffType = 'Full Time' | 'Part Time' | 'Contract' | 'Freelance'
 export type PaymentStatus = 'pending' | 'processing' | 'paid'
 export type OrderStatus = 'pending' | 'approved' | 'rejected' | 'completed'
 export type ExpenseApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
-export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'void'
+// Mirrors the check constraint on expenses.payment_state. 'advance' was in
+// the constraint and in use (7 rows) but missing here.
+export type ExpensePaymentState = 'unpaid' | 'approved_to_pay' | 'sent' | 'paid' | 'advance' | 'void'
 // 'vendor_credit' is set only by settle_expense_with_vendor_credit()
 // (migration 276) — it is never a choice on a payment form, because
 // settling from a credit has to draw the credit down and post against
