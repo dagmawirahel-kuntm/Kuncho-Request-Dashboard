@@ -39,6 +39,12 @@ export type PrWorkerLine = {
   expenseId: string
   staffId: string
   name: string
+  /** What the line is for, when the payment isn't labor — a fuel purchase's
+   *  "Fuel — IVECO (100 L)" rather than the fuel station's name. Without it
+   *  a non-labor breakdown row only repeats the payee the disbursement
+   *  schedule already named. Ignored for labor, where the person *is* the
+   *  line. */
+  description?: string | null
   bankAccount: string | null
   units: number | null
   unitLabel: string
@@ -104,6 +110,16 @@ export type LaborPaymentRequestInput = {
   /** Letterhead color — defaults to the labor navy/sky gradient when unset,
    *  so a rent/transport/bond document doesn't read as a labor payslip. */
   accentColor?: string | null
+  /** Whether the breakdown table describes labor (people, days, day rates)
+   *  or a non-labor payment (items billed by a vendor). Labor is the
+   *  default because that's what this document was built for — but the
+   *  other expense types were being printed as "Worker Breakdown — 1
+   *  worker" with the vendor cast as the worker and "— pcs" standing in
+   *  for a quantity, which is most of what made them read as payslips. */
+  breakdownKind?: 'labor' | 'line_items'
+  /** Names the kind of payment (Fuel, Purchase Order, …) in the meta strip,
+   *  standing in for the labor-only Trade and Workers cells. */
+  typeLabel?: string | null
 }
 
 // ── Disbursement schedule ────────────────────────────────────────────────────
@@ -125,37 +141,61 @@ export type PrPayeeLine = {
  * three drafts in the same batch is one transfer, not three. Getting that
  * wrong is how a batch ends up over-disbursing, so the grouping lives here
  * with the document rather than being re-derived per call site.
+ *
+ * Routing is decided by whether the row carries a vendor at all
+ * (`rollup_labor_timesheets_to_expense` only ever stamps one on when the
+ * requisition's payment_model is 'gang_leader'), not by that row's own
+ * gang_size — a gang whose rollup produced one labor_expense_workers row
+ * per crew member (each with gang_size left null) still owes its whole
+ * headcount to the vendor, not to four individual staff accounts, three of
+ * which may have no bank account on file at all.
  */
-export function buildPayeeLines(workers: PrWorkerLine[]): PrPayeeLine[] {
-  const byPayee = new Map<string, PrPayeeLine>()
+export function buildPayeeLines(workers: PrWorkerLine[], opts?: { isLabor?: boolean }): PrPayeeLine[] {
+  // Headcount only means something when the lines are people. A purchase
+  // order's items all share one payee, and counting them would put
+  // "2 workers" under a vendor being paid for two boxes of sockets.
+  const countsHeads = opts?.isLabor !== false
+  type DraftGroup = { key: string; payee: string; kind: 'worker' | 'vendor'; bankAccount: string | null; heads: number; amount: number }
 
+  // First pass: collapse to one row per (payee, draft) — several rows for
+  // the same payee within a single draft are different real heads (or an
+  // OT line split out), so their headcounts and amounts add here.
+  const byDraftPayee = new Map<string, DraftGroup>()
   for (const w of workers) {
-    const isGang = (w.gangSize ?? 1) > 1
-    // Fall back to the worker when a gang has no vendor recorded: paying
-    // the lead is wrong, but silently dropping the line is worse, and the
-    // missing account shows as "—" for finance to chase.
-    const useVendor = isGang && !!w.vendorName
+    const useVendor = !!w.vendorName
     const kind: 'worker' | 'vendor' = useVendor ? 'vendor' : 'worker'
     const payee = useVendor ? w.vendorName! : w.name
     const bankAccount = useVendor ? w.vendorBankAccount : w.bankAccount
-    const key = `${kind}:${useVendor ? w.vendorName : w.staffId}`
+    const payeeKey = `${kind}:${useVendor ? w.vendorName : w.staffId}`
+    const draftKey = `${payeeKey}|${w.expenseId}`
 
     const amount = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
-    const heads = Math.max(w.gangSize ?? 1, 1)
+    const heads = countsHeads ? Math.max(w.gangSize ?? 1, 1) : 0
 
-    const existing = byPayee.get(key)
+    const existing = byDraftPayee.get(draftKey)
     if (existing) {
       existing.amount += amount
-      // The key is the person (or gang lead)'s own identity, so a second
-      // merged row is the same headcount appearing in another draft period,
-      // not additional people — summing turned "Kedir in 2 drafts" into
-      // "2 workers". Take the largest headcount any single draft recorded
-      // for this payee instead.
-      existing.workerCount = Math.max(existing.workerCount, heads)
-      // Prefer any account we have over a blank one already recorded.
+      existing.heads += heads
       existing.bankAccount = existing.bankAccount ?? bankAccount
     } else {
-      byPayee.set(key, { key, payee, kind, bankAccount, workerCount: heads, amount })
+      byDraftPayee.set(draftKey, { key: payeeKey, payee, kind, bankAccount, heads, amount })
+    }
+  }
+
+  // Second pass: collapse across drafts. The amount is genuinely additional
+  // money (another period's earnings), so it sums; the headcount is the
+  // same crew showing up again, so it takes the largest single-draft
+  // figure instead of multiplying by however many drafts got merged —
+  // summing here is what turned "Kedir in 2 drafts" into "2 workers".
+  const byPayee = new Map<string, PrPayeeLine>()
+  for (const g of byDraftPayee.values()) {
+    const existing = byPayee.get(g.key)
+    if (existing) {
+      existing.amount += g.amount
+      existing.workerCount = Math.max(existing.workerCount, g.heads)
+      existing.bankAccount = existing.bankAccount ?? g.bankAccount
+    } else {
+      byPayee.set(g.key, { key: g.key, payee: g.payee, kind: g.kind, bankAccount: g.bankAccount, workerCount: g.heads, amount: g.amount })
     }
   }
 
@@ -210,24 +250,31 @@ function paymentMethodLabel(method: string | null | undefined): string {
   return PAYMENT_METHOD_LABELS[method] ?? method.replace(/_/g, ' ')
 }
 
-function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftCodeById: Map<string, string>): string {
+function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftCodeById: Map<string, string>, isLabor: boolean): string {
+  // Draft? + Who + Qty + Rate + Amount.
+  const cols = showDraftCol ? 5 : 4
   if (workers.length === 0) {
-    return `<tr><td colspan="${showDraftCol ? 6 : 5}" class="empty">No worker breakdown recorded for this request.</td></tr>`
+    return `<tr><td colspan="${cols}" class="empty">No ${isLabor ? 'worker breakdown' : 'line items'} recorded for this request.</td></tr>`
   }
   return workers.map(w => {
     const isGang = (w.gangSize ?? 1) > 1
-    const who = isGang
-      ? `<b>Gang of ${esc(w.gangSize)}</b> <span class="muted">via ${esc(w.name)}</span>${
-          w.gangMemberNames ? `<div class="sub">${esc(w.gangMemberNames)}</div>` : ''}`
-      : esc(w.name)
+    const who = isLabor
+      ? (isGang
+        ? `<b>Gang of ${esc(w.gangSize)}</b> <span class="muted">via ${esc(w.name)}</span>${
+            w.gangMemberNames ? `<div class="sub">${esc(w.gangMemberNames)}</div>` : ''}`
+        : esc(w.name))
+      : esc(w.description || w.name)
     const ot = (w.overtimeAmount ?? 0) > 0
       ? `<div class="ot">+ overtime ${w.overtimeHours ? `${esc(w.overtimeHours)}h · ` : ''}${money(w.overtimeAmount)}</div>`
       : ''
     const lineTotal = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
+    // A null quantity means "not recorded", so it prints as a bare dash.
+    // Pairing it with the unit — "— pcs" — reads as a real measurement.
+    const qty = w.units == null ? '—' : `${esc(w.units)} ${esc(w.unitLabel)}`
     return `<tr>
   ${showDraftCol ? `<td class="mono nowrap">${esc(draftCodeById.get(w.expenseId) ?? '—')}</td>` : ''}
   <td>${who}${ot}</td>
-  <td class="r nowrap">${w.units ?? '—'} ${esc(w.unitLabel)}</td>
+  <td class="r nowrap">${qty}</td>
   <td class="r nowrap">${money(w.rate)}</td>
   <td class="r nowrap b">${money(lineTotal)}</td>
 </tr>`
@@ -238,11 +285,12 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const {
     kind, documentCode, sourceCode, issuedOn, issuedByName, status, revision,
     drafts, workers, approvals, total, notes, whtRequired, whtMethod,
-    fundingAccount, paymentMethod, typeDetail, accentColor,
+    fundingAccount, paymentMethod, typeDetail, accentColor, breakdownKind, typeLabel,
   } = input
 
   const isBatch = kind === 'batch'
-  const payees = buildPayeeLines(workers)
+  const isLabor = breakdownKind !== 'line_items'
+  const payees = buildPayeeLines(workers, { isLabor })
   const heads = totalHeadcount(workers)
   const words = amountInWords(total)
   const banner = STATUS_BANNER[status]
@@ -255,16 +303,25 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const periodStart = starts[0]
   const periodEnd = ends[ends.length - 1]
 
+  // Trade, Period Covered and Workers are labor's own vocabulary, all three
+  // sourced from a labor requisition. On a fuel or purchase-order request
+  // they have nothing behind them, and printing "—", "—" and "1" is what
+  // left those documents looking like a payslip with the fields blanked.
+  // Such a request names its payment type instead.
   const metaCells: { label: string; value: string }[] = [
     { label: 'Project', value: projects.length === 1 ? projects[0] : projects.length ? `${projects.length} projects` : '—' },
-    { label: 'Trade', value: roles.join(', ') || '—' },
-    {
-      label: 'Period Covered',
-      value: periodStart && periodEnd
-        ? `${formatDateGC(periodStart)} → ${formatDateGC(periodEnd)}`
-        : (periodStart ? formatDateGC(periodStart) : '—'),
-    },
-    { label: 'Workers', value: String(heads) },
+    ...(isLabor
+      ? [{ label: 'Trade', value: roles.join(', ') || '—' }]
+      : (typeLabel ? [{ label: 'Type', value: typeLabel }] : [])),
+    ...(isLabor || periodStart
+      ? [{
+          label: 'Period Covered',
+          value: periodStart && periodEnd
+            ? `${formatDateGC(periodStart)} → ${formatDateGC(periodEnd)}`
+            : (periodStart ? formatDateGC(periodStart) : '—'),
+        }]
+      : []),
+    ...(isLabor ? [{ label: 'Workers', value: String(heads) }] : []),
     ...(isBatch ? [{ label: 'Drafts Covered', value: String(drafts.length) }] : []),
   ]
 
@@ -414,13 +471,15 @@ ${typeDetail ? `
 </table>
 ${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement schedule totals ${money(payeeTotal)} but the request total is ${money(total)}. Resolve the difference before releasing payment.</div>` : ''}
 
-<h2>Worker Breakdown <span class="count">— ${heads} worker${heads === 1 ? '' : 's'}</span></h2>
+<h2>${isLabor
+    ? `Worker Breakdown <span class="count">— ${heads} worker${heads === 1 ? '' : 's'}</span>`
+    : `Payment Detail${workers.length > 1 ? ` <span class="count">— ${workers.length} line items</span>` : ''}`}</h2>
 <table>
   <thead><tr>
     ${isBatch ? '<th>Draft</th>' : ''}
-    <th>Worker</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th>
+    <th>${isLabor ? 'Worker' : 'Description'}</th><th class="r">Qty</th><th class="r">${isLabor ? 'Rate' : 'Unit Price'}</th><th class="r">Amount</th>
   </tr></thead>
-  <tbody>${renderWorkerRows(workers, isBatch, draftCodeById)}</tbody>
+  <tbody>${renderWorkerRows(workers, isBatch, draftCodeById, isLabor)}</tbody>
 </table>
 
 ${isBatch && drafts.length > 0 ? `
@@ -470,5 +529,9 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     wht_method: input.whtMethod ?? null,
     notes: input.notes ?? null,
     type_detail: input.typeDetail ?? null,
+    // Recorded so the register can tell a labor request from a vendor one
+    // without re-deriving it from the worker rows.
+    breakdown_kind: input.breakdownKind ?? 'labor',
+    type_label: input.typeLabel ?? null,
   }
 }

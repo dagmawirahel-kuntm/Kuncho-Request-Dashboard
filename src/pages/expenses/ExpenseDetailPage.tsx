@@ -45,6 +45,15 @@ type ExpenseWithJoins = Expense & {
   vendor_receipt_facilitation: { record_name: string | null } | null
   properties: { property_name: string; lease_start_date: string | null; lease_end_date: string | null } | null
   cpo_bonds: { bond_id_ref: string | null; total_bond_amount: number | null; bond_status: string | null } | null
+  vehicles: { name: string; plate_number: string | null; vehicle_type: string | null } | null
+  sourcing_bundles: {
+    bundle_code: string | null; status: string | null; payment_pattern: string | null
+    expected_delivery_date: string | null; total_value: number | null
+  } | null
+  subcontractor_engagements: {
+    scope_of_work: string | null; agreed_amount: number | null; percent_complete: number | null
+    status: string | null; target_completion_date: string | null
+  } | null
 }
 
 // The Payment Request document for a single labor draft used to live
@@ -82,7 +91,10 @@ export default function ExpenseDetailPage() {
           transfers:transfer_id ( transfer_id_code ),
           vendor_receipt_facilitation:vrf_id ( record_name ),
           properties:property_id ( property_name, lease_start_date, lease_end_date ),
-          cpo_bonds:cpo_bond_id ( bond_id_ref, total_bond_amount, bond_status )
+          cpo_bonds:cpo_bond_id ( bond_id_ref, total_bond_amount, bond_status ),
+          vehicles:vehicle_id ( name, plate_number, vehicle_type ),
+          sourcing_bundles:sourcing_bundle_id ( bundle_code, status, payment_pattern, expected_delivery_date, total_value ),
+          subcontractor_engagements:subcontractor_engagement_id ( scope_of_work, agreed_amount, percent_complete, status, target_completion_date )
         `)
         .eq('id', id!)
         .single()
@@ -171,6 +183,63 @@ export default function ExpenseDetailPage() {
     enabled: !!id && expense?.expense_type === 'transportation',
   })
 
+  // A purchase order is the one non-labor type that has a real itemised
+  // breakdown behind it, so its Payment Request can list what was actually
+  // bought instead of one lump line. The quantities and prices here are the
+  // agreed ones (…_actual), which is what the vendor is being paid on.
+  const { data: bundleItems = [] } = useQuery({
+    queryKey: ['expense-bundle-items', expense?.sourcing_bundle_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sourcing_bundle_items')
+        .select('id, quantity_actual, unit_price_actual, sort_order, order_items:order_item_id ( item_name, unit )')
+        .eq('bundle_id', expense!.sourcing_bundle_id!)
+        .order('sort_order')
+      if (error) throw error
+      return (data ?? []) as unknown as {
+        id: string; quantity_actual: number | null; unit_price_actual: number | null
+        order_items: { item_name: string | null; unit: string | null } | null
+      }[]
+    },
+    enabled: !!expense?.sourcing_bundle_id && expense?.expense_type === 'purchase_order',
+  })
+
+  // Maintenance links back the same way transport does
+  // (vehicle_maintenance_requests.expense_id), and carries the estimate the
+  // job was approved against — worth printing next to what is being paid.
+  const { data: maintenanceRequest = null } = useQuery({
+    queryKey: ['expense-maintenance-request', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vehicle_maintenance_requests')
+        .select('issue_description, estimated_cost, actual_cost, status')
+        .eq('expense_id', id!)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+    enabled: !!id && expense?.expense_type === 'maintenance',
+  })
+
+  // What else has already been claimed against this subcontract. Without it
+  // nobody approving a progress payment can see whether it closes out the
+  // contract or runs past it. Rejected claims are excluded — counting them
+  // would overstate the commitment.
+  const { data: subcontractClaimedElsewhere = 0 } = useQuery({
+    queryKey: ['expense-subcontract-claimed', expense?.subcontractor_engagement_id, id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('amount_etb')
+        .eq('subcontractor_engagement_id', expense!.subcontractor_engagement_id!)
+        .neq('id', id!)
+        .neq('approval_status', 'rejected')
+      if (error) throw error
+      return (data ?? []).reduce((sum, r) => sum + Number(r.amount_etb ?? 0), 0)
+    },
+    enabled: !!expense?.subcontractor_engagement_id && expense?.expense_type === 'subcontract',
+  })
+
   // Trainer hint: ledger_posting_failures is keyed by source_table/source_id
   // (polymorphic — no real FK), so it can't ride along on the join above.
   const { data: hasUnresolvedLedgerFailure } = useQuery({
@@ -204,6 +273,43 @@ export default function ExpenseDetailPage() {
     if (!expense) return null
     const isVolume = requisitionInfo?.payment_basis === 'per_volume'
     const unitLabel = isVolume ? (requisitionInfo?.volume_unit ?? 'units') : 'days'
+    const fuelLiters = expense.fuel_liters == null ? null : Number(expense.fuel_liters)
+    const vendorPayee = (expense.vendors?.vendor_name ?? expense.vendors_name) ?? 'Vendor'
+    const vendorAccount = expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null
+    const blankLine = {
+      expenseId: expense.id, staffId: expense.id, name: vendorPayee, bankAccount: vendorAccount,
+      overtimeHours: null, overtimeAmount: null, gangSize: null, gangMemberNames: null,
+      vendorName: null, vendorBankAccount: null,
+    }
+
+    // One row per item actually ordered. Bundle items are priced net, while
+    // the expense is sometimes booked gross (VAT-inclusive) or net of a
+    // vendor discount agreed after the fact — so any difference between the
+    // two is carried as its own line rather than left to trip the document's
+    // "disbursement total disagrees with the request total" alert.
+    const poItemLines = bundleItems.map(bi => {
+      const qty = bi.quantity_actual == null ? null : Number(bi.quantity_actual)
+      const price = bi.unit_price_actual == null ? null : Number(bi.unit_price_actual)
+      return {
+        ...blankLine,
+        id: bi.id,
+        description: bi.order_items?.item_name ?? 'Item',
+        units: qty,
+        unitLabel: bi.order_items?.unit ?? '',
+        rate: price,
+        subtotal: qty != null && price != null ? qty * price : null,
+      }
+    })
+    const poItemsTotal = poItemLines.reduce((sum, l) => sum + (l.subtotal ?? 0), 0)
+    const poDelta = Number(expense.amount_etb ?? 0) - poItemsTotal
+    const poLines = poItemLines.length > 0 && Math.abs(poDelta) > 0.005
+      ? [...poItemLines, {
+          ...blankLine,
+          id: `${expense.id}-adj`,
+          description: 'Tax / adjustment',
+          units: null, unitLabel: '', rate: null, subtotal: poDelta,
+        }]
+      : poItemLines
 
     // The fields a rent/transport/bond/VRF payment actually needs to be
     // presentable — without this every non-labor expense_type fell back
@@ -245,6 +351,78 @@ export default function ExpenseDetailPage() {
             label: 'Vendor Receipt Facilitation',
             rows: [{ label: 'Record', value: expense.vendor_receipt_facilitation.record_name ?? '—' }],
           } : null
+        case 'fuel': {
+          // Litres and vehicle live on the expense itself; the rate per litre
+          // is what makes one fill comparable to the last.
+          const liters = fuelLiters
+          const amount = expense.amount_etb == null ? null : Number(expense.amount_etb)
+          if (!expense.vehicles && liters == null) return null
+          return {
+            label: 'Vehicle / Fuel',
+            rows: [
+              ...(expense.vehicles ? [{
+                label: 'Vehicle',
+                value: [expense.vehicles.name, expense.vehicles.plate_number].filter(Boolean).join(' · '),
+              }] : []),
+              ...(liters != null ? [{ label: 'Quantity', value: `${liters} L` }] : []),
+              ...(liters && amount != null ? [{ label: 'Rate', value: `${formatCurrency(amount / liters)} / L` }] : []),
+            ],
+          }
+        }
+        case 'purchase_order': {
+          const sb = expense.sourcing_bundles
+          if (!sb) return null
+          return {
+            label: 'Purchase Order',
+            rows: [
+              { label: 'PO', value: sb.bundle_code ?? '—' },
+              ...(sb.status ? [{ label: 'Status', value: sb.status.replace(/_/g, ' ') }] : []),
+              // Whether money leaves before the goods arrive is the single
+              // thing an approver most needs to see on a PO payment.
+              ...(sb.payment_pattern ? [{ label: 'Payment Terms', value: sb.payment_pattern.replace(/_/g, ' ') }] : []),
+              ...(sb.expected_delivery_date ? [{ label: 'Expected Delivery', value: formatDate(sb.expected_delivery_date) }] : []),
+            ],
+          }
+        }
+        case 'subcontract': {
+          const se = expense.subcontractor_engagements
+          if (!se) return null
+          const agreed = se.agreed_amount == null ? null : Number(se.agreed_amount)
+          const thisPayment = Number(expense.amount_etb ?? 0)
+          const remaining = agreed == null ? null : agreed - subcontractClaimedElsewhere - thisPayment
+          return {
+            label: 'Subcontract',
+            rows: [
+              ...(se.scope_of_work ? [{ label: 'Scope', value: se.scope_of_work.trim() }] : []),
+              ...(agreed != null ? [{ label: 'Contract Value', value: formatCurrency(agreed) }] : []),
+              // Progress payments are the case where the document alone has
+              // to show whether this one closes out the contract or overruns.
+              { label: 'Previously Claimed', value: formatCurrency(subcontractClaimedElsewhere) },
+              { label: 'This Payment', value: formatCurrency(thisPayment) },
+              ...(remaining != null ? [{
+                label: 'Remaining After This',
+                value: `${formatCurrency(remaining)}${remaining < -0.005 ? ' — EXCEEDS CONTRACT' : ''}`,
+              }] : []),
+              ...(se.percent_complete != null ? [{ label: 'Work Complete', value: `${se.percent_complete}%` }] : []),
+            ],
+          }
+        }
+        case 'maintenance': {
+          if (!expense.vehicles && !maintenanceRequest) return null
+          const est = maintenanceRequest?.estimated_cost == null ? null : Number(maintenanceRequest.estimated_cost)
+          return {
+            label: 'Vehicle / Maintenance',
+            rows: [
+              ...(expense.vehicles ? [{
+                label: 'Vehicle',
+                value: [expense.vehicles.name, expense.vehicles.plate_number].filter(Boolean).join(' · '),
+              }] : []),
+              ...(maintenanceRequest?.issue_description ? [{ label: 'Work', value: maintenanceRequest.issue_description.trim() }] : []),
+              ...(est != null ? [{ label: 'Approved Estimate', value: formatCurrency(est) }] : []),
+              ...(maintenanceRequest?.status ? [{ label: 'Status', value: maintenanceRequest.status.replace(/_/g, ' ') }] : []),
+            ],
+          }
+        }
         default:
           return null
       }
@@ -289,16 +467,27 @@ export default function ExpenseDetailPage() {
             vendorName: expense.vendors?.vendor_name ?? expense.vendors_name ?? null,
             vendorBankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
           }))
+        // A purchase order bills real items, so each one is its own line.
+        // They share a payee, so the disbursement schedule still resolves to
+        // a single transfer to the vendor.
+        : bundleItems.length > 0
+        ? poLines
         : [{
             id: expense.id,
             expenseId: expense.id,
             staffId: expense.paid_to_staff_id ?? expense.id,
             name: (expense.vendors?.vendor_name ?? expense.vendors_name)
               ?? paidToStaffName ?? (expense.item_service_description ?? 'Payee'),
+            // The payee names who the bank pays; the breakdown row says what
+            // was bought. Same string in both columns tells a reader nothing.
+            description: expense.item_service_description ?? null,
             bankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
-            units: expense.quantity ?? null,
-            unitLabel: expense.uom ?? 'pcs',
-            rate: null,
+            // Fuel records its quantity in its own column rather than the
+            // generic quantity/uom pair, so the litres and the birr-per-litre
+            // they imply reach the page instead of a pair of dashes.
+            units: fuelLiters ?? expense.quantity ?? null,
+            unitLabel: fuelLiters != null ? 'L' : (expense.uom ?? 'pcs'),
+            rate: fuelLiters ? Number(expense.amount_etb ?? 0) / fuelLiters : null,
             subtotal: expense.amount_etb ?? null,
             overtimeHours: null,
             overtimeAmount: null,
@@ -324,8 +513,14 @@ export default function ExpenseDetailPage() {
       paymentMethod: expense.payment_method ?? null,
       typeDetail,
       accentColor: TYPE_THEME[expense.expense_type ?? 'general']?.bg ?? null,
+      // A labor rollup is the only kind that has real workers behind it.
+      // Everything else is a vendor billing line items, and saying so keeps
+      // the document from printing it as a one-person payslip.
+      breakdownKind: laborWorkers.length > 0 ? ('labor' as const) : ('line_items' as const),
+      typeLabel: TYPE_THEME[expense.expense_type ?? 'general']?.label ?? null,
     }
-  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, transportRoute])
+  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, transportRoute,
+      bundleItems, maintenanceRequest, subcontractClaimedElsewhere])
 
   if (isLoading) {
     return (
