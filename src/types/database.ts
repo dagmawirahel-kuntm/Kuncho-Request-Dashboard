@@ -452,6 +452,10 @@ export interface Expense {
   rolled_up_from_requisition_id: string | null
   rollup_period_start: string | null
   rollup_period_end: string | null
+  /** Stamped by trg_set_fiscal_period from `date`, so an undated expense has
+   *  none — which is why anything filtering on it has to decide what to do
+   *  with the unassigned rather than dropping them. */
+  fiscal_period_id: string | null
   created_at: string
   updated_at: string
 }
