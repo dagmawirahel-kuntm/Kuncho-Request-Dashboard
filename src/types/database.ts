@@ -400,6 +400,11 @@ export interface Expense {
   wht_fund: string | null
   wht_amount: number | null
   net_payable: number | null
+  // Vendor credit already applied against this payable (migration 277).
+  // amount_etb is deliberately left alone when a credit is applied — the
+  // purchase still cost what it cost — so cash actually due is
+  // amount_etb − wht_amount − credit_applied_etb.
+  credit_applied_etb: number | null
   wht_receipt_prepared: boolean
   wht_receipt_url: string | null
   wht_receipt_name: string | null
@@ -455,7 +460,7 @@ export interface Expense {
   created_at: string
   updated_at: string
 }
-export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at' | 'payment_state_changed_at' | 'net_payable'>
+export type ExpenseInsert = Omit<Expense, 'id' | 'expense_code' | 'created_at' | 'updated_at' | 'manager_approved_by' | 'manager_approved_at' | 'finance_approved_by' | 'finance_approved_at' | 'requires_finance_approval' | 'subcontract_cert_override_by' | 'subcontract_cert_override_at' | 'payment_state_changed_at' | 'net_payable' | 'credit_applied_etb'>
 
 // ── Properties & Rent ────────────────────────────────────────────
 export interface Property {
