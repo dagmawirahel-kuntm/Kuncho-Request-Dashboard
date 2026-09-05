@@ -704,7 +704,7 @@ export const router = createBrowserRouter([
             children: [{ path: 'stock-manager-view', element: <StockManagerViewPage /> }],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'logistics_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'logistics_officer']} allowLogisticsOfficer />,
             children: [{ path: 'logistics-view', element: <LogisticsOfficerViewPage /> }],
           },
           // ── Department landing pages: Design, Business Development/
@@ -749,7 +749,7 @@ export const router = createBrowserRouter([
           // here is broader — any Operations & Construction role can
           // open it for oversight, not just a live assigned lead.
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer']} allowLogisticsOfficer />,
             children: [{ path: 'workshop-view', element: <WorkshopViewPage /> }],
           },
           // ── Properties & Rent: read matches properties RLS
