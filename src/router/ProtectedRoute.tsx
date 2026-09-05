@@ -18,9 +18,18 @@ interface ProtectedRouteProps {
   // is_vrf_manager reaches VRF routes even though the role list is
   // admin/executive only. Non-badge finance (and everyone else) stays out.
   allowVrfManager?: boolean
+  // Widens the gate with the logistics badge, the same way. role holds one
+  // value, so someone who runs logistics *and* another desk — a driver who
+  // also processes the PMs' purchase requests — can only be one of them by
+  // role. is_logistics_officer is what the logistics RLS policies and every
+  // fleet page already read for exactly that case; without this the routes
+  // stayed role-only and the badge granted powers with no door to reach them.
+  allowLogisticsOfficer?: boolean
 }
 
-export function ProtectedRoute({ allowedRoles, allowAssignedProjectManager, allowVrfManager }: ProtectedRouteProps) {
+export function ProtectedRoute({
+  allowedRoles, allowAssignedProjectManager, allowVrfManager, allowLogisticsOfficer,
+}: ProtectedRouteProps) {
   const { user, profile, role, loading } = useAuth()
   const location = useLocation()
   // Called unconditionally — hooks can't sit behind the early returns
@@ -43,6 +52,7 @@ export function ProtectedRoute({ allowedRoles, allowAssignedProjectManager, allo
   if (allowedRoles && role && !allowedRoles.includes(role)) {
     // VRF badge grant is checked first: a badge-holding finance user is in.
     if (allowVrfManager && profile?.is_vrf_manager) return <Outlet />
+    if (allowLogisticsOfficer && profile?.is_logistics_officer) return <Outlet />
     if (!allowAssignedProjectManager) return <Navigate to="/" replace />
     // Don't bounce a genuine PM out while the assignment is still
     // resolving — "not loaded yet" is not "not permitted".
