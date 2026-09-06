@@ -138,15 +138,23 @@ export default function ExpenseDetailPage() {
     () => Array.from(new Set(rawLaborWorkers.map(w => w.staff_id))),
     [rawLaborWorkers],
   )
+  // The staff directory deliberately withholds bank accounts, so they are
+  // fetched here for exactly the people this document has to pay: the labor
+  // workers behind a rollup, and — for a Tier 2 payee billed directly, which
+  // is most of the measured and contract work — whoever the expense is paid to.
+  const payeeStaffIds = useMemo(
+    () => Array.from(new Set([...workerStaffIds, expense?.paid_to_staff_id].filter(Boolean) as string[])),
+    [workerStaffIds, expense?.paid_to_staff_id],
+  )
   const { data: bankByStaffId = new Map<string, string | null>() } = useQuery({
-    queryKey: ['expense-labor-worker-banks', id, workerStaffIds],
+    queryKey: ['expense-labor-worker-banks', id, payeeStaffIds],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('staff').select('id, bank_account').in('id', workerStaffIds)
+        .from('staff').select('id, bank_account').in('id', payeeStaffIds)
       if (error) throw error
       return new Map((data ?? []).map(s => [s.id as string, (s.bank_account as string | null) ?? null]))
     },
-    enabled: workerStaffIds.length > 0 && canIssuePaymentRequest(role),
+    enabled: payeeStaffIds.length > 0 && canIssuePaymentRequest(role),
   })
 
   const laborWorkers = useMemo(() => rawLaborWorkers.map(w => ({
@@ -155,6 +163,7 @@ export default function ExpenseDetailPage() {
     bank_account: bankByStaffId.get(w.staff_id) ?? null,
   })), [rawLaborWorkers, staffNameById, bankByStaffId])
   const paidToStaffName = expense?.paid_to_staff_id ? (staffNameById.get(expense.paid_to_staff_id) ?? null) : null
+  const paidToStaffAccount = expense?.paid_to_staff_id ? (bankByStaffId.get(expense.paid_to_staff_id) ?? null) : null
 
   const { data: requisitionInfo = null } = useQuery({
     queryKey: ['expense-labor-requisition', expense?.rolled_up_from_requisition_id],
@@ -340,8 +349,13 @@ export default function ExpenseDetailPage() {
     const isVolume = requisitionInfo?.payment_basis === 'per_volume'
     const unitLabel = isVolume ? (requisitionInfo?.volume_unit ?? 'units') : 'days'
     const fuelLiters = expense.fuel_liters == null ? null : Number(expense.fuel_liters)
-    const vendorPayee = (expense.vendors?.vendor_name ?? expense.vendors_name) ?? 'Vendor'
-    const vendorAccount = expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null
+    // A vendor is only one kind of payee. Work billed by a Tier 2 individual
+    // is paid to a staff record, and reading the vendor alone printed "Vendor"
+    // with an empty bank account onto a document the bank is meant to act on.
+    const vendorPayee = (expense.vendors?.vendor_name ?? expense.vendors_name)
+      ?? paidToStaffName ?? 'Vendor'
+    const vendorAccount = expense.vendors?.bank_account ?? expense.vendors_bank_account
+      ?? paidToStaffAccount ?? null
     const blankLine = {
       expenseId: expense.id, staffId: expense.id, name: vendorPayee, bankAccount: vendorAccount,
       overtimeHours: null, overtimeAmount: null, gangSize: null, gangMemberNames: null,
@@ -553,7 +567,8 @@ export default function ExpenseDetailPage() {
             // The payee names who the bank pays; the breakdown row says what
             // was bought. Same string in both columns tells a reader nothing.
             description: expense.item_service_description ?? null,
-            bankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
+            bankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account
+              ?? paidToStaffAccount ?? null,
             // Fuel records its quantity in its own column rather than the
             // generic quantity/uom pair, so the litres and the birr-per-litre
             // they imply reach the page instead of a pair of dashes.
@@ -599,7 +614,7 @@ export default function ExpenseDetailPage() {
       breakdownKind: laborWorkers.length > 0 ? ('labor' as const) : ('line_items' as const),
       typeLabel: TYPE_THEME[expense.expense_type ?? 'general']?.label ?? null,
     }
-  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, transportRoute,
+  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, paidToStaffAccount, transportRoute,
       bundleItems, maintenanceRequest, subcontractClaimedElsewhere,
       creditApplied, creditNote])
 
