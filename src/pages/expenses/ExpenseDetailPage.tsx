@@ -228,21 +228,37 @@ export default function ExpenseDetailPage() {
 
   // What else has already been claimed against this subcontract. Without it
   // nobody approving a progress payment can see whether it closes out the
-  // contract or runs past it. Rejected claims are excluded — counting them
-  // would overstate the commitment.
+  // contract or runs past it.
+  //
+  // Two things were wrong with how this was counted, and the label named
+  // both of them.
+  //
+  // "Claimed" — it excluded rejected claims alone, on the reasoning that
+  // counting them overstates the commitment. The same is true of a pending
+  // claim, which is a request nobody has agreed to yet. Live, a duplicate
+  // still-pending row was read as 44,000 already claimed and printed onto
+  // an authorised Payment Request.
+  //
+  // "Previously" — it summed every other claim on the engagement whatever
+  // its date, so a claim raised later counted as prior to this one. On a
+  // two-claim engagement that made each document say the other came first,
+  // and a document reissued after a later claim would contradict the one
+  // filed against the same expense.
   const { data: subcontractClaimedElsewhere = 0 } = useQuery({
-    queryKey: ['expense-subcontract-claimed', expense?.subcontractor_engagement_id, id],
+    queryKey: ['expense-subcontract-claimed', expense?.subcontractor_engagement_id, id, expense?.created_at],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
         .select('amount_etb')
         .eq('subcontractor_engagement_id', expense!.subcontractor_engagement_id!)
         .neq('id', id!)
-        .neq('approval_status', 'rejected')
+        .in('approval_status', ['manager_approved', 'finance_approved'])
+        .lt('created_at', expense!.created_at)
       if (error) throw error
       return (data ?? []).reduce((sum, r) => sum + Number(r.amount_etb ?? 0), 0)
     },
-    enabled: !!expense?.subcontractor_engagement_id && expense?.expense_type === 'subcontract',
+    enabled: !!expense?.subcontractor_engagement_id && expense?.expense_type === 'subcontract'
+      && !!expense?.created_at,
   })
 
   // A vendor credit settles part of a payable with money the vendor already
@@ -453,7 +469,7 @@ export default function ExpenseDetailPage() {
               ...(agreed != null ? [{ label: 'Contract Value', value: formatCurrency(agreed) }] : []),
               // Progress payments are the case where the document alone has
               // to show whether this one closes out the contract or overruns.
-              { label: 'Previously Claimed', value: formatCurrency(subcontractClaimedElsewhere) },
+              { label: 'Previously Claimed (approved)', value: formatCurrency(subcontractClaimedElsewhere) },
               { label: 'This Payment', value: formatCurrency(thisPayment) },
               ...(remaining != null ? [{
                 label: 'Remaining After This',
