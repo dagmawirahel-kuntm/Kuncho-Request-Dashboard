@@ -25,6 +25,11 @@ interface NavItem {
   // Shown to a finance user holding the is_vrf_manager badge, in addition to
   // `roles` (admin/executive) — VRF access is a badge, not a plain role.
   showIfVrfManager?: boolean
+  // Shown to anyone holding the is_logistics_officer badge, for the same
+  // reason: role carries one value, so a person who runs logistics alongside
+  // another desk holds the badge rather than the role, and would otherwise
+  // lose the entries to the surfaces the badge already lets them use.
+  showIfLogisticsOfficer?: boolean
   // Shown to a site foreman with at least one active project assignment. Site
   // foreman lives on staff.role (a job title), not user_profiles.role (system
   // access), so it uses the same "derived, not a stored permission" pattern as
@@ -57,8 +62,8 @@ const navGroups: NavGroup[] = [
       { label: 'BOQ Change Orders', to: '/pm/boq-change-orders', icon: FileText, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
       { label: 'Stock', to: '/stock-manager-view', icon: Warehouse, roles: ['stock_manager'] },
-      { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'] },
-      { label: 'Workshop', to: '/workshop-view', icon: Hammer, roles: ['admin', 'executive', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'] },
+      { label: 'Logistics', to: '/logistics-view', icon: Car, roles: ['logistics_officer'], showIfLogisticsOfficer: true },
+      { label: 'Workshop', to: '/workshop-view', icon: Hammer, roles: ['admin', 'executive', 'operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'], showIfLogisticsOfficer: true },
       { label: 'Calendar', to: '/calendar', icon: CalendarDays },
       { label: 'Company Overview', to: '/overview', icon: Globe2, roles: ['admin', 'operations_manager'] },
       { label: 'Executive View', to: '/exec', icon: BarChart3, roles: ['admin', 'executive'] },
@@ -93,7 +98,7 @@ const navGroups: NavGroup[] = [
       { label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
       { label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },
-      { label: 'Receipt Collection', to: '/receipt-pickups', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'logistics_officer', 'operations_manager'] },
+      { label: 'Receipt Collection', to: '/receipt-pickups', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'logistics_officer', 'operations_manager'], showIfLogisticsOfficer: true },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },
       { label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'executive', 'finance'] },
       { label: 'My Leave', to: '/my-leave', icon: CalendarClock },
@@ -121,7 +126,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Sourcing Bundles', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
-      { label: 'Goods Received', to: '/goods-received', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer'] },
+      { label: 'Goods Received', to: '/goods-received', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer'], showIfLogisticsOfficer: true },
       { label: 'General Ledger', to: '/general-ledger', icon: BookOpen, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Market Trends', to: '/procurement/market-trends', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Price Check Queue', to: '/procurement/price-check-requests', icon: Clock, roles: ['admin', 'executive', 'procurement_officer'] },
@@ -248,6 +253,8 @@ function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean })
     || (item.showIfAssignedProjectManager && managesAny)
     // VRF badge: a finance user with is_vrf_manager sees the VRF entry.
     || (item.showIfVrfManager && profile?.is_vrf_manager)
+    // Logistics badge: same idea, for whoever runs logistics on a second hat.
+    || (item.showIfLogisticsOfficer && profile?.is_logistics_officer)
     // Site foreman with at least one scoped project.
     || (item.showIfSiteForeman && isForemanWithProjects)
   )
