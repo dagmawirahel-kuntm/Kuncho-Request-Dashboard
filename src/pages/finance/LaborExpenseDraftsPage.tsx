@@ -70,6 +70,12 @@ export default function LaborExpenseDraftsPage() {
   // reachable behind the toggle.
   const [showArchived, setShowArchived] = useState(false)
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
+  // Drafts accumulate a week at a time and never leave, so by the second month
+  // "which of these is the week I am paying" is a scrolling exercise. Filters
+  // on the period the work was done, not on when the row happened to be
+  // created — that is the date anyone reading this page has in mind.
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
 
   const { data: drafts = [], isLoading } = useQuery({
     queryKey: ['labor-expense-drafts', showArchived],
@@ -207,13 +213,32 @@ export default function LaborExpenseDraftsPage() {
     return [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label))
   }, [drafts, activeReqs])
 
+  // A row matches when its period overlaps the window, not when it sits wholly
+  // inside it: a week running 31 Aug – 5 Sep is part of both months, and asking
+  // for September should still find it.
+  const overlapsWindow = (start: string | null, end: string | null) => {
+    if (!dateFrom && !dateTo) return true
+    const s = start ?? end
+    const e = end ?? start
+    if (!s || !e) return false          // undated rows drop out of a date search
+    if (dateFrom && e < dateFrom) return false
+    if (dateTo && s > dateTo) return false
+    return true
+  }
+
   const visibleDrafts = useMemo(
-    () => projectFilter ? drafts.filter(d => d.project_id === projectFilter) : drafts,
-    [drafts, projectFilter]
+    () => drafts.filter(d =>
+      (!projectFilter || d.project_id === projectFilter)
+      && overlapsWindow(d.rollup_period_start ?? d.date, d.rollup_period_end ?? d.date)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drafts, projectFilter, dateFrom, dateTo]
   )
   const visibleReqs = useMemo(
-    () => projectFilter ? activeReqs.filter(r => r.project_id === projectFilter) : activeReqs,
-    [activeReqs, projectFilter]
+    () => activeReqs.filter(r =>
+      (!projectFilter || r.project_id === projectFilter)
+      && overlapsWindow(r.start_date, r.end_date)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeReqs, projectFilter, dateFrom, dateTo]
   )
 
   const draftsByReq = useMemo(() => {
@@ -232,6 +257,14 @@ export default function LaborExpenseDraftsPage() {
   const lastMon = new Date(lastSun); lastMon.setDate(lastSun.getDate() - 6)
   const defaultFrom = lastMon.toISOString().slice(0, 10)
   const defaultTo   = lastSun.toISOString().slice(0, 10)
+  // Both presets hang off the same Mon→Sun anchors the launcher uses, so
+  // "This week" and the rollup window it defaults to are always the same days.
+  // Anchoring on the most recent Sunday rather than on today matters: today
+  // can itself be Sunday, and a range starting tomorrow would select nothing.
+  const prevMon = new Date(lastMon); prevMon.setDate(lastMon.getDate() - 7)
+  const prevSun = new Date(lastSun); prevSun.setDate(lastSun.getDate() - 7)
+  const thisWeek = { from: defaultFrom, to: defaultTo }
+  const lastWeek = { from: prevMon.toISOString().slice(0, 10), to: prevSun.toISOString().slice(0, 10) }
 
   return (
     <div className="space-y-5">
@@ -284,6 +317,33 @@ export default function LaborExpenseDraftsPage() {
         {projectFilter && (
           <button onClick={() => setProjectFilter(null)} className="text-xs text-slate-500 hover:underline">Clear</button>
         )}
+
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Period</span>
+        <input
+          type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} max={dateTo || undefined}
+          aria-label="Period from"
+          className="rounded-md border px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        />
+        <span className="text-xs text-slate-400">→</span>
+        <input
+          type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} min={dateFrom || undefined}
+          aria-label="Period to"
+          className="rounded-md border px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        />
+        {/* The two windows people actually ask for, rather than making them
+            count back to Monday themselves. */}
+        <button
+          onClick={() => { setDateFrom(thisWeek.from); setDateTo(thisWeek.to) }}
+          className="rounded-md border dark:border-slate-600 px-2 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >This week</button>
+        <button
+          onClick={() => { setDateFrom(lastWeek.from); setDateTo(lastWeek.to) }}
+          className="rounded-md border dark:border-slate-600 px-2 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >Last week</button>
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo('') }} className="text-xs text-slate-500 hover:underline">Clear dates</button>
+        )}
+
         <label className="ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           <input
             type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)}
