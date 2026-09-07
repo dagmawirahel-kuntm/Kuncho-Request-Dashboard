@@ -1,10 +1,21 @@
-// Parses a CBE-style bank statement CSV export:
-// "Value Date","Post Date","Transaction Type","Narration","Debit","Credit","Balance","Reference"
-// Amounts use comma thousands separators; dates are "DD MON YY"; the
-// last two rows are "Starting Balance"/"Ending Balance" sentinels
-// with the figure (plus a trailing " ETB") in the Reference column,
-// not a real transaction. Verified against a real CBE export, not
-// assumed — see the row-by-row running-balance check below.
+// Parses a CBE bank statement CSV export. CBE ships (at least) two column
+// orders, and they differ in where Reference sits:
+//
+//   "Value Date","Post Date","Transaction Type","Narration","Debit","Credit","Balance","Reference"
+//   ValueDate,PostDate,TransactionType,Narration,Reference,Debit,Credit,Balance
+//
+// Reading the second with the first's fixed positions is silent and total:
+// every Debit lands in credit, every Credit in balance, and the Balance
+// string in reference. That is what happened to the 11–19 Aug 2026 statement
+// — 48 lines imported with no reference at all, so not one of them could
+// match an expense, and the transfers written at commit were all backwards.
+// So the columns are read from the header row by name rather than assumed,
+// falling back to the older fixed order only when no header is recognisable.
+//
+// Amounts use comma thousands separators; dates are "DD MON YY". Some
+// exports end with "Starting Balance"/"Ending Balance" sentinel rows
+// carrying the figure (plus a trailing " ETB") rather than a transaction;
+// others (the second layout above) carry no sentinels at all.
 
 export interface ParsedStatementLine {
   lineNo: number
@@ -50,12 +61,59 @@ function parseAmount(s: string): number | null {
 }
 
 function parseCsvLine(line: string): string[] {
-  // Fields are fully quoted and don't contain embedded quotes in this
-  // format, so a quote-delimited match per line is reliable and far
-  // simpler than a general CSV state machine.
+  // Transaction rows are fully quoted and don't contain embedded quotes in
+  // either format, so a quote-delimited match is reliable and far simpler
+  // than a general CSV state machine. Header rows are sometimes unquoted,
+  // hence the plain split when the row carries no quotes at all.
   const matches = line.match(/"([^"]*)"/g)
-  if (!matches) return []
+  if (!matches) return line.includes(',') ? line.split(',').map(f => f.trim()) : []
   return matches.map(m => m.slice(1, -1))
+}
+
+interface ColumnIndex {
+  valueDate: number
+  postDate: number
+  transactionType: number
+  narration: number
+  debit: number
+  credit: number
+  balance: number
+  reference: number
+}
+
+// The layout this parser was originally written against, used when a file
+// arrives with no header we can read.
+const LEGACY_COLUMNS: ColumnIndex = {
+  valueDate: 0, postDate: 1, transactionType: 2, narration: 3,
+  debit: 4, credit: 5, balance: 6, reference: 7,
+}
+
+const HEADER_NAMES: Record<string, keyof ColumnIndex> = {
+  valuedate: 'valueDate',
+  postdate: 'postDate',
+  transactiontype: 'transactionType',
+  narration: 'narration',
+  debit: 'debit',
+  credit: 'credit',
+  balance: 'balance',
+  reference: 'reference',
+}
+
+// "Value Date" and "ValueDate" are the same column; so are "REFERENCE" and
+// "Reference". Everything that isn't a letter is dropped before matching.
+function columnsFromHeader(headerRow: string): ColumnIndex | null {
+  const fields = parseCsvLine(headerRow)
+  if (fields.length === 0) return null
+
+  const found: Partial<ColumnIndex> = {}
+  fields.forEach((field, i) => {
+    const key = HEADER_NAMES[field.trim().toLowerCase().replace(/[^a-z]/g, '')]
+    if (key && found[key] === undefined) found[key] = i
+  })
+
+  const complete = (Object.values(HEADER_NAMES) as (keyof ColumnIndex)[])
+    .every(key => found[key] !== undefined)
+  return complete ? (found as ColumnIndex) : null
 }
 
 export function parseBankStatementCsv(csvText: string): ParsedStatement {
@@ -65,17 +123,23 @@ export function parseBankStatementCsv(csvText: string): ParsedStatement {
   let endingBalance: number | null = null
   let lineNo = 0
 
+  const cols = (rawLines.length > 0 ? columnsFromHeader(rawLines[0]) : null) ?? LEGACY_COLUMNS
+
   for (let i = 1; i < rawLines.length; i++) {
     const fields = parseCsvLine(rawLines[i])
     if (fields.length < 8) continue
-    const [valueDateRaw, , transactionType, narration, debit, credit, balance, reference] = fields
+    const valueDateRaw = fields[cols.valueDate]
+    const reference = fields[cols.reference]
 
+    // The sentinel rows carry their figure in the Reference column of the
+    // layout that has them; read the last field as a fallback so a file that
+    // puts it elsewhere still yields a balance rather than a silent null.
     if (/^Starting Balance$/i.test(valueDateRaw)) {
-      startingBalance = parseAmount(reference)
+      startingBalance = parseAmount(reference) ?? parseAmount(fields[fields.length - 1])
       continue
     }
     if (/^Ending Balance$/i.test(valueDateRaw)) {
-      endingBalance = parseAmount(reference)
+      endingBalance = parseAmount(reference) ?? parseAmount(fields[fields.length - 1])
       continue
     }
 
@@ -86,12 +150,12 @@ export function parseBankStatementCsv(csvText: string): ParsedStatement {
     lines.push({
       lineNo,
       valueDate,
-      postDate: parseStatementDate(fields[1]) ?? valueDate,
-      transactionType: transactionType || null,
-      narration: narration || null,
-      debitAmount: parseAmount(debit),
-      creditAmount: parseAmount(credit),
-      runningBalance: parseAmount(balance),
+      postDate: parseStatementDate(fields[cols.postDate]) ?? valueDate,
+      transactionType: fields[cols.transactionType] || null,
+      narration: fields[cols.narration] || null,
+      debitAmount: parseAmount(fields[cols.debit]),
+      creditAmount: parseAmount(fields[cols.credit]),
+      runningBalance: parseAmount(fields[cols.balance]),
       reference: reference || null,
       referenceCode: reference ? reference.split('\\')[0].trim() : null,
     })
