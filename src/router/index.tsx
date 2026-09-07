@@ -50,6 +50,7 @@ import VolatilitySettingsPage from '@/pages/procurement/VolatilitySettingsPage'
 import ItemBrandsPage from '@/pages/procurement/ItemBrandsPage'
 import PayrollPage from '@/pages/payroll/PayrollPage'
 import PayrollFormPage from '@/pages/payroll/PayrollFormPage'
+import PayrollDetailPage from '@/pages/payroll/PayrollDetailPage'
 import VendorsPage from '@/pages/vendors/VendorsPage'
 import VendorFormPage from '@/pages/vendors/VendorFormPage'
 import VendorDetailPage from '@/pages/vendors/VendorDetailPage'
@@ -494,6 +495,7 @@ export const router = createBrowserRouter([
               { path: 'payroll', element: <PayrollPage /> },
               { path: 'payroll/new', element: <PayrollFormPage /> },
               { path: 'payroll/:id/edit', element: <PayrollFormPage /> },
+              { path: 'payroll/:id', element: <PayrollDetailPage /> },
               { path: 'payroll-taxes', element: <PayrollTaxesPage /> },
               { path: 'payroll-taxes/new', element: <PayrollTaxFormPage /> },
               { path: 'payroll-taxes/:id/edit', element: <PayrollTaxFormPage /> },

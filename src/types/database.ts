@@ -110,7 +110,15 @@ export interface Staff {
   monthly_salary: number | null
   day_rate: number | null
   payment_frequency: string | null
+  /** Account number only — the bank it belongs to is bank_id. */
   bank_account: string | null
+  /** Which bank holds that account, from the bank directory in `accounts`. An
+   *  account number without a bank is not a payment instruction, and a run
+   *  spanning banks has to be split before it reaches one. */
+  bank_id: string | null
+  /** Verbatim original of a bank_account that carried more than a number —
+   *  usually the name of the person whose account is actually used. */
+  bank_account_note: string | null
   starting_date: string | null
   termination_date: string | null
   phone_number: string | null
@@ -2301,7 +2309,7 @@ export interface RollupIntegrityRow {
 // ── Payment Requests (migration 268) ─────────────────────────────────────────
 
 export type PaymentRequestStatus = 'issued' | 'superseded' | 'void'
-export type PaymentRequestSource = 'expense' | 'batch_payment'
+export type PaymentRequestSource = 'expense' | 'batch_payment' | 'payroll'
 
 /** Register row — v_payment_requests, which omits the stored document. */
 export interface PaymentRequestRow {
@@ -2310,6 +2318,7 @@ export interface PaymentRequestRow {
   source_type: PaymentRequestSource
   expense_id: string | null
   batch_payment_id: string | null
+  payroll_id: string | null
   source_code: string | null
   title: string | null
   total_amount: number | null

@@ -37,7 +37,7 @@ type SavedPr = {
 }
 
 interface Props {
-  sourceType: 'expense' | 'batch_payment'
+  sourceType: 'expense' | 'batch_payment' | 'payroll'
   sourceId: string
   /** Everything the document needs, minus the fields only issuing can fill in. */
   document: Omit<LaborPaymentRequestInput, 'documentCode' | 'status' | 'revision'>
@@ -58,7 +58,9 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
   const { data: saved = [] } = useQuery({
     queryKey: ['payment-requests-for-source', sourceType, sourceId],
     queryFn: async () => {
-      const col = sourceType === 'expense' ? 'expense_id' : 'batch_payment_id'
+      const col = sourceType === 'expense'
+        ? 'expense_id'
+        : sourceType === 'payroll' ? 'payroll_id' : 'batch_payment_id'
       const { data, error } = await supabase
         .from('v_payment_requests')
         .select('id, request_code, revision, status, issued_at, issued_by_name, total_amount')
@@ -101,11 +103,13 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
         // The register row is titled after what the request actually is: a
         // fuel or rent request filed as a "Labor Payment Request" is the
         // same mislabelling as the worker-shaped document it came from.
-        p_title: doc.kind === 'batch'
-          ? 'Batch Labor Payment Request'
-          : doc.breakdownKind === 'line_items'
-            ? `${doc.typeLabel ?? 'Expense'} Payment Request`
-            : 'Labor Payment Request',
+        p_title: sourceType === 'payroll'
+          ? 'Payroll Payment Request'
+          : doc.kind === 'batch'
+            ? 'Batch Labor Payment Request'
+            : doc.breakdownKind === 'line_items'
+              ? `${doc.typeLabel ?? 'Expense'} Payment Request`
+              : 'Labor Payment Request',
         // The register records what actually leaves the account: WHT is
         // withheld from the total and remitted separately, so a request
         // carrying it is not a request to send the gross.

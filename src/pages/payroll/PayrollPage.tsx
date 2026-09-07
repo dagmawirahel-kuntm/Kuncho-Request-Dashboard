@@ -36,7 +36,14 @@ export default function PayrollPage() {
   }
 
   const columns: ColumnDef<PayrollRow>[] = useMemo(() => [
-    { accessorKey: 'payroll_record', header: 'Record', cell: ({ getValue }) => <span className="font-mono text-xs font-bold text-brand">{(getValue() as string) ?? '—'}</span> },
+    {
+      accessorKey: 'payroll_record', header: 'Record',
+      cell: ({ row, getValue }) => (
+        <Link to={`/payroll/${row.original.id}`} className="font-mono text-xs font-bold text-brand hover:underline">
+          {(getValue() as string) ?? '—'}
+        </Link>
+      ),
+    },
     { accessorKey: 'pay_period', header: 'Pay Period', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'payroll_type', header: 'Type', cell: ({ getValue }) => getValue() ?? '—' },
     { accessorKey: 'start_date', header: 'Start', cell: ({ getValue }) => formatDate(getValue() as string) },
