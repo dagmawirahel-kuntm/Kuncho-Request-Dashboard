@@ -11,6 +11,7 @@ import { StarRating } from '@/components/shared/StarRating'
 import { RequestWorkerForProjectModal } from '@/components/shared/RequestWorkerForProjectModal'
 import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import { MyAssetsSection } from '@/components/staff/MyAssetsSection'
+import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
@@ -1073,6 +1074,7 @@ export default function StaffDetailPage() {
           {activeTab === 'overview'   && (
             <div className="space-y-6">
               <OverviewTab staff={staff} />
+              <StaffBankAccountsSection staffId={staff.id} />
               <OrgPlacementSection staff={staff} />
               <MyAssetsSection staffId={staff.id} isOwnProfile={isOwnProfile} />
             </div>
