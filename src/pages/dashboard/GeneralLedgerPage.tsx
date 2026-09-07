@@ -10,10 +10,10 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type {
   ChartOfAccounts, JournalEntry, JournalLine, OpeningBalance,
   LedgerPostingFailure, TrialBalanceRow, PlLedgerPreviewRow, BalanceSheetLedgerPreviewRow,
-  CashReconciliationCheckRow, SubLedgerBalanceRow,
+  CashReconciliationCheckRow, SubLedgerBalanceRow, CashFlowStatementRow, CashFlowMovementRow, CashFlowSection,
 } from '@/types/database'
 import {
-  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight, Layers,
+  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight, Layers, Waves,
 } from 'lucide-react'
 
 const TABS = [
@@ -24,6 +24,7 @@ const TABS = [
   { key: 'reconciliation', label: 'Reconciliation', icon: BookOpen },
   { key: 'failures', label: 'Posting Failures', icon: AlertTriangle, adminFinanceOnly: true },
   { key: 'preview', label: 'P&L / Balance Sheet', icon: PieChart },
+  { key: 'cash-flow', label: 'Cash Flow', icon: Waves },
   { key: 'close', label: 'Year-End Close', icon: Lock, adminFinanceOnly: true },
 ] as const
 type TabKey = typeof TABS[number]['key']
@@ -88,6 +89,7 @@ export default function GeneralLedgerPage() {
       {tab === 'reconciliation' && <ReconciliationTab />}
       {tab === 'failures' && canManage && <PostingFailuresTab />}
       {tab === 'preview' && <PlBalanceSheetPreviewTab />}
+      {tab === 'cash-flow' && <CashFlowTab />}
       {tab === 'close' && canManage && <YearEndCloseTab />}
     </div>
   )
@@ -787,5 +789,191 @@ function ClosedStateAction({
     <button onClick={() => onClose(periodId, label)} disabled={busy} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
       <Lock className="h-3 w-3" /> Close Period
     </button>
+  )
+}
+
+// ── Cash Flow (migration 279) ────────────────────────────────────────────────
+//
+// Direct method: read what actually moved through the cash accounts and
+// classify it by the counterpart that explains it. The indirect method
+// would need accrual balances this ledger does not yet carry.
+//
+// The reconciliation strip is the point of the tab, not decoration. A
+// cash flow statement that does not tie to the movement in the cash
+// accounts is wrong, and the only way to know is to show both numbers.
+
+const CASH_FLOW_SECTIONS: { key: CashFlowSection; label: string; blurb: string }[] = [
+  { key: 'operating', label: 'Operating', blurb: 'Trading — what the business earns and spends running projects' },
+  { key: 'investing', label: 'Investing', blurb: 'Capital assets bought and sold' },
+  { key: 'financing', label: 'Financing', blurb: 'Borrowings and owner capital' },
+  { key: 'unclassified', label: 'Unclassified', blurb: 'Counterpart account has no cash flow section set' },
+]
+
+function CashFlowTab() {
+  const [openSection, setOpenSection] = useState<CashFlowSection | null>(null)
+
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['v-cash-flow-statement'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_cash_flow_statement').select('*')
+      if (error) throw error
+      return data as CashFlowStatementRow[]
+    },
+  })
+
+  // Ties the statement back to the cash accounts themselves. If these two
+  // disagree the statement is not trustworthy, so it is shown either way
+  // rather than only when it breaks.
+  const { data: cashAccountMovement } = useQuery({
+    queryKey: ['cash-flow-tie-out'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('journal_lines')
+        .select('debit, credit, chart_of_accounts!inner(cash_flow_section)')
+        .eq('chart_of_accounts.cash_flow_section', 'cash')
+      if (error) throw error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (data as any[]).reduce((s, r) => s + Number(r.debit ?? 0) - Number(r.credit ?? 0), 0)
+    },
+  })
+
+  const { data: movements = [] } = useQuery({
+    queryKey: ['v-cash-flow-movements', openSection],
+    enabled: !!openSection,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_cash_flow_movements')
+        .select('*')
+        .eq('section', openSection!)
+        .order('entry_date', { ascending: false })
+        .limit(200)
+      if (error) throw error
+      return data as CashFlowMovementRow[]
+    },
+  })
+
+  const bySection = useMemo(() => {
+    const m = new Map<CashFlowSection, { cashIn: number; cashOut: number; net: number; count: number }>()
+    for (const r of rows) {
+      const g = m.get(r.section) ?? { cashIn: 0, cashOut: 0, net: 0, count: 0 }
+      g.cashIn += Number(r.cash_in ?? 0)
+      g.cashOut += Number(r.cash_out ?? 0)
+      g.net += Number(r.net_cash_flow ?? 0)
+      g.count += r.movement_count
+      m.set(r.section, g)
+    }
+    return m
+  }, [rows])
+
+  const netTotal = rows.reduce((s, r) => s + Number(r.net_cash_flow ?? 0), 0)
+  const tieOut = cashAccountMovement == null ? null : Number(cashAccountMovement) - netTotal
+  const ties = tieOut != null && Math.abs(tieOut) < 0.01
+
+  return (
+    <Section
+      title="Cash Flow"
+      sub="Direct method — every movement through a cash account, classified by what explains it. Built from posted journal entries only."
+    >
+      {isLoading ? (
+        <Empty>Loading…</Empty>
+      ) : rows.length === 0 ? (
+        <Empty>No cash movements posted to the ledger yet.</Empty>
+      ) : (
+        <>
+          <div className="mx-4 mt-3">
+            <div className={`rounded-lg border px-3 py-2 text-xs ${ties
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300'
+              : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+              {ties ? (
+                <>Ties to the cash accounts: net <span className="font-semibold">{formatCurrency(netTotal)}</span> matches the movement across all cash accounts exactly.</>
+              ) : (
+                <>Does not tie. The statement nets <span className="font-semibold">{formatCurrency(netTotal)}</span> but the cash accounts moved{' '}
+                  <span className="font-semibold">{formatCurrency(Number(cashAccountMovement ?? 0))}</span> — a difference of{' '}
+                  <span className="font-semibold">{formatCurrency(tieOut ?? 0)}</span>. Treat the figures below as indicative until this is resolved.</>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Cash paid outside a bank account cannot appear here — there is no Cash on Hand account in the chart, so
+              cash-method expenses fail to post. Spending is understated until that is set up.
+            </p>
+          </div>
+
+          <div className="mt-3 divide-y dark:divide-slate-700">
+            {CASH_FLOW_SECTIONS.map(sec => {
+              const g = bySection.get(sec.key)
+              if (!g) return null
+              const isOpen = openSection === sec.key
+              return (
+                <div key={sec.key}>
+                  <button
+                    onClick={() => setOpenSection(isOpen ? null : sec.key)}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                  >
+                    {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-semibold ${sec.key === 'unclassified' ? 'text-amber-700 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>{sec.label}</p>
+                      <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{sec.blurb}</p>
+                    </div>
+                    <div className="shrink-0 text-right text-xs tabular-nums">
+                      <p className="text-emerald-600 dark:text-emerald-400">in {formatCurrency(g.cashIn)}</p>
+                      <p className="text-red-500 dark:text-red-400">out {formatCurrency(g.cashOut)}</p>
+                    </div>
+                    <div className="w-40 shrink-0 text-right">
+                      <p className={`text-sm font-bold tabular-nums ${g.net >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
+                        {formatCurrency(g.net)}
+                      </p>
+                      <p className="text-[11px] text-slate-400">{g.count} movement{g.count === 1 ? '' : 's'}</p>
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div className="bg-slate-50 px-4 py-2 dark:bg-slate-900/40">
+                      {movements.length === 0 ? (
+                        <p className="py-3 text-center text-xs text-slate-400">Loading…</p>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-slate-500 dark:text-slate-400">
+                              <th className="py-1 font-medium">Date</th>
+                              <th className="py-1 font-medium">Account</th>
+                              <th className="py-1 font-medium">Description</th>
+                              <th className="py-1 text-right font-medium">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y dark:divide-slate-700">
+                            {movements.map(m => (
+                              <tr key={`${m.journal_entry_id}-${m.account_code}`}>
+                                <td className="py-1.5 whitespace-nowrap text-slate-500">{formatDate(m.entry_date)}</td>
+                                <td className="py-1.5 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                                  <span className="font-mono text-[10px] text-slate-400">{m.account_code}</span> {m.account_name}
+                                </td>
+                                <td className="py-1.5 text-slate-500 dark:text-slate-400">{m.description}</td>
+                                <td className={`py-1.5 text-right tabular-nums font-medium ${m.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                  {formatCurrency(m.amount)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                      {movements.length === 200 && (
+                        <p className="py-2 text-center text-[11px] text-slate-400">Showing the 200 most recent movements in this section.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="flex items-center justify-between border-t px-4 py-3 dark:border-slate-700">
+            <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Net change in cash</span>
+            <span className={`text-base font-black tabular-nums ${netTotal >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
+              {formatCurrency(netTotal)}
+            </span>
+          </div>
+        </>
+      )}
+    </Section>
   )
 }
