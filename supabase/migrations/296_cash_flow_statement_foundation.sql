@@ -1,4 +1,4 @@
--- 279 — Foundations for a cash flow statement
+-- 296 — Foundations for a cash flow statement
 --
 -- The ledger can already produce a Trial Balance and a P&L / Balance
 -- Sheet preview. The missing third statement is cash flow: where cash
@@ -52,7 +52,8 @@
 --     there is no "Cash on Hand" account in the chart, only "Cash at
 --     Bank — <bank>" rows linked to real bank accounts. Until that
 --     account exists and those postings are retried, cash spending is
---     understated by roughly a million birr.
+--     understated by roughly a million birr. (297 adds the account and
+--     clears them.)
 --   · The transfers table holds 112 rows and produces no journal entries
 --     at all, so inter-account movement is invisible to the ledger.
 --

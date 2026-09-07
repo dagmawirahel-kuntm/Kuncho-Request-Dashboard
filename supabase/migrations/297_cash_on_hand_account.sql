@@ -1,4 +1,4 @@
--- 280 — Give cash payments somewhere to post
+-- 297 — Give cash payments somewhere to post
 --
 -- 44 paid expenses totalling 976,355.40 ETB have no journal entry at
 -- all. Every one is payment_method = 'cash' with account_id NULL, and
@@ -24,7 +24,7 @@
 -- 11000 Cash on Hand — an asset, postable, no linked bank row, coded
 -- below 11001 so it sorts ahead of the bank accounts the way a chart of
 -- accounts conventionally reads. Classified as 'cash' for the cash flow
--- statement (279), so cash spending starts appearing there.
+-- statement (296), so cash spending starts appearing there.
 --
 -- The posting trigger now falls back to it, but only when the normal
 -- lookup finds nothing AND the payment was made in cash. An expense that
