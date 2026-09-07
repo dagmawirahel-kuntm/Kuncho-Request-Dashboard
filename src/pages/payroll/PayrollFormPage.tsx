@@ -35,6 +35,58 @@ interface PayLine {
   staff_id: string
   gross: number
   deductions: number
+  /** Which of the employee's accounts this run pays into. Null follows their
+   *  primary — right for a run being drafted, wrong to leave on a run that
+   *  has been paid, because the primary moves. When the workshop salary went
+   *  to Zemen, 22 people's primary changed underneath every earlier run. */
+  bank_account_id: string | null
+}
+
+type StaffAccount = {
+  id: string
+  staff_id: string
+  account_number: string
+  account_holder: string | null
+  label: string | null
+  is_primary: boolean
+  is_active: boolean
+  accounts: { account_name: string } | null
+}
+
+// Which account a line pays into. "Primary" is the default and stays a real
+// option rather than a blank, so leaving it alone is a visible choice; naming
+// the account instead pins it, which is what stops a paid run reporting a
+// different bank later because the primary moved.
+function PayIntoSelect({
+  accounts, value, onChange,
+}: { accounts: StaffAccount[]; value: string | null; onChange: (id: string | null) => void }) {
+  const primary = accounts.find(a => a.is_primary) ?? null
+
+  if (accounts.length === 0) {
+    return <span className="text-[11px] text-amber-600">no account on file</span>
+  }
+
+  const describe = (a: StaffAccount) =>
+    `${a.accounts?.account_name ?? 'no bank'} · ${a.account_number}`
+      + (a.account_holder ? ` (${a.account_holder})` : '')
+
+  return (
+    <select
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value || null)}
+      title={value ? undefined : primary ? `Primary — ${describe(primary)}` : undefined}
+      className="w-full rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-brand dark:border-slate-600 dark:bg-slate-800"
+    >
+      <option value="">
+        {primary ? `Primary — ${describe(primary)}` : 'Primary — none set'}
+      </option>
+      {accounts.filter(a => !a.is_primary).map(a => (
+        <option key={a.id} value={a.id}>
+          {describe(a)}{a.is_active ? '' : ' · inactive'}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 export default function PayrollFormPage() {
@@ -55,10 +107,10 @@ export default function PayrollFormPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payroll_staff')
-        .select('staff_id, gross_amount, deductions, net_amount')
+        .select('staff_id, gross_amount, deductions, net_amount, staff_bank_account_id')
         .eq('payroll_id', id)
       if (error) throw error
-      return data as PayrollStaff[]
+      return (data ?? []) as unknown as PayrollStaff[]
     },
     enabled: isEdit,
   })
@@ -114,6 +166,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
       staff_id: r.staff_id,
       gross: Number(r.gross_amount ?? 0),
       deductions: Number(r.deductions ?? 0),
+      bank_account_id: r.staff_bank_account_id ?? null,
     }))
   )
   const [saving, setSaving] = useState(false)
@@ -133,7 +186,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
         .map(sid => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const s = staffById.get(sid) as any
-          return { staff_id: sid, gross: Number(s?.monthly_salary ?? 0), deductions: 0 }
+          return { staff_id: sid, gross: Number(s?.monthly_salary ?? 0), deductions: 0, bank_account_id: null }
         })
       return [...kept, ...added]
     })
@@ -141,6 +194,10 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
 
   function setLine(staffId: string, key: 'gross' | 'deductions', value: number) {
     setLines(prev => prev.map(l => (l.staff_id === staffId ? { ...l, [key]: value } : l)))
+  }
+
+  function setLineAccount(staffId: string, accountId: string | null) {
+    setLines(prev => prev.map(l => (l.staff_id === staffId ? { ...l, bank_account_id: accountId } : l)))
   }
 
   // Arriving from a staff member's detail page with ?staff_id= — add them
@@ -153,6 +210,33 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
     setStaffPrefilled(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, prefillStaffId, staffPrefilled, staff])
+
+  // Every account held by anyone on this run, so each line can offer a
+  // choice rather than silently following whichever is primary today.
+  const staffIdsOnRun = useMemo(() => lines.map(l => l.staff_id), [lines])
+  const { data: staffAccounts = [] } = useQuery({
+    queryKey: ['staff-bank-accounts', staffIdsOnRun.slice().sort().join(',')],
+    enabled: staffIdsOnRun.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_bank_accounts')
+        .select('id, staff_id, account_number, account_holder, label, is_primary, is_active, accounts:bank_id (account_name)')
+        .in('staff_id', staffIdsOnRun)
+        .order('is_primary', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as unknown as StaffAccount[]
+    },
+  })
+
+  const accountsByStaff = useMemo(() => {
+    const map = new Map<string, StaffAccount[]>()
+    for (const a of staffAccounts) {
+      const list = map.get(a.staff_id)
+      if (list) list.push(a)
+      else map.set(a.staff_id, [a])
+    }
+    return map
+  }, [staffAccounts])
 
   const totals = useMemo(() => {
     const gross = lines.reduce((s, l) => s + l.gross, 0)
@@ -198,6 +282,7 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
           gross_amount: l.gross,
           deductions: l.deductions,
           net_amount: l.gross - l.deductions,
+          staff_bank_account_id: l.bank_account_id,
         }))
       )
       if (linkErr) { setSaving(false); setError(linkErr.message); toast(linkErr.message, 'error'); return }
@@ -334,8 +419,9 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
       {/* ── Per-employee amounts ── */}
       {lines.length > 0 && (
         <div className="rounded-lg border overflow-hidden">
-          <div className="grid grid-cols-[1fr_7rem_7rem_7rem] gap-2 px-3 py-2 bg-slate-50 border-b text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          <div className="grid grid-cols-[1fr_12rem_7rem_7rem_7rem] gap-2 px-3 py-2 bg-slate-50 border-b text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
             <span>Employee</span>
+            <span>Pay into</span>
             <span className="text-right">Gross (ETB)</span>
             <span className="text-right">Deductions</span>
             <span className="text-right">Net Pay</span>
@@ -344,8 +430,13 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const s = staffById.get(l.staff_id) as any
             return (
-              <div key={l.staff_id} className="grid grid-cols-[1fr_7rem_7rem_7rem] gap-2 px-3 py-2 border-b last:border-0 items-center">
+              <div key={l.staff_id} className="grid grid-cols-[1fr_12rem_7rem_7rem_7rem] gap-2 px-3 py-2 border-b last:border-0 items-center">
                 <span className="text-sm text-slate-700 truncate">{s?.employee_name ?? '—'}</span>
+                <PayIntoSelect
+                  accounts={accountsByStaff.get(l.staff_id) ?? []}
+                  value={l.bank_account_id}
+                  onChange={acc => setLineAccount(l.staff_id, acc)}
+                />
                 <FormattedNumberInput
                   className="rounded border px-2 py-1 text-sm text-right tabular-nums outline-none focus:ring-1 focus:ring-brand"
                   value={l.gross || null}

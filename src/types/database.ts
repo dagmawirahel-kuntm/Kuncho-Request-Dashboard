@@ -1605,6 +1605,26 @@ export interface PayrollStaff {
   gross_amount: number | null
   deductions: number | null
   net_amount: number | null
+  /** Which of the employee's accounts this run pays into. Null follows their
+   *  primary — but the primary moves, so a run that has been paid should name
+   *  its account rather than be re-read against whatever is primary later. */
+  staff_bank_account_id: string | null
+}
+
+/** One account a staff member holds. staff.bank_id/bank_account mirror the primary. */
+export interface StaffBankAccount {
+  id: string
+  staff_id: string
+  bank_id: string | null
+  account_number: string
+  /** Set when the account is in someone else's name — the bank needs it. */
+  account_holder: string | null
+  label: string | null
+  is_primary: boolean
+  is_active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface CashAdvanceExpense {
