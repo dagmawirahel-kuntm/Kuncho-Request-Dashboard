@@ -172,8 +172,14 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
   async function handleSave() {
     if (!form.employee_name?.trim()) { setError('Employee name is required'); return }
     setError(''); setSaving(true)
+    // bank_account is a mirror of the primary staff_bank_accounts row, kept
+    // by a trigger. Writing it back from this form would push a value the
+    // form only ever displayed, and could overwrite a newer primary set on
+    // the staff page while this form was open.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+    const { bank_account: _mirrored, ...payload } = form as any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('staff').update(form as any).eq('id', id!) : supabase.from('staff').insert([form as any])
+    const op = isEdit ? supabase.from('staff').update(payload as any).eq('id', id!) : supabase.from('staff').insert([payload as any])
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
@@ -392,8 +398,21 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
         <Field label="National ID">
           <input type="text" className={inputCls} value={form.national_id ?? ''} onChange={e => set('national_id', e.target.value)} />
         </Field>
+        {/* Bank accounts moved to their own card on the staff member's page,
+            because a person can hold several and staff.bank_account is now
+            only a mirror of whichever is primary. Editing it here changed the
+            mirror without touching the account behind it, and the next change
+            to that person's accounts silently put it back — so the field is
+            shown, not edited. */}
         <Field label="Bank Account">
-          <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
+          <div className={`${inputCls} flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40`}>
+            <span className="font-mono text-sm text-slate-600 dark:text-slate-300 truncate">
+              {form.bank_account || <span className="font-sans text-slate-400">none on file</span>}
+            </span>
+            <span className="shrink-0 text-[11px] text-slate-400">
+              {isEdit ? 'managed on the staff page' : 'add after saving'}
+            </span>
+          </div>
         </Field>
       </div>
 

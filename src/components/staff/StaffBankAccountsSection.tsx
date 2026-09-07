@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Landmark, Plus, Star, X, Check, Ban, RotateCcw } from 'lucide-react'
+import { Landmark, Plus, Star, X, Check, Ban, RotateCcw, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -32,6 +32,7 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
   const qc = useQueryClient()
   const { data: accounts = [] } = useAccounts()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<Row | null>(null)
   const [bankId, setBankId] = useState<string | null>(null)
   const [number, setNumber] = useState('')
   const [holder, setHolder] = useState('')
@@ -74,11 +75,7 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
       }])
       if (error) throw new Error(error.message)
     },
-    onSuccess: () => {
-      toast('Account added', 'success')
-      setAdding(false); setBankId(null); setNumber(''); setHolder(''); setLabel('')
-      invalidate()
-    },
+    onSuccess: () => { toast('Account added', 'success'); resetForm(); invalidate() },
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
@@ -100,6 +97,46 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
     onError: (e: Error) => toast(e.message, 'error'),
   })
 
+  // A mistyped account number needs correcting in place, not a second row
+  // standing next to the wrong one.
+  const save = useMutation({
+    mutationFn: async (row: Row) => {
+      if (!number.trim()) throw new Error('An account number is required')
+      const { error } = await supabase.from('staff_bank_accounts').update({
+        bank_id: bankId,
+        account_number: number.trim(),
+        account_holder: holder.trim() || null,
+        label: label.trim() || null,
+      }).eq('id', row.id)
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => { toast('Account updated', 'success'); resetForm(); invalidate() },
+    onError: (e: Error) => toast(e.message, 'error'),
+  })
+
+  const remove = useMutation({
+    mutationFn: async (row: Row) => {
+      const { error } = await supabase.from('staff_bank_accounts').delete().eq('id', row.id)
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => { toast('Account removed', 'success'); invalidate() },
+    onError: (e: Error) => toast(e.message, 'error'),
+  })
+
+  function resetForm() {
+    setAdding(false); setEditing(null)
+    setBankId(null); setNumber(''); setHolder(''); setLabel('')
+  }
+
+  function beginEdit(r: Row) {
+    setEditing(r)
+    setAdding(false)
+    setBankId(r.bank_id)
+    setNumber(r.account_number)
+    setHolder(r.account_holder ?? '')
+    setLabel(r.label ?? '')
+  }
+
   const bankOptions = (accounts as { id: string; account_name: string }[])
     .map(a => ({ id: a.id, label: a.account_name }))
 
@@ -114,9 +151,9 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
             The primary is what payment documents show; payroll can pay into any of them.
           </p>
         </div>
-        {canEdit && !adding && (
+        {canEdit && !adding && !editing && (
           <button
-            onClick={() => setAdding(true)}
+            onClick={() => { resetForm(); setAdding(true) }}
             className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-600 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <Plus className="h-3.5 w-3.5" /> Add
@@ -124,7 +161,7 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
         )}
       </div>
 
-      {adding && (
+      {(adding || editing) && (
         <div className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 space-y-2">
           <div className="grid gap-2 sm:grid-cols-2">
             <div>
@@ -161,13 +198,15 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
           </p>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => add.mutate()} disabled={add.isPending || !number.trim()}
+              onClick={() => (editing ? save.mutate(editing) : add.mutate())}
+              disabled={add.isPending || save.isPending || !number.trim()}
               className="flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50"
             >
-              <Check className="h-3.5 w-3.5" /> {add.isPending ? 'Saving…' : 'Save account'}
+              <Check className="h-3.5 w-3.5" />
+              {add.isPending || save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Save account'}
             </button>
             <button
-              onClick={() => { setAdding(false); setBankId(null); setNumber(''); setHolder(''); setLabel('') }}
+              onClick={resetForm}
               className="flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs text-slate-600 dark:border-slate-600 dark:text-slate-300"
             >
               <X className="h-3.5 w-3.5" /> Cancel
@@ -219,16 +258,36 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
                       <Star className="h-3 w-3" /> Make primary
                     </button>
                   )}
+                  <button
+                    onClick={() => beginEdit(r)}
+                    title="Correct the bank, number or holder"
+                    className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
                   {/* The primary keeps a person payable, so it is not something
-                      to switch off; change the primary first. */}
+                      to switch off or remove; change the primary first. */}
                   {!r.is_primary && (
-                    <button
-                      onClick={() => setActive.mutate({ id: r.id, active: !r.is_active })}
-                      title={r.is_active ? 'Mark inactive' : 'Mark active'}
-                      className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                    >
-                      {r.is_active ? <><Ban className="h-3 w-3" /> Deactivate</> : <><RotateCcw className="h-3 w-3" /> Reactivate</>}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setActive.mutate({ id: r.id, active: !r.is_active })}
+                        title={r.is_active ? 'Mark inactive' : 'Mark active'}
+                        className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                      >
+                        {r.is_active ? <><Ban className="h-3 w-3" /> Deactivate</> : <><RotateCcw className="h-3 w-3" /> Reactivate</>}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Remove ${r.account_number}? Any payroll line that named this account will fall back to the primary.`)) {
+                            remove.mutate(r)
+                          }
+                        }}
+                        title="Remove this account"
+                        className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:border-slate-600 dark:hover:bg-red-900/20"
+                      >
+                        <Trash2 className="h-3 w-3" /> Remove
+                      </button>
+                    </>
                   )}
                 </div>
               )}
