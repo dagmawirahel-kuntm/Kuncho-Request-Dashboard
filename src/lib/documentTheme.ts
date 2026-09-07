@@ -13,7 +13,7 @@ export const DOC_FONT = 'Arial, Helvetica, sans-serif'
 // document still shares the same layout/font/company identity.
 export type DocumentGradientKey =
   | 'purchaseOrder' | 'proforma' | 'paymentRequestLetter' | 'laborPayment'
-  | 'vendorContract' | 'bdContract'
+  | 'vendorContract' | 'bdContract' | 'payroll'
 
 export const DOCUMENT_GRADIENTS: Record<DocumentGradientKey, { from: string; to: string }> = {
   purchaseOrder:       { from: '#1D4E89', to: '#0EA5A5' }, // blue -> teal: procurement/materials
@@ -22,6 +22,10 @@ export const DOCUMENT_GRADIENTS: Record<DocumentGradientKey, { from: string; to:
   laborPayment:        { from: '#1B3A5C', to: '#0EA5E9' }, // navy -> sky: money we pay out
   vendorContract:      { from: '#334155', to: '#7E22CE' }, // slate -> purple: procurement-side legal
   bdContract:          { from: '#92400E', to: '#D97706' }, // amber -> gold: sales-side legal
+  // Berry -> rose: salaries. Deliberately the one warm red in the set — a
+  // payroll run is the document most often confused with a labor payment at a
+  // glance, and the two sat at opposite ends of the same navy/sky family.
+  payroll:             { from: '#831843', to: '#E11D48' },
 }
 
 export function gradientCss(key: DocumentGradientKey | { from: string; to: string }, angle = 135): string {
