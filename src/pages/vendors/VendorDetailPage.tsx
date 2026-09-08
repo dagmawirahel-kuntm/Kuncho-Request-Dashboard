@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { Vendor, Expense, SourcingBundle, CpoBond, VendorAttachment, VendorAttachmentCategory, SourcingBundleItem, VendorTaxReceipt } from '@/types/database'
+import type { Vendor, Expense, SourcingBundle, CpoBond, VendorAttachment, VendorAttachmentCategory, VendorTaxReceipt } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import {
@@ -140,30 +140,15 @@ export default function VendorDetailPage() {
     enabled: !!id,
   })
 
-  const bundleIds = useMemo(() => bundles.map(b => b.id), [bundles])
 
-  const { data: allBundleItems = [] } = useQuery<SourcingBundleItem[]>({
-    queryKey: ['vendor-bundle-items', id, bundleIds.join(',')],
-    queryFn: async () => {
-      if (!bundleIds.length) return []
-      const { data, error } = await supabase
-        .from('sourcing_bundle_items')
-        .select('bundle_id, quantity_actual, unit_price_actual')
-        .in('bundle_id', bundleIds)
-      if (error) throw error
-      return data as SourcingBundleItem[]
-    },
-    enabled: !!id && bundleIds.length > 0,
-  })
-
+  // What this vendor was actually committed, which is the bundle's own
+  // total_value — net of any vendor discount (299). Re-summing the line
+  // items would credit the vendor with money the discount took back off.
   const bundleTotals = useMemo(() => {
     const map: Record<string, number> = {}
-    allBundleItems.forEach(item => {
-      const t = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
-      map[item.bundle_id] = (map[item.bundle_id] ?? 0) + t
-    })
+    bundles.forEach(b => { map[b.id] = Number(b.total_value ?? 0) })
     return map
-  }, [allBundleItems])
+  }, [bundles])
 
   const { data: bonds = [] } = useQuery<CpoBond[]>({
     queryKey: ['vendor-bonds', id],

@@ -7,7 +7,7 @@ import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
-import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement } from '@/types/database'
+import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement, SourcingBundleDiscountKind } from '@/types/database'
 import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -120,6 +120,7 @@ export default function ExpenseFormPage() {
         .from('sourcing_bundles')
         .select(`
           id, bundle_code, vendor_id, vendor_name,
+          total_value, items_subtotal_etb, discount_etb, discount_kind, discount_value, discount_reason,
           sourcing_bundle_items(
             quantity_actual, unit_price_actual,
             order_items(item_name, orders(project_id))
@@ -185,6 +186,8 @@ export default function ExpenseFormPage() {
 
 type LinkedBundle = {
   id: string; bundle_code: string; vendor_id: string | null; vendor_name: string | null
+  total_value: number | null; items_subtotal_etb: number | null; discount_etb: number | null
+  discount_kind: SourcingBundleDiscountKind | null; discount_value: number | null; discount_reason: string | null
   sourcing_bundle_items: {
     quantity_actual: number | null; unit_price_actual: number | null
     order_items: { item_name: string; orders: { project_id: string | null } | null } | null
@@ -410,13 +413,26 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     // negotiated vendor and price, not the PR's original estimate
     ...(linkedBundle ? (() => {
       const items = linkedBundle.sourcing_bundle_items ?? []
-      const total = items.reduce((sum, i) => sum + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0)
+      // total_value is the bundle's net commitment — the line items less any
+      // vendor discount — maintained by the database (299). Re-summing the
+      // lines here would bill the vendor the undiscounted figure, which is
+      // not what the PO was approved at. The fallback only covers a bundle
+      // row that somehow arrives without it.
+      const total = linkedBundle.total_value
+        ?? items.reduce((sum, i) => sum + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0)
+      const discount = Number(linkedBundle.discount_etb ?? 0)
       const projectIds = new Set(items.map(i => i.order_items?.orders?.project_id).filter(Boolean))
       const itemNames = items.map(i => i.order_items?.item_name).filter(Boolean).join(', ')
       return {
         expense_type: 'purchase_order' as const,
         item_service_description: `PO ${linkedBundle.bundle_code}${itemNames ? ` — ${itemNames}` : ''}`,
         amount_etb: total || undefined,
+        ...(discount > 0 ? {
+          notes: `Vendor discount of ${formatCurrency(discount)} applied: `
+            + `${formatCurrency(Number(linkedBundle.items_subtotal_etb ?? 0))} before discount, `
+            + `${formatCurrency(Number(total))} billed.`
+            + (linkedBundle.discount_reason ? ` ${linkedBundle.discount_reason}` : ''),
+        } : {}),
         vendor_id: linkedBundle.vendor_id ?? undefined,
         vendors_name: linkedBundle.vendor_id ? undefined : (linkedBundle.vendor_name ?? undefined),
         project_id: projectIds.size === 1 ? [...projectIds][0] as string : undefined,

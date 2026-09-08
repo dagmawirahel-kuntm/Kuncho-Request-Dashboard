@@ -70,25 +70,30 @@ export default function SourcingBundlesPage() {
   const { data: itemSummary = [] } = useQuery({
     queryKey: ['bundle-item-summary'],
     queryFn: async () => {
+      // Only the line count is needed here — the money comes from the
+      // bundle's own total_value.
       const { data, error } = await supabase
         .from('sourcing_bundle_items')
-        .select('bundle_id, quantity_actual, unit_price_actual')
+        .select('bundle_id')
       if (error) throw error
       return data ?? []
     },
   })
 
   const enriched: BundleRow[] = useMemo(() => {
-    const map: Record<string, { count: number; total: number }> = {}
+    const map: Record<string, { count: number }> = {}
     for (const item of itemSummary) {
-      if (!map[item.bundle_id]) map[item.bundle_id] = { count: 0, total: 0 }
+      if (!map[item.bundle_id]) map[item.bundle_id] = { count: 0 }
       map[item.bundle_id].count++
-      map[item.bundle_id].total += (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
     }
     return bundles.map(b => ({
       ...b,
       _itemCount:   map[b.id]?.count ?? 0,
-      _totalActual: map[b.id]?.total ?? 0,
+      // total_value, not a re-sum of the line items: it is the bundle's net
+      // commitment after any vendor discount (299), and the figure the
+      // approval caps are checked against. Summing the lines here would
+      // list discounted POs at their undiscounted price.
+      _totalActual: Number(b.total_value ?? 0),
     }))
   }, [bundles, itemSummary])
 

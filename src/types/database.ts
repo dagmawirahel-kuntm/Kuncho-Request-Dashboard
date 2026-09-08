@@ -1058,6 +1058,10 @@ export type SourcingBundleStatus = 'drafting' | 'submitted' | 'approved' | 'orde
 
 export type SourcingBundlePaymentPattern = 'pay_on_delivery' | 'pay_in_advance'
 
+// How a vendor discount was expressed (migration 299). 'percent' means
+// discount_value is 0-100; 'amount' means it is ETB off the subtotal.
+export type SourcingBundleDiscountKind = 'none' | 'percent' | 'amount'
+
 export interface SourcingBundle {
   id: string
   bundle_code: string
@@ -1074,12 +1078,25 @@ export interface SourcingBundle {
   notes: string | null
   finance_notes: string | null
   expense_id: string | null
-  total_value: number
   payment_pattern: SourcingBundlePaymentPattern
+  // What somebody entered for the vendor discount.
+  discount_kind: SourcingBundleDiscountKind
+  discount_value: number
+  discount_reason: string | null
+  // Derived by apply_sourcing_bundle_discount() (299) and never written by
+  // the client: the pre-discount sum of the line items, the discount
+  // resolved to birr, and total_value = items_subtotal_etb - discount_etb.
+  // total_value is the net commitment the RLS approval caps are checked
+  // against, so it must come from the database, not from a form.
+  items_subtotal_etb: number
+  discount_etb: number
+  total_value: number
   created_at: string
   updated_at: string
 }
-export type SourcingBundleInsert = Omit<SourcingBundle, 'id' | 'bundle_code' | 'created_at' | 'updated_at' | 'total_value'>
+export type SourcingBundleInsert = Omit<SourcingBundle,
+  'id' | 'bundle_code' | 'created_at' | 'updated_at'
+  | 'total_value' | 'items_subtotal_etb' | 'discount_etb'>
 
 // ── Finance sourcing review (the "should we pursue this" gate between
 // stock check and sourcing bundle creation) ────────────────────────

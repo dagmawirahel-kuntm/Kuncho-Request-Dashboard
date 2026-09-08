@@ -249,9 +249,14 @@ export default function VendorContractPage() {
     enabled: !!bundleId,
   })
 
+  // The contract is written for what the vendor is actually owed, so this
+  // is the bundle's net total_value (line items less any vendor discount,
+  // 299) rather than a re-sum of the lines. The fallback keeps a bundle row
+  // that arrives without it working as before.
   const bundleTotal = useMemo(
-    () => bundleItems.reduce((s, i) => s + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0),
-    [bundleItems]
+    () => Number(bundle?.total_value
+      ?? bundleItems.reduce((s, i) => s + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0)),
+    [bundle, bundleItems]
   )
 
   const { data: linkedExpenses = [] } = useQuery<Expense[]>({

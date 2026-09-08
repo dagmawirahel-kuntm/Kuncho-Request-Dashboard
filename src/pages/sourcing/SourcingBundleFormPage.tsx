@@ -6,9 +6,9 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
-import type { SourcingBundleInsert, SourcingBundlePaymentPattern } from '@/types/database'
+import type { SourcingBundleInsert, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
-import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers } from 'lucide-react'
+import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers, Tag } from 'lucide-react'
 
 type OrderRow = {
   id: string
@@ -71,6 +71,9 @@ export default function SourcingBundleFormPage() {
   const [deliveryDate, setDeliveryDate] = useState<string>('')
   const [paymentPattern, setPaymentPattern] = useState<SourcingBundlePaymentPattern>('pay_on_delivery')
   const [notes, setNotes] = useState<string>('')
+  const [discountKind, setDiscountKind] = useState<SourcingBundleDiscountKind>('none')
+  const [discountValue, setDiscountValue] = useState<string>('')
+  const [discountReason, setDiscountReason] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [itemSearch, setItemSearch] = useState<string>('')
   const [bundleItems, setBundleItems] = useState<BundleLineItem[]>([])
@@ -250,6 +253,10 @@ export default function SourcingBundleFormPage() {
     setDeliveryDate(existingBundle.expected_delivery_date ?? '')
     setPaymentPattern(existingBundle.payment_pattern ?? 'pay_on_delivery')
     setNotes(existingBundle.notes ?? '')
+    setDiscountKind((existingBundle.discount_kind ?? 'none') as SourcingBundleDiscountKind)
+    setDiscountValue(existingBundle.discount_kind && existingBundle.discount_kind !== 'none'
+      ? String(existingBundle.discount_value ?? '') : '')
+    setDiscountReason(existingBundle.discount_reason ?? '')
     setExistingLoaded(true)
   }, [existingBundle, existingLoaded])
 
@@ -377,10 +384,27 @@ export default function SourcingBundleFormPage() {
     [bundleItems]
   )
 
+  // Mirrors resolve_bundle_discount() in migration 299 — clamped to the
+  // subtotal, so a discount larger than the order shows as the whole order
+  // off rather than a negative PO. The database is what actually decides;
+  // this only keeps the figures on screen honest before saving.
+  const discountAmount = useMemo(() => {
+    const v = parseFloat(discountValue) || 0
+    if (discountKind === 'none' || v <= 0) return 0
+    const raw = discountKind === 'percent'
+      ? Math.round(runningTotal * v) / 100
+      : v
+    return Math.min(Math.max(raw, 0), Math.max(runningTotal, 0))
+  }, [discountKind, discountValue, runningTotal])
+
+  // Everything downstream of here is on the discounted figure: the vendor
+  // charges VAT on what it actually bills, and withholding is computed off
+  // the same base.
+  const netSubtotal = runningTotal - discountAmount
   const whtEligible = !!selectedVendor?.wth_eligible
-  const vatAmount = runningTotal * VAT_RATE
-  const whtAmount = whtEligible ? runningTotal * WHT_RATE : 0
-  const netPayable = runningTotal + vatAmount - whtAmount
+  const vatAmount = netSubtotal * VAT_RATE
+  const whtAmount = whtEligible ? netSubtotal * WHT_RATE : 0
+  const netPayable = netSubtotal + vatAmount - whtAmount
 
   // ── Phase 2 warn-only budget check — grouped by (project, cost group),
   // since one bundle can pull items from PRs on different projects and
@@ -400,8 +424,16 @@ export default function SourcingBundleFormPage() {
       const existing = totals.get(key)
       totals.set(key, { projectId: order.project_id, costGroupId, amount: (existing?.amount ?? 0) + qty * price })
     }
+    // A discount is negotiated on the order as a whole, so spread it across
+    // the groups in proportion to what each contributes. Checking budgets
+    // against the undiscounted lines would warn about money the project is
+    // not going to spend.
+    if (discountAmount > 0 && runningTotal > 0) {
+      const ratio = netSubtotal / runningTotal
+      for (const [key, g] of totals) totals.set(key, { ...g, amount: g.amount * ratio })
+    }
     return totals
-  }, [bundleItems, orderItemMap, orderMap])
+  }, [bundleItems, orderItemMap, orderMap, discountAmount, netSubtotal, runningTotal])
 
   const [budgetChecks, setBudgetChecks] = useState<Record<string, BudgetCheckResult>>({})
 
@@ -428,6 +460,13 @@ export default function SourcingBundleFormPage() {
         expected_delivery_date: deliveryDate || null,
         payment_pattern: paymentPattern,
         notes: notes || null,
+        // Only what was typed goes to the server. discount_etb,
+        // items_subtotal_etb and total_value are derived there (299) — a
+        // client that sent its own would just be overwritten, and could
+        // disagree with the figure the approval caps are checked against.
+        discount_kind: discountKind,
+        discount_value: discountKind === 'none' ? 0 : (parseFloat(discountValue) || 0),
+        discount_reason: discountKind === 'none' ? null : (discountReason.trim() || null),
       }
       // Only stamp the procurement officer at creation — editing
       // shouldn't silently reassign attribution to whoever last saved.
@@ -625,6 +664,75 @@ export default function SourcingBundleFormPage() {
               className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40 resize-none" />
           </div>
         </div>
+
+        {/* Vendor discount — on the order as a whole, not per line. Shading
+        the unit prices instead would lose the fact a discount was given and
+        would feed the wrong rates into the market price history. */}
+        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 p-3 space-y-3">
+          <div className="flex items-center gap-2">
+            <Tag className="h-3.5 w-3.5 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Vendor Discount</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Type</label>
+              <select
+                value={discountKind}
+                onChange={e => {
+                  const next = e.target.value as SourcingBundleDiscountKind
+                  setDiscountKind(next)
+                  if (next === 'none') { setDiscountValue(''); setDiscountReason('') }
+                }}
+                className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40">
+                <option value="none">No discount</option>
+                <option value="percent">Percentage off</option>
+                <option value="amount">Fixed amount off (ETB)</option>
+              </select>
+            </div>
+            {discountKind !== 'none' && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    {discountKind === 'percent' ? 'Percent (0–100)' : 'Amount (ETB)'}
+                  </label>
+                  <input
+                    type="number"
+                    value={discountValue}
+                    onChange={e => setDiscountValue(e.target.value)}
+                    min={0}
+                    max={discountKind === 'percent' ? 100 : undefined}
+                    step="any"
+                    placeholder={discountKind === 'percent' ? 'e.g. 5' : 'e.g. 2500'}
+                    className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Reason (optional)</label>
+                  <input
+                    type="text"
+                    value={discountReason}
+                    onChange={e => setDiscountReason(e.target.value)}
+                    placeholder="e.g. bulk order, early settlement"
+                    className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40" />
+                </div>
+              </>
+            )}
+          </div>
+          {discountKind !== 'none' && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {discountAmount > 0 ? (
+                <>
+                  {formatCurrency(discountAmount)} off {formatCurrency(runningTotal)} — this PO commits{' '}
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(netSubtotal)}</span>
+                  {' '}before VAT, and that is the figure the approval threshold is checked against.
+                  {discountKind === 'amount' && (parseFloat(discountValue) || 0) > runningTotal &&
+                    ' The amount entered is larger than the order, so it is capped at the full subtotal.'}
+                </>
+              ) : (
+                'Enter a discount above. It applies to the whole order, and is frozen once this PO leaves drafting.'
+              )}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Phase 2 budget check — preview only, never blocks (see src/lib/budgetCheck.ts) */}
@@ -812,6 +920,21 @@ export default function SourcingBundleFormPage() {
                 <span>{bundleItems.length} item{bundleItems.length !== 1 ? 's' : ''} · Subtotal</span>
                 <span className="tabular-nums">{formatCurrency(runningTotal)}</span>
               </div>
+              {discountAmount > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400">
+                    <span>
+                      Vendor discount
+                      {discountKind === 'percent' && ` (${parseFloat(discountValue) || 0}%)`}
+                    </span>
+                    <span className="tabular-nums">−{formatCurrency(discountAmount)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+                    <span>Discounted subtotal</span>
+                    <span className="tabular-nums">{formatCurrency(netSubtotal)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                 <span>VAT (15%, added)</span>
                 <span className="tabular-nums">+{formatCurrency(vatAmount)}</span>
