@@ -2310,6 +2310,37 @@ export interface SubLedgerBalanceRow {
   entry_count: number
 }
 
+// ── Cash flow statement (migration 279) ──────────────────────────────────────
+
+export type CashFlowSection = 'operating' | 'investing' | 'financing' | 'unclassified'
+
+/** v_cash_flow_statement — cash flow by fiscal period and section (direct method). */
+export interface CashFlowStatementRow {
+  fiscal_period_id: string | null
+  fiscal_period_label: string | null
+  section: CashFlowSection
+  cash_in: number | null
+  cash_out: number
+  net_cash_flow: number
+  movement_count: number
+}
+
+/** v_cash_flow_movements — the individual movements behind a section. */
+export interface CashFlowMovementRow {
+  journal_entry_id: string
+  entry_date: string
+  description: string | null
+  source_table: string | null
+  source_id: string | null
+  fiscal_period_id: string | null
+  section: CashFlowSection
+  account_code: string
+  account_name: string
+  /** Signed: positive is cash in. */
+  amount: number
+  direction: 'in' | 'out'
+}
+
 export interface RollupIntegrityRow {
   expense_id: string
   expense_code: string | null

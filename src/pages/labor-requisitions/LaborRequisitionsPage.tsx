@@ -27,7 +27,16 @@ export default function LaborRequisitionsPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['labor-requisitions'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('labor_requisitions').select('*, projects(project_name)').order('created_at', { ascending: false })
+      // Alphabetical by role. The table groups by project and already sorts
+      // those headers A→Z, but rows inside a group kept the fetch order —
+      // so a project with a dozen trades listed them newest-first, which is
+      // no help when you are looking for one by name. created_at is kept as
+      // the tiebreak so repeat requisitions for the same role stay stable.
+      const { data, error } = await supabase
+        .from('labor_requisitions')
+        .select('*, projects(project_name)')
+        .order('role_needed', { ascending: true })
+        .order('created_at', { ascending: false })
       if (error) throw error
       return data as LaborRequisitionRow[]
     },
