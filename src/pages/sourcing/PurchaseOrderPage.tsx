@@ -9,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import { documentBaseCss, renderLetterhead, renderFooter } from '@/lib/documentTheme'
-import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern } from '@/types/database'
+import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
 import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
@@ -47,6 +47,11 @@ type BundleDetail = {
   finance_notes: string | null
   expense_id: string | null
   total_value: number
+  discount_kind: SourcingBundleDiscountKind
+  discount_value: number
+  discount_reason: string | null
+  discount_etb: number
+  items_subtotal_etb: number
   payment_pattern: SourcingBundlePaymentPattern
   created_at: string
   vendors: { vendor_name: string; wth_eligible: boolean | null } | null
@@ -107,6 +112,8 @@ function buildPoHtml(p: {
   bundle: BundleDetail
   vendorDisplay: string
   sortedItems: BundleDetail['sourcing_bundle_items']
+  itemsSubtotal: number
+  discountEtb: number
   grandTotal: number
   vatAmount: number
   grossTotal: number
@@ -114,7 +121,7 @@ function buildPoHtml(p: {
   whtEligible: boolean
   netPayable: number
 }): string {
-  const { bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable } = p
+  const { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable } = p
 
   const rows = sortedItems.map((item, i) => {
     const oi = item.order_items
@@ -161,6 +168,8 @@ td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
 .totals .net td{border-top:2px solid #1B3A5C;padding-top:8px;font-weight:700;font-size:12pt;color:#1B3A5C}
 .totals .gross td{border-top:1px solid #d4d4d4;padding-top:6px;font-weight:600}
 .wht{color:#b45309}
+.disc{color:#047857}
+.disc .lbl{color:#047857}
 .notes{font-size:9.5pt;color:#555;margin-top:16px}
 </style>
 </head>
@@ -200,6 +209,8 @@ ${renderLetterhead({
   <tbody>${rows}</tbody>
 </table>
 <table class="totals">
+  ${discountEtb > 0 ? `<tr><td class="lbl">Subtotal before discount</td><td class="val">${fmt(itemsSubtotal)}</td></tr>
+  <tr class="disc"><td class="lbl">Vendor discount${bundle.discount_kind === 'percent' ? ` (${Number(bundle.discount_value)}%)` : ''}${bundle.discount_reason ? ` — ${bundle.discount_reason}` : ''}</td><td class="val">−${fmt(discountEtb)}</td></tr>` : ''}
   <tr><td class="lbl">Subtotal</td><td class="val">${fmt(grandTotal)}</td></tr>
   <tr><td class="lbl">VAT (15%, added)</td><td class="val">${fmt(vatAmount)}</td></tr>
   ${whtEligible ? `<tr class="gross"><td class="lbl">Gross Total (before WHT)</td><td class="val">${fmt(grossTotal)}</td></tr>
@@ -422,8 +433,17 @@ export default function PurchaseOrderPage() {
 
   const sortedItems = [...(bundle.sourcing_bundle_items ?? [])].sort((a, b) => a.sort_order - b.sort_order)
 
-  const grandTotal = sortedItems.reduce((sum, item) =>
+  const itemsSubtotal = sortedItems.reduce((sum, item) =>
     sum + (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0), 0)
+
+  // The vendor discount comes from the bundle, already resolved to birr and
+  // clamped by the database (299) — it is not recomputed here, so the PO
+  // shows the same figure the approval caps were checked against.
+  const discountEtb = Number(bundle.discount_etb ?? 0)
+  // grandTotal is the discounted subtotal from here down: it is what the
+  // vendor invoices, so VAT is charged on it and withholding is measured
+  // against it.
+  const grandTotal = Math.max(itemsSubtotal - discountEtb, 0)
 
   // Vendor must be tax-registered AND the PO subtotal must clear the
   // withholding bracket floor — either alone is not sufficient.
@@ -436,7 +456,7 @@ export default function PurchaseOrderPage() {
   const whtAmount = whtEligible ? grandTotal * WHT_RATE : 0
   const netPayable = grossTotal - whtAmount
 
-  const poHtml = buildPoHtml({ bundle, vendorDisplay, sortedItems, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable })
+  const poHtml = buildPoHtml({ bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable })
 
   function handlePrint() {
     printRef.current?.contentWindow?.print()
@@ -454,10 +474,14 @@ export default function PurchaseOrderPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Group by project for cost allocation
+  // Group by project for cost allocation. A discount is negotiated on the
+  // order as a whole, so each project carries it in proportion to what it
+  // contributed — otherwise these would add up to the undiscounted total
+  // and read as more than 100% of the PO.
+  const discountRatio = itemsSubtotal > 0 ? grandTotal / itemsSubtotal : 1
   const projectAllocations = sortedItems.reduce<Record<string, { name: string; total: number }>>((acc, item) => {
     const project = item.order_items?.orders?.projects?.project_name ?? 'No project'
-    const lineTotal = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+    const lineTotal = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0) * discountRatio
     if (!acc[project]) acc[project] = { name: project, total: 0 }
     acc[project].total += lineTotal
     return acc
@@ -795,6 +819,22 @@ export default function PurchaseOrderPage() {
               })}
             </tbody>
             <tfoot>
+              {discountEtb > 0 && (
+                <>
+                  <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
+                    <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">Subtotal before discount</td>
+                    <td className="px-4 py-2 text-right text-sm text-slate-500 dark:text-slate-400 tabular-nums">{formatCurrency(itemsSubtotal)}</td>
+                  </tr>
+                  <tr className="bg-slate-50 dark:bg-slate-700/30">
+                    <td colSpan={7} className="px-4 py-2 text-right text-xs text-emerald-600 dark:text-emerald-400">
+                      Vendor discount
+                      {bundle.discount_kind === 'percent' && ` (${Number(bundle.discount_value)}%)`}
+                      {bundle.discount_reason && ` — ${bundle.discount_reason}`}
+                    </td>
+                    <td className="px-4 py-2 text-right text-sm text-emerald-600 dark:text-emerald-400 tabular-nums">−{formatCurrency(discountEtb)}</td>
+                  </tr>
+                </>
+              )}
               <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
                 <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">Subtotal</td>
                 <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(grandTotal)}</td>
