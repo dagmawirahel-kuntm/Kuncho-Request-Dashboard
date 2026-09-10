@@ -158,6 +158,24 @@ export type LaborPaymentRequestInput = {
   /** Where the credit came from, printed under the schedule so an approver
    *  can see why the disbursement is short of the invoice. */
   creditNote?: string | null
+  /** What this document instructs, when a payroll run is split (migration
+   *  300). 'bank' is the instruction one bank receives and is the only one
+   *  that should ever leave the building; 'unassigned' collects the payees
+   *  with no account on file, so the money owed to them stays visible
+   *  instead of quietly going missing from the split; 'all' is the run-wide
+   *  sheet somebody signs before any of the others are sent, and is the
+   *  default because every other document kind is exactly that.
+   *
+   *  The caller narrows `workers` and `total` to match — this only controls
+   *  what the document says about itself. */
+  bankScope?: 'all' | 'bank' | 'unassigned'
+  /** The bank being instructed, when bankScope is 'bank'. */
+  bankLabel?: string | null
+  /** True when the company holds no account at `bankLabel`, so this is an
+   *  outward transfer rather than a same-bank one. Worth printing: outward
+   *  transfers carry the 290-birr MT103 charge and clear on a different
+   *  timetable, and finding that out at the counter is too late. */
+  outwardTransfer?: boolean
 }
 
 // ── Disbursement schedule ────────────────────────────────────────────────────
@@ -368,7 +386,12 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     fundingAccount, paymentMethod, typeDetail, accentColor, accentGradient, breakdownKind, typeLabel,
     breakdownNoun,
     whtAmount, creditApplied, creditNote,
+    bankScope, bankLabel, outwardTransfer,
   } = input
+
+  const scope = bankScope ?? 'all'
+  const isPerBank = scope === 'bank'
+  const isUnassigned = scope === 'unassigned'
 
   const isBatch = kind === 'batch'
   const isLabor = breakdownKind !== 'line_items'
@@ -471,12 +494,39 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   <div class="sighint">${a.date ? esc(formatDateGC(a.date)) : 'Name / Signature / Date'}</div>
 </div>`).join('')
 
-  const docTitle = isBatch ? 'PAYMENT REQUEST — BATCH' : 'PAYMENT REQUEST'
+  // A per-bank document says so in its own title. Four sheets from one
+  // payroll run that all read "PAYMENT REQUEST" are how the wrong one ends
+  // up at the wrong counter.
+  const docTitle = isPerBank
+    ? `PAYMENT REQUEST — ${(bankLabel ?? 'BANK').toUpperCase()}`
+    : isUnassigned
+      ? 'PAYMENT REQUEST — UNASSIGNED PAYEES'
+      : isBatch ? 'PAYMENT REQUEST — BATCH' : 'PAYMENT REQUEST'
   const metaLines = [
     formatDateGC(issuedOn),
     sourceCode ? `Source: ${esc(sourceCode)}` : '',
     revision && revision > 1 ? `Revision ${revision}` : '',
   ].filter(Boolean)
+
+  // Says what this sheet is for, immediately under the schedule heading.
+  // The unassigned one is a warning, not an instruction: there is no bank to
+  // hand it to, and its whole job is to stop the money being forgotten
+  // because it fell out of the per-bank split.
+  const routingNote = isPerBank
+    ? `<div class="routing">
+  <span class="rk">Instructing</span> ${esc(bankLabel ?? 'this bank')}${
+      fundingAccount ? ` · <span class="rk">from</span> ${esc(fundingAccount)}` : ''}
+  ${outwardTransfer
+      ? `<div class="rwarn">Outward transfer — the company holds no account at ${esc(bankLabel ?? 'this bank')}. Expect the outward transfer charge, and a longer clearing time than a same-bank payment.</div>`
+      : ''}
+</div>`
+    : isUnassigned
+      ? `<div class="routing rnobank">
+  <span class="rk">Not an instruction to any bank.</span> These payees have no
+  account on file, so they are not covered by any of this run's per-bank
+  requests. Settle them another way, or record their accounts and re-issue.
+</div>`
+      : ''
 
   return `<!DOCTYPE html>
 <html>
@@ -512,6 +562,11 @@ td.b{font-weight:700}
 .pill{display:inline-block;padding:0 5px;border-radius:8px;background:#eef2ff;color:#3730a3;font-size:7pt;font-weight:700;vertical-align:1px}
 .bankhead td{background:#f1f5f9;font-weight:700;font-size:7.5pt;letter-spacing:.03em;text-transform:uppercase;color:#334155;padding-top:7px}
 .banksub td{border-top:1px solid #cbd5e1;background:#f8fafc;font-weight:600;color:#334155}
+.routing{background:#f4f6f8;border-left:3px solid ${BRAND_NAVY};border-radius:0 5px 5px 0;padding:7px 11px;margin-bottom:7px;font-size:8.5pt;color:#334155}
+.routing .rk{font-size:7.5pt;text-transform:uppercase;letter-spacing:.09em;color:#9aa5b1;font-weight:700}
+.routing .rwarn{margin-top:5px;color:#b45309;font-size:8pt}
+.routing.rnobank{border-left-color:#b45309;background:#fffbeb;color:#92400e}
+.routing.rnobank .rk{color:#b45309}
 .grand{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:12px;padding:11px 14px;border-radius:6px;background:${BRAND_NAVY};color:#fff}
 .grand .w{font-size:8.5pt;color:rgba(255,255,255,.8);font-style:italic;max-width:62%}
 .grand .n{font-size:16pt;font-weight:900;letter-spacing:-.5px;white-space:nowrap}
@@ -575,6 +630,7 @@ ${typeDetail ? `
 </div>` : ''}
 
 <h2>Disbursement Schedule <span class="count">— ${payees.length} payee${payees.length === 1 ? '' : 's'}</span></h2>
+${routingNote}
 <table>
   <thead><tr><th>Pay To</th><th>Bank Account</th><th class="r">Amount</th></tr></thead>
   <tbody>${payeeRows}</tbody>
@@ -656,5 +712,12 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     credit_applied: input.creditApplied ?? null,
     // What the bank was actually told to move, after WHT and any credit.
     cash_to_send: input.total - Number(input.whtAmount ?? 0) - Number(input.creditApplied ?? 0),
+    // Which slice of a split payroll run this document is. The columns on
+    // payment_requests are the queryable copy; this keeps the frozen
+    // snapshot self-describing, so an archived document still says what it
+    // covered without joining back to a row that could later be voided.
+    bank_scope: input.bankScope ?? 'all',
+    bank_label: input.bankLabel ?? null,
+    outward_transfer: input.outwardTransfer ?? false,
   }
 }

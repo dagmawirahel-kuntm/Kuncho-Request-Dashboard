@@ -2412,7 +2412,17 @@ export interface PaymentRequestRow {
   payment_state: string | null
   created_at: string
   updated_at: string
+  /** Which slice of a split payroll run this covers (migration 300): the
+   *  whole source, one bank, or the payees with no account on file. Always
+   *  'all' for an expense or batch request. */
+  bank_scope: PaymentRequestBankScope
+  bank_id: string | null
+  /** The bank's name, resolved from accounts. Null unless bank_scope is 'bank'. */
+  bank_name: string | null
 }
+
+/** How a payroll run's Payment Requests are split. See migration 300. */
+export type PaymentRequestBankScope = 'all' | 'bank' | 'unassigned'
 
 /** The stored row itself, including the frozen document. */
 export interface PaymentRequestRecord {
@@ -2421,6 +2431,11 @@ export interface PaymentRequestRecord {
   source_type: PaymentRequestSource
   expense_id: string | null
   batch_payment_id: string | null
+  /** Added by migration 289; the type had not caught up. */
+  payroll_id: string | null
+  /** Which slice of a split payroll run this is (migration 300). */
+  bank_scope: PaymentRequestBankScope
+  bank_id: string | null
   title: string | null
   total_amount: number | null
   amount_in_words: string | null
