@@ -50,7 +50,7 @@ export default function PaymentRequestsPage() {
       if (status !== 'all' && r.status !== status) return false
       if (project !== 'all' && !(r.project_names ?? []).includes(project)) return false
       if (!q) return true
-      return [r.request_code, r.source_code, r.title, r.issued_by_name, ...(r.project_names ?? [])]
+      return [r.request_code, r.source_code, r.title, r.issued_by_name, r.bank_name, ...(r.project_names ?? [])]
         .filter(Boolean).some(v => String(v).toLowerCase().includes(q))
     })
   }, [rows, search, status, project])
@@ -182,6 +182,20 @@ export default function PaymentRequestsPage() {
                           ? <Layers className="h-3 w-3 text-slate-400 flex-shrink-0" />
                           : <Receipt className="h-3 w-3 text-slate-400 flex-shrink-0" />}
                         <span className="text-xs truncate max-w-[260px]">{r.source_code ?? r.title ?? '—'}</span>
+                        {/* A split payroll run puts several rows here under
+                            one payroll_record. Without the bank they are
+                            indistinguishable — same code, same period, and
+                            only the amount differing. */}
+                        {r.bank_scope === 'bank' && (
+                          <span className="rounded bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                            {r.bank_name ?? 'bank'}
+                          </span>
+                        )}
+                        {r.bank_scope === 'unassigned' && (
+                          <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 whitespace-nowrap">
+                            no account
+                          </span>
+                        )}
                       </div>
                       {(r.project_names ?? []).length > 0 && (
                         <p className="text-[11px] text-slate-400 truncate max-w-[260px]">{(r.project_names ?? []).join(', ')}</p>

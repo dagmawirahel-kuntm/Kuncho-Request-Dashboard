@@ -17,6 +17,9 @@ import { formatCurrency, formatDateTime, formatDateGC } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { PaymentRequestRecord } from '@/types/database'
 
+/** The stored row plus the bank it names, which lives on accounts. */
+type PrRecord = PaymentRequestRecord & { bank: { account_name: string } | null }
+
 export default function PaymentRequestDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -31,9 +34,15 @@ export default function PaymentRequestDetailPage() {
   const { data: pr, isLoading } = useQuery({
     queryKey: ['payment-request', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('payment_requests').select('*').eq('id', id!).single()
+      // The bank is embedded rather than read from v_payment_requests: this
+      // page needs document_html, which the view does not carry.
+      const { data, error } = await supabase
+        .from('payment_requests')
+        .select('*, bank:bank_id (account_name)')
+        .eq('id', id!)
+        .single()
       if (error) throw error
-      return data as PaymentRequestRecord
+      return data as unknown as PrRecord
     },
     enabled: !!id,
   })
@@ -41,15 +50,26 @@ export default function PaymentRequestDetailPage() {
   // Sibling revisions against the same source, so the trail is walkable
   // in both directions rather than only backwards via supersedes_id.
   const { data: siblings = [] } = useQuery({
-    queryKey: ['payment-request-siblings', pr?.expense_id, pr?.batch_payment_id],
+    queryKey: ['payment-request-siblings', pr?.expense_id, pr?.batch_payment_id, pr?.payroll_id, pr?.bank_scope, pr?.bank_id],
     queryFn: async () => {
-      const col = pr!.source_type === 'expense' ? 'expense_id' : 'batch_payment_id'
-      const val = pr!.source_type === 'expense' ? pr!.expense_id : pr!.batch_payment_id
-      const { data, error } = await supabase
+      // Payroll was never handled here: the ternary fell through to
+      // batch_payment_id with a null value, so a payroll request's revision
+      // trail came back empty. It also has to narrow to this request's own
+      // slice — the other banks' documents for the same run are separate
+      // trails, not earlier revisions of this one.
+      const col = pr!.source_type === 'expense' ? 'expense_id'
+        : pr!.source_type === 'payroll' ? 'payroll_id' : 'batch_payment_id'
+      const val = pr!.source_type === 'expense' ? pr!.expense_id
+        : pr!.source_type === 'payroll' ? pr!.payroll_id : pr!.batch_payment_id
+      let q = supabase
         .from('v_payment_requests')
         .select('id, request_code, revision, status, issued_at')
         .eq(col, val!)
-        .order('revision', { ascending: false })
+      if (pr!.source_type === 'payroll') {
+        q = q.eq('bank_scope', pr!.bank_scope ?? 'all')
+        q = pr!.bank_id ? q.eq('bank_id', pr!.bank_id) : q.is('bank_id', null)
+      }
+      const { data, error } = await q.order('revision', { ascending: false })
       if (error) throw error
       return (data ?? []) as { id: string; request_code: string | null; revision: number; status: string; issued_at: string }[]
     },
@@ -103,9 +123,13 @@ export default function PaymentRequestDetailPage() {
     )
   }
 
+  // Payroll was missing here too, so the "back to source" link on a payroll
+  // request pointed at /batch-payments/null.
   const sourceHref = pr.source_type === 'expense'
     ? `/expenses/${pr.expense_id}`
-    : `/batch-payments/${pr.batch_payment_id}`
+    : pr.source_type === 'payroll'
+      ? `/payroll/${pr.payroll_id}`
+      : `/batch-payments/${pr.batch_payment_id}`
 
   return (
     <div className="space-y-4">
@@ -161,7 +185,15 @@ export default function PaymentRequestDetailPage() {
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <p className="text-white/60 text-xs uppercase tracking-widest">
-                {pr.source_type === 'batch_payment' ? 'Batch Payment Request' : 'Payment Request'}
+                {pr.source_type === 'batch_payment'
+                  ? 'Batch Payment Request'
+                  : pr.bank_scope === 'bank'
+                    // Which bank this one instructs belongs in the title: a
+                    // run's requests otherwise all open on the same words.
+                    ? `Payment Request — ${pr.bank?.account_name ?? 'bank'}`
+                    : pr.bank_scope === 'unassigned'
+                      ? 'Payment Request — unassigned payees'
+                      : 'Payment Request'}
               </p>
               <h1 className="text-white font-bold text-lg leading-tight font-mono">{pr.request_code}</h1>
               {pr.amount_in_words && <p className="text-white/70 text-xs italic mt-1">{pr.amount_in_words}</p>}

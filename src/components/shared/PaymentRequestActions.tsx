@@ -43,9 +43,25 @@ interface Props {
   document: Omit<LaborPaymentRequestInput, 'documentCode' | 'status' | 'revision'>
   /** Rendered inline in the page's action row; the preview opens in a modal. */
   compact?: boolean
+  /** Which slice of a split payroll run this toolbar issues (migration 300).
+   *  A payroll run has one of these per bank plus, where needed, one for the
+   *  payees with no account and one run-wide sheet — each with its own code,
+   *  its own revision history, and its own live document. Defaults to the
+   *  whole source, which is what every non-payroll caller wants. */
+  bankScope?: 'all' | 'bank' | 'unassigned'
+  /** The accounts row for the bank, when bankScope is 'bank'. */
+  bankId?: string | null
+  /** The bank's name, used to title the register row. */
+  bankLabel?: string | null
+  /** Button text. Defaults to "Payment Request"; a payroll run's per-bank
+   *  buttons name their bank, since several of them sit on one page. */
+  label?: string
 }
 
-export function PaymentRequestActions({ sourceType, sourceId, document: doc, compact }: Props) {
+export function PaymentRequestActions({
+  sourceType, sourceId, document: doc, compact,
+  bankScope = 'all', bankId = null, bankLabel = null, label,
+}: Props) {
   const { toast } = useToast()
   const { role } = useAuth()
   const qc = useQueryClient()
@@ -56,16 +72,23 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
   const canIssue = role === 'admin' || role === 'executive' || role === 'finance'
 
   const { data: saved = [] } = useQuery({
-    queryKey: ['payment-requests-for-source', sourceType, sourceId],
+    queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId],
     queryFn: async () => {
       const col = sourceType === 'expense'
         ? 'expense_id'
         : sourceType === 'payroll' ? 'payroll_id' : 'batch_payment_id'
-      const { data, error } = await supabase
+      let q = supabase
         .from('v_payment_requests')
         .select('id, request_code, revision, status, issued_at, issued_by_name, total_amount')
         .eq(col, sourceId)
-        .order('revision', { ascending: false })
+      // A split payroll run has several live requests against the same id, so
+      // matching on the source alone would pick whichever came back first and
+      // show CBE's code above Awash's button. The scope is part of the key.
+      if (sourceType === 'payroll') {
+        q = q.eq('bank_scope', bankScope)
+        q = bankId ? q.eq('bank_id', bankId) : q.is('bank_id', null)
+      }
+      const { data, error } = await q.order('revision', { ascending: false })
       if (error) throw error
       return (data ?? []) as SavedPr[]
     },
@@ -100,11 +123,20 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
         p_document_html: html,
         p_snapshot: buildPaymentRequestSnapshot(input),
         p_payee_lines: payees,
+        // Which slice of the run this is. The server supersedes per
+        // (run, scope, bank), so this is what keeps re-issuing one bank from
+        // retiring the documents the other banks already have.
+        p_bank_scope: bankScope,
+        p_bank_id: bankScope === 'bank' ? bankId : null,
         // The register row is titled after what the request actually is: a
         // fuel or rent request filed as a "Labor Payment Request" is the
         // same mislabelling as the worker-shaped document it came from.
         p_title: sourceType === 'payroll'
-          ? 'Payroll Payment Request'
+          ? bankScope === 'bank'
+            ? `Payroll Payment Request — ${bankLabel ?? 'bank'}`
+            : bankScope === 'unassigned'
+              ? 'Payroll Payment Request — unassigned payees'
+              : 'Payroll Payment Request'
           : doc.kind === 'batch'
             ? 'Batch Labor Payment Request'
             : doc.breakdownKind === 'line_items'
@@ -135,7 +167,7 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
         'success',
       )
       setNotes('')
-      qc.invalidateQueries({ queryKey: ['payment-requests-for-source', sourceType, sourceId] })
+      qc.invalidateQueries({ queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId] })
       qc.invalidateQueries({ queryKey: ['payment-requests'] })
     },
     onError: (e: Error) => toast(e.message, 'error'),
@@ -164,13 +196,18 @@ export function PaymentRequestActions({ sourceType, sourceId, document: doc, com
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+        className={`flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 ${
+          compact ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-sm'
+        }`}
       >
-        <FileText className="h-3.5 w-3.5" />
-        {compact ? 'Payment Request' : 'Payment Request'}
-        {live?.request_code && (
-          <span className="font-mono text-[11px] text-slate-400">{live.request_code}</span>
-        )}
+        <FileText className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+        {label ?? 'Payment Request'}
+        {live?.request_code
+          ? <span className="font-mono text-[11px] text-slate-400">{live.request_code}</span>
+          // Which banks are still to be sent is the thing you scan for on a
+          // half-issued run, so an un-issued group says so rather than
+          // looking identical to an issued one.
+          : <span className="text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400">not issued</span>}
       </button>
 
       {open && (
