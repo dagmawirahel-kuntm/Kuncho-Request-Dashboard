@@ -92,6 +92,12 @@ export function BoqSection({ projectId, projectName }: Props) {
   function invalidateAll() {
     qc.invalidateQueries({ queryKey: ['project-boq', projectId] })
     qc.invalidateQueries({ queryKey: ['boq-tree', boq?.id] })
+    // ScheduleSection reads the approved BOQ under its own key to stamp
+    // schedules.boq_id when a schedule is built. Without this, approving a
+    // BOQ here left that query holding a stale null, and a schedule built
+    // moments later recorded no BOQ at all — which silently zeroed the
+    // whole physical-progress chain (see migration 235).
+    qc.invalidateQueries({ queryKey: ['project-approved-boq', projectId] })
   }
 
   async function handleCreateManually() {

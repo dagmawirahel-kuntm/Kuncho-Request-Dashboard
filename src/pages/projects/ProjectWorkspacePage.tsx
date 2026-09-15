@@ -13,6 +13,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { ScheduleSection } from '@/components/projects/ScheduleSection'
 import { BoqSection } from '@/components/projects/BoqSection'
+import { PaymentMilestonesSection } from '@/components/projects/PaymentMilestonesSection'
 import { resolveHint } from '@/lib/trainerHints'
 import { useStaff, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
@@ -1388,6 +1389,11 @@ export default function ProjectWorkspacePage() {
       {/* Schedule (PR 9b): tasks with baseline tracking, working-day-aware
           dates, simple dependencies, BOQ linkage, WO spawning. */}
       <ScheduleSection projectId={id!} projectName={project?.project_name ?? ''} />
+
+      {/* Payment milestones (PR 9d): contract-value-based payment stages,
+          gated on the BOQ physical progress above. Renders nothing unless the
+          project has a contract with a value, which is most projects. */}
+      <PaymentMilestonesSection projectId={id!} projectManagerId={project?.project_manager_id ?? null} />
 
       {/* Labor Tier 1: routine assignment, no approval */}
       <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />

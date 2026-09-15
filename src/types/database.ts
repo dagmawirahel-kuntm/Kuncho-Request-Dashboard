@@ -3050,6 +3050,81 @@ export interface ScheduleTaskBoqItem {
   created_at: string
 }
 
+// PR 9d: contract-value-based payment milestones, phase-gated by BOQ
+// physical progress. Amounts are computed by trigger from the contract
+// (migrations 232/233) — never written directly by the client.
+export type PaymentMilestoneStatus = 'pending' | 'progress_met' | 'invoiced' | 'payment_confirmed'
+
+export interface PaymentMilestone {
+  id: string
+  contract_id: string
+  project_id: string
+  sequence_number: number
+  title: string
+  percent_of_contract_value: number
+  gross_amount_etb: number
+  // VAT-exclusive share of the contract — the base for both retention and WHT.
+  gross_excl_vat_etb: number
+  retention_withheld_etb: number
+  wht_withheld_etb: number
+  net_payable_etb: number
+  status: PaymentMilestoneStatus
+  progress_met_at: string | null
+  progress_met_by_staff_id: string | null
+  invoiced_at: string | null
+  invoiced_by_staff_id: string | null
+  invoice_document_url: string | null
+  payment_confirmed_at: string | null
+  payment_confirmed_by_staff_id: string | null
+  amount_received_etb: number | null
+  payment_note: string | null
+  created_by_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PaymentMilestoneBoqItem {
+  id: string
+  payment_milestone_id: string
+  boq_item_id: string
+}
+
+export interface MilestoneGateOverride {
+  id: string
+  schedule_task_id: string
+  blocking_milestone_id: string
+  reason: string
+  overridden_by_staff_id: string
+  overridden_at: string
+}
+
+// v_contract_milestone_plan_totals — drives the soft "plan doesn't sum to
+// 100%" warning. Never blocks.
+export interface ContractMilestonePlanTotals {
+  contract_id: string
+  milestone_count: number
+  sum_percent_of_contract_value: number
+  is_balanced: boolean
+}
+
+// v_project_milestone_summary (PR 9d item 16) — built for a future exec
+// dashboard gadget, not wired into one yet.
+export interface ProjectMilestoneSummary {
+  project_id: string
+  contract_id: string
+  milestone_count: number
+  pending_count: number
+  progress_met_count: number
+  invoiced_count: number
+  paid_count: number
+  total_net_payable_etb: number
+  total_received_etb: number
+  outstanding_etb: number
+  invoiced_awaiting_payment_etb: number
+  total_retention_withheld_etb: number
+  total_wht_withheld_etb: number
+}
+
 // PR 9a.5: BOQ frontend types, against the live boqs/boq_items schema
 // (PR 9a shipped these tables in migrations 209-215 but never a frontend).
 export type BoqStatus = 'draft' | 'internal_review' | 'approved' | 'superseded'
