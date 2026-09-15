@@ -44,6 +44,9 @@ export function ScheduleSection({ projectId, projectName }: Props) {
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
   const [resetReason, setResetReason] = useState('')
   const [resetting, setResetting] = useState(false)
+  const [creatingWo, setCreatingWo] = useState(false)
+  const [gateWarning, setGateWarning] = useState<{ message: string; milestoneTitle: string | null } | null>(null)
+  const [gateReason, setGateReason] = useState('')
 
   const { data: schedule, isLoading: scheduleLoading } = useQuery({
     queryKey: ['project-schedule', projectId],
@@ -215,14 +218,37 @@ export function ScheduleSection({ projectId, projectName }: Props) {
     toast('Baseline reset', 'success')
   }
 
-  async function handleCreateWorkOrder() {
+  // create_work_order_from_task returns a row, not a bare id (migration 236):
+  // when an earlier payment milestone is still unpaid it comes back with a
+  // warning and creates nothing. Passing a reason re-runs it as a logged
+  // override. Projects with no milestone plan never see this path.
+  async function handleCreateWorkOrder(overrideReason?: string) {
     if (!creatingWoFor) return
-    const { data, error } = await supabase.rpc('create_work_order_from_task', { p_task_id: creatingWoFor.id, p_work_type: woType })
+    setCreatingWo(true)
+    const { data, error } = await supabase.rpc('create_work_order_from_task', {
+      p_task_id: creatingWoFor.id,
+      p_work_type: woType,
+      p_override_reason: overrideReason ?? null,
+    })
+    setCreatingWo(false)
     if (error) { toast(error.message, 'error'); return }
+
+    const result = Array.isArray(data) ? data[0] : data
+    if (!result?.work_order_id) {
+      // Gate hit — ask for a reason rather than failing or silently proceeding.
+      setGateWarning({
+        message: result?.warning_message ?? 'A previous payment milestone is not yet confirmed as paid.',
+        milestoneTitle: result?.blocking_milestone_title ?? null,
+      })
+      return
+    }
+
     qc.invalidateQueries({ queryKey: ['schedule-task-work-orders', schedule?.id] })
-    toast('Work order created', 'success')
+    toast(overrideReason ? 'Work order created — gate override logged' : 'Work order created', 'success')
     setCreatingWoFor(null)
-    navigate(`/work-orders/${data}`)
+    setGateWarning(null)
+    setGateReason('')
+    navigate(`/work-orders/${result.work_order_id}`)
   }
 
   if (scheduleLoading) {
@@ -483,7 +509,10 @@ export function ScheduleSection({ projectId, projectName }: Props) {
             </div>
             <div className="flex items-center gap-2 justify-end pt-1">
               <button onClick={() => setCreatingWoFor(null)} className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
-              <button onClick={handleCreateWorkOrder} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">Create</button>
+              <button onClick={() => handleCreateWorkOrder()} disabled={creatingWo}
+                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+                {creatingWo ? 'Creating…' : 'Create'}
+              </button>
             </div>
           </div>
         </div>
@@ -522,6 +551,33 @@ export function ScheduleSection({ projectId, projectName }: Props) {
               <button onClick={handleResetBaseline} disabled={resetting}
                 className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60">
                 {resetting ? 'Resetting…' : 'Reset Baseline'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gateWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 text-amber-500" /> Previous milestone not yet paid
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300">{gateWarning.message}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              You can proceed anyway — a brief reason is required and will be logged against this task.
+            </p>
+            <textarea className={inputCls} rows={2} placeholder="Reason for proceeding before payment…"
+              value={gateReason} onChange={e => setGateReason(e.target.value)} />
+            <div className="flex items-center gap-2 justify-end pt-1">
+              <button onClick={() => { setGateWarning(null); setGateReason('') }}
+                className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                Cancel
+              </button>
+              <button onClick={() => handleCreateWorkOrder(gateReason.trim())}
+                disabled={!gateReason.trim() || creatingWo}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60">
+                {creatingWo ? 'Creating…' : 'Proceed anyway'}
               </button>
             </div>
           </div>
