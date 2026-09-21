@@ -85,8 +85,12 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
         document_name: record.document_name,
         notes: record.notes,
         wht_deduction_mode: record.wht_deduction_mode ?? 'per_payment',
+        contract_value_includes_vat: record.contract_value_includes_vat ?? false,
       }
-      : { status: 'draft', client_id: prefillClientId ?? undefined, wht_deduction_mode: 'per_payment' }
+      : {
+        status: 'draft', client_id: prefillClientId ?? undefined,
+        wht_deduction_mode: 'per_payment', contract_value_includes_vat: false,
+      }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -125,6 +129,7 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       document_name: form.document_name ?? null,
       notes: form.notes ?? null,
       wht_deduction_mode: form.wht_deduction_mode ?? 'per_payment',
+      contract_value_includes_vat: form.contract_value_includes_vat ?? false,
       created_at: record?.created_at ?? '',
       updated_at: record?.updated_at ?? '',
     }
@@ -211,6 +216,25 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Contract Value (ETB)">
           <input type="number" step="0.01" className={inputCls} value={form.contract_value ?? ''} onChange={e => set('contract_value', e.target.value ? parseFloat(e.target.value) : null)} />
+          {/* Payment milestones compute WHT and retention on the VAT-exclusive
+              figure, so they need to know which one was typed here. Without
+              this the column stayed false for every contract, and a
+              VAT-inclusive value silently had both deductions taken on an
+              amount 15% too high. */}
+          <label className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand"
+              checked={form.contract_value_includes_vat === true}
+              onChange={e => set('contract_value_includes_vat', e.target.checked)}
+            />
+            This amount already includes 15% VAT
+          </label>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+            {form.contract_value_includes_vat
+              ? 'Milestone WHT and retention will be computed on the value excluding VAT.'
+              : 'Treated as VAT-exclusive — milestone WHT and retention use this figure directly.'}
+          </p>
         </Field>
         <Field label="Signed Date">
           <input type="date" className={inputCls} value={form.signed_date ?? ''} onChange={e => set('signed_date', e.target.value || null)} />
@@ -235,11 +259,11 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
           <input type="number" step="0.01" className={inputCls} value={form.retention_percent ?? ''} onChange={e => set('retention_percent', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
-      <Field label="WHT Deduction">
+      <Field label="WHT Deduction on invoices">
         <div className="flex gap-2">
           {[
-            { v: 'per_payment', label: 'On every payment', desc: 'Each qualifying invoice (≥20k) against this client needs its own WHT receipt.' },
-            { v: 'final_only',  label: 'On final payment',  desc: 'WHT is withheld once, on the invoice marked final, computed on the full contract value.' },
+            { v: 'per_payment', label: 'On every payment', desc: 'Each qualifying invoice (≥20k) needs its own WHT receipt.' },
+            { v: 'final_only',  label: 'On final payment',  desc: 'One WHT receipt, on the invoice marked final, for the whole contract.' },
           ].map(opt => (
             <label key={opt.v} className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm ${form.wht_deduction_mode === opt.v ? 'border-brand bg-brand/5 text-brand dark:bg-brand/10' : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
               <input type="radio" name="whtmode" className="sr-only" checked={form.wht_deduction_mode === opt.v} onChange={() => set('wht_deduction_mode', opt.v)} />
@@ -248,6 +272,17 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
             </label>
           ))}
         </div>
+        {/* This setting decides when WHT receipts are collected against
+            sales/invoices. It does not change payment milestone amounts —
+            milestone WHT is a contract-level deduction spread across the
+            plan, so both options produce identical milestone figures. Said
+            here because the previous copy ("computed on the full contract
+            value") read as though it set the amount. */}
+        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+          Affects when WHT receipts are collected on invoices. Payment milestone amounts are
+          the same either way — milestone WHT is deducted from the contract as a whole and
+          spread across the plan.
+        </p>
       </Field>
       <Field label="Contract Document">
         {isEdit ? (
