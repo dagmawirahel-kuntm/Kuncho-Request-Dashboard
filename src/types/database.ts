@@ -1987,10 +1987,18 @@ export interface Contract {
   document_url: string | null
   document_name: string | null
   notes: string | null
-  // per_payment (default): every qualifying sale needs its own WHT
-  // receipt. final_only: WHT is deducted once, on the sale flagged
-  // is_final_payment, computed on the full contract_value.
+  // Governs SALES/invoice WHT only. per_payment (default): every
+  // qualifying sale needs its own WHT receipt. final_only: WHT is
+  // deducted once, on the sale flagged is_final_payment, computed on the
+  // full contract_value.
+  //
+  // It does NOT affect payment_milestones amounts: milestone WHT is a
+  // contract-level deduction apportioned across the plan, so both modes
+  // produce identical per-milestone figures (migration 233).
   wht_deduction_mode: 'per_payment' | 'final_only'
+  // Whether contract_value as entered already includes 15% VAT. Payment
+  // milestone WHT and retention are computed on the VAT-exclusive figure.
+  contract_value_includes_vat: boolean
   created_at: string
   updated_at: string
 }
