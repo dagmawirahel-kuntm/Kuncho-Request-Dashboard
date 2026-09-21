@@ -37,7 +37,13 @@ export function StaffBankAccountsSection({ staffId }: { staffId: string }) {
   const [holder, setHolder] = useState('')
   const [label, setLabel] = useState('')
 
-  const canEdit = role === 'admin' || role === 'executive' || role === 'finance' || role === 'hr_officer'
+  // Kept in step with set_primary_staff_bank_account's own role check
+  // (migration 238), which is admin/finance/HR. 'executive' used to be here,
+  // so an executive was shown a "Make primary" button that the function now
+  // refuses. Narrowed rather than widening the function, because repointing
+  // the account a staff member is paid into is what that check exists to
+  // limit. Put 'executive' back in both places if they should have it.
+  const canEdit = role === 'admin' || role === 'finance' || role === 'hr_officer'
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['staff-bank-accounts', staffId],
