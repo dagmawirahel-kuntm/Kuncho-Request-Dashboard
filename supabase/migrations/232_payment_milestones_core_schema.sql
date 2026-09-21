@@ -26,14 +26,20 @@
 --   IMPORTANT unit note, confirmed with the user: contracts.wht_rate is
 --   entered and documented everywhere (ContractFormPage's "e.g. 3" input,
 --   generateContractDocument's "${wht_rate}%" text, the column's own
---   COMMENT) as a percentage number, so this divides by 100. One existing
---   line, ClientDetailPage.tsx's `saleWht`-consuming `base * rate` bank-
---   matching estimate, uses `rate` as a raw multiplier with no /100 --
---   that appears to be a pre-existing unit bug (harmless there because it's
---   only a "does this bank line look like a plausible match" estimate, not
---   a posted amount), left untouched here as it's outside this PR's scope.
---   Not flagged as a migration TODO because fixing it would need its own
---   verification pass against real contracts with an explicit wht_rate.
+--   COMMENT) as a percentage number, so this divides by 100.
+--   ClientDetailPage.tsx's saleWht() used it as a raw multiplier with no
+--   /100 -- a pre-existing unit bug, left untouched here as it is outside
+--   this PR's scope, and fixed separately.
+--
+--   CORRECTION to what this comment said when first written: it called that
+--   bug "harmless... only a bank-matching estimate, not a posted amount."
+--   That was wrong. The same value is also rendered directly as a currency
+--   figure on the client's Collections tab, where an 11,152,447.50 ETB sale
+--   under a 3% contract displayed 33,457,342.50 ETB of WHT instead of
+--   334,573.43 -- and the estimate it feeds went negative, so a
+--   contract-linked sale could never match an incoming credit. Nothing in
+--   the database was affected (no posted amount derives from that path), but
+--   it was user-visible, not cosmetic.
 --
 --   net_payable_etb = gross_amount_etb - retention_withheld_etb - wht_withheld_etb
 --
