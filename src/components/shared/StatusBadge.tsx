@@ -47,6 +47,10 @@ const statusVariantMap: Record<string, Variant> = {
   pending_finance: 'yellow',
   pending_exec: 'yellow',
   pending_client_signoff: 'orange',
+  // Payment milestone pipeline (PR 9d). 'pending' and 'invoiced' are already
+  // mapped above and carry the same meaning here.
+  progress_met: 'blue',
+  payment_confirmed: 'green',
 }
 
 interface StatusBadgeProps {
