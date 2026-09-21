@@ -20,6 +20,9 @@ import { getClientLogoUrl } from '@/hooks/useClientLogo'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const WHT_THRESHOLD = 20_000
+// A fraction, not a percentage — every call site multiplies `base * rate`
+// directly. contracts.wht_rate is stored the other way round (as a percentage,
+// e.g. 3 meaning 3%), so whtRateFraction() below converts it.
 const WHT_RATE = 0.03
 
 // ── Contract-aware WHT qualification ────────────────────────────────────────
@@ -32,9 +35,19 @@ type ContractRow = { id: string; contract_no: string | null; contract_value: num
 function contractForSale(sale: { contract_id?: string | null }, contracts: ContractRow[]): ContractRow | null {
   return sale.contract_id ? contracts.find(c => c.id === sale.contract_id) ?? null : null
 }
+// contracts.wht_rate is a percentage everywhere it is written or displayed:
+// ContractFormPage's "Withholding Tax (%)" input (placeholder "e.g. 3"), the
+// generated contract document's "WHT of {wht_rate}%" clause, and the column's
+// own COMMENT. Returning it raw here meant `base * rate` computed base * 3
+// instead of base * 0.03 — a 100x overstatement on every contract that sets an
+// explicit rate, while contracts left at the default silently stayed correct
+// via the WHT_RATE fraction fallback.
+function whtRateFraction(contract: ContractRow | null): number {
+  return contract?.wht_rate != null ? Number(contract.wht_rate) / 100 : WHT_RATE
+}
 function saleWht(sale: { amount: number | null; contract_id?: string | null; is_final_payment?: boolean }, contracts: ContractRow[]) {
   const contract = contractForSale(sale, contracts)
-  const rate = contract?.wht_rate ?? WHT_RATE
+  const rate = whtRateFraction(contract)
   if (contract?.wht_deduction_mode === 'final_only') {
     const base = Number(contract.contract_value ?? 0)
     const qualifies = !!sale.is_final_payment && base > WHT_THRESHOLD
