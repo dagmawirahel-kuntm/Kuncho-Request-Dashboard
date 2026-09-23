@@ -90,11 +90,9 @@ import TimesheetPage from '@/pages/timesheet/TimesheetPage'
 import TimesheetFormPage from '@/pages/timesheet/TimesheetFormPage'
 import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
 import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
-import TaxSummaryPage from '@/pages/tax-summary/TaxSummaryPage'
 import TaxSummaryFormPage from '@/pages/tax-summary/TaxSummaryFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
 import TaxFilingsPage from '@/pages/tax-filings/TaxFilingsPage'
-import TaxEngagementFormPage from '@/pages/tax-summary/TaxEngagementFormPage'
 import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
 import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
 import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
@@ -348,7 +346,11 @@ export const router = createBrowserRouter([
               { path: 'clients/:id', element: <ClientDetailPage /> },
               { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
               { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
-              { path: 'tax-summary', element: <TaxSummaryPage /> },
+              // Tax Summary was a Gregorian-month filing-status grid over
+              // tax_engagements; Tax Filings replaced it with Ethiopian
+              // periods (migration 308). Kept as a redirect so old links and
+              // TaxSummaryFormPage's back button still land somewhere real.
+              { path: 'tax-summary', element: <Navigate to="/tax-filings" replace /> },
               { path: 'tax-management', element: <TaxManagementPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'batch-payments/:id', element: <BatchPaymentDetailPage /> },
@@ -387,7 +389,9 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
               { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
               { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
-              { path: 'tax-management/log', element: <TaxEngagementFormPage /> },
+              // Filings are recorded in Tax Filings now; tax_engagements is a
+              // read-only archive (migration 308).
+              { path: 'tax-management/log', element: <Navigate to="/tax-filings" replace /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
               { path: 'finance/fixed-assets/new', element: <FixedAssetFormPage /> },

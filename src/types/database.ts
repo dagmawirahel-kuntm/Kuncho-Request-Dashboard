@@ -1209,6 +1209,8 @@ export interface TaxEngagement {
 }
 export type TaxEngagementInsert = Omit<TaxEngagement, 'id' | 'created_at' | 'updated_at'>
 
+// v_tax_engagements — read-only archive since migration 308; filings are
+// recorded in tax_filings (TaxFilingView) now.
 export interface TaxEngagementView {
   id: string
   period_month: string
@@ -1222,15 +1224,6 @@ export interface TaxEngagementView {
   obligation_name: string
   filed_by_name: string | null
   status: 'filed' | 'pending' | 'overdue'
-}
-
-export interface NextTaxObligation {
-  obligation_type_id: string
-  tax_type: string
-  name: string
-  due_day_of_month: number | null
-  next_period_month: string
-  suggested_due_date: string | null
 }
 
 export interface TaxLiabilityRow {

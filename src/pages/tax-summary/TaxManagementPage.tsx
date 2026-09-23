@@ -1,19 +1,18 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { TaxEngagementView, NextTaxObligation, TaxLiabilityRow, UserProfile, ReceiptAwaitingTaxReview, ReceiptOutstanding } from '@/types/database'
+import type { TaxEngagementView, TaxFilingView, TaxLiabilityRow, UserProfile, ReceiptAwaitingTaxReview, ReceiptOutstanding } from '@/types/database'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
-import { Landmark, AlertTriangle, CalendarClock, FileText, ReceiptText } from 'lucide-react'
-
-function daysUntil(dateStr: string | null): number | null {
-  if (!dateStr) return null
-  const ms = new Date(dateStr).getTime() - new Date(new Date().toDateString()).getTime()
-  return Math.round(ms / 86400000)
-}
+import { Landmark, AlertTriangle, CalendarClock, FileText, ReceiptText, Archive } from 'lucide-react'
 
 const TAX_TYPE_LABEL: Record<string, string> = { VAT: 'VAT', WHT: 'WHT', payroll_tax: 'Payroll Tax', other: 'Other' }
+
+// How far ahead a not-yet-filed period is worth a banner. Beyond this it is
+// just the calendar, and Tax Filings already shows the whole year.
+const DUE_SOON_DAYS = 14
 
 export default function TaxManagementPage() {
   const { data: taxOfficer } = useQuery({
@@ -24,17 +23,52 @@ export default function TaxManagementPage() {
     },
   })
 
-  const { data: nextObligations = [] } = useQuery({
-    queryKey: ['tax-next-obligations'],
+  // Everything below about "what is due / what was filed" reads tax_filings,
+  // the one record since migration 308. The Gregorian-month views that used
+  // to feed these panels were dropped because they disagreed with it.
+  // The cut-off date is computed once per mount (useState initialiser), not
+  // on every render, so the query key is stable.
+  const [dueSoonCutoff] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + DUE_SOON_DAYS)
+    return d.toISOString().slice(0, 10)
+  })
+
+  const { data: dueFilings = [] } = useQuery({
+    queryKey: ['tax-filings', 'due-soon', dueSoonCutoff],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_next_tax_obligations').select('*')
+      const { data, error } = await supabase
+        .from('v_tax_filings')
+        .select('*')
+        // Same test v_tax_filings.is_overdue uses: until the authority has
+        // acknowledged it, a return past its due date is still late.
+        .neq('status', 'acknowledged')
+        .not('due_date_greg', 'is', null)
+        .lte('due_date_greg', dueSoonCutoff)
+        .order('due_date_greg')
       if (error) throw error
-      return data as NextTaxObligation[]
+      return data as TaxFilingView[]
     },
   })
 
-  const { data: engagements = [], isLoading } = useQuery({
-    queryKey: ['tax-engagements'],
+  const { data: recentFilings = [], isLoading } = useQuery({
+    queryKey: ['tax-filings', 'recent-filed'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_tax_filings')
+        .select('*')
+        .in('status', ['filed', 'acknowledged'])
+        .order('period_start_greg', { ascending: false })
+        .limit(12)
+      if (error) throw error
+      return data as TaxFilingView[]
+    },
+  })
+
+  // Read-only archive (migration 308). Shown only if it has anything in it,
+  // so the page does not grow a permanently empty panel.
+  const { data: legacyLog = [] } = useQuery({
+    queryKey: ['tax-engagements-archive'],
     queryFn: async () => {
       const { data, error } = await supabase.from('v_tax_engagements').select('*').order('period_month', { ascending: false })
       if (error) throw error
@@ -81,8 +115,8 @@ export default function TaxManagementPage() {
             <Landmark className="h-3.5 w-3.5" />
             Tax Owner: <span className="font-medium text-slate-700 dark:text-slate-200">{taxOfficer?.full_name ?? 'Not designated'}</span>
           </div>
-          <Link to="/tax-management/log" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            Log a Filing
+          <Link to="/tax-filings" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            Tax Filings
           </Link>
         </div>
       </div>
@@ -94,36 +128,33 @@ export default function TaxManagementPage() {
         </div>
       )}
 
-      {/* Upcoming / overdue obligations — same banner treatment as Rent's renewal/payment-due surfacing */}
-      {nextObligations.length > 0 && (
+      {/* Unacknowledged filings that are overdue or due within DUE_SOON_DAYS. Periods
+          and due dates come straight from tax_filings, so this banner and the
+          Tax Filings page cannot disagree about what is late. */}
+      {dueFilings.length > 0 && (
         <div className="space-y-2">
-          {nextObligations.map(ob => {
-            const overdue = ob.suggested_due_date != null && (daysUntil(ob.suggested_due_date) ?? 0) < 0
-            return (
-              <div
-                key={ob.obligation_type_id}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
-                  overdue
-                    ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-400'
-                    : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-400'
-                }`}
+          {dueFilings.map(f => (
+            <div
+              key={f.id}
+              className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+                f.is_overdue
+                  ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-400'
+                  : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-400'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                {f.display_label} — {f.period_label}
+                {` · due ${formatDateGC(f.due_date_greg)}${f.is_overdue ? ' (overdue)' : ''}`}
+              </span>
+              <Link
+                to="/tax-filings"
+                className={`flex-shrink-0 rounded-md px-2.5 py-1 text-[11px] font-medium text-white ${f.is_overdue ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
               >
-                <span className="flex items-center gap-2">
-                  <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                  {TAX_TYPE_LABEL[ob.tax_type] ?? ob.tax_type} — {ob.name} for {formatDate(ob.next_period_month)}
-                  {ob.suggested_due_date
-                    ? ` · due ${formatDate(ob.suggested_due_date)}${overdue ? ' (overdue)' : ''}`
-                    : ' · due date not yet configured for this obligation type'}
-                </span>
-                <Link
-                  to={`/tax-management/log?obligation_type_id=${ob.obligation_type_id}&period_month=${ob.next_period_month}${ob.suggested_due_date ? `&due_date=${ob.suggested_due_date}` : ''}`}
-                  className={`flex-shrink-0 rounded-md px-2.5 py-1 text-[11px] font-medium text-white ${overdue ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                >
-                  Log Filing
-                </Link>
-              </div>
-            )
-          })}
+                Open
+              </Link>
+            </div>
+          ))}
         </div>
       )}
 
@@ -228,40 +259,77 @@ export default function TaxManagementPage() {
         )}
       </div>
 
-      {/* Filing / engagement history */}
+      {/* Filing history — filed and acknowledged returns from tax_filings. */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b dark:border-slate-700">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Filing History</p>
-          <p className="text-xs text-slate-400">Actual submissions and correspondence with ERCA</p>
+        <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Filing History</p>
+            <p className="text-xs text-slate-400">The most recent returns submitted to the authorities</p>
+          </div>
+          <Link to="/tax-filings" className="rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            All filings
+          </Link>
         </div>
         {isLoading ? (
           <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
-        ) : engagements.length === 0 ? (
-          <p className="px-5 py-6 text-center text-xs text-slate-400">No filings logged yet</p>
+        ) : recentFilings.length === 0 ? (
+          <p className="px-5 py-6 text-center text-xs text-slate-400">No returns marked filed yet</p>
         ) : (
           <div className="divide-y dark:divide-slate-700">
-            {engagements.map(e => (
-              <div key={e.id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+            {recentFilings.map(f => (
+              <div key={f.id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
                 <div className="min-w-0 flex items-center gap-2">
                   <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                   <div className="min-w-0">
                     <p className="truncate font-medium text-slate-700 dark:text-slate-200">
-                      {TAX_TYPE_LABEL[e.tax_type] ?? e.tax_type} — {formatDate(e.period_month)}
+                      {f.display_label} — {f.period_label}
                     </p>
                     <p className="text-xs text-slate-400">
-                      {e.reference_number ? `Ref: ${e.reference_number}` : 'No reference'} {e.filed_by_name ? `· Filed by ${e.filed_by_name}` : ''}
+                      {f.government_reference_no ? `Ref: ${f.government_reference_no}` : 'No reference'}
+                      {f.declared_amount != null ? ` · ${formatCurrency(f.declared_amount)}` : ''}
+                      {f.document_count > 0 ? ` · ${f.document_count} document${f.document_count > 1 ? 's' : ''}` : ''}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {e.document_url && <PrivateDocLink path={e.document_url} title="View filed declaration" />}
-                  <StatusBadge status={e.status} />
-                </div>
+                <StatusBadge status={f.status} />
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* The old engagement log, read-only since migration 308. Its periods
+          are Gregorian months and cannot be mapped onto Ethiopian periods
+          without guessing, so they are shown as entered rather than merged. */}
+      {legacyLog.length > 0 && (
+        <div className="rounded-xl border border-dashed dark:border-slate-700 overflow-hidden">
+          <div className="px-5 py-3 border-b border-dashed dark:border-slate-700">
+            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <Archive className="h-3.5 w-3.5" /> Earlier filing log (archive)
+            </p>
+            <p className="text-xs text-slate-400">
+              Entered before Tax Filings existed. Read-only — if one of these was a real submission, record it against its Ethiopian period in Tax Filings.
+            </p>
+          </div>
+          <div className="divide-y dark:divide-slate-700">
+            {legacyLog.map(e => (
+              <div key={e.id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-600 dark:text-slate-300">
+                    {TAX_TYPE_LABEL[e.tax_type] ?? e.tax_type} — logged for {formatDate(e.period_month)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {e.filed_date ? `Marked filed ${formatDate(e.filed_date)}` : 'Not marked filed'}
+                    {e.reference_number ? ` · Ref: ${e.reference_number}` : ' · No reference'}
+                    {e.filed_by_name ? ` · ${e.filed_by_name}` : ''}
+                  </p>
+                </div>
+                {e.document_url && <PrivateDocLink path={e.document_url} title="View filed declaration" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
