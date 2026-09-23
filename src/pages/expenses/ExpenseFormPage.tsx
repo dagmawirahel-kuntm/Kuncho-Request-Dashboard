@@ -8,7 +8,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement, SourcingBundleDiscountKind } from '@/types/database'
-import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
+import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties, useStaff } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -220,6 +220,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const { data: userProfiles = [] } = useUserProfiles()
     const { data: subcontractorEngagements = [] } = useSubcontractorEngagements()
     const { data: properties = [] } = useProperties()
+    const { data: staff = [] } = useStaff()
 
     const financeLocked = !canEditFinanceFields(role)
 
@@ -320,6 +321,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const showFullFieldSet = !isCuratedGateway || showAllFields
 
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const staffOptions = useMemo(() => (staff as any[]).map(s => ({
+      id: s.id,
+      label: s.role ? `${s.employee_name} — ${s.role}` : s.employee_name,
+    })), [staff])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
     const categoryOptions = useMemo(() => categories.map((c: any) => ({ id: c.id, label: c.category_name })), [categories])
     const engagementOptions = useMemo(() => subcontractorEngagements.map((e: any) => ({
@@ -372,6 +378,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         completion_percentage: record.completion_percentage ?? undefined,
         paid_date: record.paid_date,
         vendor_id: record.vendor_id,
+        paid_to_staff_id: record.paid_to_staff_id,
         category_id: record.category_id,
         project_id: record.project_id,
         staff_id: record.staff_id,
@@ -499,7 +506,23 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         set('vendors_name', v.vendor_name)
         set('vendors_bank_account', v.bank_account ?? '')
       }
+      // One payment goes to one place. The Payment Request resolves the payee
+      // as vendor ?? staff, so leaving both set would silently ignore the
+      // staff member rather than flagging the contradiction.
+      setForm(f => ({ ...f, paid_to_staff_id: null }))
     }
+  }
+
+  // The other half of that rule. Clearing the vendor's name and account too,
+  // not just the id — they are the fields the document actually prints, so a
+  // stale vendor name left behind would put the wrong payee on the bank
+  // instruction even with vendor_id gone.
+  function handlePayeeStaffChange(staffId: string | null) {
+    setForm(f => ({
+      ...f,
+      paid_to_staff_id: staffId,
+      ...(staffId ? { vendor_id: null, vendors_name: null, vendors_bank_account: null } : {}),
+    }))
   }
 
   // A vendor_id can arrive pre-filled from a gateway (PR recommendation,
@@ -524,6 +547,62 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   // resolve_expense_category) rather than keeping a second copy of the
   // mapping here — so what the form shows is exactly what the trigger
   // would store, and the two can't drift apart.
+  // ── Payee: the person, when the money does not go to a vendor ──────────
+  //
+  // expenses.paid_to_staff_id already existed, written only by
+  // rollup_labor_timesheets_to_expense. Everything else that carried a payee
+  // — 19 expenses at the time of writing, including the hand-entered labor
+  // payments — had it set by writing to the database directly, because no
+  // screen offered the field. This is that field.
+  //
+  // A rollup's payee is derived, not chosen: it comes from the one worker on
+  // the run, and labor_expense_workers holds the per-worker detail behind it.
+  // Editing it here would put the expense header and its own worker rows in
+  // disagreement, so on a rolled-up expense it is shown and not edited.
+  const isRollupDerived = !!record?.rolled_up_from_requisition_id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const payeeStaff = useMemo(() => (staff as any[]).find(x => x.id === form.paid_to_staff_id) ?? null,
+    [staff, form.paid_to_staff_id])
+
+  const payeeStaffField = (
+    <Field label="Paid To (Staff)">
+      {isRollupDerived ? (
+        <>
+          <div className={`${inputCls} bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 cursor-default select-none`}>
+            {payeeStaff?.employee_name ?? 'Resolved from the rollup'}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Set by the labor rollup from the worker on this run — change it by correcting the
+            timesheets and rolling up again, not here.
+          </p>
+        </>
+      ) : (
+        <>
+          <SearchableSelect
+            value={form.paid_to_staff_id ?? null}
+            onChange={handlePayeeStaffChange}
+            options={staffOptions}
+            placeholder="Select staff member…"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            For labor paid straight to a person — a casual worker&rsquo;s day, a one-off site
+            payment — with no vendor in between. Picking someone clears the vendor above.
+          </p>
+          {payeeStaff && (
+            payeeStaff.bank_account
+              ? <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  Payment Request will pay <span className="font-mono">{payeeStaff.bank_account}</span>.
+                </p>
+              : <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                  No bank account on file — the Payment Request will show this payee with a blank
+                  account and the bank cannot pay them.
+                </p>
+          )}
+        </>
+      )}
+    </Field>
+  )
+
   const bundleForCategory = record?.sourcing_bundle_id ?? form.sourcing_bundle_id ?? null
   const { data: defaultCategoryId } = useQuery({
     queryKey: ['default-expense-category', form.expense_type, bundleForCategory],
@@ -869,10 +948,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
 
       {showFullFieldSet && (
         <>
-          <SectionHeader title="Vendor" subtitle={isCuratedGateway ? 'Already captured by the request gateway — shown because "Show all fields" is on' : undefined} />
+          <SectionHeader title="Payee" subtitle={isCuratedGateway ? 'Already captured by the request gateway — shown because "Show all fields" is on' : 'Who the money goes to — a vendor, or a person on staff. Not both.'} />
           <Field label="Vendor">
             <SearchableSelect value={form.vendor_id ?? null} onChange={handleVendorChange} options={vendorOptions} placeholder="Select vendor…" />
           </Field>
+          {payeeStaffField}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Vendor Name (override)">
               <input type="text" className={inputCls} value={form.vendors_name ?? ''} onChange={e => set('vendors_name', e.target.value)} />
@@ -884,6 +964,17 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           <Field label="Vendor Location">
             <input type="text" className={inputCls} value={form.vendors_location ?? ''} onChange={e => set('vendors_location', e.target.value)} />
           </Field>
+        </>
+      )}
+
+      {/* Labor paid to a person has no gateway form of its own — unlike rent,
+          fuel or a purchase order, which capture their payee elsewhere — so
+          for that one type the payee stays reachable without turning on
+          "Show all fields". This is the case the field was added for. */}
+      {!showFullFieldSet && form.expense_type === 'labor_payment' && (
+        <>
+          <SectionHeader title="Payee" />
+          {payeeStaffField}
         </>
       )}
 
