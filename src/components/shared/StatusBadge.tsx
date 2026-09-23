@@ -14,6 +14,8 @@ const variantClasses: Record<Variant, string> = {
 const statusVariantMap: Record<string, Variant> = {
   paid: 'green',
   filed: 'green',
+  // Tax filings (302): the authority's receipt is in hand — the final state.
+  acknowledged: 'green',
   completed: 'green',
   approved: 'green',
   finance_approved: 'green',

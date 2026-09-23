@@ -25,10 +25,17 @@ interface ProtectedRouteProps {
   // fleet page already read for exactly that case; without this the routes
   // stayed role-only and the badge granted powers with no door to reach them.
   allowLogisticsOfficer?: boolean
+  // Widens the gate with the tax-officer badge. The tax filing tables are
+  // readable by is_tax_officer() OR admin/finance/executive (migrations
+  // 301-302), so a tax officer whose login role is neither — the HR officer
+  // who also files payroll tax is the real case — would be refused at the
+  // door by a role-only gate while the database would happily serve them.
+  allowTaxOfficer?: boolean
 }
 
 export function ProtectedRoute({
   allowedRoles, allowAssignedProjectManager, allowVrfManager, allowLogisticsOfficer,
+  allowTaxOfficer,
 }: ProtectedRouteProps) {
   const { user, profile, role, loading } = useAuth()
   const location = useLocation()
@@ -53,6 +60,7 @@ export function ProtectedRoute({
     // VRF badge grant is checked first: a badge-holding finance user is in.
     if (allowVrfManager && profile?.is_vrf_manager) return <Outlet />
     if (allowLogisticsOfficer && profile?.is_logistics_officer) return <Outlet />
+    if (allowTaxOfficer && profile?.is_tax_officer) return <Outlet />
     if (!allowAssignedProjectManager) return <Navigate to="/" replace />
     // Don't bounce a genuine PM out while the assignment is still
     // resolving — "not loaded yet" is not "not permitted".

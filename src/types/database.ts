@@ -1209,6 +1209,8 @@ export interface TaxEngagement {
 }
 export type TaxEngagementInsert = Omit<TaxEngagement, 'id' | 'created_at' | 'updated_at'>
 
+// v_tax_engagements — read-only archive since migration 308; filings are
+// recorded in tax_filings (TaxFilingView) now.
 export interface TaxEngagementView {
   id: string
   period_month: string
@@ -1222,15 +1224,6 @@ export interface TaxEngagementView {
   obligation_name: string
   filed_by_name: string | null
   status: 'filed' | 'pending' | 'overdue'
-}
-
-export interface NextTaxObligation {
-  obligation_type_id: string
-  tax_type: string
-  name: string
-  due_day_of_month: number | null
-  next_period_month: string
-  suggested_due_date: string | null
 }
 
 export interface TaxLiabilityRow {
@@ -3342,4 +3335,101 @@ export interface ScheduleGanttRow {
   status: ScheduleTaskStatus
   predecessor_task_id: string | null
   days_slipped: number | null
+}
+
+// ── Ethiopian Tax Filings (migrations 301-304) ──────────────────────────
+// Periods are Ethiopian-calendar throughout. period_label is a generated
+// column ("Nehase 2018" / "2018 E.C."); the Gregorian span is carried
+// alongside only as a secondary hint, never as the period's name.
+
+export type TaxAuthority = 'MoR' | 'ERCA' | 'POESSA' | 'PSSSA'
+export type TaxPeriodicity = 'monthly' | 'quarterly' | 'annual'
+export type TaxFilingStatus = 'draft' | 'filed' | 'acknowledged'
+export type TaxFilingDocType =
+  | 'declaration' | 'official_receipt' | 'acknowledgement' | 'assessment' | 'other'
+
+export interface TaxSchedule {
+  id: string
+  code: string
+  display_label: string
+  name: string
+  authority: TaxAuthority
+  periodicity: TaxPeriodicity
+  statutory_reference: string | null
+  default_due_rule: Record<string, unknown>
+  is_active: boolean
+  applies_to_kuncho: boolean
+  tax_obligation_type_id: string | null
+  display_order: number
+  created_at: string
+}
+
+export interface TaxRateReference {
+  id: string
+  tax_schedule_id: string
+  effective_from: string
+  effective_to: string | null
+  /** Free-form for flat rates; `{ kind, bands: [...] }` for Schedule A. */
+  rate_note: Record<string, unknown>
+  statutory_reference: string | null
+  entered_by: string | null
+  created_at: string
+}
+
+export interface TaxFiling {
+  id: string
+  tax_schedule_id: string
+  schedule_code: string
+  fiscal_period_id: string | null
+  period_ec_year: number
+  /** NULL for an annual filing. */
+  period_ec_month: number | null
+  period_label: string
+  period_start_greg: string
+  period_end_greg: string
+  due_date_greg: string | null
+  status: TaxFilingStatus
+  declared_amount: number | null
+  paid_amount: number | null
+  payment_date: string | null
+  government_reference_no: string | null
+  filed_by: string | null
+  filed_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// v_tax_filings — the filing plus its schedule's labels, with is_overdue
+// derived in the view so every caller agrees on what "overdue" means.
+export interface TaxFilingView extends TaxFiling {
+  display_label: string
+  schedule_name: string
+  authority: TaxAuthority
+  periodicity: TaxPeriodicity
+  statutory_reference: string | null
+  is_overdue: boolean
+  document_count: number
+}
+
+export interface TaxFilingDocument {
+  id: string
+  tax_filing_id: string
+  storage_path: string
+  file_name: string
+  mime_type: string | null
+  size_bytes: number | null
+  doc_type: TaxFilingDocType
+  uploaded_by: string | null
+  uploaded_at: string
+}
+
+export interface TaxFilingDeletion {
+  id: string
+  deleted_filing_snapshot: Record<string, unknown>
+  schedule_code: string
+  period_label: string
+  reason: string
+  deleted_by: string
+  deleted_at: string
 }
