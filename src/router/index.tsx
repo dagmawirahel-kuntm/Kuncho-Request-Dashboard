@@ -93,6 +93,7 @@ import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
 import TaxSummaryPage from '@/pages/tax-summary/TaxSummaryPage'
 import TaxSummaryFormPage from '@/pages/tax-summary/TaxSummaryFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
+import TaxFilingsPage from '@/pages/tax-filings/TaxFilingsPage'
 import TaxEngagementFormPage from '@/pages/tax-summary/TaxEngagementFormPage'
 import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
 import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
@@ -307,6 +308,19 @@ export const router = createBrowserRouter([
               // (slightly wider) list; grn_read (063) is what actually
               // decides which rows come back, same split as everywhere else.
               { path: 'goods-received', element: <GrnRegisterPage /> },
+            ],
+          },
+          {
+            // Tax filings sit in their own block rather than the finance one
+            // below, because the tax officer is a badge and not a role: the
+            // RLS on these tables reads is_tax_officer() alongside
+            // admin/finance/executive, and the gate has to match or an
+            // officer with some other login role is locked out of the module
+            // built for them. Writes are narrower still (tax officer or
+            // admin) and are enforced by policy, not by this route.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} allowTaxOfficer />,
+            children: [
+              { path: 'tax-filings', element: <TaxFilingsPage /> },
             ],
           },
           {

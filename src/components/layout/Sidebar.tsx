@@ -25,6 +25,11 @@ interface NavItem {
   // Shown to a finance user holding the is_vrf_manager badge, in addition to
   // `roles` (admin/executive) — VRF access is a badge, not a plain role.
   showIfVrfManager?: boolean
+  // Shown to anyone holding the is_tax_officer badge, in addition to `roles`.
+  // Same reason as the VRF badge: the tax filing tables read the badge in
+  // their RLS, so an officer whose login role is outside the list would hold
+  // the access and never see the way in.
+  showIfTaxOfficer?: boolean
   // Shown to anyone holding the is_logistics_officer badge, for the same
   // reason: role carries one value, so a person who runs logistics alongside
   // another desk holds the badge rather than the role, and would otherwise
@@ -150,6 +155,7 @@ const navGroups: NavGroup[] = [
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
+      { label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
       { label: 'Tax Summary', to: '/tax-summary', icon: BarChart3, roles: ['admin', 'executive', 'finance'] },
       { label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
       { label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
@@ -253,6 +259,8 @@ function NavGroup({ group, collapsed }: { group: NavGroup; collapsed: boolean })
     || (item.showIfAssignedProjectManager && managesAny)
     // VRF badge: a finance user with is_vrf_manager sees the VRF entry.
     || (item.showIfVrfManager && profile?.is_vrf_manager)
+    // Tax-officer badge: same idea, for the tax filings module.
+    || (item.showIfTaxOfficer && profile?.is_tax_officer)
     // Logistics badge: same idea, for whoever runs logistics on a second hat.
     || (item.showIfLogisticsOfficer && profile?.is_logistics_officer)
     // Site foreman with at least one scoped project.

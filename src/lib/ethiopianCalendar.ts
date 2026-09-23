@@ -91,3 +91,36 @@ export function formatEthiopian(date: Date | string, short = false): string {
   const names = short ? ETHIOPIAN_MONTHS_SHORT : ETHIOPIAN_MONTHS
   return `${day} ${names[month - 1]} ${year}`
 }
+
+// ── Tax filing period labels ─────────────────────────────────────────────
+// Filing periods are named by Ethiopian month and year and never by a
+// Gregorian month. These reuse the conversion above rather than adding a
+// second one.
+//
+// The database carries its own copy of this arithmetic (migration 301:
+// ec_to_gregorian, gregorian_to_ec, ec_month_start_greg, ec_month_end_greg),
+// because a generated column and an RPC both need it server-side. The two
+// are the same formula — same epoch (JDN 1724221), and `year % 4 === 3`
+// here is `(year + 1) % 4 = 0` there — and both were verified against the
+// same anchors including the Pagume leap edges. Anything that decides a
+// stored date asks the database; this side is for display.
+
+/** Month index is 1-13, matching the database's ec_month_name(). */
+export function ecMonthName(month: number): string {
+  return ETHIOPIAN_MONTHS[month - 1] ?? `Month ${month}`
+}
+
+/**
+ * The label shown wherever a filing period appears. Mirrors the
+ * tax_filings.period_label generated column so the UI and the database
+ * agree exactly: "Nehase 2018" for a monthly period, "2018 E.C." for an
+ * annual one.
+ */
+export function ecPeriodLabel(ecYear: number, ecMonth: number | null): string {
+  return ecMonth == null ? `${ecYear} E.C.` : `${ecMonthName(ecMonth)} ${ecYear}`
+}
+
+/** Days in an Ethiopian month: 30 for all but Pagume, which has 5 or 6. */
+export function ecMonthLength(ecYear: number, ecMonth: number): number {
+  return ecMonth === 13 ? (isEthiopianLeapYear(ecYear) ? 6 : 5) : 30
+}
