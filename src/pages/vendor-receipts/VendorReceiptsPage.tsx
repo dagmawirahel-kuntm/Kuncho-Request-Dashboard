@@ -1,15 +1,24 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { VendorReceiptFacilitation, VrfStatus, VrfRegisterRow } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle, BarChart3 } from 'lucide-react'
+import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle, BarChart3, Table2, LayoutGrid } from 'lucide-react'
 import { VrfRegisterPanel } from './VrfRegisterPanel'
 import { VrfPack, VrfPackOpening } from './VrfPacks'
 import { VrfHoldingAccounts } from './VrfHoldingAccounts'
+import { VrfTable } from './VrfTable'
+
+type View = 'table' | 'cards'
+const VIEW_KEY = 'vrf-view'
+
+// The table is the default; cards are an option each person can switch to.
+function readView(): View {
+  try { return localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'table' } catch { return 'table' }
+}
 
 type VrfRow = VendorReceiptFacilitation & {
   initial: { account_name: string } | null
@@ -67,8 +76,13 @@ export default function VendorReceiptsPage() {
     },
   })
   const [opened, setOpened] = useState<VrfRegisterRow | null>(null)
+  const [view, setViewState] = useState<View>(readView)
+  function setView(v: View) {
+    setViewState(v)
+    try { localStorage.setItem(VIEW_KEY, v) } catch { /* storage unavailable: keep it for this visit */ }
+  }
 
-  async function handleDelete(e: React.MouseEvent, id: string) {
+  const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     if (!window.confirm('Delete this VRF record? This cannot be undone.')) return
     const { error } = await supabase.from('vendor_receipt_facilitation').delete().eq('id', id)
@@ -76,7 +90,7 @@ export default function VendorReceiptsPage() {
     qc.invalidateQueries({ queryKey: ['vendor-receipts'] })
     qc.invalidateQueries({ queryKey: ['vrf-register'] })
     toast('Record deleted', 'success')
-  }
+  }, [qc, toast])
 
   const stats = useMemo(() => ({
     open:     data.filter(r => r.status === 'open').length,
@@ -106,7 +120,7 @@ export default function VendorReceiptsPage() {
         <StatCard label="Open" value={stats.open} icon={<Clock className="h-4 w-4" />} colorCls="bg-amber-50 text-amber-600 dark:bg-amber-900/30" />
         <StatCard label="Partial" value={stats.partial} icon={<AlertCircle className="h-4 w-4" />} colorCls="bg-blue-50 text-blue-500 dark:bg-blue-900/30" />
         <StatCard label="Settled" value={stats.settled} icon={<CheckCircle2 className="h-4 w-4" />} colorCls="bg-green-50 text-green-600 dark:bg-green-900/30" />
-        <StatCard label="Total Transferred" value={formatCurrency(stats.totalOut)} icon={<ArrowRightLeft className="h-4 w-4" />} colorCls="bg-slate-100 text-slate-500 dark:bg-slate-700" />
+        <StatCard label="Total Sent" value={formatCurrency(stats.totalOut)} icon={<ArrowRightLeft className="h-4 w-4" />} colorCls="bg-slate-100 text-slate-500 dark:bg-slate-700" />
       </div>
 
       {/* How much has gone through VRF, by Ethiopian month */}
@@ -118,7 +132,18 @@ export default function VendorReceiptsPage() {
       {/* Accumulation by good/service across all VRFs */}
       <VrfAccumulationPanel />
 
-      {/* Packs — one per VRF; opening one deals out where its money went */}
+      {/* Every VRF — a table by default, or cards */}
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">All VRFs</h2>
+        <div className="inline-flex rounded-lg border p-0.5 dark:border-slate-700" role="group" aria-label="View">
+          {([['table', 'Table', Table2], ['cards', 'Cards', LayoutGrid]] as const).map(([v, label, Icon]) => (
+            <button key={v} type="button" onClick={() => setView(v)} aria-pressed={view === v}
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium ${view === v ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}>
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+      </div>
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
       ) : data.length === 0 ? (
@@ -131,6 +156,8 @@ export default function VendorReceiptsPage() {
             </Link>
           )}
         </div>
+      ) : view === 'table' ? (
+        <VrfTable rows={packs} canWrite={canWrite} onDelete={handleDelete} />
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {packs.map(row => (

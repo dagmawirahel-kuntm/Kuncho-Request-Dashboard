@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { VendorReceiptFacilitation, VrfCommissionBasis } from '@/types/database'
-import { useAccounts } from '@/hooks/useLookups'
+import { useAccounts, useVendors } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
@@ -54,6 +54,7 @@ export default function VendorReceiptFormPage() {
 type Form = {
   record_name: string
   facilitator_name: string
+  vendor_id: string | null
   trxn_date: string
   receipt_amount: string
   supply_kind: 'goods' | 'services'
@@ -80,11 +81,13 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: accounts = [] } = useAccounts()
+  const { data: vendors = [] } = useVendors()
   const backTo = isEdit ? `/vendor-receipts/${id}` : '/vendor-receipts'
 
   const [form, setForm] = useState<Form>(() => ({
     record_name: record?.record_name ?? '',
     facilitator_name: record?.facilitator_name ?? '',
+    vendor_id: record?.vendor_id ?? null,
     trxn_date: record?.trxn_date ?? new Date().toISOString().slice(0, 10),
     receipt_amount: String(record?.receipt_amount ?? record?.amount_transferred ?? ''),
     supply_kind: record?.supply_kind ?? 'goods',
@@ -169,6 +172,9 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     return { vat, wht, commission, net, expected: net - commission, cost: commission + wht, whtRate, threshold }
   }, [rates, receipt, form.supply_kind, form.wht_overridden, form.wht_amount, form.commission_basis, form.commission_rate, form.commission_amount])
 
+  const vendorList = vendors as { id: string; vendor_name: string; tin: string | null }[]
+  const vendorOptions = useMemo(() => vendorList.map(v => ({ id: v.id, label: v.vendor_name, sub: v.tin ? `TIN ${v.tin}` : 'no TIN on file' })), [vendorList])
+  const chosenVendor = vendorList.find(v => v.id === form.vendor_id)
   const accountOptions = useMemo(() => (accounts as { id: string; account_name: string }[]).map(a => ({ id: a.id, label: a.account_name })), [accounts])
   const holdingOptions = useMemo(() => holding.map(a => ({ id: a.id, label: a.account_name, sub: a.holder_name ?? undefined })), [holding])
   const bankOptions = useMemo(() => bankLines.map(l => ({
@@ -181,6 +187,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     setError('')
     if (!form.record_name.trim()) { setError('Give the VRF a name'); return }
     if (!form.facilitator_name.trim()) { setError('Enter the facilitator'); return }
+    if (!form.vendor_id) { setError('Choose the vendor that issued the receipt'); return }
     if (!form.trxn_date) { setError('Enter the date the money was sent'); return }
     if (receipt <= 0) { setError('Enter the receipt amount'); return }
     if (form.wht_overridden && form.wht_amount === '') { setError('Enter the WHT, or let it be calculated'); return }
@@ -189,6 +196,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       structured: true,
       record_name: form.record_name.trim(),
       facilitator_name: form.facilitator_name.trim(),
+      vendor_id: form.vendor_id,
       trxn_date: form.trxn_date,
       receipt_amount: receipt,
       supply_kind: form.supply_kind,
@@ -233,10 +241,16 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
         <Field label="Name *" hint="How the team will refer to this VRF, e.g. VRF-20260924-01">
           <input type="text" className={inputCls} value={form.record_name} onChange={e => set('record_name', e.target.value)} />
         </Field>
-        <Field label="Facilitator *" hint="The individual who arranged the receipt">
+        <Field label="Facilitator *" hint="The individual who arranged the receipt and takes the commission">
           <input type="text" className={inputCls} value={form.facilitator_name} onChange={e => set('facilitator_name', e.target.value)} />
         </Field>
       </div>
+      <Field label="Vendor *"
+        hint={chosenVendor
+          ? (chosenVendor.tin ? `Issues the receipt and is paid · TIN ${chosenVendor.tin} goes on its WHT certificate` : 'This vendor has no TIN on file — add it on the vendor, its WHT certificate needs one')
+          : 'The company that issues the receipt and is paid for it'}>
+        <SearchableSelect value={form.vendor_id} onChange={v => set('vendor_id', v)} options={vendorOptions} placeholder="Select the vendor…" />
+      </Field>
 
       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-2">The receipt</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
