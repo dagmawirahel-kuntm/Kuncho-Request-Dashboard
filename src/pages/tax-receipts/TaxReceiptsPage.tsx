@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
+import { useTaxPeriodLabel } from '@/hooks/useTaxPeriod'
 import type { VendorReceipt } from '@/types/database'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import { Plus, CheckCircle2, XCircle, Landmark, Info, PackageCheck } from 'lucide-react'
@@ -29,6 +29,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function TaxReceiptsPage() {
   const { role, user } = useAuth()
+  const taxPeriodOf = useTaxPeriodLabel()
   const { toast } = useToast()
   const qc = useQueryClient()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -126,7 +127,7 @@ export default function TaxReceiptsPage() {
                       {/* The VAT return this receipt's input VAT is claimed on
                           once tax-reviewed -- same period rule as
                           v_vat_input_by_ec_period (309). Display only. */}
-                      {r.receipt_date ? ` · counts toward VAT ${ecPeriodLabelForDate(r.receipt_date)}` : ''}
+                      {r.receipt_date ? ` · counts toward VAT ${taxPeriodOf(r.receipt_date)}` : ''}
                       {r.projects?.project_name ? ` · ${r.projects.project_name}` : ''}
                       {r.expenses?.expense_code ? ` · ${r.expenses.expense_code}` : ''}
                     </p>

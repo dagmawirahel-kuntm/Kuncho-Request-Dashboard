@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
+import { useTaxPeriodLabel } from '@/hooks/useTaxPeriod'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -39,6 +39,7 @@ const saleQuickFilters: QuickFilter[] = [
 
 export default function SalesPage() {
   const [searchParams] = useSearchParams()
+  const taxPeriodOf = useTaxPeriodLabel()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { role } = useAuth()
@@ -88,7 +89,7 @@ export default function SalesPage() {
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
     { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
     // Was the tax_summary "Tax Month" (always empty); the VAT return follows from the date.
-    { id: 'vat_period', header: 'VAT Period', cell: ({ row }) => ecPeriodLabelForDate(row.original.date) ?? '—' },
+    { id: 'vat_period', header: 'VAT Period', cell: ({ row }) => taxPeriodOf(row.original.date) ?? '—' },
     { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
     {
       id: 'actions',
@@ -101,7 +102,7 @@ export default function SalesPage() {
         </div>
       ),
     },
-  ], [canDelete])
+  ], [canDelete, taxPeriodOf])
 
   return (
     <div className="space-y-4">

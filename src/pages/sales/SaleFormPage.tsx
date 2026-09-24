@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Sale, SaleInsert } from '@/types/database'
 import { useClients, useProjects, useAccounts, useUserProfiles } from '@/hooks/useLookups'
-import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
+import { useTaxPeriodLabel } from '@/hooks/useTaxPeriod'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -51,6 +51,7 @@ export default function SaleFormPage() {
 
 function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
   const isEdit = !!id
+  const taxPeriodOf = useTaxPeriodLabel()
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const clientId = searchParams.get('client_id')
@@ -292,7 +293,7 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
       {/* Was a "Tax Month" picker over tax_summary, which is empty and
           retired. The VAT return a sale belongs to follows from its date. */}
       <Field label="VAT return period">
-        <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{ecPeriodLabelForDate(form.date) ?? 'Set a date'}</p>
+        <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{taxPeriodOf(form.date) ?? 'Set a date'}</p>
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />

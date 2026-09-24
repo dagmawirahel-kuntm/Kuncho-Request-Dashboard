@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import type { Payroll } from '@/types/database'
+import { PayrollRunTaxSection } from '@/components/payroll/PayrollRunTaxSection'
 
 // A payroll run had no page of its own — the list went straight to the edit
 // form — so there was nowhere to issue the one document finance actually
@@ -424,6 +425,8 @@ export default function PayrollDetailPage() {
           </table>
         </div>
       </div>
+
+      {id && <PayrollRunTaxSection payrollId={id} />}
     </div>
   )
 }

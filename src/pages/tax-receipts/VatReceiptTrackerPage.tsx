@@ -6,7 +6,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
-import type { ReceiptOutstanding, SalesReceiptOutstanding, VatPositionRow } from '@/types/database'
+import type { SalesReceiptOutstanding, VatPositionRow } from '@/types/database'
+import { InputVatTransactions } from './InputVatTransactions'
 import { Camera, PackageCheck, Landmark, TrendingUp, TrendingDown, Info } from 'lucide-react'
 
 type TrackerRow = {
@@ -61,15 +62,6 @@ export default function VatReceiptTrackerPage() {
         .order('receipt_date', { ascending: false, nullsFirst: false })
       if (error) throw error
       return data as unknown as TrackerRow[]
-    },
-  })
-
-  const { data: purchaseOutstanding = [] } = useQuery({
-    queryKey: ['receipts-outstanding'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('v_receipts_outstanding').select('*')
-      if (error) throw error
-      return data as ReceiptOutstanding[]
     },
   })
 
@@ -132,6 +124,7 @@ export default function VatReceiptTrackerPage() {
                   <th className="px-4 py-2 text-left font-semibold">VAT period</th>
                   <th className="px-4 py-2 text-right font-semibold">Output VAT</th>
                   <th className="px-4 py-2 text-right font-semibold">Input VAT</th>
+                  <th className="px-4 py-2 text-right font-semibold" title="Flagged purchases whose receipt is not yet tax-reviewed">Awaiting review</th>
                   <th className="px-4 py-2 text-right font-semibold">Net</th>
                   <th className="px-4 py-2 text-left font-semibold">Position</th>
                   <th className="px-4 py-2 text-left font-semibold">Return</th>
@@ -146,6 +139,9 @@ export default function VatReceiptTrackerPage() {
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(p.output_vat)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(p.input_vat_reclaimable)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">
+                      {Number(p.input_vat_pending_review) > 0 ? `${formatCurrency(p.input_vat_pending_review)} (${p.pending_review_count})` : '—'}
+                    </td>
                     <td className={`px-4 py-2 text-right tabular-nums font-semibold ${p.position === 'payable' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                       {formatCurrency(Math.abs(p.net_vat))}
                     </td>
@@ -211,37 +207,14 @@ export default function VatReceiptTrackerPage() {
         )}
       </div>
 
-      {/* ── What's still owed, both sides ──────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b dark:border-slate-700">
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Purchases Missing a Receipt ({purchaseOutstanding.length})</p>
-            <p className="text-xs text-slate-400">Input VAT that can't be reclaimed until collected</p>
-          </div>
-          {purchaseOutstanding.length === 0 ? (
-            <p className="px-5 py-6 text-center text-xs text-slate-400">Nothing outstanding</p>
-          ) : (
-            <div className="divide-y dark:divide-slate-700">
-              {purchaseOutstanding.map(o => (
-                <div key={o.expense_id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-700 dark:text-slate-200">{o.expense_code ?? '—'}</p>
-                    <p className="text-xs text-slate-400 truncate">
-                      {o.vendor_name ?? 'No vendor'}{o.project_name ? ` · ${o.project_name}` : ''}
-                    </p>
-                  </div>
-                  <Link
-                    to={`/tax-receipts/new?expense_id=${o.expense_id}${o.vendor_id ? `&vendor_id=${o.vendor_id}` : ''}${o.project_id ? `&project_id=${o.project_id}` : ''}`}
-                    className="shrink-0 rounded-md bg-brand px-2.5 py-1 text-[11px] font-medium text-white hover:bg-brand/90"
-                  >
-                    Capture
-                  </Link>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* ── Input VAT, purchase by purchase (317) ─────────────────── */}
+      {/* Replaces "Purchases Missing a Receipt": every paid purchase is here,
+          with its flag, declaration month and receipt-copy status, and a
+          Capture link for the ones still missing a receipt. */}
+      <InputVatTransactions />
 
+      {/* ── Sales side still owed ─────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4">
         <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b dark:border-slate-700">
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
