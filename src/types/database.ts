@@ -990,6 +990,45 @@ export interface VendorReceiptFacilitation {
 }
 export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at'>
 
+/** One VRF and where its money went (v_vrf_register, migration 320). */
+export interface VrfRegisterRow {
+  vrf_id: string
+  record_name: string | null
+  facilitator_name: string | null
+  status: VrfStatus
+  trxn_date: string | null
+  ec_year: number | null
+  ec_month: number | null
+  period_label: string | null
+  fiscal_period_id: string | null
+  fiscal_year: string | null
+  receipt_amount: number
+  transferred: number
+  wht_recorded: number
+  commission: number
+  returned: number
+  kept_back: number
+  unaccounted: number
+  company_expense_drawn: number
+  payroll_drawn: number
+  personal_drawn: number
+  held: number
+  /** VAT the receipt states (migration 321) — shown only, never claimable. */
+  vat_on_receipt: number
+}
+
+/** Money taken from a VRF's returned funds for personal use (migration 320). */
+export interface VrfPersonalDraw {
+  id: string
+  vrf_id: string
+  draw_date: string
+  amount: number
+  drawn_by: string
+  note: string | null
+  created_by: string
+  created_at: string
+}
+
 // ── Cash / VRF Payment Receipts ────────────────────────────────────
 export interface CashPaymentReceipt {
   id: string

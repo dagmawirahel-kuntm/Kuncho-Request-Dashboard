@@ -3,10 +3,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import type { VendorReceiptFacilitation, VrfStatus } from '@/types/database'
+import type { VendorReceiptFacilitation, VrfStatus, VrfRegisterRow } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle, BarChart3 } from 'lucide-react'
+import { VrfRegisterPanel } from './VrfRegisterPanel'
+import { VrfPack, VrfPackOpening } from './VrfPacks'
 
 type VrfRow = VendorReceiptFacilitation & {
   initial: { account_name: string } | null
@@ -51,12 +53,27 @@ export default function VendorReceiptsPage() {
     },
   })
 
+  // The same rows the register panel reads, newest first.
+  const { data: packs = [] } = useQuery({
+    queryKey: ['vrf-register'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_vrf_register')
+        .select('*')
+        .order('trxn_date', { ascending: false, nullsFirst: false })
+      if (error) throw error
+      return data as VrfRegisterRow[]
+    },
+  })
+  const [opened, setOpened] = useState<VrfRegisterRow | null>(null)
+
   async function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation()
     if (!window.confirm('Delete this VRF record? This cannot be undone.')) return
     const { error } = await supabase.from('vendor_receipt_facilitation').delete().eq('id', id)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['vendor-receipts'] })
+    qc.invalidateQueries({ queryKey: ['vrf-register'] })
     toast('Record deleted', 'success')
   }
 
@@ -91,10 +108,13 @@ export default function VendorReceiptsPage() {
         <StatCard label="Total Transferred" value={formatCurrency(stats.totalOut)} icon={<ArrowRightLeft className="h-4 w-4" />} colorCls="bg-slate-100 text-slate-500 dark:bg-slate-700" />
       </div>
 
+      {/* How much has gone through VRF, by Ethiopian month */}
+      <VrfRegisterPanel />
+
       {/* Accumulation by good/service across all VRFs */}
       <VrfAccumulationPanel />
 
-      {/* List */}
+      {/* Packs — one per VRF; opening one deals out where its money went */}
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
       ) : data.length === 0 ? (
@@ -108,68 +128,37 @@ export default function VendorReceiptsPage() {
           )}
         </div>
       ) : (
-        <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
-          {/* Column headers */}
-          <div className="hidden sm:grid grid-cols-[1fr_6rem_7rem_7rem_7rem_6rem_5rem] gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-            <span>Record</span>
-            <span>Date</span>
-            <span className="text-right">Transferred</span>
-            <span className="text-right">Returned</span>
-            <span className="text-right">Comm. Cost</span>
-            <span>Status</span>
-            <span />
-          </div>
-
-          {data.map((row, i) => (
-            <div key={row.id}
-              onClick={() => navigate(`/vendor-receipts/${row.id}`)}
-              className={`sm:grid sm:grid-cols-[1fr_6rem_7rem_7rem_7rem_6rem_5rem] sm:gap-3 flex flex-col gap-1 items-start sm:items-center px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${i < data.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
-              {/* Name + accounts */}
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{row.record_name ?? '—'}</p>
-                <p className="text-xs text-slate-400 truncate mt-0.5">
-                  {row.facilitator_name && <span>{row.facilitator_name} · </span>}
-                  {row.initial?.account_name ?? '—'}
-                  {row.returned?.account_name && ` → ${row.returned.account_name}`}
-                </p>
-              </div>
-              {/* Date */}
-              <p className="text-sm text-slate-500 dark:text-slate-400">{formatDate(row.trxn_date)}</p>
-              {/* Transferred */}
-              <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 text-right">
-                {row.amount_transferred != null ? formatCurrency(Number(row.amount_transferred)) : '—'}
-              </p>
-              {/* Returned */}
-              <p className="text-sm tabular-nums text-green-600 dark:text-green-400 text-right">
-                {row.money_returned != null ? formatCurrency(Number(row.money_returned)) : '—'}
-              </p>
-              {/* Commission/cost */}
-              <p className="text-sm tabular-nums text-slate-500 dark:text-slate-400 text-right">
-                {(row.commission_amount ?? row.net_facilitation_cost) != null
-                  ? formatCurrency(Number(row.commission_amount ?? row.net_facilitation_cost))
-                  : '—'}
-              </p>
-              {/* Status */}
-              <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${STATUS_CLS[row.status]}`}>
-                {row.status}
-              </span>
-              {/* Actions */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {packs.map(row => (
+            <VrfPack key={row.vrf_id} row={row} onOpen={() => setOpened(row)}>
+              {row.status !== 'settled' && (
+                <span className={`absolute left-3 top-3 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${STATUS_CLS[row.status]}`}>{row.status}</span>
+              )}
               {canWrite && (
-                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                  <Link to={`/vendor-receipts/${row.id}/edit`}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200" title="Edit">
-                    <Pencil className="h-3.5 w-3.5" />
+                <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                  <Link to={`/vendor-receipts/${row.vrf_id}/edit`} title="Edit"
+                    className="rounded-full bg-black/40 p-1.5 text-white hover:bg-black/60">
+                    <Pencil className="h-3 w-3" />
                   </Link>
-                  <button onClick={e => handleDelete(e, row.id)}
-                    className="rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600" title="Delete">
-                    <Trash2 className="h-3.5 w-3.5" />
+                  <button onClick={e => handleDelete(e, row.vrf_id)} title="Delete"
+                    className="rounded-full bg-black/40 p-1.5 text-white hover:bg-red-600">
+                    <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
               )}
-            </div>
+            </VrfPack>
+          ))}
+          {/* A VRF that the register does not return yet (just created) still gets a way in */}
+          {data.filter(r => !packs.some(p => p.vrf_id === r.id)).map(r => (
+            <button key={r.id} onClick={() => navigate(`/vendor-receipts/${r.id}`)}
+              className="flex aspect-[3/4] flex-col items-center justify-center rounded-2xl border-2 border-dashed text-sm text-slate-400 dark:border-slate-700">
+              {r.record_name ?? 'New VRF'}
+            </button>
           ))}
         </div>
       )}
+
+      {opened && <VrfPackOpening row={opened} onClose={() => setOpened(null)} />}
     </div>
   )
 }

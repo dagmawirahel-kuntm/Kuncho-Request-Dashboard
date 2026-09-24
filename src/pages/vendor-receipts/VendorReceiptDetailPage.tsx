@@ -7,11 +7,13 @@ import {
   ArrowLeft, Pencil, ReceiptText, AlertCircle,
   ArrowRightLeft, User, Plus, Trash2,
 } from 'lucide-react'
-import type { VendorReceiptFacilitation, Expense } from '@/types/database'
+import type { VendorReceiptFacilitation, Expense, VrfRegisterRow } from '@/types/database'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useCategories } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { toEthiopian, ecPeriodLabel } from '@/lib/ethiopianCalendar'
+import { VrfPersonalDraws } from './VrfPersonalDraws'
 
 interface VrfReceiptItem {
   id: string
@@ -173,10 +175,13 @@ const STATUS_CLS: Record<string, string> = {
   settled:  'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
 }
 
+// Grouped by Ethiopian month, e.g. "Meskerem 2019".
 function monthKey(dateStr: string | null) {
   if (!dateStr) return 'Unknown'
   const d = new Date(dateStr)
-  return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleString('default', { month: 'long', year: 'numeric' })
+  if (isNaN(d.getTime())) return 'Unknown'
+  const ec = toEthiopian(d)
+  return ecPeriodLabel(ec.year, ec.month)
 }
 
 function groupByMonth<T extends { paid_date?: string | null; date?: string | null }>(items: T[]) {
@@ -248,7 +253,22 @@ export default function VendorReceiptDetailPage() {
     queryKey: ['vrf-fund', id],
     queryFn: async () => {
       const { data } = await supabase.from('v_vrf_fund_status').select('*').eq('vrf_id', id!).maybeSingle()
-      return data as { money_returned: number; fund_drawn: number; fund_available: number; payments_count: number } | null
+      return data as {
+        money_returned: number; fund_drawn: number; fund_available: number; payments_count: number
+        company_expense_drawn: number; payroll_drawn: number; personal_drawn: number
+      } | null
+    },
+    enabled: !!id,
+  })
+
+  // Where the receipt amount went: WHT, commission, returned, and whatever
+  // the record does not yet explain (v_vrf_register, migration 320).
+  const { data: reg } = useQuery({
+    queryKey: ['vrf-register', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_vrf_register').select('*').eq('vrf_id', id!).maybeSingle()
+      if (error) throw error
+      return data as VrfRegisterRow | null
     },
     enabled: !!id,
   })
@@ -285,12 +305,13 @@ export default function VendorReceiptDetailPage() {
   const returned     = Number(vrf.money_returned ?? 0)
   const commission   = Number(vrf.commission_amount ?? 0)
   const netCost      = Number(vrf.net_facilitation_cost ?? 0)
-  // The facilitator takes a cut and returns the rest — it does NOT pay the
-  // vendors. So the settlement reconciles the money that left against the money
-  // that came back plus the agreed commission; it should net to zero. Vendor
-  // expenses are paid separately from the returned funds and only *documented*
-  // here, so they are not part of this balance.
-  const settlementGap = transferred - returned - commission
+  // What left for the receipt and did not come back should be exactly the WHT
+  // withheld plus the commission. Anything else is a figure missing from the
+  // record — measured against the receipt amount, because the transfer is
+  // sometimes entered before WHT and sometimes after.
+  const unaccounted  = Number(reg?.unaccounted ?? 0)
+  const receiptAmt   = Number(reg?.receipt_amount ?? transferred)
+  const whtRecorded  = Number(reg?.wht_recorded ?? 0)
   const groups       = groupByMonth(expenses)
 
   const HERO_BG = '#1E3A5F'
@@ -391,13 +412,13 @@ export default function VendorReceiptDetailPage() {
             <p className="text-white font-bold text-base tabular-nums">{commission > 0 ? formatCurrency(commission) : '—'}</p>
           </div>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Gap</p>
-            <p className={`font-bold text-base tabular-nums ${Math.abs(settlementGap) < 0.01 ? 'text-green-300' : 'text-amber-300'}`}>
-              {transferred > 0 ? formatCurrency(Math.abs(settlementGap)) : '—'}
+            <p className="text-white/50 text-xs uppercase tracking-wide">Unaccounted</p>
+            <p className={`font-bold text-base tabular-nums ${Math.abs(unaccounted) < 1 ? 'text-green-300' : 'text-amber-300'}`}>
+              {reg ? formatCurrency(Math.abs(unaccounted)) : '—'}
             </p>
           </div>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Fund Available</p>
+            <p className="text-white/50 text-xs uppercase tracking-wide">Still Held</p>
             <p className="text-white font-bold text-base tabular-nums">{fund ? formatCurrency(Number(fund.fund_available)) : (returned > 0 ? formatCurrency(returned) : '—')}</p>
           </div>
         </div>
@@ -407,9 +428,9 @@ export default function VendorReceiptDetailPage() {
       <div className="flex items-start gap-2 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
         <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
         <span>
-          The facilitator takes the transfer, keeps a <span className="font-medium">commission</span>, issues a legal invoice, and
-          <span className="font-medium"> returns the rest</span> — it doesn't pay the vendors. You pay them from the returned funds.
-          So the <span className="font-medium">settlement</span> just checks transferred = returned + commission; the linked expenses are the purchases this invoice documents.
+          Kuncho pays the receipt amount; the VRF company keeps the <span className="font-medium">WHT</span> and the individual the
+          <span className="font-medium"> commission</span>, and <span className="font-medium">the rest comes back</span>. No goods reach Kuncho,
+          so a VRF stays out of the Government Statement, input VAT and Tax Filings. The WHT withheld still goes on the WHT return.
         </span>
       </div>
 
@@ -441,7 +462,7 @@ export default function VendorReceiptDetailPage() {
               <ReceiptText className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" />
               <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses documented under this VRF invoice</p>
               <p className="text-xs text-slate-400 dark:text-slate-500 max-w-xs mx-auto leading-relaxed">
-                Link the vendor expenses this facilitation's invoice covers. They're paid normally from the company account — linking them here is for the VAT/receipt record, and does not change the settlement balance.
+                The VRF payment appears here once the record is settled. It is kept out of the Government Statement and input VAT.
               </p>
               {canAddExpense && (
                 <Link
@@ -549,17 +570,32 @@ export default function VendorReceiptDetailPage() {
                   accent="text-amber-600 dark:text-amber-400"
                 />
               )}
-              {transferred > 0 && (
+              {reg && (
                 <SummaryRow
-                  label="Settlement Gap"
-                  sub="Transferred − returned − commission · should be 0 when the facilitator has settled"
-                  value={`${settlementGap < 0 ? '−' : settlementGap > 0 ? '+' : ''}${formatCurrency(Math.abs(settlementGap))}`}
-                  accent={Math.abs(settlementGap) < 0.01 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}
+                  label="Receipt Amount"
+                  sub="The VRF payment the receipt is issued for"
+                  value={formatCurrency(receiptAmt)}
+                />
+              )}
+              {reg && (
+                <SummaryRow
+                  label="WHT Withheld"
+                  sub="As recorded on the VRF payment · owed to the government"
+                  value={formatCurrency(whtRecorded)}
+                  accent="text-slate-600 dark:text-slate-300"
+                />
+              )}
+              {reg && (
+                <SummaryRow
+                  label="Not Accounted For"
+                  sub="Receipt amount − returned − WHT − commission · 0 once both are recorded"
+                  value={`${unaccounted < 0 ? '−' : ''}${formatCurrency(Math.abs(unaccounted))}`}
+                  accent={Math.abs(unaccounted) < 1 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}
                 />
               )}
               <SummaryRow
-                label="Expenses Documented"
-                sub={`${expenses.length} vendor expense${expenses.length !== 1 ? 's' : ''} this invoice covers · paid separately from the company account`}
+                label="VRF Payment"
+                sub={`${expenses.length} linked payment${expenses.length !== 1 ? 's' : ''} · outside the Government Statement and input VAT`}
                 value={documentedTotal > 0 ? formatCurrency(documentedTotal) : '—'}
                 accent="text-slate-600 dark:text-slate-300"
               />
@@ -570,7 +606,7 @@ export default function VendorReceiptDetailPage() {
           {vrf.status === 'settled' && (
             <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
               <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Fund — Payments Drawn From This VRF</p>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Returned Money — How It Was Used</p>
                 <span className="text-xs text-slate-400">{fund?.payments_count ?? 0} payment{(fund?.payments_count ?? 0) === 1 ? '' : 's'}</span>
               </div>
               <div className="grid grid-cols-3 divide-x dark:divide-slate-700 text-center">
@@ -581,9 +617,12 @@ export default function VendorReceiptDetailPage() {
                 <div className="py-3">
                   <p className="text-[11px] text-slate-400">Drawn</p>
                   <p className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(Number(fund?.fund_drawn ?? 0))}</p>
+                  <p className="text-[10px] text-slate-400">
+                    company {formatCurrency(Number(fund?.company_expense_drawn ?? 0) + Number(fund?.payroll_drawn ?? 0))} · personal {formatCurrency(Number(fund?.personal_drawn ?? 0))}
+                  </p>
                 </div>
                 <div className="py-3">
-                  <p className="text-[11px] text-slate-400">Available</p>
+                  <p className="text-[11px] text-slate-400">Still held</p>
                   <p className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(Number(fund?.fund_available ?? returned))}</p>
                 </div>
               </div>
@@ -603,6 +642,10 @@ export default function VendorReceiptDetailPage() {
             </div>
           )}
 
+          {vrf.status === 'settled' && (
+            <VrfPersonalDraws vrfId={id!} available={Number(fund?.fund_available ?? returned)} canEdit={canAddExpense} />
+          )}
+
           {vrf.notes && (
             <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm p-5">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Notes</p>
@@ -610,20 +653,20 @@ export default function VendorReceiptDetailPage() {
             </div>
           )}
 
-          {/* Settlement-gap alert */}
-          {transferred > 0 && Math.abs(settlementGap) >= 0.01 && (
+          {/* Unaccounted alert */}
+          {reg && Math.abs(unaccounted) >= 1 && (
             <div className="flex items-start gap-3 rounded-xl border p-4 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40">
               <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-500" />
               <div>
                 <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                  {settlementGap > 0
-                    ? `${formatCurrency(settlementGap)} not yet returned`
-                    : `${formatCurrency(Math.abs(settlementGap))} returned above expectation`}
+                  {unaccounted > 0
+                    ? `${formatCurrency(unaccounted)} kept back is not explained by the WHT and commission on record`
+                    : `${formatCurrency(Math.abs(unaccounted))} more came back than the receipt less WHT and commission`}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {settlementGap > 0
-                    ? 'The facilitator has kept more than the agreed commission — either more is still to come back, or the commission on record is understated. Record the remaining return, or correct the commission.'
-                    : 'More came back than transferred minus commission — check the returned amount and commission are right.'}
+                  {unaccounted > 0
+                    ? 'Record the WHT on the VRF payment and the commission on this record — or the rest of the return, if more is still to come back.'
+                    : 'Check the returned amount, the WHT and the commission are right.'}
                 </p>
               </div>
             </div>
