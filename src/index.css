@@ -36,6 +36,7 @@
   --color-sidebar-foreground: hsl(210 40% 98%);
   --color-brand: #151a1f;
   --color-brand-foreground: #ffffff;
+  --font-ethiopic: "Noto Sans Ethiopic", "Nyala", "Ebrima", ui-sans-serif, system-ui, sans-serif;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
@@ -77,6 +78,64 @@
   --color-muted: #201a13;
   --color-elevated: #1c170f;
   --color-sidebar: #0c0a07;
+}
+
+/* ── Seasonal moments (src/lib/seasons.ts) ─────────────────────────────
+   Colours for the Meskel artwork, and the accent layer AppShell puts on
+   <html> as .meskel for the festive days. In dark and gold the accent warms
+   from the app's gold to Adey Abeba yellow; light keeps its near-black
+   accent, because the daisy yellow is 1.7:1 on white and can't carry text. */
+:root {
+  --season-wood: #8a5a2b;
+  --season-wood-2: #6b4320;
+  --season-band: #4D7C0F;
+  --season-cross: #9a7b1e;
+  --season-ground: #94a3b8;
+}
+.dark {
+  --season-wood: #b07a45;
+  --season-wood-2: #8c5c30;
+  --season-band: #65a30d;
+  --season-cross: #D4AF37;
+  --season-ground: #475569;
+}
+.gold { --season-ground: #3a3025; }
+.dark.meskel { --color-brand: #F4C20D; }
+
+.season-greet {
+  background: linear-gradient(115deg, #fff8dc 0%, rgba(255,255,255,0) 58%), var(--color-card);
+  border-color: #efe0a4;
+}
+.season-greet--demera {
+  background-image:
+    radial-gradient(130% 150% at 0% 100%, rgba(249,115,22,.12) 0%, rgba(249,115,22,0) 58%),
+    linear-gradient(115deg, #fff8dc 0%, rgba(255,255,255,0) 58%);
+}
+.dark .season-greet {
+  background: linear-gradient(115deg, rgba(244,194,13,.13) 0%, rgba(244,194,13,0) 58%), var(--color-card);
+  border-color: rgba(244,194,13,.28);
+}
+.dark .season-greet--demera {
+  background-image:
+    radial-gradient(130% 150% at 0% 100%, rgba(249,115,22,.28) 0%, rgba(249,115,22,0) 58%),
+    linear-gradient(115deg, rgba(244,194,13,.13) 0%, rgba(244,194,13,0) 58%);
+}
+
+.meskel-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: meskel-flick 1.6s ease-in-out infinite;
+}
+.meskel-flame.f2 { animation-duration: 1.15s; animation-delay: -.4s; }
+.meskel-flame.f3 { animation-duration: .85s; animation-delay: -.2s; }
+@keyframes meskel-flick {
+  0%, 100% { transform: scale(1, 1) skewX(0deg); }
+  25%      { transform: scale(.97, 1.07) skewX(-2.5deg); }
+  50%      { transform: scale(1.03, .95) skewX(1.5deg); }
+  75%      { transform: scale(.98, 1.05) skewX(2.5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .meskel-flame { animation: none; }
 }
 
 /* Gold focus ring in dark mode (both Dark and Gold) */

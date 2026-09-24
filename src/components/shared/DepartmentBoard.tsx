@@ -6,6 +6,7 @@ import { getDeptColor, initials } from '@/lib/departments'
 import { formatEthiopian } from '@/lib/ethiopianCalendar'
 import type { CompanyEvent, CompanyEventType } from '@/types/database'
 import { Megaphone, CalendarDays, CheckSquare, Sun, ArrowRight, Clock, User } from 'lucide-react'
+import { SeasonalEventIcon } from '@/components/seasonal/MeskelArt'
 
 const TYPE_META: Record<CompanyEventType, { icon: React.ReactNode; cls: string; label: string }> = {
   announcement: { icon: <Megaphone className="h-3.5 w-3.5" />, cls: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20', label: 'Announcement' },
@@ -53,7 +54,7 @@ function EventRow({ ev, showDay }: { ev: CompanyEvent; showDay?: boolean }) {
   const time = fmtTime(ev.start_time)
   return (
     <div className="flex items-start gap-2.5 px-4 sm:px-6 py-2.5">
-      <span className={`mt-0.5 rounded-md p-1.5 flex-shrink-0 ${meta.cls}`}>{meta.icon}</span>
+      <span className={`mt-0.5 rounded-md p-1.5 flex-shrink-0 ${meta.cls}`}><SeasonalEventIcon title={ev.title} fallback={meta.icon} /></span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug">{ev.title}</p>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
