@@ -8,11 +8,11 @@ import { AlertCircle, ShieldOff } from 'lucide-react'
 
 type Totals = {
   count: number; receipt: number; wht: number; commission: number; returned: number
-  unaccounted: number; company: number; personal: number; held: number
+  unaccounted: number; company: number; personal: number; held: number; vat: number
 }
 
 function sum(rows: VrfRegisterRow[]): Totals {
-  const t: Totals = { count: 0, receipt: 0, wht: 0, commission: 0, returned: 0, unaccounted: 0, company: 0, personal: 0, held: 0 }
+  const t: Totals = { count: 0, receipt: 0, wht: 0, commission: 0, returned: 0, unaccounted: 0, company: 0, personal: 0, held: 0, vat: 0 }
   for (const r of rows) {
     t.count += 1
     t.receipt += Number(r.receipt_amount)
@@ -23,6 +23,7 @@ function sum(rows: VrfRegisterRow[]): Totals {
     t.company += Number(r.company_expense_drawn) + Number(r.payroll_drawn)
     t.personal += Number(r.personal_drawn)
     t.held += Number(r.held)
+    t.vat += Number(r.vat_on_receipt ?? 0)
   }
   return t
 }
@@ -91,7 +92,7 @@ export function VrfRegisterPanel() {
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Accumulated through VRF</h2>
           <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
             <ShieldOff className="h-3 w-3" />
-            Kept out of the Government Statement, input VAT and Tax Filings. WHT withheld on VRF payments still belongs on the WHT return.
+            Kept out of the Government Statement, input VAT and Tax Filings. The VAT on the receipts is shown for the record only and is not claimable; WHT withheld on VRF payments still belongs on the WHT return.
           </p>
         </div>
         <select value={fy} onChange={e => setFy(e.target.value)}
@@ -101,7 +102,7 @@ export function VrfRegisterPanel() {
         </select>
       </div>
 
-      <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-4 dark:divide-slate-700">
+      <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 dark:divide-slate-700">
         <Figure label="Receipts bought" value={formatCurrency(total.receipt)} sub={`${total.count} VRF${total.count === 1 ? '' : 's'}`} />
         <Figure label="WHT withheld" value={formatCurrency(total.wht)} sub="as recorded" />
         <Figure label="Commission" value={formatCurrency(total.commission)} cls="text-amber-600 dark:text-amber-400" />
@@ -112,6 +113,8 @@ export function VrfRegisterPanel() {
         <Figure label="Not accounted for" value={formatCurrency(total.unaccounted)}
           cls={Math.abs(total.unaccounted) >= 1 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}
           sub="missing WHT or commission" />
+        <Figure label="VAT on receipts" value={formatCurrency(total.vat)} cls="text-red-600 dark:text-red-400"
+          sub="stated on the receipts · not claimable" />
       </div>
 
       <div className="overflow-x-auto border-t dark:border-slate-700">
@@ -126,6 +129,7 @@ export function VrfRegisterPanel() {
               <th className="px-3 py-2 text-right font-semibold">Returned</th>
               <th className="px-3 py-2 text-right font-semibold">Personal</th>
               <th className="px-3 py-2 text-right font-semibold">Unaccounted</th>
+              <th className="px-3 py-2 text-right font-semibold">VAT on receipts</th>
             </tr>
           </thead>
           <tbody className="divide-y dark:divide-slate-700">
@@ -141,6 +145,7 @@ export function VrfRegisterPanel() {
                 <td className={`px-3 py-2 text-right tabular-nums ${Math.abs(p.t.unaccounted) >= 1 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
                   {formatCurrency(p.t.unaccounted)}
                 </td>
+                <td className="px-3 py-2 text-right tabular-nums text-red-600 dark:text-red-400">{formatCurrency(p.t.vat)}</td>
               </tr>
             ))}
           </tbody>

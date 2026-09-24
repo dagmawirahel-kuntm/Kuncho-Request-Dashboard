@@ -1013,6 +1013,8 @@ export interface VrfRegisterRow {
   payroll_drawn: number
   personal_drawn: number
   held: number
+  /** VAT the receipt states (migration 321) — shown only, never claimable. */
+  vat_on_receipt: number
 }
 
 /** Money taken from a VRF's returned funds for personal use (migration 320). */
