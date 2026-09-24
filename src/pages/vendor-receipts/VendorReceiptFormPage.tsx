@@ -85,6 +85,8 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     dropRecordCache(qc, 'vendor-receipt')
     qc.invalidateQueries({ queryKey: ['vendor-receipts'] })
     qc.invalidateQueries({ queryKey: ['vrf', id] })
+    qc.invalidateQueries({ queryKey: ['vrf-register'] })
+    qc.invalidateQueries({ queryKey: ['vrf-fund'] })
     toast(isEdit ? 'Record updated' : 'Record created', 'success')
     navigate(backTo)
   }

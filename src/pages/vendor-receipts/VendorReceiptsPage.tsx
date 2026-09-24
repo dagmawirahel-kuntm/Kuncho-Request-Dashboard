@@ -7,6 +7,7 @@ import type { VendorReceiptFacilitation, VrfStatus } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle, BarChart3 } from 'lucide-react'
+import { VrfRegisterPanel } from './VrfRegisterPanel'
 
 type VrfRow = VendorReceiptFacilitation & {
   initial: { account_name: string } | null
@@ -57,6 +58,7 @@ export default function VendorReceiptsPage() {
     const { error } = await supabase.from('vendor_receipt_facilitation').delete().eq('id', id)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['vendor-receipts'] })
+    qc.invalidateQueries({ queryKey: ['vrf-register'] })
     toast('Record deleted', 'success')
   }
 
@@ -90,6 +92,9 @@ export default function VendorReceiptsPage() {
         <StatCard label="Settled" value={stats.settled} icon={<CheckCircle2 className="h-4 w-4" />} colorCls="bg-green-50 text-green-600 dark:bg-green-900/30" />
         <StatCard label="Total Transferred" value={formatCurrency(stats.totalOut)} icon={<ArrowRightLeft className="h-4 w-4" />} colorCls="bg-slate-100 text-slate-500 dark:bg-slate-700" />
       </div>
+
+      {/* How much has gone through VRF, by Ethiopian month */}
+      <VrfRegisterPanel />
 
       {/* Accumulation by good/service across all VRFs */}
       <VrfAccumulationPanel />
