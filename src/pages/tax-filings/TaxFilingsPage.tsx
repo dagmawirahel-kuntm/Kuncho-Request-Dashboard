@@ -6,6 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import type { TaxFilingView, TaxSchedule } from '@/types/database'
 import { TaxFilingDetailModal } from './TaxFilingDetailModal'
+import { useTaxFilingComputed } from '@/hooks/useTaxFilingComputed'
 import { NewTaxFilingModal } from './NewTaxFilingModal'
 import { Plus, CalendarPlus, Info, Paperclip, AlertTriangle } from 'lucide-react'
 
@@ -92,6 +93,9 @@ export default function TaxFilingsPage() {
       return data as TaxFilingView[]
     },
   })
+
+  // What each filing should declare, from the books (migration 313).
+  const { data: computed } = useTaxFilingComputed(selectedPeriod?.id)
 
   // Grouped by schedule, in the catalogue's own display order.
   const groups = useMemo(() => {
@@ -223,6 +227,23 @@ export default function TaxFilingsPage() {
                         </p>
                       </div>
 
+                      {(() => {
+                        const c = computed?.get(f.id)?.computed_amount
+                        if (c == null) return null
+                        // Flag a declared figure that differs from the books by
+                        // more than a rounding cent; an undeclared draft is not
+                        // a mismatch, just unfinished.
+                        const mismatch = f.declared_amount != null && Math.abs(Number(f.declared_amount) - Number(c)) > 0.01
+                        return (
+                          <div className="hidden shrink-0 text-right sm:block">
+                            <p className={`text-sm tabular-nums ${mismatch ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {formatCurrency(Number(c))}
+                            </p>
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400">{mismatch ? 'computed ≠ declared' : 'computed'}</p>
+                          </div>
+                        )
+                      })()}
+
                       <div className="hidden shrink-0 text-right sm:block">
                         <p className="text-sm tabular-nums text-slate-700 dark:text-slate-200">
                           {formatCurrency(f.declared_amount)}
@@ -251,7 +272,7 @@ export default function TaxFilingsPage() {
       )}
 
       {openFiling && (
-        <TaxFilingDetailModal filing={openFiling} canEdit={canEdit} onClose={() => setOpenFiling(null)} />
+        <TaxFilingDetailModal filing={openFiling} canEdit={canEdit} computed={computed?.get(openFiling.id) ?? null} onClose={() => setOpenFiling(null)} />
       )}
       {showNew && (
         <NewTaxFilingModal

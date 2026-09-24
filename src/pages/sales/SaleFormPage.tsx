@@ -8,7 +8,8 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Sale, SaleInsert } from '@/types/database'
-import { useClients, useProjects, useAccounts, useTaxSummaries, useUserProfiles } from '@/hooks/useLookups'
+import { useClients, useProjects, useAccounts, useUserProfiles } from '@/hooks/useLookups'
+import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -59,7 +60,6 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     const { data: clients = [] } = useClients()
     const { data: projects = [] } = useProjects()
     const { data: accounts = [] } = useAccounts()
-    const { data: taxSummaries = [] } = useTaxSummaries()
     const { data: userProfiles = [] } = useUserProfiles()
     const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name, sub: c.phone_number ?? undefined })), [clients])
     const [formClientId, setFormClientId] = useState<string | null>(record?.client_id ?? clientId ?? null)
@@ -79,7 +79,6 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     const contractOptions = useMemo(() => clientContracts.map((c: any) => ({ id: c.id, label: c.contract_no ?? 'Untitled contract' })), [clientContracts])
     const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
     const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
-    const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
 
     function profileName(userId: string | null) {
       if (!userId) return null
@@ -218,7 +217,9 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         <Field label="Date">
           <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
         </Field>
-        <Field label="Amount (ETB)">
+        {/* VAT-inclusive by decision (migration 156): output VAT is taken out
+            of this figure, and WHT is tested on it with VAT removed (310). */}
+        <Field label="Amount (ETB, incl. VAT)">
           <FormattedNumberInput className={inputCls} value={form.amount ?? null} onChange={n => set('amount', n ?? null)} />
         </Field>
       </div>
@@ -288,8 +289,10 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
       <Field label="Received Through (Account)">
         <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
       </Field>
-      <Field label="Tax Month">
-        <SearchableSelect value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
+      {/* Was a "Tax Month" picker over tax_summary, which is empty and
+          retired. The VAT return a sale belongs to follows from its date. */}
+      <Field label="VAT return period">
+        <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{ecPeriodLabelForDate(form.date) ?? 'Set a date'}</p>
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />

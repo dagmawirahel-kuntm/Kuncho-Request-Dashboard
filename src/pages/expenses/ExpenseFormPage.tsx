@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
+import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -8,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement, SourcingBundleDiscountKind } from '@/types/database'
-import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useTaxSummaries, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
+import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
@@ -215,7 +216,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const { data: accounts = [] } = useAccounts()
     const { data: vendorReceiptFacilitations = [] } = useVendorReceiptFacilitations()
     const { data: transfers = [] } = useTransfers()
-    const { data: taxSummaries = [] } = useTaxSummaries()
     const { data: locations = [] } = useLocations()
     const { data: userProfiles = [] } = useUserProfiles()
     const { data: subcontractorEngagements = [] } = useSubcontractorEngagements()
@@ -331,7 +331,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const accountOptions = useMemo(() => accounts.map((a: any) => ({ id: a.id, label: a.account_name })), [accounts])
     const vendorReceiptFacilitationOptions = useMemo(() => vendorReceiptFacilitations.map((v: any) => ({ id: v.id, label: v.record_name })), [vendorReceiptFacilitations])
     const transferOptions = useMemo(() => transfers.map((t: any) => ({ id: t.id, label: t.transfer_id_code })), [transfers])
-    const taxSummaryOptions = useMemo(() => taxSummaries.map((t: any) => ({ id: t.id, label: t.month })), [taxSummaries])
     const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
     const propertyOptions = useMemo(() => properties.filter((p: any) => p.status === 'active').map((p: any) => ({ id: p.id, label: p.property_name })), [properties])
 
@@ -1052,8 +1051,10 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </Field>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Tax Month" locked={financeLocked}>
-          <SearchableSelect disabled={financeLocked} value={form.tax_summary_id ?? null} onChange={id => set('tax_summary_id', id)} options={taxSummaryOptions} placeholder="Select tax month…" />
+        {/* Was a "Tax Month" picker over tax_summary, which is empty and
+            retired. The period for VAT and WHT follows from the date. */}
+        <Field label="Tax period">
+          <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{ecPeriodLabelForDate(form.date) ?? 'Set a date'}</p>
         </Field>
         <Field label="Location">
           <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />

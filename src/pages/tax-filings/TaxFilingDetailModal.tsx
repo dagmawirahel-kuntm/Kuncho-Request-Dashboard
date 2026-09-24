@@ -3,11 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { formatDateGC } from '@/lib/utils'
+import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { summariseRateNote } from '@/lib/taxRateNote'
 import type {
-  TaxFilingView, TaxFilingDocument, TaxFilingDocType, TaxFilingStatus, TaxRateReference,
+  TaxFilingView, TaxFilingDocument, TaxFilingDocType, TaxFilingStatus, TaxRateReference, TaxFilingComputed,
 } from '@/types/database'
+import { BASIS_LABEL, BASIS_COUNT_KEYS } from '@/hooks/useTaxFilingComputed'
 import { X, Upload, FileText, Trash2, ExternalLink, AlertTriangle, Info } from 'lucide-react'
 
 const DOC_TYPES: { value: TaxFilingDocType; label: string }[] = [
@@ -25,10 +26,12 @@ const STATUSES: { value: TaxFilingStatus; label: string; hint: string }[] = [
 ]
 
 export function TaxFilingDetailModal({
-  filing, canEdit, onClose,
+  filing, canEdit, computed, onClose,
 }: {
   filing: TaxFilingView
   canEdit: boolean
+  /** From tax_filing_computed() (313); null while loading or not computed. */
+  computed: TaxFilingComputed | null
   onClose: () => void
 }) {
   const { role, user } = useAuth()
@@ -204,6 +207,48 @@ export function TaxFilingDetailModal({
                 {filing.is_overdue ? 'Overdue — due' : 'Due'} {formatDateGC(filing.due_date_greg)}
                 {filing.statutory_reference ? ` · ${filing.statutory_reference}` : ''}
               </span>
+            </div>
+          )}
+
+          {computed && (computed.computed_amount != null || computed.basis) && (
+            <div className="rounded-lg border px-3 py-2.5 text-xs dark:border-slate-600">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-slate-600 dark:text-slate-300">
+                  {computed.computed_amount != null ? 'Computed from the books' : 'Figures from the books'}
+                </span>
+                {computed.computed_amount != null && (
+                  <span className="flex items-center gap-2">
+                    <span className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
+                      {formatCurrency(Number(computed.computed_amount))}
+                    </span>
+                    {canEdit && (
+                      <button type="button" onClick={() => setDeclared(String(computed.computed_amount))}
+                        className="rounded border px-2 py-0.5 text-[11px] font-medium text-brand hover:bg-brand/5 dark:border-slate-600">
+                        Use as declared
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+              {computed.basis && (
+                <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
+                  {Object.entries(computed.basis).filter(([k]) => k !== 'note').map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-2">
+                      <dt className="text-slate-400">{BASIS_LABEL[k] ?? k}</dt>
+                      <dd className="tabular-nums text-slate-600 dark:text-slate-300">
+                        {BASIS_COUNT_KEYS.has(k) ? String(v) : formatCurrency(Number(v))}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {/* A 0 with no payroll runs is "nothing recorded", not "nothing owed". */}
+              {computed.basis && Number(computed.basis.payroll_runs) === 0 && (
+                <p className="mt-1.5 text-amber-600 dark:text-amber-400">No payroll run is recorded for this period — this figure is 0 because nothing was entered, not because nothing is owed.</p>
+              )}
+              {typeof computed.basis?.note === 'string' && (
+                <p className="mt-1.5 text-slate-400">{computed.basis.note}</p>
+              )}
             </div>
           )}
 

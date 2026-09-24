@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { computeMilestoneAmounts, type ContractTerms } from '@/lib/milestoneAmounts'
-import type { PaymentMilestone } from '@/types/database'
+import type { PaymentMilestone, ContractWhtBasis } from '@/types/database'
 import { X } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -30,10 +31,22 @@ export function MilestoneFormModal({
   )
   const [saving, setSaving] = useState(false)
 
+  // The same WHT basis the save trigger uses (migration 310), so the preview
+  // and the stored amounts come from one rule.
+  const { data: basis = null } = useQuery({
+    queryKey: ['contract-wht-basis', contractId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('contract_wht_basis', { p_contract_id: contractId })
+      if (error) throw error
+      return ((data as ContractWhtBasis[] | null)?.[0] ?? null)
+    },
+  })
+
   const pct = parseFloat(percent)
   const validPct = !isNaN(pct) && pct > 0 && pct <= 100
   // Preview only — the trigger computes the stored values on save.
-  const preview = computeMilestoneAmounts(terms, validPct ? pct : 0)
+  const preview = computeMilestoneAmounts(terms, basis, validPct ? pct : 0)
+  const ratePct = basis?.rate_fraction != null ? Number((basis.rate_fraction * 100).toFixed(2)) : null
 
   async function handleSave() {
     if (!title.trim()) { toast('A title is required', 'error'); return }
@@ -97,7 +110,9 @@ export function MilestoneFormModal({
           )}
           <Row label={`Retention (${terms.retention_percent ?? 0}%)`} value={-preview.retention} />
           <Row
-            label={preview.whtApplies ? `WHT (${terms.wht_rate ?? 3}%)` : 'WHT (contract under 20,000 — none)'}
+            label={preview.whtApplies
+              ? `WHT (${ratePct ?? '—'}%)`
+              : `WHT (contract under ${basis?.threshold != null ? formatCurrency(basis.threshold) : 'the threshold'} before VAT — none)`}
             value={-preview.wht}
           />
           <div className="border-t dark:border-slate-700 pt-1">

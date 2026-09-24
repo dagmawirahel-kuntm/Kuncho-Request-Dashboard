@@ -155,10 +155,6 @@ const navGroups: NavGroup[] = [
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
-      { label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
-      { label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
-      { label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
-      { label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },
       { label: 'BOQ Change Orders', to: '/finance/boq-change-orders', icon: FileText, roles: ['admin', 'executive', 'finance'] },
@@ -169,11 +165,23 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    // Everything tax in one place. These were spread across Finance, Reports
+    // and HR; they now all read Ethiopian periods and the same rate
+    // references (migrations 301-313), so they belong together.
+    title: 'Tax',
+    items: [
+      { label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
+      { label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      { label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      { label: 'Government Statement', to: '/reports/government-statement', icon: FileText, roles: ['admin', 'executive', 'finance'] },
+    ],
+  },
+  {
     title: 'Reports',
     items: [
       { label: 'P&L Report', to: '/reports/pl', icon: PieChart, roles: ['admin', 'executive', 'finance'] },
       { label: 'Balance Sheet', to: '/reports/balance-sheet', icon: Scale, roles: ['admin', 'executive', 'finance'] },
-      { label: 'Government Statement', to: '/reports/government-statement', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
       { label: 'Historical Archive', to: '/reports/archive', icon: Archive, roles: ['admin', 'executive', 'finance'] },
     ],
   },
@@ -188,7 +196,6 @@ const navGroups: NavGroup[] = [
       { label: 'Tier 2 Candidates', to: '/hr/tier2-candidates', icon: UserCheck, roles: ['admin', 'executive', 'hr_officer'] },
       { label: 'Trade Catalog', to: '/hr/trades', icon: Layers, roles: ['admin', 'executive', 'hr_officer'] },
       { label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
-      { label: 'Payroll Taxes', to: '/payroll-taxes', icon: FileText, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'executive', 'finance', 'hr_officer'] },

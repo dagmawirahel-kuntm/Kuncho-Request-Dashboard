@@ -169,20 +169,6 @@ export function useLocations() {
   })
 }
 
-export function useTaxSummaries() {
-  return useQuery({
-    queryKey: ['tax-summary-lookup'],
-    staleTime: 300000,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('tax_summary')
-        .select('id,month')
-        .order('month', { ascending: false })
-      return data ?? []
-    },
-  })
-}
-
 export function useTransfers() {
   return useQuery({
     queryKey: ['transfers-lookup'],
