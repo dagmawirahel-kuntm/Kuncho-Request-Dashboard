@@ -378,6 +378,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         sub_category_id: record.sub_category_id,
         account_id: record.account_id,
         vendor_receipt_facilitation_id: record.vendor_receipt_facilitation_id,
+        vrf_id: record.vrf_id,
         transfer_id: record.transfer_id,
         tax_summary_id: record.tax_summary_id,
         location_id: record.location_id,
@@ -444,13 +445,13 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         sourcing_bundle_id: linkedBundle.id,
       }
     })() : {}),
-    // Link an expense to a VRF for documentation only. The facilitator doesn't
-    // pay the vendors — you do, from the returned funds — so this is a real
-    // vendor purchase, NOT a copy of the transfer. Default the paying account to
-    // where the returned money sits; leave vendor/amount for the real purchase.
+    // A company payment made from a VRF's returned money (migration 322): it
+    // draws on that VRF (vrf_id) and is paid from the holding account the
+    // money came back to. vendor_receipt_facilitation_id is no longer set:
+    // that link marked the VRF payment itself, which is not an expense.
     ...(linkedVrf ? {
-      vendor_receipt_facilitation_id: linkedVrf.id,
-      account_id: linkedVrf.return_account_id ?? linkedVrf.initial_account_id ?? undefined,
+      vrf_id: linkedVrf.id,
+      account_id: linkedVrf.return_account_id ?? undefined,
     } : {}),
     // pre-fill from a linked property — used by the Rent page's "Record
     // Rent Payment" link, same ?xxx_id= gateway pattern as PO/VRF above
@@ -1043,8 +1044,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {showFullFieldSet && (
-          <Field label="Vendor Receipt Facilitation">
-            <SearchableSelect value={form.vendor_receipt_facilitation_id ?? null} onChange={id => set('vendor_receipt_facilitation_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Select record…" />
+          <Field label="Paid from VRF (returned money)">
+            <SearchableSelect value={form.vrf_id ?? null} onChange={id => set('vrf_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Not paid from a VRF" />
           </Field>
         )}
         <Field label="Transfer" locked={financeLocked}>
