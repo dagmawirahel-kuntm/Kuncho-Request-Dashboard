@@ -4,16 +4,16 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
-  ArrowLeft, Pencil, ReceiptText, AlertCircle,
+  ArrowLeft, Pencil, AlertCircle,
   ArrowRightLeft, User, Plus, Trash2,
 } from 'lucide-react'
-import type { VendorReceiptFacilitation, Expense, VrfRegisterRow } from '@/types/database'
+import type { VendorReceiptFacilitation, VrfRegisterRow } from '@/types/database'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useCategories } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { toEthiopian, ecPeriodLabel } from '@/lib/ethiopianCalendar'
 import { VrfPersonalDraws } from './VrfPersonalDraws'
+import { VrfReturns, VrfReviewPanel } from './VrfReturns'
 
 interface VrfReceiptItem {
   id: string
@@ -167,32 +167,12 @@ function ReceiptItemsTab({ vrfId, transferred, canEdit }: { vrfId: string; trans
   )
 }
 
-type Tab = 'expenses' | 'items' | 'summary'
+type Tab = 'returns' | 'items' | 'summary'
 
 const STATUS_CLS: Record<string, string> = {
   open:     'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   partial:  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   settled:  'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-}
-
-// Grouped by Ethiopian month, e.g. "Meskerem 2019".
-function monthKey(dateStr: string | null) {
-  if (!dateStr) return 'Unknown'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return 'Unknown'
-  const ec = toEthiopian(d)
-  return ecPeriodLabel(ec.year, ec.month)
-}
-
-function groupByMonth<T extends { paid_date?: string | null; date?: string | null }>(items: T[]) {
-  const out: { month: string; rows: T[] }[] = []
-  const seen: Record<string, number> = {}
-  for (const row of items) {
-    const m = monthKey(row.paid_date ?? row.date ?? null)
-    if (seen[m] == null) { seen[m] = out.length; out.push({ month: m, rows: [] }) }
-    out[seen[m]].rows.push(row)
-  }
-  return out
 }
 
 function SummaryRow({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
@@ -210,7 +190,7 @@ function SummaryRow({ label, value, sub, accent }: { label: string; value: strin
 export default function VendorReceiptDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
-  const [tab, setTab] = useState<Tab>('expenses')
+  const [tab, setTab] = useState<Tab>('returns')
   const canAddExpense = role === 'admin' || role === 'executive' || role === 'finance'
 
   const { data: vrf, isLoading } = useQuery({
@@ -223,26 +203,6 @@ export default function VendorReceiptDetailPage() {
         .single()
       if (error) throw error
       return data as VendorReceiptFacilitation & { initial: { account_name: string } | null; returned: { account_name: string } | null }
-    },
-    enabled: !!id,
-  })
-
-  const { data: expenses = [], isLoading: loadingExp } = useQuery({
-    queryKey: ['vrf-expenses', id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select(`
-          id, item_service_description, amount_etb, payment_status,
-          bank_ref, paid_date, date,
-          vendors:vendor_id ( vendor_name ),
-          projects:project_id ( project_name ),
-          categories:category_id ( category_name )
-        `)
-        .eq('vendor_receipt_facilitation_id', id!)
-        .order('paid_date', { ascending: false, nullsFirst: false })
-      if (error) throw error
-      return (data ?? []) as (Expense & { vendors: any; projects: any; categories: any })[]
     },
     enabled: !!id,
   })
@@ -300,19 +260,21 @@ export default function VendorReceiptDetailPage() {
     )
   }
 
-  const documentedTotal = expenses.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
+  // One figure is typed (the receipt amount); the rest follow from it
+  // (migration 322). What should come back is the receipt less WHT and
+  // commission; anything else is a figure still missing from the record.
   const transferred  = Number(vrf.amount_transferred ?? 0)
   const returned     = Number(vrf.money_returned ?? 0)
   const commission   = Number(vrf.commission_amount ?? 0)
-  const netCost      = Number(vrf.net_facilitation_cost ?? 0)
-  // What left for the receipt and did not come back should be exactly the WHT
-  // withheld plus the commission. Anything else is a figure missing from the
-  // record — measured against the receipt amount, because the transfer is
-  // sometimes entered before WHT and sometimes after.
   const unaccounted  = Number(reg?.unaccounted ?? 0)
   const receiptAmt   = Number(reg?.receipt_amount ?? transferred)
   const whtRecorded  = Number(reg?.wht_recorded ?? 0)
-  const groups       = groupByMonth(expenses)
+  const expected     = Number(reg?.expected_return ?? transferred - commission)
+  const BASIS_TEXT: Record<string, string> = {
+    receipt_pct: `${vrf.commission_rate ?? 0}% of the receipt`,
+    vat_pct: `${vrf.commission_rate ?? 0}% of the VAT on the receipt`,
+    fixed: 'fixed amount',
+  }
 
   const HERO_BG = '#1E3A5F'
 
@@ -330,7 +292,7 @@ export default function VendorReceiptDetailPage() {
             <Link
               to={`/expenses/new?vrf_id=${id}`}
               className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 shadow-sm">
-              <Plus className="h-4 w-4" /> Add Expense
+              <Plus className="h-4 w-4" /> Pay from this VRF
             </Link>
           )}
           {(role === 'admin' || role === 'finance') && (
@@ -374,10 +336,10 @@ export default function VendorReceiptDetailPage() {
               </span>
             </div>
 
-            {/* Amount transferred */}
-            <p className="text-white/50 text-xs uppercase tracking-widest mb-1">Amount Transferred</p>
+            {/* Receipt amount — the one figure typed in */}
+            <p className="text-white/50 text-xs uppercase tracking-widest mb-1">Receipt Amount</p>
             <p className="text-white font-black text-4xl tabular-nums mb-4">
-              {transferred > 0 ? formatCurrency(transferred) : '—'}
+              {receiptAmt > 0 ? formatCurrency(receiptAmt) : '—'}
             </p>
 
             {/* Meta chips */}
@@ -434,113 +396,26 @@ export default function VendorReceiptDetailPage() {
         </span>
       </div>
 
+      {reg && <VrfReviewPanel reg={reg} canEdit={canAddExpense} />}
+
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <div className="flex gap-0 border-b dark:border-slate-700">
-        {(['expenses', 'items', 'summary'] as Tab[]).map(t => (
+        {(['returns', 'items', 'summary'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px capitalize transition-colors ${
               tab === t
                 ? 'border-brand text-brand'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
             }`}>
-            {t === 'expenses'
-              ? `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}`
-              : t === 'items' ? 'Receipt Items' : 'Financial Summary'}
+            {t === 'returns' ? 'Returns' : t === 'items' ? 'Receipt Items' : 'Financial Summary'}
           </button>
         ))}
       </div>
 
       {tab === 'items' && <ReceiptItemsTab vrfId={id!} transferred={transferred} canEdit={canAddExpense} />}
 
-      {/* ── Expenses tab ────────────────────────────────────────── */}
-      {tab === 'expenses' && (
-        <div className="space-y-4">
-          {loadingExp && <p className="text-center text-sm text-slate-400 py-16">Loading expenses…</p>}
-
-          {!loadingExp && expenses.length === 0 && (
-            <div className="rounded-2xl border-2 border-dashed dark:border-slate-700 py-14 text-center space-y-2 px-6">
-              <ReceiptText className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" />
-              <p className="text-slate-600 dark:text-slate-400 font-medium">No expenses documented under this VRF invoice</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 max-w-xs mx-auto leading-relaxed">
-                The VRF payment appears here once the record is settled. It is kept out of the Government Statement and input VAT.
-              </p>
-              {canAddExpense && (
-                <Link
-                  to={`/expenses/new?vrf_id=${id}`}
-                  className="mt-2 inline-flex items-center gap-1.5 text-sm text-brand font-medium hover:underline">
-                  <Plus className="h-3.5 w-3.5" /> Add first expense
-                </Link>
-              )}
-            </div>
-          )}
-
-          {!loadingExp && groups.length > 0 && (
-            <>
-              {groups.map(({ month, rows }) => {
-                const monthTotal = rows.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
-                return (
-                  <div key={month} className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700">
-                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{month}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">{rows.length} expense{rows.length !== 1 ? 's' : ''}</span>
-                        <span className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(monthTotal)}</span>
-                      </div>
-                    </div>
-                    {rows.map((e, i) => {
-                      const dateStr = e.paid_date ?? e.date
-                      const d = dateStr ? new Date(dateStr) : null
-                      const dayNum  = d ? d.getDate() : '—'
-                      const dayName = d ? d.toLocaleString('default', { weekday: 'short' }) : ''
-                      return (
-                        <Link key={e.id} to={`/expenses/${e.id}/edit`} state={{ returnTo: `/vendor-receipts/${id}` }}
-                          className={`flex items-stretch hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${i < rows.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
-                          <div className="flex flex-col items-center justify-center w-14 py-3 border-r dark:border-slate-700 flex-shrink-0">
-                            <span className="text-[10px] font-medium text-slate-400 leading-none">{dayName}</span>
-                            <span className="text-lg font-bold text-slate-700 dark:text-slate-200 leading-tight">{dayNum}</span>
-                          </div>
-                          <div className="flex-1 min-w-0 px-3 py-3 flex flex-col justify-center gap-0.5">
-                            <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
-                              {e.item_service_description ?? '—'}
-                            </p>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {e.vendors?.vendor_name && (
-                                <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[140px]">{e.vendors.vendor_name}</span>
-                              )}
-                              {e.projects?.project_name && (
-                                <span className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
-                                  {e.projects.project_name}
-                                </span>
-                              )}
-                              {e.categories?.category_name && (
-                                <span className="text-xs text-slate-400 truncate max-w-[100px]">{e.categories.category_name}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end justify-center pr-3 py-3 flex-shrink-0 gap-1">
-                            <span className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">
-                              {e.amount_etb != null ? formatCurrency(Number(e.amount_etb)) : '—'}
-                            </span>
-                            {e.bank_ref && (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500">
-                                {e.bank_ref}
-                              </span>
-                            )}
-                          </div>
-                        </Link>
-                      )
-                    })}
-                  </div>
-                )
-              })}
-              <div className="flex items-center justify-between rounded-xl bg-white dark:bg-slate-800 border dark:border-slate-700 px-5 py-4 shadow-sm">
-                <span className="text-sm text-slate-500 dark:text-slate-400">Documented across {expenses.length} expenses · paid from the company account</span>
-                <span className="text-lg font-black tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(documentedTotal)}</span>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {/* ── Returns tab ─────────────────────────────────────────── */}
+      {tab === 'returns' && reg && <VrfReturns reg={reg} canEdit={canAddExpense} />}
 
       {/* ── Summary tab ─────────────────────────────────────────── */}
       {tab === 'summary' && (
@@ -550,60 +425,46 @@ export default function VendorReceiptDetailPage() {
               <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Cash Flow Breakdown</p>
             </div>
             <div className="px-5">
+              <SummaryRow label="Receipt Amount" sub="VAT included — the one figure typed in" value={formatCurrency(receiptAmt)} />
               <SummaryRow
-                label="Amount Transferred Out"
-                sub="Funds sent from the company account to the facilitator"
-                value={transferred > 0 ? formatCurrency(transferred) : '—'}
+                label="WHT Withheld"
+                sub={vrf.wht_overridden ? 'Entered by hand · owed to the government' : 'Worked out from the WHT rate · owed to the government'}
+                value={formatCurrency(whtRecorded)}
+                accent="text-slate-600 dark:text-slate-300"
+              />
+              <SummaryRow
+                label="Sent"
+                sub={`Receipt − WHT${(vrf as any).initial?.account_name ? ` · from ${(vrf as any).initial.account_name}` : ''}${vrf.out_transfer_id ? ' · matched to its bank line' : ''}`}
+                value={formatCurrency(transferred)}
                 accent="text-red-600 dark:text-red-400"
               />
               <SummaryRow
-                label="Money Returned to Company"
-                sub={vrf.return_account_id ? `Returned to: ${(vrf as any).returned?.account_name ?? '—'}` : 'Return account not set'}
-                value={returned > 0 ? formatCurrency(returned) : '—'}
+                label="Commission"
+                sub={vrf.commission_basis ? BASIS_TEXT[vrf.commission_basis] : 'Kept by the individual'}
+                value={formatCurrency(commission)}
+                accent="text-amber-600 dark:text-amber-400"
+              />
+              <SummaryRow label="Should Come Back" sub="Sent − commission" value={formatCurrency(expected)} />
+              <SummaryRow
+                label="Came Back"
+                sub={vrf.return_account_id ? `Into ${(vrf as any).returned?.account_name ?? 'the holding account'}` : 'Recorded under Returns'}
+                value={formatCurrency(returned)}
                 accent="text-green-600 dark:text-green-400"
               />
-              {(commission > 0 || netCost > 0) && (
-                <SummaryRow
-                  label="Commission (facilitator's cut)"
-                  sub={vrf.commission_rate ? `${vrf.commission_rate}% — the only real cost of the facilitation` : 'The only real cost of the facilitation'}
-                  value={formatCurrency(commission > 0 ? commission : netCost)}
-                  accent="text-amber-600 dark:text-amber-400"
-                />
-              )}
-              {reg && (
-                <SummaryRow
-                  label="Receipt Amount"
-                  sub="The VRF payment the receipt is issued for"
-                  value={formatCurrency(receiptAmt)}
-                />
-              )}
-              {reg && (
-                <SummaryRow
-                  label="WHT Withheld"
-                  sub="As recorded on the VRF payment · owed to the government"
-                  value={formatCurrency(whtRecorded)}
-                  accent="text-slate-600 dark:text-slate-300"
-                />
-              )}
               {reg && (
                 <SummaryRow
                   label="Not Accounted For"
-                  sub="Receipt amount − returned − WHT − commission · 0 once both are recorded"
+                  sub="Should come back − came back"
                   value={`${unaccounted < 0 ? '−' : ''}${formatCurrency(Math.abs(unaccounted))}`}
                   accent={Math.abs(unaccounted) < 1 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}
                 />
               )}
-              <SummaryRow
-                label="VRF Payment"
-                sub={`${expenses.length} linked payment${expenses.length !== 1 ? 's' : ''} · outside the Government Statement and input VAT`}
-                value={documentedTotal > 0 ? formatCurrency(documentedTotal) : '—'}
-                accent="text-slate-600 dark:text-slate-300"
-              />
+              <SummaryRow label="Real Cost" sub="Commission + WHT" value={formatCurrency(commission + whtRecorded)} />
             </div>
           </div>
 
           {/* Fund — the returned money as a spendable pool, drawn down by payments made via VRF */}
-          {vrf.status === 'settled' && (
+          {vrf.status !== 'open' && (
             <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
               <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex items-center justify-between">
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Returned Money — How It Was Used</p>
@@ -642,7 +503,7 @@ export default function VendorReceiptDetailPage() {
             </div>
           )}
 
-          {vrf.status === 'settled' && (
+          {vrf.status !== 'open' && (
             <VrfPersonalDraws vrfId={id!} available={Number(fund?.fund_available ?? returned)} canEdit={canAddExpense} />
           )}
 
@@ -665,7 +526,7 @@ export default function VendorReceiptDetailPage() {
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {unaccounted > 0
-                    ? 'Record the WHT on the VRF payment and the commission on this record — or the rest of the return, if more is still to come back.'
+                    ? 'Correct the WHT or commission with Edit, or record the rest of the return if more is still to come back.'
                     : 'Check the returned amount, the WHT and the commission are right.'}
                 </p>
               </div>

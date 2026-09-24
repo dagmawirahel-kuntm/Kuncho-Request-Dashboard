@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, ArrowRightLeft, Clock, CheckCircle2, AlertCircle, BarChart3 } from 'lucide-react'
 import { VrfRegisterPanel } from './VrfRegisterPanel'
 import { VrfPack, VrfPackOpening } from './VrfPacks'
+import { VrfHoldingAccounts } from './VrfHoldingAccounts'
 
 type VrfRow = VendorReceiptFacilitation & {
   initial: { account_name: string } | null
@@ -95,7 +96,7 @@ export default function VendorReceiptsPage() {
         {canWrite && (
           <Link to="/vendor-receipts/new"
             className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            <Plus className="h-4 w-4" /> New Record
+            <Plus className="h-4 w-4" /> New VRF
           </Link>
         )}
       </div>
@@ -110,6 +111,9 @@ export default function VendorReceiptsPage() {
 
       {/* How much has gone through VRF, by Ethiopian month */}
       <VrfRegisterPanel />
+
+      {/* Where the returned money is kept */}
+      <VrfHoldingAccounts />
 
       {/* Accumulation by good/service across all VRFs */}
       <VrfAccumulationPanel />

@@ -987,8 +987,52 @@ export interface VendorReceiptFacilitation {
   return_account_id: string | null
   created_at: string
   updated_at: string
+  /** Recorded with the structured form (migration 322): figures below are derived. */
+  structured: boolean
+  /** The receipt total, VAT included — the one figure typed in. */
+  receipt_amount: number | null
+  supply_kind: 'goods' | 'services'
+  /** Worked out from the WHT rate unless wht_overridden. */
+  wht_amount: number | null
+  wht_overridden: boolean
+  commission_basis: VrfCommissionBasis | null
+  /** The bank line that paid this VRF, when the statement is imported. */
+  out_transfer_id: string | null
+  needs_review: boolean
+  review_notes: string[]
+  /** Generated: receipt − WHT. */
+  net_sent: number | null
+  /** Generated: receipt − WHT − commission. */
+  expected_return: number | null
 }
-export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at'>
+export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at' | 'net_sent' | 'expected_return'>
+export type VrfCommissionBasis = 'receipt_pct' | 'vat_pct' | 'fixed'
+
+/** Money coming back from a VRF, one entry per return (migration 322). */
+export interface VrfReturn {
+  id: string
+  vrf_id: string
+  return_date: string
+  amount: number
+  account_id: string | null
+  transfer_id: string | null
+  note: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** An account that holds returned VRF money for Kuncho (v_vrf_holding_accounts). */
+export interface VrfHoldingAccount {
+  account_id: string
+  account_name: string
+  holder_name: string | null
+  returned_in: number
+  company_spent: number
+  personal_drawn: number
+  held: number
+  return_count: number
+  account_balance: number | null
+}
 
 /** One VRF and where its money went (v_vrf_register, migration 320). */
 export interface VrfRegisterRow {
@@ -1015,6 +1059,20 @@ export interface VrfRegisterRow {
   held: number
   /** VAT the receipt states (migration 321) — shown only, never claimable. */
   vat_on_receipt: number
+  net_sent: number | null
+  expected_return: number | null
+  needs_review: boolean
+  review_notes: string[]
+  structured: boolean
+  supply_kind: 'goods' | 'services'
+  commission_basis: VrfCommissionBasis | null
+  commission_rate: number | null
+  wht_overridden: boolean
+  return_account_id: string | null
+  holding_account_name: string | null
+  initial_account_id: string | null
+  sent_from_account_name: string | null
+  out_transfer_id: string | null
 }
 
 /** Money taken from a VRF's returned funds for personal use (migration 320). */
@@ -1025,6 +1083,8 @@ export interface VrfPersonalDraw {
   amount: number
   drawn_by: string
   note: string | null
+  /** The holding account it came out of. */
+  account_id: string | null
   created_by: string
   created_at: string
 }

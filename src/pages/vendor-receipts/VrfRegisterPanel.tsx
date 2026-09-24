@@ -81,7 +81,9 @@ export function VrfRegisterPanel() {
     return Array.from(m.values()).sort((a, b) => b.key - a.key).map(g => ({ ...g, t: sum(g.rows) }))
   }, [scoped])
 
-  const loose = useMemo(() => scoped.filter(r => Math.abs(Number(r.unaccounted)) >= 1), [scoped])
+  // VRFs with something to confirm: figures the conversion could not settle
+  // (migration 322), or money that does not reconcile.
+  const loose = useMemo(() => scoped.filter(r => r.needs_review || Math.abs(Number(r.unaccounted)) >= 1), [scoped])
 
   if (rows.length === 0) return null
 
@@ -156,17 +158,18 @@ export function VrfRegisterPanel() {
         <div className="border-t bg-amber-50/60 px-5 py-3 dark:border-slate-700 dark:bg-amber-900/10">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
             <AlertCircle className="h-3.5 w-3.5" />
-            {loose.length} VRF{loose.length === 1 ? '' : 's'} with money not accounted for
+            {loose.length} VRF{loose.length === 1 ? '' : 's'} to confirm
           </p>
           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-            Receipt amount − returned should equal the WHT on the VRF payment plus the commission. Record whichever is missing on each.
+            Each lists what to check: WHT that was worked out rather than recorded, a missing holding account, or money that does not reconcile.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {loose.map(r => (
               <Link key={r.vrf_id} to={`/vendor-receipts/${r.vrf_id}`}
                 className="rounded border border-amber-200 bg-white px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-slate-800 dark:text-amber-300">
                 {r.record_name ?? r.facilitator_name ?? `${formatCurrency(Number(r.receipt_amount))} receipt`}
-                {r.period_label ? `, ${r.period_label}` : ''} · {formatCurrency(Number(r.unaccounted))}
+                {r.period_label ? `, ${r.period_label}` : ''}
+                {Math.abs(Number(r.unaccounted)) >= 1 ? ` · ${formatCurrency(Number(r.unaccounted))}` : ''}
               </Link>
             ))}
           </div>
