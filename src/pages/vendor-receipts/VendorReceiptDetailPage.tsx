@@ -349,6 +349,11 @@ export default function VendorReceiptDetailPage() {
                   {formatDate(vrf.trxn_date)}
                 </span>
               )}
+              {reg?.vendor_name && (
+                <span className="text-xs px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+                  Vendor: {reg.vendor_name}{reg.vendor_tin ? ` · TIN ${reg.vendor_tin}` : ''}
+                </span>
+              )}
               {(vrf as any).initial?.account_name && (
                 <span className="text-xs px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
                   From: {(vrf as any).initial.account_name}

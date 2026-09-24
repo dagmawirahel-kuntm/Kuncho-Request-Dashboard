@@ -1004,6 +1004,8 @@ export interface VendorReceiptFacilitation {
   net_sent: number | null
   /** Generated: receipt − WHT − commission. */
   expected_return: number | null
+  /** The company that issued the receipt and was paid for it (migration 324). */
+  vendor_id: string | null
 }
 export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at' | 'net_sent' | 'expected_return'>
 export type VrfCommissionBasis = 'receipt_pct' | 'vat_pct' | 'fixed'
@@ -1073,6 +1075,10 @@ export interface VrfRegisterRow {
   initial_account_id: string | null
   sent_from_account_name: string | null
   out_transfer_id: string | null
+  vendor_id: string | null
+  vendor_name: string | null
+  /** The TIN the vendor's WHT certificate carries. */
+  vendor_tin: string | null
 }
 
 /** Money taken from a VRF's returned funds for personal use (migration 320). */

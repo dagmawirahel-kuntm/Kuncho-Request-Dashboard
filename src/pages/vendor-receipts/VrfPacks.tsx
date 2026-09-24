@@ -242,6 +242,9 @@ export function VrfPackOpening({ row, onClose }: { row: VrfRegisterRow; onClose:
             <div className="text-center">
               <p className="text-[11px] font-bold uppercase tracking-[0.3em]" style={{ color: tier.glow.replace(/[\d.]+\)$/, '1)') }}>{tier.name} pack</p>
               <h2 className="text-2xl font-black text-white">{row.record_name ?? row.facilitator_name ?? 'VRF'} · {row.period_label ?? 'No date'}</h2>
+              <p className="mt-1 text-xs text-white/70">
+                {[row.facilitator_name && `Arranged by ${row.facilitator_name}`, row.vendor_name && `receipt from ${row.vendor_name}`].filter(Boolean).join(' · ')}
+              </p>
               <p className="mt-1 text-xs text-white/50">Ratings are each figure's share of the receipt amount.</p>
             </div>
 
