@@ -4,6 +4,9 @@ import { Sidebar } from './Sidebar'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
+import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
+import { useSeason } from '@/hooks/useSeason'
+import { LANDING_PATHS } from '@/router/landingPaths'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
@@ -106,6 +109,14 @@ export function AppShell() {
     localStorage.setItem('theme', theme)
   }, [theme])
 
+  // Holidays (lib/seasons.ts) dress the shell on their own schedule; the
+  // `meskel` class on <html> carries the accent colour changes in index.css.
+  const season = useSeason()
+  const festive = !!season?.festive
+  useEffect(() => {
+    document.documentElement.classList.toggle('meskel', festive)
+  }, [festive])
+
   function cycleTheme() {
     const root = document.documentElement
     root.classList.add('theme-transition')
@@ -124,6 +135,7 @@ export function AppShell() {
         onCloseMobile={() => setMobileOpen(false)}
         theme={theme}
         onToggleTheme={cycleTheme}
+        festive={festive}
       />
       <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         {/* Header */}
@@ -188,6 +200,9 @@ export function AppShell() {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
+          {season?.greeting && LANDING_PATHS.has(location.pathname) && (
+            <div className="print:hidden"><SeasonalGreeting moment={season} /></div>
+          )}
           <div key={location.pathname} className="animate-fade-in">
             <Outlet />
           </div>

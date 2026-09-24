@@ -13,6 +13,7 @@ import type { Theme } from './AppShell'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
 import { useState, useRef } from 'react'
+import { DaisyMark } from '@/components/seasonal/MeskelArt'
 
 interface NavItem {
   label: string
@@ -344,9 +345,11 @@ interface SidebarProps {
   onCloseMobile: () => void
   theme: Theme
   onToggleTheme: () => void
+  /** A holiday is on (see lib/seasons.ts): the logo wears a daisy. */
+  festive?: boolean
 }
 
-export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, theme, onToggleTheme }: SidebarProps) {
+export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, theme, onToggleTheme, festive = false }: SidebarProps) {
   const logoRef = useRef<HTMLSpanElement>(null)
 
   function handleLogoClick() {
@@ -382,12 +385,15 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
             title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to gold theme' : 'Switch to light mode'}
             className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            <span
-              ref={logoRef}
-              className="inline-block font-black leading-none select-none transition-colors duration-300"
-              style={{ fontSize: '2rem', color: theme === 'light' ? 'white' : '#D4AF37' }}
-            >
-              ቁ
+            <span className="relative inline-block">
+              <span
+                ref={logoRef}
+                className="inline-block font-black leading-none select-none transition-colors duration-300"
+                style={{ fontSize: '2rem', color: theme === 'light' ? 'white' : festive ? '#F4C20D' : '#D4AF37' }}
+              >
+                ቁ
+              </span>
+              {festive && <DaisyMark className="pointer-events-none absolute -right-2.5 -top-1.5 h-4 w-4 animate-fade-in" />}
             </span>
             {!collapsed && (
               <span className="text-sm font-semibold tracking-widest text-white/60 uppercase">
