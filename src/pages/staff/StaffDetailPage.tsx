@@ -12,6 +12,7 @@ import { RequestWorkerForProjectModal } from '@/components/shared/RequestWorkerF
 import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import { MyAssetsSection } from '@/components/staff/MyAssetsSection'
 import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
+import { StaffTaxCostSection } from '@/components/staff/StaffTaxCostSection'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
@@ -53,7 +54,7 @@ const APPROVAL_CHIP: Record<string, string> = {
   rejected:          'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 }
 
-type TabId = 'overview' | 'payroll' | 'advances' | 'timesheets' | 'performance' | 'competency'
+type TabId = 'overview' | 'payroll' | 'tax' | 'advances' | 'timesheets' | 'performance' | 'competency'
 
 // ── Sub-components ────────────────────────────────────────────────
 
@@ -821,8 +822,12 @@ function DimensionCell({ label, value }: { label: string; value: number | null }
 
 export default function StaffDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { role, user } = useAuth()
+  const { role, user, profile } = useAuth()
   const [activeTab, setActiveTab] = useState<TabId>('overview')
+  // Salary-derived figures: the payroll read set plus the tax officer,
+  // matching the RLS on payroll and tax_filing_lines.
+  const canSeeTaxCost = !!profile?.is_tax_officer
+    || role === 'admin' || role === 'finance' || role === 'hr_officer' || role === 'executive'
   const [reqOpen, setReqOpen] = useState(false)
 
   const { data: staff, isLoading } = useQuery({
@@ -900,6 +905,7 @@ export default function StaffDetailPage() {
     { id: 'performance', label: 'Performance' },
     { id: 'competency', label: 'Competency' },
     { id: 'payroll', label: 'Payroll' },
+    ...(canSeeTaxCost ? [{ id: 'tax' as TabId, label: 'Tax & Pension' }] : []),
     { id: 'advances', label: 'Cash Advances' },
     { id: 'timesheets', label: 'Timesheets' },
   ]
@@ -1092,6 +1098,7 @@ export default function StaffDetailPage() {
             />
           )}
           {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
+          {activeTab === 'tax'        && canSeeTaxCost && <StaffTaxCostSection staffId={staff.id} />}
           {activeTab === 'advances'   && <AdvancesTab advances={advances} staffId={staff.id} />}
           {activeTab === 'timesheets' && <TimesheetsTab timesheets={timesheets} />}
         </div>

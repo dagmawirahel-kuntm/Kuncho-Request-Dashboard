@@ -26,6 +26,8 @@ interface FiscalPeriodRow {
   start_date: string
   end_date: string
   is_current: boolean
+  /** Which tax month this year's Pagume is declared with (migration 315). */
+  pagume_attaches_to: 'nehase' | 'meskerem'
 }
 
 export default function TaxFilingsPage() {
@@ -44,12 +46,15 @@ export default function TaxFilingsPage() {
   const [generating, setGenerating] = useState(false)
 
   const { data: periods = [] } = useQuery({
-    queryKey: ['fiscal-periods'],
+    // Own key: FiscalYearContext caches ['fiscal-periods'] with fewer
+    // columns, and a shared key would hand this page rows without the
+    // Pagume setting.
+    queryKey: ['fiscal-periods', 'tax-filings'],
     staleTime: 300000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('fiscal_periods')
-        .select('id,label,start_date,end_date,is_current')
+        .select('id,label,start_date,end_date,is_current,pagume_attaches_to')
         .order('start_date', { ascending: false })
       if (error) throw error
       return data as FiscalPeriodRow[]
@@ -113,6 +118,24 @@ export default function TaxFilingsPage() {
 
   const overdueCount = filings.filter(f => f.is_overdue).length
 
+  // Pagume is not a return of its own: each fiscal year declares it with
+  // Nehase or with Meskerem. set_pagume_attachment() reshapes that year's
+  // filings and refuses once any affected return has left draft.
+  const [savingPagume, setSavingPagume] = useState(false)
+  async function changePagume(target: 'nehase' | 'meskerem') {
+    if (!selectedPeriod || target === selectedPeriod.pagume_attaches_to) return
+    setSavingPagume(true)
+    const { error } = await supabase.rpc('set_pagume_attachment', {
+      p_fiscal_period_id: selectedPeriod.id, p_attaches_to: target,
+    })
+    setSavingPagume(false)
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['fiscal-periods'] })
+    qc.invalidateQueries({ queryKey: ['tax-filings'] })
+    qc.invalidateQueries({ queryKey: ['tax-filing-computed'] })
+    toast(`Pagume is now declared with ${target === 'nehase' ? 'Nehase' : 'Meskerem'} for ${selectedPeriod.label}`, 'success')
+  }
+
   async function generatePeriods() {
     if (!selectedPeriod) return
     setGenerating(true)
@@ -153,6 +176,21 @@ export default function TaxFilingsPage() {
               <option key={p.id} value={p.id}>{p.label}{p.is_current ? ' (current)' : ''}</option>
             ))}
           </select>
+          {selectedPeriod && (
+            <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
+              title="Pagume's days are declared with the chosen month; there is no separate Pagume return">
+              Pagume with
+              <select
+                value={selectedPeriod.pagume_attaches_to}
+                disabled={!canEdit || savingPagume}
+                onChange={e => changePagume(e.target.value as 'nehase' | 'meskerem')}
+                className="rounded-md border px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              >
+                <option value="nehase">Nehase</option>
+                <option value="meskerem">Meskerem</option>
+              </select>
+            </label>
+          )}
           {canEdit && (
             <>
               <button onClick={generatePeriods} disabled={generating || !selectedPeriod}
@@ -220,6 +258,11 @@ export default function TaxFilingsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
                           {f.period_label}
+                          {f.includes_pagume && (
+                            <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                              incl. Pagume
+                            </span>
+                          )}
                         </p>
                         <p className="text-[11px] text-slate-400">
                           {formatDateGC(f.period_start_greg)} – {formatDateGC(f.period_end_greg)}

@@ -125,13 +125,3 @@ export function ecMonthLength(ecYear: number, ecMonth: number): number {
   return ecMonth === 13 ? (isEthiopianLeapYear(ecYear) ? 6 : 5) : 30
 }
 
-/**
- * The Ethiopian period a Gregorian date falls in, e.g. "Hamle 2018" — i.e.
- * the monthly VAT / WHT / payroll return it belongs to. Same rule the
- * database views use (gregorian_to_ec), for display beside a record's date.
- */
-export function ecPeriodLabelForDate(date: string | null | undefined): string | null {
-  if (!date) return null
-  const ec = toEthiopian(date)
-  return ecPeriodLabel(ec.year, ec.month)
-}

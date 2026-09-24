@@ -78,11 +78,14 @@ export function NewTaxFilingModal({
       setSpan(v)
       return v
     }
-    const { data: s, error: e1 } = await supabase.rpc('ec_month_start_greg', { p_ec_year: ecYear, p_ec_month: effectiveMonth })
-    const { data: e, error: e2 } = await supabase.rpc('ec_month_end_greg', { p_ec_year: ecYear, p_ec_month: effectiveMonth })
+    // Tax-period bounds, not calendar-month bounds: the month Pagume is
+    // declared with runs 5-6 days longer (migration 315).
+    const { data, error } = await supabase.rpc('tax_period_bounds', { p_ec_year: ecYear, p_ec_month: effectiveMonth })
     setResolving(false)
-    if (e1 || e2) { toast((e1 ?? e2)!.message, 'error'); return null }
-    const v = { start: s as string, end: e as string }
+    if (error) { toast(error.message, 'error'); return null }
+    const row = (data as { start_greg: string; end_greg: string }[] | null)?.[0]
+    if (!row) { toast('Could not resolve that period', 'error'); return null }
+    const v = { start: row.start_greg, end: row.end_greg }
     setSpan(v)
     return v
   }
@@ -160,7 +163,9 @@ export function NewTaxFilingModal({
               >
                 {isAnnual
                   ? <option value="">Whole year</option>
-                  : ETHIOPIAN_MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                  // No Pagume: it is declared with Nehase or Meskerem, per
+                  // the fiscal year's setting, never as a return of its own.
+                  : ETHIOPIAN_MONTHS.slice(0, 12).map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </select>
             </div>
           </div>

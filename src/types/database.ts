@@ -1325,6 +1325,41 @@ export interface VatPositionRow {
   /** NULL for viewers outside the tax read set, or when no filing exists. */
   vat_filing_id: string | null
   vat_filing_status: TaxFilingStatus | null
+  /** Flagged purchases whose receipt is not yet tax-reviewed (317). */
+  input_vat_pending_review: number
+  pending_review_count: number
+}
+
+export type InputVatCopyStatus = 'not_uploaded' | 'uploaded' | 'not_available'
+
+// v_input_vat_tracker (317/318) — one row per paid purchase.
+export interface InputVatRow {
+  expense_id: string
+  expense_code: string | null
+  expense_date: string | null
+  amount_etb: number | null
+  vendor_id: string | null
+  vendor_name: string | null
+  vendor_tin: string | null
+  project_id: string | null
+  project_name: string | null
+  /** null = not yet looked at; true = carries input VAT; false = none to claim */
+  vat_applicable: boolean | null
+  anchor_date: string
+  default_ec_year: number
+  default_ec_month: number
+  declare_ec_year: number
+  declare_ec_month: number
+  declare_period_label: string
+  declare_overridden: boolean
+  vat_amount: number | null
+  vat_source: 'entered' | 'receipt' | 'estimated'
+  receipt_id: string | null
+  receipt_status: string | null
+  copy_status: InputVatCopyStatus
+  copy_status_set: boolean
+  claimable: boolean
+  notes: string | null
 }
 
 // v_sale_wht (310) — the single WHT rule, per sale.
@@ -3459,6 +3494,8 @@ export interface TaxFilingView extends TaxFiling {
   statutory_reference: string | null
   is_overdue: boolean
   document_count: number
+  /** True when this month's period was extended by Pagume (migration 315). */
+  includes_pagume: boolean
 }
 
 export interface TaxFilingDocument {
@@ -3481,4 +3518,68 @@ export interface TaxFilingDeletion {
   reason: string
   deleted_by: string
   deleted_at: string
+}
+
+// ── PAYE per employee (migration 319) ────────────────────────────────────
+
+// v_payroll_tax_by_staff_period — one row per person per tax period.
+export interface StaffTaxPeriod {
+  staff_id: string
+  employee_name: string
+  employment_type: string | null
+  ec_year: number
+  ec_month: number
+  period_label: string
+  pension_covered: boolean
+  net_paid: number
+  gross_paid: number | null
+  paye_paid: number | null
+  pension_employee_paid: number | null
+  pension_employer_paid: number | null
+  net_all: number
+  gross_incl_unpaid: number | null
+  paye_incl_unpaid: number | null
+  pension_employee_incl_unpaid: number | null
+  pension_employer_incl_unpaid: number | null
+  employer_cost_paid: number | null
+  employer_cost_incl_unpaid: number | null
+  payroll_ids_paid: string[]
+  payroll_ids_all: string[]
+}
+
+// v_payroll_line_tax — the tax carried by one person's line on one run.
+export interface PayrollLineTax {
+  payroll_id: string
+  payroll_record: string | null
+  payroll_type: string | null
+  staff_id: string
+  employee_name: string
+  ec_year: number
+  ec_month: number
+  period_label: string
+  is_paid: boolean
+  net_amount: number
+  gross_share: number | null
+  paye_share: number | null
+  pension_employee_share: number | null
+  pension_employer_share: number | null
+  employer_cost_share: number | null
+}
+
+// tax_filing_lines — the declaration schedule of a Schedule A / pension return.
+export interface TaxFilingLine {
+  id: string
+  tax_filing_id: string
+  staff_id: string | null
+  employee_name: string
+  employment_type: string | null
+  pension_covered: boolean
+  net_paid: number
+  gross: number
+  paye: number
+  pension_employee: number
+  pension_employer: number
+  payroll_ids: string[]
+  created_by: string | null
+  created_at: string
 }

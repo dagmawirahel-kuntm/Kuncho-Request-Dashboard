@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
-import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
+import { useTaxPeriodLabel } from '@/hooks/useTaxPeriod'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -27,6 +27,7 @@ type SaleWithJoins = Sale & {
 export default function SaleDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
+  const taxPeriodOf = useTaxPeriodLabel()
   const { toast } = useToast()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -92,7 +93,7 @@ export default function SaleDetailPage() {
   const clientName  = (sale as any).clients?.client_name ?? null
   const projectName = (sale as any).projects?.project_name ?? null
   const accountName = (sale as any).accounts?.account_name ?? null
-  const taxMonth    = ecPeriodLabelForDate(sale.date)
+  const taxMonth    = taxPeriodOf(sale.date)
   const managerName = (sale as any).manager_profile?.full_name ?? null
   const financeName = (sale as any).finance_profile?.full_name ?? null
 

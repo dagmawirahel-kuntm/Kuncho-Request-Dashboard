@@ -9,6 +9,7 @@ import type {
   TaxFilingView, TaxFilingDocument, TaxFilingDocType, TaxFilingStatus, TaxRateReference, TaxFilingComputed,
 } from '@/types/database'
 import { BASIS_LABEL, BASIS_COUNT_KEYS } from '@/hooks/useTaxFilingComputed'
+import { EmployeeScheduleSection } from './EmployeeScheduleSection'
 import { X, Upload, FileText, Trash2, ExternalLink, AlertTriangle, Info } from 'lucide-react'
 
 const DOC_TYPES: { value: TaxFilingDocType; label: string }[] = [
@@ -298,6 +299,10 @@ export function TaxFilingDetailModal({
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} />
             </Field>
           </fieldset>
+
+          {(filing.schedule_code === 'SCH_A' || filing.schedule_code === 'PENSION') && filing.period_ec_month != null && (
+            <EmployeeScheduleSection filing={filing} canEdit={canEdit} />
+          )}
 
           {/* ── Documents ─────────────────────────────────────────────── */}
           <div className="space-y-2">

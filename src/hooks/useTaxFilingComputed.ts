@@ -26,6 +26,7 @@ export function useTaxFilingComputed(fiscalPeriodId: string | null | undefined, 
 export const BASIS_LABEL: Record<string, string> = {
   output_vat: 'Output VAT on sales',
   input_vat: 'Input VAT from tax-reviewed receipts',
+  input_vat_pending_review: 'Input VAT flagged, awaiting review',
   sale_count: 'Sales in period',
   reviewed_receipt_count: 'Tax-reviewed receipts',
   paid_expense_count: 'Paid vendor payments with WHT',
@@ -39,6 +40,7 @@ export const BASIS_LABEL: Record<string, string> = {
   paye_incl_unpaid: 'PAYE if unpaid runs are paid',
   employee_share: 'Employee pension (7%)',
   employer_share: 'Employer pension (11%)',
+  schedule_employees: 'Employees in declaration schedule',
   client_wht_credits_expected: 'WHT clients should withhold (credit)',
   deductible_expenses: 'Deductible expenses (Government Statement)',
 }
@@ -46,5 +48,5 @@ export const BASIS_LABEL: Record<string, string> = {
 /** Basis keys that are counts rather than money. */
 export const BASIS_COUNT_KEYS = new Set([
   'sale_count', 'reviewed_receipt_count', 'paid_expense_count',
-  'pending_expense_count', 'payroll_runs', 'paid_staff_count',
+  'pending_expense_count', 'payroll_runs', 'paid_staff_count', 'schedule_employees',
 ])

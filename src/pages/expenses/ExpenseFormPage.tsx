@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
+import { useTaxPeriodLabel } from '@/hooks/useTaxPeriod'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -207,6 +207,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const isEdit = !!id
     const navigate = useNavigate()
     const { user, role } = useAuth()
+    const taxPeriodOf = useTaxPeriodLabel()
     const { toast } = useToast()
     const qc = useQueryClient()
     const { data: vendors = [] } = useVendors()
@@ -1054,7 +1055,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         {/* Was a "Tax Month" picker over tax_summary, which is empty and
             retired. The period for VAT and WHT follows from the date. */}
         <Field label="Tax period">
-          <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{ecPeriodLabelForDate(form.date) ?? 'Set a date'}</p>
+          <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{taxPeriodOf(form.date) ?? 'Set a date'}</p>
         </Field>
         <Field label="Location">
           <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
