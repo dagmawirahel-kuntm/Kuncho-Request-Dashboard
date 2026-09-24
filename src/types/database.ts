@@ -1226,12 +1226,6 @@ export interface TaxEngagementView {
   status: 'filed' | 'pending' | 'overdue'
 }
 
-export interface TaxLiabilityRow {
-  category: string
-  period: string
-  amount: number
-}
-
 // ── Vendor Receipts (the tax document — NOT vendor_receipt_facilitation,
 // which is the separate cost of paying a facilitator to obtain one) ──
 export type VendorReceiptStatus = 'pending_verification' | 'verified' | 'tax_reviewed' | 'rejected'
@@ -1313,14 +1307,69 @@ export interface SalesReceiptOutstanding {
   receipt_status: string
 }
 
-export interface TaxPositionRow {
-  month: string
+// v_vat_position_by_ec_period (309) — one row per Ethiopian VAT period.
+// Replaced v_tax_position, which grouped by Gregorian 'YYYY-MM' and so
+// straddled two VAT returns in every month.
+export interface VatPositionRow {
+  ec_year: number
+  ec_month: number
+  period_label: string
+  period_start_greg: string
+  period_end_greg: string
   output_vat: number
   input_vat_reclaimable: number
   net_vat: number
   position: 'payable' | 'reclaimable'
   sale_count: number
   reviewed_receipt_count: number
+  /** NULL for viewers outside the tax read set, or when no filing exists. */
+  vat_filing_id: string | null
+  vat_filing_status: TaxFilingStatus | null
+}
+
+// v_sale_wht (310) — the single WHT rule, per sale.
+export interface SaleWht {
+  sale_id: string
+  client_id: string | null
+  contract_id: string | null
+  wht_deduction_mode: string | null
+  qualifies: boolean
+  wht_base: number | null
+  rate_fraction: number | null
+  expected_wht: number | null
+  rate_missing: boolean
+}
+
+// contract_wht_basis(contract_id) (310)
+export interface ContractWhtBasis {
+  base_ex_vat: number | null
+  wht_applies: boolean | null
+  rate_fraction: number | null
+  threshold: number | null
+}
+
+// tax_filing_computed(fiscal_period_id) (313)
+export interface TaxFilingComputed {
+  filing_id: string
+  schedule_code: string
+  /** NULL for schedules this system does not compute (e.g. SCH_C). */
+  computed_amount: number | null
+  basis: Record<string, number | string> | null
+}
+
+// v_government_expense_statement_by_ec_period (313)
+export interface GovExpenseRow {
+  fiscal_period_id: string | null
+  fiscal_year: string | null
+  ec_year: number
+  ec_month: number
+  period_label: string
+  category_name: string
+  nature: string
+  asset_class: string | null
+  gov_treatment: 'operating_expense' | 'consumable_inventory'
+  line_count: number
+  amount: number
 }
 
 /** v_vendor_tax_receipts — the vendor page's own Tax Receipts section. */

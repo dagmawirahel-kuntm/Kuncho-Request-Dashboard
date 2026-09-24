@@ -90,7 +90,6 @@ import TimesheetPage from '@/pages/timesheet/TimesheetPage'
 import TimesheetFormPage from '@/pages/timesheet/TimesheetFormPage'
 import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
 import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
-import TaxSummaryFormPage from '@/pages/tax-summary/TaxSummaryFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
 import TaxFilingsPage from '@/pages/tax-filings/TaxFilingsPage'
 import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
@@ -104,8 +103,6 @@ import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
 import CpoBondFormPage from '@/pages/cpo-bonds/CpoBondFormPage'
 import ProductsPage from '@/pages/products/ProductsPage'
 import ProductFormPage from '@/pages/products/ProductFormPage'
-import PayrollTaxesPage from '@/pages/payroll-taxes/PayrollTaxesPage'
-import PayrollTaxFormPage from '@/pages/payroll-taxes/PayrollTaxFormPage'
 import EmergencyPayrollPage from '@/pages/emergency-payroll/EmergencyPayrollPage'
 import EmergencyPayrollFormPage from '@/pages/emergency-payroll/EmergencyPayrollFormPage'
 import VendorReceiptsPage from '@/pages/vendor-receipts/VendorReceiptsPage'
@@ -348,8 +345,7 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
               // Tax Summary was a Gregorian-month filing-status grid over
               // tax_engagements; Tax Filings replaced it with Ethiopian
-              // periods (migration 308). Kept as a redirect so old links and
-              // TaxSummaryFormPage's back button still land somewhere real.
+              // periods (migration 308). Kept as a redirect for old links.
               { path: 'tax-summary', element: <Navigate to="/tax-filings" replace /> },
               { path: 'tax-management', element: <TaxManagementPage /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
@@ -387,8 +383,10 @@ export const router = createBrowserRouter([
               { path: 'sales/new', element: <SaleFormPage /> },
               { path: 'clients/new', element: <ClientFormPage /> },
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
-              { path: 'tax-summary/new', element: <TaxSummaryFormPage /> },
-              { path: 'tax-summary/:id/edit', element: <TaxSummaryFormPage /> },
+              // tax_summary was an empty manual monthly rollup; periods now
+              // follow from each record's date (migration 314).
+              { path: 'tax-summary/new', element: <Navigate to="/tax-filings" replace /> },
+              { path: 'tax-summary/:id/edit', element: <Navigate to="/tax-filings" replace /> },
               // Filings are recorded in Tax Filings now; tax_engagements is a
               // read-only archive (migration 308).
               { path: 'tax-management/log', element: <Navigate to="/tax-filings" replace /> },
@@ -514,9 +512,12 @@ export const router = createBrowserRouter([
               { path: 'payroll/new', element: <PayrollFormPage /> },
               { path: 'payroll/:id/edit', element: <PayrollFormPage /> },
               { path: 'payroll/:id', element: <PayrollDetailPage /> },
-              { path: 'payroll-taxes', element: <PayrollTaxesPage /> },
-              { path: 'payroll-taxes/new', element: <PayrollTaxFormPage /> },
-              { path: 'payroll-taxes/:id/edit', element: <PayrollTaxFormPage /> },
+              // Payroll Taxes was manual per-staff entry (empty). PAYE and
+              // pension are now computed from payroll and shown on the
+              // Schedule A and pension filings (migration 312).
+              { path: 'payroll-taxes', element: <Navigate to="/tax-filings" replace /> },
+              { path: 'payroll-taxes/new', element: <Navigate to="/tax-filings" replace /> },
+              { path: 'payroll-taxes/:id/edit', element: <Navigate to="/tax-filings" replace /> },
               { path: 'emergency-payroll', element: <EmergencyPayrollPage /> },
               { path: 'emergency-payroll/new', element: <EmergencyPayrollFormPage /> },
               { path: 'emergency-payroll/:id/edit', element: <EmergencyPayrollFormPage /> },

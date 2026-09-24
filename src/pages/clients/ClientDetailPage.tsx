@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useState, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
-import type { Client, Sale, ClientAttachment, AttachmentCategory, Transfer } from '@/types/database'
+import type { Client, Sale, ClientAttachment, AttachmentCategory, Transfer, SaleWht } from '@/types/database'
 import {
   ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, FileText,
   TrendingUp, CheckCircle2, Clock, ExternalLink, Upload,
@@ -18,43 +18,22 @@ import { useAuth } from '@/contexts/AuthContext'
 import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge, TierIconBadge, TIER_STYLES } from './ClientsPage'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-const WHT_THRESHOLD = 20_000
-// A fraction, not a percentage — every call site multiplies `base * rate`
-// directly. contracts.wht_rate is stored the other way round (as a percentage,
-// e.g. 3 meaning 3%), so whtRateFraction() below converts it.
-const WHT_RATE = 0.03
-
-// ── Contract-aware WHT qualification ────────────────────────────────────────
-// Sales are only linked to a contract when the user picked one on the sale
-// form; unlinked sales fall back to the old per-sale-amount rule. A contract
-// in 'final_only' mode withholds once, on whichever sale is flagged as the
-// final payment, computed on the full contract value rather than that
-// invoice's amount.
+// ── WHT per sale ────────────────────────────────────────────────────────────
+// This page used to decide WHT itself, with 20,000 and 3% hardcoded, and it
+// disagreed with the payment-milestone logic: it tested the contract value
+// WITH VAT, used > instead of >= in final_only mode, and tested each sale on
+// its own in per_payment mode. The rule now lives once, in the database
+// (contract_wht_basis / v_sale_wht, migration 310), and each sale arrives
+// with its row attached (see the sales query below).
 type ContractRow = { id: string; contract_no: string | null; contract_value: number | null; status: string | null; signed_date: string | null; wht_rate: number | null; wht_deduction_mode: string }
 function contractForSale(sale: { contract_id?: string | null }, contracts: ContractRow[]): ContractRow | null {
   return sale.contract_id ? contracts.find(c => c.id === sale.contract_id) ?? null : null
 }
-// contracts.wht_rate is a percentage everywhere it is written or displayed:
-// ContractFormPage's "Withholding Tax (%)" input (placeholder "e.g. 3"), the
-// generated contract document's "WHT of {wht_rate}%" clause, and the column's
-// own COMMENT. Returning it raw here meant `base * rate` computed base * 3
-// instead of base * 0.03 — a 100x overstatement on every contract that sets an
-// explicit rate, while contracts left at the default silently stayed correct
-// via the WHT_RATE fraction fallback.
-function whtRateFraction(contract: ContractRow | null): number {
-  return contract?.wht_rate != null ? Number(contract.wht_rate) / 100 : WHT_RATE
-}
-function saleWht(sale: { amount: number | null; contract_id?: string | null; is_final_payment?: boolean }, contracts: ContractRow[]) {
-  const contract = contractForSale(sale, contracts)
-  const rate = whtRateFraction(contract)
-  if (contract?.wht_deduction_mode === 'final_only') {
-    const base = Number(contract.contract_value ?? 0)
-    const qualifies = !!sale.is_final_payment && base > WHT_THRESHOLD
-    return { qualifies, base, rate }
+function saleWht(sale: { wht?: SaleWht | null }) {
+  return {
+    qualifies: !!sale.wht?.qualifies,
+    expected: Number(sale.wht?.expected_wht ?? 0),
   }
-  const base = Number(sale.amount ?? 0)
-  return { qualifies: base >= WHT_THRESHOLD, base, rate }
 }
 
 // ── Tax workflow chip ─────────────────────────────────────────────────────────
@@ -318,7 +297,7 @@ function WhtTracker({
   contracts: ContractRow[]
   onUploaded: () => void
 }) {
-  const qualifyingSales = sales.filter(s => saleWht(s, contracts).qualifies)
+  const qualifyingSales = sales.filter(s => saleWht(s).qualifies)
   const whtAttachments = attachments.filter(a => a.category === 'wht_receipt')
 
   if (qualifyingSales.length === 0) {
@@ -326,7 +305,7 @@ function WhtTracker({
       <div className="rounded-xl border-2 border-dashed dark:border-slate-700 p-5 text-center space-y-1">
         <FileCheck className="mx-auto h-7 w-7 text-slate-300 dark:text-slate-600" />
         <p className="text-sm text-slate-500 dark:text-slate-400">No qualifying sales yet.</p>
-        <p className="text-xs text-slate-400 dark:text-slate-500">Sales of ETB {formatCurrency(WHT_THRESHOLD)}+ incur 3% WHT and will appear here.</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">Sales carrying WHT appear here — tested on the contract's value before VAT, against the threshold in the WHT rate reference.</p>
       </div>
     )
   }
@@ -360,7 +339,7 @@ function WhtTracker({
           const age = daysAgo(s.date)
           const overdue = !hasReceipt && age != null && age > 30
           const daysLeft = !hasReceipt && age != null ? 30 - age : null
-          const { base, rate } = saleWht(s, contracts)
+          const { expected } = saleWht(s)
           const isFinalOnly = contractForSale(s, contracts)?.wht_deduction_mode === 'final_only'
 
           return (
@@ -373,7 +352,7 @@ function WhtTracker({
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="text-xs text-slate-500">{fmt(s.date)}</span>
                   <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                    WHT: {formatCurrency(base * rate)}{isFinalOnly ? ' (on contract value)' : ''}
+                    WHT: {formatCurrency(expected)}{isFinalOnly ? ' (on contract value)' : ''}
                   </span>
                   {overdue && <span className="text-xs font-medium text-red-500">Overdue ({age}d ago)</span>}
                   {!hasReceipt && !overdue && daysLeft != null && daysLeft > 0 && (
@@ -400,7 +379,7 @@ function WhtTracker({
 }
 
 // ── Transfer Matcher ──────────────────────────────────────────────────────────
-function TransferMatcher({ sales, transfers, contracts }: { sales: SaleRow[]; transfers: Transfer[]; contracts: ContractRow[] }) {
+function TransferMatcher({ sales, transfers }: { sales: SaleRow[]; transfers: Transfer[] }) {
   const paidSales = sales.filter(s => s.sales_status === 'Paid')
 
   if (paidSales.length === 0) {
@@ -413,8 +392,8 @@ function TransferMatcher({ sales, transfers, contracts }: { sales: SaleRow[]; tr
 
   function findMatch(sale: SaleRow): Transfer | null {
     const saleAmt = Number(sale.amount ?? 0)
-    const { qualifies: whtApplies, base, rate } = saleWht(sale, contracts)
-    const expected = whtApplies ? saleAmt - base * rate : saleAmt
+    const { qualifies: whtApplies, expected: whtAmt } = saleWht(sale)
+    const expected = whtApplies ? saleAmt - whtAmt : saleAmt
     const tolerance = Math.max(expected * 0.02, 10)
 
     const candidates = transfers.filter(t => {
@@ -436,8 +415,8 @@ function TransferMatcher({ sales, transfers, contracts }: { sales: SaleRow[]; tr
     <div className="rounded-xl border dark:border-slate-700 overflow-hidden">
       {paidSales.map((s, i) => {
         const saleAmt = Number(s.amount ?? 0)
-        const { qualifies: whtApplies, base, rate } = saleWht(s, contracts)
-        const expectedCredit = whtApplies ? saleAmt - base * rate : saleAmt
+        const { qualifies: whtApplies, expected: whtAmt } = saleWht(s)
+        const expectedCredit = whtApplies ? saleAmt - whtAmt : saleAmt
         const match = findMatch(s)
 
         return (
@@ -478,11 +457,11 @@ function TransferMatcher({ sales, transfers, contracts }: { sales: SaleRow[]; tr
 
 // ── File completeness meter ───────────────────────────────────────────────────
 function FileCompletenessMeter({
-  client, sales, attachments, contracts,
-}: { client: Client; sales: SaleRow[]; attachments: ClientAttachment[]; contracts: ContractRow[] }) {
+  client, sales, attachments,
+}: { client: Client; sales: SaleRow[]; attachments: ClientAttachment[] }) {
   const hasReceipt = attachments.some(a => a.category === 'receipt')
   const hasContract = attachments.some(a => a.category === 'contract')
-  const qualifyingSales = sales.filter(s => saleWht(s, contracts).qualifies)
+  const qualifyingSales = sales.filter(s => saleWht(s).qualifies)
   const whtNeeded = qualifyingSales.length
   const whtCollected = attachments.filter(a => a.category === 'wht_receipt').length
   const whtComplete = whtNeeded === 0 || whtCollected >= whtNeeded
@@ -550,7 +529,7 @@ function CollectionMonitor({
 }) {
   const contractDocs = attachments.filter(a => a.category === 'contract')
   const paidSales = sales.filter(s => s.sales_status === 'Paid')
-  const qualifyingSales = sales.filter(s => saleWht(s, contracts).qualifies)
+  const qualifyingSales = sales.filter(s => saleWht(s).qualifies)
   const whtCollected = attachments.filter(a => a.category === 'wht_receipt').length
   const whtNeeded = qualifyingSales.length
   const totalContracted = contractDocs.reduce((s, c) => s + Number(c.amount ?? 0), 0)
@@ -590,7 +569,7 @@ function CollectionMonitor({
       <section>
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
           <FileCheck className="h-4 w-4 text-amber-500" /> WHT Receipt Tracker
-          <span className="text-xs font-normal text-slate-400">· Sales ≥ {formatCurrency(WHT_THRESHOLD)} incur 3% WHT</span>
+          <span className="text-xs font-normal text-slate-400">· Tested on the pre-VAT contract value; rate and threshold from the WHT rate reference</span>
         </h3>
         <WhtTracker sales={sales} attachments={attachments} clientId={client.id} contracts={contracts} onUploaded={onUploaded} />
       </section>
@@ -601,14 +580,14 @@ function CollectionMonitor({
           <Banknote className="h-4 w-4 text-slate-500" /> Bank Transfer Matching
           <span className="text-xs font-normal text-slate-400">· Matches paid sales against recorded transfers (97% for WHT sales)</span>
         </h3>
-        <TransferMatcher sales={sales} transfers={transfers} contracts={contracts} />
+        <TransferMatcher sales={sales} transfers={transfers} />
       </section>
     </div>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-type SaleRow = Sale & { projects?: { project_name: string } | null }
+type SaleRow = Sale & { projects?: { project_name: string } | null; wht?: SaleWht | null }
 type Tab = 'sales' | 'collections' | 'documents' | 'info'
 
 export default function ClientDetailPage() {
@@ -647,7 +626,10 @@ export default function ClientDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('sales').select('*, projects:project_id ( project_name )').eq('client_id', id!).order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      return data as SaleRow[]
+      const { data: wht, error: whtErr } = await supabase.from('v_sale_wht').select('*').eq('client_id', id!)
+      if (whtErr) throw whtErr
+      const bySale = new Map((wht as SaleWht[]).map(w => [w.sale_id, w]))
+      return (data as SaleRow[]).map(s => ({ ...s, wht: bySale.get(s.id) ?? null }))
     },
     enabled: !!id,
   })
@@ -817,7 +799,7 @@ export default function ClientDetailPage() {
   }
 
   // Collections tab badge: how many outstanding WHT receipts
-  const whtNeeded = sales.filter(s => saleWht(s, clientContracts).qualifies).length
+  const whtNeeded = sales.filter(s => saleWht(s).qualifies).length
   const whtCollected = attachments.filter(a => a.category === 'wht_receipt').length
   const whtOutstanding = Math.max(whtNeeded - whtCollected, 0)
 
@@ -899,7 +881,7 @@ export default function ClientDetailPage() {
       <TrainerHintBanner entityType="client" entityId={id!} hint={clientHint} />
 
       {/* File completeness meter */}
-      <FileCompletenessMeter client={client} sales={sales} attachments={attachments} contracts={clientContracts} />
+      <FileCompletenessMeter client={client} sales={sales} attachments={attachments} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b dark:border-slate-700">
@@ -955,7 +937,7 @@ export default function ClientDetailPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{s.sales_description || '—'}</p>
-                          {saleWht(s, clientContracts).qualifies && (
+                          {saleWht(s).qualifies && (
                             <span className="flex-shrink-0 text-[10px] font-medium rounded px-1 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">WHT</span>
                           )}
                         </div>

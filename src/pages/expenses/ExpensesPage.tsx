@@ -661,7 +661,7 @@ export default function ExpensesPage() {
         // rendered "No records found" for every row rather than for none.
         // vendor_receipt_facilitation_id is the live column: it is set on 13
         // rows, vrf_id on none.
-        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation:vendor_receipt_facilitation_id(record_name), transfers(transfer_id_code), tax_summary(month), locations(location_name)')
+        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation:vendor_receipt_facilitation_id(record_name), transfers(transfer_id_code), locations(location_name)')
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
       // fiscal_period_id is stamped by trg_set_fiscal_period as

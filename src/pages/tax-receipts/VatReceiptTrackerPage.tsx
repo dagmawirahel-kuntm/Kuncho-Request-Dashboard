@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import type { ReceiptOutstanding, SalesReceiptOutstanding, TaxPositionRow } from '@/types/database'
+import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
+import type { ReceiptOutstanding, SalesReceiptOutstanding, VatPositionRow } from '@/types/database'
 import { Camera, PackageCheck, Landmark, TrendingUp, TrendingDown, Info } from 'lucide-react'
 
 type TrackerRow = {
@@ -37,12 +37,18 @@ export default function VatReceiptTrackerPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const canConfirmCustody = role === 'admin' || role === 'finance'
 
+  // One row per Ethiopian VAT period (309). The old view grouped by
+  // Gregorian month, so every row straddled two VAT returns.
   const { data: position = [] } = useQuery({
-    queryKey: ['tax-position'],
+    queryKey: ['vat-position-ec'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_tax_position').select('*')
+      const { data, error } = await supabase
+        .from('v_vat_position_by_ec_period')
+        .select('*')
+        .order('ec_year', { ascending: false })
+        .order('ec_month', { ascending: false })
       if (error) throw error
-      return data as TaxPositionRow[]
+      return data as VatPositionRow[]
     },
   })
 
@@ -112,7 +118,7 @@ export default function VatReceiptTrackerPage() {
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b dark:border-slate-700">
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Tax Position</p>
-          <p className="text-xs text-slate-400">Output VAT owed on sales, less input VAT reclaimable from tax-reviewed receipts</p>
+          <p className="text-xs text-slate-400">Output VAT owed on sales, less input VAT reclaimable from tax-reviewed receipts — per VAT return period</p>
         </div>
         {position.length === 0 ? (
           <p className="px-5 py-6 text-center text-xs text-slate-400">
@@ -123,17 +129,21 @@ export default function VatReceiptTrackerPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 dark:bg-slate-700/30 text-[10px] uppercase tracking-wider text-slate-400">
                 <tr>
-                  <th className="px-4 py-2 text-left font-semibold">Month</th>
+                  <th className="px-4 py-2 text-left font-semibold">VAT period</th>
                   <th className="px-4 py-2 text-right font-semibold">Output VAT</th>
                   <th className="px-4 py-2 text-right font-semibold">Input VAT</th>
                   <th className="px-4 py-2 text-right font-semibold">Net</th>
                   <th className="px-4 py-2 text-left font-semibold">Position</th>
+                  <th className="px-4 py-2 text-left font-semibold">Return</th>
                 </tr>
               </thead>
               <tbody className="divide-y dark:divide-slate-700">
                 {position.map(p => (
-                  <tr key={p.month}>
-                    <td className="px-4 py-2 font-medium text-slate-700 dark:text-slate-200">{p.month}</td>
+                  <tr key={`${p.ec_year}-${p.ec_month}`}>
+                    <td className="px-4 py-2">
+                      <p className="font-medium text-slate-700 dark:text-slate-200">{p.period_label}</p>
+                      <p className="text-[10px] text-slate-400">{formatDateGC(p.period_start_greg)} – {formatDateGC(p.period_end_greg)}</p>
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(p.output_vat)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(p.input_vat_reclaimable)}</td>
                     <td className={`px-4 py-2 text-right tabular-nums font-semibold ${p.position === 'payable' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
@@ -144,6 +154,13 @@ export default function VatReceiptTrackerPage() {
                         {p.position === 'payable' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                         {p.position === 'payable' ? 'Payable to ERCA' : 'Reclaimable'}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {/* Only the tax read set gets a filing id back (the view's
+                          join to tax_filings is RLS-filtered); others see a dash. */}
+                      {p.vat_filing_id
+                        ? <Link to="/tax-filings" className="text-brand hover:underline capitalize">{p.vat_filing_status}</Link>
+                        : <span className="text-slate-400">—</span>}
                     </td>
                   </tr>
                 ))}

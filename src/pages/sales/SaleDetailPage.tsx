@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
+import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -19,7 +20,6 @@ type SaleWithJoins = Sale & {
   clients: { client_name: string } | null
   projects: { project_name: string } | null
   accounts: { account_name: string } | null
-  tax_summary: { month: string } | null
   manager_profile: { full_name: string } | null
   finance_profile: { full_name: string } | null
 }
@@ -44,7 +44,6 @@ export default function SaleDetailPage() {
           clients:client_id ( client_name ),
           projects:project_id ( project_name ),
           accounts:account_id ( account_name ),
-          tax_summary:tax_summary_id ( month ),
           manager_profile:user_profiles!manager_approved_by ( full_name ),
           finance_profile:user_profiles!finance_approved_by ( full_name )
         `)
@@ -93,7 +92,7 @@ export default function SaleDetailPage() {
   const clientName  = (sale as any).clients?.client_name ?? null
   const projectName = (sale as any).projects?.project_name ?? null
   const accountName = (sale as any).accounts?.account_name ?? null
-  const taxMonth    = (sale as any).tax_summary?.month ?? null
+  const taxMonth    = ecPeriodLabelForDate(sale.date)
   const managerName = (sale as any).manager_profile?.full_name ?? null
   const financeName = (sale as any).finance_profile?.full_name ?? null
 
@@ -302,7 +301,7 @@ export default function SaleDetailPage() {
             { label: 'Client',           value: clientName,                        icon: <Users className="h-3.5 w-3.5" /> },
             { label: 'Project',          value: projectName,                       icon: <FolderKanban className="h-3.5 w-3.5" /> },
             { label: 'Account',          value: accountName,                       icon: null },
-            { label: 'Tax Month',        value: taxMonth,                          icon: null },
+            { label: 'VAT Period',       value: taxMonth,                          icon: null },
             { label: 'Notes',            value: sale.notes,                        icon: null },
           ] as { label: string; value: string | null | undefined; icon: React.ReactNode }[])
             .filter(r => r.value)

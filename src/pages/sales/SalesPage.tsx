@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
+import { ecPeriodLabelForDate } from '@/lib/ethiopianCalendar'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -50,7 +51,7 @@ export default function SalesPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['sales', fiscalPeriodId],
     queryFn: async () => {
-      let q = supabase.from('sales').select('*, clients(client_name), projects(project_name), accounts(account_name), tax_summary(month)').eq('is_archived', false).order('created_at', { ascending: false })
+      let q = supabase.from('sales').select('*, clients(client_name), projects(project_name), accounts(account_name)').eq('is_archived', false).order('created_at', { ascending: false })
       if (fiscalPeriodId) q = q.eq('fiscal_period_id', fiscalPeriodId)
       const { data, error } = await q
       if (error) throw error
@@ -86,7 +87,8 @@ export default function SalesPage() {
     { id: 'client_name', header: 'Client', cell: ({ row }) => (row.original as any).clients?.client_name ?? '—' },
     { id: 'project_name', header: 'Project', cell: ({ row }) => (row.original as any).projects?.project_name ?? '—' },
     { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
-    { id: 'tax_summary_month', header: 'Tax Month', cell: ({ row }) => (row.original as any).tax_summary?.month ?? '—' },
+    // Was the tax_summary "Tax Month" (always empty); the VAT return follows from the date.
+    { id: 'vat_period', header: 'VAT Period', cell: ({ row }) => ecPeriodLabelForDate(row.original.date) ?? '—' },
     { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
     {
       id: 'actions',

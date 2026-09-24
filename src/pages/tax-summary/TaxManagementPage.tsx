@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import type { TaxEngagementView, TaxFilingView, TaxLiabilityRow, UserProfile, ReceiptAwaitingTaxReview, ReceiptOutstanding } from '@/types/database'
+import type { TaxEngagementView, TaxFilingView, UserProfile, ReceiptAwaitingTaxReview, ReceiptOutstanding } from '@/types/database'
+import { useTaxFilingComputed } from '@/hooks/useTaxFilingComputed'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import { Landmark, AlertTriangle, CalendarClock, FileText, ReceiptText, Archive } from 'lucide-react'
 
@@ -76,14 +77,54 @@ export default function TaxManagementPage() {
     },
   })
 
-  const { data: liability = [] } = useQuery({
-    queryKey: ['tax-liability-summary'],
+  // "What Kuncho owes" is now one row per return in the current fiscal year:
+  // what the books say (tax_filing_computed, 313), what was declared, and
+  // what was paid. It replaces v_tax_liability_summary, which listed Gregorian
+  // months beside free-text month labels and could not line up with a return.
+  const { data: currentFy = null } = useQuery({
+    queryKey: ['fiscal-period-current'],
+    staleTime: 300000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_tax_liability_summary').select('*')
+      const { data, error } = await supabase
+        .from('fiscal_periods').select('id,label,start_date,end_date').eq('is_current', true).maybeSingle()
       if (error) throw error
-      return data as TaxLiabilityRow[]
+      return data as { id: string; label: string; start_date: string; end_date: string } | null
     },
   })
+
+  const { data: fyFilings = [] } = useQuery({
+    queryKey: ['tax-filings', 'owed', currentFy?.id ?? null, dueSoonCutoff],
+    enabled: !!currentFy,
+    queryFn: async () => {
+      // Periods that have started; a future period has nothing to owe yet.
+      const { data, error } = await supabase
+        .from('v_tax_filings')
+        .select('*')
+        .gte('period_start_greg', currentFy!.start_date)
+        .lte('period_start_greg', currentFy!.end_date)
+        .lte('period_start_greg', new Date().toISOString().slice(0, 10))
+        .order('period_start_greg')
+      if (error) throw error
+      return data as TaxFilingView[]
+    },
+  })
+
+  const { data: computed } = useTaxFilingComputed(currentFy?.id)
+
+  const owedRows = fyFilings
+    .map(f => {
+      const c = computed?.get(f.id)?.computed_amount
+      return {
+        filing: f,
+        computed: c == null ? null : Number(c),
+        declared: f.declared_amount == null ? null : Number(f.declared_amount),
+        paid: f.paid_amount == null ? null : Number(f.paid_amount),
+      }
+    })
+    // Hide periods where nothing happened and nothing was entered.
+    .filter(r => (r.computed ?? 0) !== 0 || r.declared != null || r.paid != null)
+    .map(r => ({ ...r, outstanding: Math.max(0, (r.declared ?? r.computed ?? 0) - (r.paid ?? 0)) }))
+  const totalOutstanding = owedRows.reduce((s, r) => s + r.outstanding, 0)
 
   const { data: awaitingReview = [] } = useQuery({
     queryKey: ['receipts-awaiting-tax-review'],
@@ -233,28 +274,54 @@ export default function TaxManagementPage() {
         </div>
       )}
 
-      {/* Consolidated liability — a labeled list, not a period-pivoted grid: the
-          underlying sources use incompatible calendars (Amharic month text vs
-          Gregorian YYYY-MM), so forcing them into one row per period would
-          fabricate an alignment that isn't actually there. */}
+      {/* What Kuncho owes, per return in the current fiscal year: computed
+          from the books, declared, paid. Outstanding uses the declared figure
+          once there is one, and the computed figure until then. */}
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b dark:border-slate-700">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">What Kuncho Owes — Consolidated</p>
-          <p className="text-xs text-slate-400">Every tracked liability, by source and period</p>
+        <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">What Kuncho Owes — {currentFy?.label ?? 'this fiscal year'}</p>
+            <p className="text-xs text-slate-400">Per return: computed from sales, receipts, expenses and payroll, against what was declared and paid</p>
+          </div>
+          {owedRows.length > 0 && (
+            <span className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100 shrink-0">{formatCurrency(totalOutstanding)}</span>
+          )}
         </div>
-        {liability.length === 0 ? (
-          <p className="px-5 py-6 text-center text-xs text-slate-400">No tax liability recorded yet</p>
+        {owedRows.length === 0 ? (
+          <p className="px-5 py-6 text-center text-xs text-slate-400">Nothing computed or declared yet for this fiscal year</p>
         ) : (
-          <div className="divide-y dark:divide-slate-700">
-            {liability.map((row, i) => (
-              <div key={i} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-slate-700 dark:text-slate-200">{row.category}</p>
-                  <p className="text-xs text-slate-400">{row.period}</p>
-                </div>
-                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 tabular-nums shrink-0">{formatCurrency(row.amount)}</span>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-700/30 text-[10px] uppercase tracking-wider text-slate-400">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold">Return</th>
+                  <th className="px-4 py-2 text-right font-semibold">Computed</th>
+                  <th className="px-4 py-2 text-right font-semibold">Declared</th>
+                  <th className="px-4 py-2 text-right font-semibold">Paid</th>
+                  <th className="px-4 py-2 text-right font-semibold">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y dark:divide-slate-700">
+                {owedRows.map(r => {
+                  const mismatch = r.declared != null && r.computed != null && Math.abs(r.declared - r.computed) > 0.01
+                  return (
+                    <tr key={r.filing.id}>
+                      <td className="px-4 py-2">
+                        <p className="font-medium text-slate-700 dark:text-slate-200">{r.filing.display_label} · {r.filing.period_label}</p>
+                        <p className="text-[10px] text-slate-400 capitalize">{r.filing.is_overdue ? 'overdue' : r.filing.status}</p>
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400">{r.computed == null ? '—' : formatCurrency(r.computed)}</td>
+                      <td className={`px-4 py-2 text-right tabular-nums ${mismatch ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}
+                        title={mismatch ? 'Declared differs from the computed figure' : undefined}>
+                        {r.declared == null ? '—' : formatCurrency(r.declared)}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{r.paid == null ? '—' : formatCurrency(r.paid)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(r.outstanding)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
