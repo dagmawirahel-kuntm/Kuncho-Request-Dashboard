@@ -133,7 +133,13 @@ export function VrfReturns({ reg, canEdit }: { reg: VrfRegisterRow; canEdit: boo
         </div>
       )}
 
-      {canEdit && (
+      {/* Money comes back only after it went out: returns wait for Mark sent. */}
+      {canEdit && reg.payment_state !== 'sent' && (
+        <p className="border-t px-5 py-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          Returns are recorded once the payment is marked sent.
+        </p>
+      )}
+      {canEdit && reg.payment_state === 'sent' && (
         <div className="space-y-3 border-t p-5 dark:border-slate-700">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>

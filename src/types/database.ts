@@ -1006,9 +1006,20 @@ export interface VendorReceiptFacilitation {
   expected_return: number | null
   /** The company that issued the receipt and was paid for it (migration 324). */
   vendor_id: string | null
+  /** The payment step (migration 326): moves only via approve_vrf_payment / mark_vrf_sent. */
+  payment_state: VrfPaymentState
+  approved_by: string | null
+  approved_at: string | null
+  sent_by: string | null
+  /** When the money left the bank: the bank line's date, or the date given. */
+  sent_date: string | null
 }
-export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation, 'id' | 'record_name' | 'created_at' | 'updated_at' | 'net_sent' | 'expected_return'>
+export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation,
+  'id' | 'record_name' | 'created_at' | 'updated_at' | 'net_sent' | 'expected_return'
+  | 'payment_state' | 'approved_by' | 'approved_at' | 'sent_by' | 'sent_date'>
 export type VrfCommissionBasis = 'receipt_pct' | 'vat_pct' | 'fixed'
+/** to_pay → approved → sent. Only a sent VRF has left the bank. */
+export type VrfPaymentState = 'to_pay' | 'approved' | 'sent'
 
 /** Money coming back from a VRF, one entry per return (migration 322). */
 export interface VrfReturn {
@@ -1079,6 +1090,9 @@ export interface VrfRegisterRow {
   vendor_name: string | null
   /** The TIN the vendor's WHT certificate carries. */
   vendor_tin: string | null
+  payment_state: VrfPaymentState
+  approved_at: string | null
+  sent_date: string | null
 }
 
 /** Money taken from a VRF's returned funds for personal use (migration 320). */
