@@ -903,6 +903,91 @@ export interface SalesEngagementRow {
   docs_missing: number
   created_at: string
 }
+// ── Client history (migration 334) ──────────────────────────────────────
+export type ContactRole = 'decision_maker' | 'procurement' | 'finance' | 'project' | 'site' | 'other'
+export interface ClientContact {
+  id: string
+  client_id: string
+  full_name: string
+  role: ContactRole
+  job_title: string | null
+  phone: string | null
+  email: string | null
+  is_primary: boolean
+  is_active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type InteractionKind = 'call' | 'meeting' | 'site_visit' | 'email' | 'whatsapp' | 'other'
+export interface ClientInteraction {
+  id: string
+  client_id: string
+  contact_id: string | null
+  opportunity_id: string | null
+  project_id: string | null
+  kind: InteractionKind
+  occurred_at: string
+  summary: string
+  next_step: string | null
+  next_step_due: string | null
+  next_step_done_at: string | null
+  logged_by: string
+  created_at: string
+}
+export interface ClientRelationshipRow {
+  client_id: string
+  client_name: string
+  logo_url: string | null
+  tin: string | null
+  business_type: string | null
+  phone_number: string | null
+  email: string | null
+  address: string | null
+  client_since: string
+  projects_total: number
+  projects_open: number
+  open_contract_value: number
+  contacts_total: number
+  contacts_active: number
+  last_interaction_at: string | null
+  interactions_recent: number
+  next_step: string | null
+  next_step_due: string | null
+  next_steps_open: number
+  open_deals: number
+  pipeline_value: number
+  lost_deals: number
+  contracts_signed: number
+  contracted_value: number
+  invoiced: number
+  received: number
+  outstanding: number
+  last_payment_at: string | null
+  docs_missing: number
+  active_window_days: number
+  /** The earliest thing on record with the client (migration 335). */
+  first_seen: string
+}
+export type TimelineKind =
+  | 'deal_opened' | 'deal_moved' | 'deal_won' | 'deal_lost'
+  | 'proforma' | 'contract_drafted' | 'contract_signed'
+  | 'invoice' | 'payment'
+  | 'project_started' | 'handover_due'
+  | 'interaction' | 'document'
+export interface ClientTimelineEvent {
+  event_id: string
+  client_id: string
+  event_at: string
+  kind: TimelineKind
+  title: string | null
+  detail: string | null
+  amount: number | null
+  opportunity_id: string | null
+  contract_id: string | null
+  project_id: string | null
+  contact_id: string | null
+}
 export interface ClientAttachment {
   id: string
   client_id: string

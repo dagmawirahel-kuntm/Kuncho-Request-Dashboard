@@ -8,6 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { OPEN_STAGES, SOURCE_LABEL, STAGE_BY_VALUE } from '@/lib/salesJourney'
 import type { SalesChecklistItem, SalesEngagementRow } from '@/types/database'
 import { KpiCard } from '@/components/shared/KpiCard'
+import { ClientsStrip } from './client-history/ClientsStrip'
 import { AlertTriangle, Banknote, CheckCircle2, ChevronDown, Circle, FileWarning, Target, TrendingUp, Upload } from 'lucide-react'
 
 type Filter = 'all' | 'open' | 'won' | 'missing_docs' | 'owed'
@@ -154,6 +155,8 @@ export default function SalesJourneyPage() {
         )}
       </div>
 
+      <ClientsStrip />
+
       {/* Deals */}
       <div className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 dark:border-slate-700">
@@ -266,6 +269,7 @@ function DealDetail({ d, canUpload }: { d: SalesEngagementRow; canUpload: boolea
           {d.opportunity_id && <Link to={`/opportunities/${d.opportunity_id}/edit`} className="text-brand hover:underline">Open the deal</Link>}
           {d.contract_id && <Link to={`/contracts/${d.contract_id}/edit`} className="text-brand hover:underline">Contract & payment plan</Link>}
           {d.project_id && <Link to={`/projects/${d.project_id}`} className="text-brand hover:underline">Project{d.project_name ? ` · ${d.project_name}` : ''}</Link>}
+          {d.client_id && <Link to={`/sales-journey/clients/${d.client_id}`} className="text-brand hover:underline">Client history</Link>}
           {d.client_id && <Link to={`/clients/${d.client_id}`} className="text-brand hover:underline">Client file</Link>}
         </div>
       </div>

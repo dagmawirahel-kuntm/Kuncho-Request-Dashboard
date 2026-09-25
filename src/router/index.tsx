@@ -73,6 +73,7 @@ import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
 import GovernmentStatementPage from '@/pages/reports/GovernmentStatementPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SalesJourneyPage from '@/pages/sales/SalesJourneyPage'
+import ClientHistoryPage from '@/pages/sales/client-history/ClientHistoryPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
 import SaleDetailPage from '@/pages/sales/SaleDetailPage'
 import ProformasPage from '@/pages/sales/ProformasPage'
@@ -369,6 +370,8 @@ export const router = createBrowserRouter([
               { path: 'sales/:id', element: <SaleDetailPage /> },
               // Every deal, its money and its documents (migration 331).
               { path: 'sales-journey', element: <SalesJourneyPage /> },
+              // One client's whole relationship (migration 334).
+              { path: 'sales-journey/clients/:id', element: <ClientHistoryPage /> },
             ],
           },
           {
