@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -7,7 +7,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { ecPeriodLabel } from '@/lib/ethiopianCalendar'
 import type { InputVatRow, InputVatCopyStatus } from '@/types/database'
-import { Camera, CheckSquare } from 'lucide-react'
+import { Camera, CheckSquare, ChevronDown } from 'lucide-react'
+import { InputVatExpenseDetail } from './InputVatExpenseDetail'
 
 /**
  * Input VAT, transaction by transaction (migrations 317/318).
@@ -82,6 +83,7 @@ export function InputVatTransactions() {
   const [sort, setSort] = useState<Sort>('newest')
   const [busy, setBusy] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [open, setOpen] = useState<string | null>(null)
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['input-vat-tracker'],
@@ -289,7 +291,8 @@ export function InputVatTransactions() {
                 const disabled = !canEdit || busy === r.expense_id || busy === 'bulk'
                 const g = gradeOf(r.vat_amount)
                 return (
-                  <tr key={r.expense_id} className={`${r.vat_applicable === false ? 'opacity-60' : ''} ${selected.has(r.expense_id) ? 'bg-brand/5 dark:bg-brand/10' : ''}`}>
+                  <Fragment key={r.expense_id}>
+                  <tr className={`${r.vat_applicable === false ? 'opacity-60' : ''} ${selected.has(r.expense_id) ? 'bg-brand/5 dark:bg-brand/10' : ''}`}>
                     {canEdit && (
                       <td className="pl-4 py-2">
                         <input type="checkbox" checked={selected.has(r.expense_id)} onChange={() => toggle(r.expense_id)}
@@ -297,7 +300,12 @@ export function InputVatTransactions() {
                       </td>
                     )}
                     <td className="px-4 py-2">
-                      <p className="font-medium text-slate-700 dark:text-slate-200">{r.expense_code ?? '—'}</p>
+                      <button type="button" onClick={() => setOpen(o => (o === r.expense_id ? null : r.expense_id))}
+                        aria-expanded={open === r.expense_id} title="Show the purchase details"
+                        className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-brand dark:text-slate-200">
+                        <ChevronDown className={`h-3 w-3 transition-transform ${open === r.expense_id ? 'rotate-180' : ''}`} />
+                        {r.expense_code ?? '—'}
+                      </button>
                       <p className="text-[10px] text-slate-400">
                         {r.vendor_name ?? 'No vendor'}{r.vendor_tin ? ` · TIN ${r.vendor_tin}` : ' · no TIN'}
                         {' · '}{formatDateGC(r.expense_date)}
@@ -364,6 +372,14 @@ export function InputVatTransactions() {
                       )}
                     </td>
                   </tr>
+                  {open === r.expense_id && (
+                    <tr className="bg-slate-50 dark:bg-slate-900/40">
+                      <td colSpan={canEdit ? 9 : 8} className="px-5 py-3">
+                        <InputVatExpenseDetail row={r} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>
