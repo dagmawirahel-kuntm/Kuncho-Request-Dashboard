@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,6 +13,7 @@ import { KpiCard } from '@/components/shared/KpiCard'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import { VrfPaymentsSection } from '@/pages/vendor-receipts/VrfPaymentStep'
+import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type {
   ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow, OpenVendorAdvanceRow,
   ExpensePaymentMethod, AwaitingBankConfirmationRow, AccountStatementSummaryRow, MatchableRow,
@@ -290,6 +291,7 @@ export default function PaymentsDashboardPage() {
   const { role, user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const canAct = role === 'admin' || role === 'finance'
 
   // VRF payments are confirmed by the VRF-manager badge holder (or admin).
@@ -462,6 +464,7 @@ export default function PaymentsDashboardPage() {
   const [sendingBulk, setSendingBulk] = useState(false)
   const [batchModalOpen, setBatchModalOpen] = useState(false)
   const [advancingRow, setAdvancingRow] = useState<ToPayQueueRow | null>(null)
+  const [whtRow, setWhtRow] = useState<ToPayQueueRow | null>(null)
 
   // Pay-in-advance rows need a different action (payment_state = 'advance',
   // not 'sent') — bulk "Mark as Sent" would leave them stranded, since the
@@ -615,9 +618,13 @@ export default function PaymentsDashboardPage() {
                 </button>
                 <button
                   onClick={() => setBatchModalOpen(true)}
-                  disabled={!payerId}
+                  disabled={!payerId || selfApprovedConflict.length > 0}
                   className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
-                  title={!payerId ? 'Select a payer first' : undefined}
+                  title={!payerId
+                    ? 'Select a payer first'
+                    : selfApprovedConflict.length > 0
+                      ? 'The payer approved some of these — the same person cannot approve and pay'
+                      : undefined}
                 >
                   <Layers className="h-3.5 w-3.5" /> Create Batch Payment
                 </button>
@@ -702,7 +709,7 @@ export default function PaymentsDashboardPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-center">
-                        {r.verify_wht && <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
+                        <WhtCell row={r} canAct={canAct} onEdit={() => setWhtRow(r)} />
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                         {r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}
@@ -762,7 +769,9 @@ export default function PaymentsDashboardPage() {
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span className="truncate">{r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}</span>
-                      {r.verify_wht && <span className="flex-shrink-0 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
+                      <span className="flex-shrink-0" onClick={e => e.preventDefault()}>
+                        <WhtCell row={r} canAct={canAct} onEdit={() => setWhtRow(r)} />
+                      </span>
                       <span className="ml-auto flex-shrink-0 tabular-nums">{r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}</span>
                     </div>
                     {isAdvance && (
@@ -1111,16 +1120,34 @@ export default function PaymentsDashboardPage() {
         />
       )}
 
+      {whtRow && (
+        <WithholdingModal
+          expense={whtRow}
+          onClose={() => setWhtRow(null)}
+          onSaved={() => {
+            setWhtRow(null)
+            toast('Withholding recorded — the amount to send is updated', 'success')
+            invalidateAll()
+          }}
+        />
+      )}
+
       {batchModalOpen && payerId && (
         <CreateBatchModal
-          expenseIds={Array.from(selectedQueue)}
+          rows={toPayQueue.filter(r => selectedQueue.has(r.id))}
           payerId={payerId}
+          payerName={payerOptions.find(p => p.id === payerId)?.label ?? null}
+          defaultMethod={paymentMethod === 'cash' ? 'cash' : 'batch_wire'}
+          accountOptions={accountOptions}
           onClose={() => setBatchModalOpen(false)}
-          onCreated={() => {
+          onCreated={batchId => {
             setBatchModalOpen(false)
             setSelectedQueue(new Set())
-            toast('Batch payment created', 'success')
+            toast('Batch payment created — it’s now Sent', 'success')
             invalidateAll()
+            qc.invalidateQueries({ queryKey: ['batch-payments'] })
+            // Straight to the batch, where its Payment Request is printed.
+            navigate(`/batch-payments/${batchId}`)
           }}
           onError={msg => toast(msg, 'error')}
         />
@@ -1382,53 +1409,164 @@ function PartialSplitModal({
   )
 }
 
+// The To-Pay queue's WHT column. It was a static "WHT" badge driven by the
+// verify_wht tick alone, which said nothing about whether anything was
+// actually withheld — 29 payments carried the tick with no amount. Now it
+// shows what is withheld, flags a tick with nothing behind it, and opens
+// the withholding dialog for finance.
+function WhtCell({ row, canAct, onEdit }: { row: ToPayQueueRow; canAct: boolean; onEdit: () => void }) {
+  const wht = Number(row.wht_amount ?? 0)
+  const label = wht > 0
+    ? `WHT −${formatCurrency(wht)}`
+    : row.verify_wht ? 'WHT — no amount' : '+ WHT'
+  const cls = wht > 0
+    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+    : row.verify_wht
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'text-slate-400 hover:text-brand'
+  const title = wht > 0
+    ? 'Withholding recorded — click to change'
+    : row.verify_wht
+      ? 'Marked for WHT but no amount recorded, so nothing is being withheld — click to set it'
+      : 'Record withholding deducted from this payment'
+  if (!canAct) {
+    return wht > 0 || row.verify_wht
+      ? <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>
+      : null
+  }
+  return (
+    <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); onEdit() }} title={title}
+      className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums ${cls}`}>
+      {label}
+    </button>
+  )
+}
+
+// Batches the selected To-Pay rows into one wire and moves them to Sent.
+//
+// This never worked. It called create_batch_payment() with no funding
+// account and no payment method, and every row in the To-Pay queue is
+// already approved — which is exactly the case where the RPC insists on an
+// account for anything but cash. So every attempt failed with "An account
+// must be selected to fund a batch_wire batch payment", and there was no
+// field in the modal to supply one.
 function CreateBatchModal({
-  expenseIds, payerId, onClose, onCreated, onError,
+  rows, payerId, payerName, defaultMethod, accountOptions, onClose, onCreated, onError,
 }: {
-  expenseIds: string[]
+  rows: ToPayQueueRow[]
   payerId: string
+  payerName: string | null
+  defaultMethod: 'batch_wire' | 'cash'
+  accountOptions: { id: string; label: string; sub?: string }[]
   onClose: () => void
-  onCreated: () => void
+  onCreated: (batchId: string) => void
   onError: (msg: string) => void
 }) {
   const [code, setCode] = useState('')
   const [notes, setNotes] = useState('')
+  const [method, setMethod] = useState<'batch_wire' | 'cash'>(defaultMethod)
+  const [accountId, setAccountId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // What the bank will be asked to do: one transfer per payee, at the net
+  // that actually leaves (after WHT and any vendor credit) — the same figure
+  // the queue shows and the batch's Payment Request will print.
+  const payees = useMemo(() => {
+    const byPayee = new Map<string, { name: string; count: number; net: number }>()
+    for (const r of rows) {
+      const name = r.vendor_name ?? r.item_service_description ?? r.expense_code ?? 'Payee'
+      const net = Number(r.cash_to_send ?? r.net_payable ?? r.amount_etb ?? 0)
+      const existing = byPayee.get(name)
+      if (existing) { existing.count += 1; existing.net += net } else byPayee.set(name, { name, count: 1, net })
+    }
+    return Array.from(byPayee.values()).sort((a, b) => b.net - a.net)
+  }, [rows])
+  const total = payees.reduce((s, p) => s + p.net, 0)
+  const needsAccount = method !== 'cash'
+
   async function handleCreate() {
+    if (needsAccount && !accountId) { onError('Pick the account this batch is paid from'); return }
     setSaving(true)
-    const { error } = await supabase.rpc('create_batch_payment', {
-      p_expense_ids: expenseIds,
+    const { data, error } = await supabase.rpc('create_batch_payment', {
+      p_expense_ids: rows.map(r => r.id),
       p_assignee_id: payerId,
+      p_account_id: needsAccount ? accountId : null,
+      p_payment_method: method,
       p_payment_code: code.trim() || null,
       p_notes: notes.trim() || null,
     })
     setSaving(false)
     if (error) { onError(error.message); return }
-    onCreated()
+    onCreated(String(data))
   }
+
+  const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-lg w-full overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between">
           <h2 className="font-bold text-slate-800 dark:text-slate-100">Create Batch Payment</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
         </div>
-        <div className="px-5 py-4 space-y-4">
-          <p className="text-sm text-slate-500 dark:text-slate-400">{expenseIds.length} expense(s) will be linked to one wire and moved to Sent.</p>
+        <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="rounded-lg border dark:border-slate-700 overflow-hidden">
+            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {rows.length} payment{rows.length === 1 ? '' : 's'} · {payees.length} payee{payees.length === 1 ? '' : 's'}
+              </span>
+              <span className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(total)}</span>
+            </div>
+            <ul className="divide-y dark:divide-slate-700 max-h-48 overflow-y-auto">
+              {payees.map(p => (
+                <li key={p.name} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
+                  <span className="truncate text-slate-700 dark:text-slate-200">
+                    {p.name}{p.count > 1 && <span className="text-xs text-slate-400"> · {p.count} payments</span>}
+                  </span>
+                  <span className="tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(p.net)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Paid by</label>
+              <p className="rounded-md border bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-900/40 dark:text-slate-200">{payerName ?? '—'}</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Method</label>
+              <select className={inputCls} value={method} onChange={e => setMethod(e.target.value as 'batch_wire' | 'cash')}>
+                <option value="batch_wire">Bank / Wire</option>
+                <option value="cash">Cash</option>
+              </select>
+            </div>
+          </div>
+
+          {needsAccount && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Paid from account <span className="text-brand">*</span>
+              </label>
+              <SearchableSelect value={accountId} onChange={setAccountId} options={accountOptions} placeholder="Select the funding account…" />
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Payment Code (optional)</label>
-            <input className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. BATCH-2026-014" />
+            <input className={inputCls} value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. BATCH-2026-014" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Notes (optional)</label>
-            <textarea rows={2} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" value={notes} onChange={e => setNotes(e.target.value)} />
+            <textarea rows={2} className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
+          <p className="text-xs text-slate-400">
+            All {rows.length} will move to Sent together. You’ll land on the batch, where its Payment Request is printed.
+          </p>
         </div>
         <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
-          <button onClick={handleCreate} disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+          <button onClick={handleCreate} disabled={saving || (needsAccount && !accountId)} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
             {saving ? 'Creating…' : 'Create Batch'}
           </button>
         </div>

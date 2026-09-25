@@ -1,0 +1,105 @@
+-- 329 — Merge the duplicate "Aragaw" staff record into "Aragaw Welde"
+--
+-- Two staff records existed for the same person:
+--
+--   Aragaw Welde  e4ebb9a7…  created 23 Aug  day_rate   160.00
+--                            CBE 1000070442648 (paid via Mesfin Bekele)
+--   Aragaw        14017f25…  created 25 Sep  day_rate  2000.00  no bank details
+--
+-- The second was created by promoting a labor-requisition candidate named
+-- "Aragaw" — requisition "Chuck and paint" at Mesob Exhibition Center A,
+-- estimated day rate 2000, 5 Aug – 10 Sep. Nobody linked it to the
+-- existing person, so a month of work accumulated against a second
+-- identity: 20 timesheet rows, 20 attendance rows, 20 work-order
+-- attendance entries, a crew seat, an allocation, a labor expense worker
+-- line and a paid expense.
+--
+-- "Aragaw Welde" is the real record — it is the one carrying the bank
+-- details payroll actually pays — so it survives and the other folds into
+-- it.
+--
+-- ── Why this goes through merge_staff_records() ───────────────────────────────
+--
+-- staff.id is referenced by 88 foreign keys across ~50 tables, and some
+-- are ON DELETE CASCADE — timesheet_attendance, wo_attendance_log,
+-- work_order_crew, payroll_staff, staff_bank_accounts. Deleting the
+-- duplicate without re-pointing those first would silently destroy
+-- attendance and crew history rather than merge it.
+--
+-- 267 already built merge_staff_records() for exactly this: it walks every
+-- FK to staff from the catalogue (so nothing is missed as the schema
+-- grows), re-points each one, reports any that collide instead of dying
+-- half-done, and refuses to delete the duplicate unless every labor row
+-- moved cleanly. It is also gated to admin/HR. Calling it beats
+-- hand-rolling the same UPDATEs.
+--
+-- ── Checked before running ────────────────────────────────────────────────────
+--
+-- The dangerous part of a merge is a unique index that both records
+-- violate once they become one. Every unique key on the affected tables
+-- was tested for an actual overlap between the two records first:
+--
+--   timesheet_attendance (staff, project, work_date), both partial forms   0
+--   wo_attendance_log    (unallocated / allocated / per-requisition)       0
+--   work_order_crew      (work_order, staff) where not removed             0
+--   labor_expense_workers(expense, staff)                                  0
+--   labor_requisition_workers PK (requisition, staff)                      0
+--
+-- Zero overlaps — the two records cover disjoint dates, work orders,
+-- expenses and requisitions, so nothing had to be discarded or merged by
+-- hand. 65 rows moved in total and the duplicate was deleted.
+--
+-- ── The day rate ──────────────────────────────────────────────────────────────
+--
+-- The two records disagreed twelve-fold: 160 against 2000. The surviving
+-- record now carries 2000, which is what the approved requisition
+-- estimated and what all 20 of the most recent logged days were costed
+-- at. 160 was contradicted by every piece of recent activity.
+--
+-- This is set BEFORE the merge deliberately. Re-pointing an attendance row
+-- fires sync_wo_attendance_before(), which recomputes the mirrored
+-- timesheet's day_rate as
+--   COALESCE(allocation.day_rate_snapshot, staff.day_rate, requisition.estimated_day_rate)
+-- so staff.day_rate has to be right at that moment or the mirror would be
+-- rebuilt against a stale one. In this case the allocation's snapshot
+-- (2000.00) wins anyway, and labor_allocations is re-pointed before the
+-- attendance tables — the catalogue loop runs alphabetically — so the
+-- lookup resolves to the correct allocation. Verified after the fact:
+-- every historical rate is untouched.
+--
+--   Mesob Exhibition Center A  2000.00   20 rows  22 Aug – 10 Sep
+--   Mesob Kitchen              3000.00    2 rows  27 – 28 Aug
+--   Solomon Apartment            80.00   18 rows  24 – 29 Aug
+--   Solomon Apartment           160.00    3 rows  20 – 22 Aug
+--
+-- Merging re-attributes work; it does not re-price it.
+--
+-- ── Worth a look, not fixed here ──────────────────────────────────────────────
+--
+-- The surviving record's Solomon Apartment rows are costed at 80 and 160
+-- ETB/day, against 2000 and 3000 elsewhere for the same person. Those
+-- rates are implausible for site labor and look like an hourly figure
+-- entered as a daily one, but correcting them means restating paid labor
+-- expenses, which is a decision about money rather than a merge. Flagged
+-- rather than touched.
+--
+-- Also: that record now holds three separate active allocations for
+-- Solomon Apartment covering the identical 24–29 Aug window at 80.00,
+-- which looks like accidental duplication predating this merge.
+
+-- ── Apply ────────────────────────────────────────────────────────────────────
+--
+-- Recorded for history. merge_staff_records() is gated to admin/HR via
+-- get_user_role(), so this was run as an admin against the live database;
+-- replaying it needs the same. The guards are left in place: the
+-- paid-attendance block in sync_wo_attendance_before() is bypassed only by
+-- the transaction-local app.staff_merge flag that merge_staff_records()
+-- sets and clears itself.
+
+UPDATE staff SET day_rate = 2000.00
+ WHERE id = 'e4ebb9a7-02b1-4fdf-9b3c-50c5e0c7a464';
+
+SELECT * FROM merge_staff_records(
+  'e4ebb9a7-02b1-4fdf-9b3c-50c5e0c7a464',  -- keep:  Aragaw Welde
+  '14017f25-d942-4a6a-8e61-6b49fc0c2799'   -- merge: Aragaw
+);

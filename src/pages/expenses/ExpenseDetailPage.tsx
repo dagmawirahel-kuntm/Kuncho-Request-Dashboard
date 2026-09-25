@@ -16,25 +16,16 @@ import {
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
-import type { Expense, ExpenseType } from '@/types/database'
+import { WithholdingModal } from '@/components/shared/WithholdingModal'
+import type { Expense } from '@/types/database'
+import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
 
-const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string }> = {
-  general:        { bg: '#1B3A5C', label: 'General Expense',  abbr: 'GE'  },
-  purchase_order: { bg: '#0C4A6E', label: 'Purchase Order',   abbr: 'PO'  },
-  vrf:            { bg: '#312E81', label: 'Vendor Receipt',    abbr: 'VRF' },
-  cpo_bond:       { bg: '#4C1D95', label: 'CPO Bond',          abbr: 'CPO' },
-  fuel:           { bg: '#92400E', label: 'Fuel',               abbr: 'FUEL' },
-  subcontract:    { bg: '#164E63', label: 'Subcontract',        abbr: 'SUB' },
-  maintenance:    { bg: '#78350F', label: 'Vehicle Maintenance', abbr: 'MNT' },
-  property_rent:  { bg: '#365314', label: 'Property Rent',       abbr: 'RENT' },
-  labor_payment:  { bg: '#0F766E', label: 'Labor Payment',       abbr: 'LBR' },
-  transportation: { bg: '#0369A1', label: 'Transportation',      abbr: 'TRSP' },
-}
+const TYPE_THEME = EXPENSE_TYPE_THEME
 
 type ExpenseWithJoins = Expense & {
-  vendors: { vendor_name: string; bank_account: string | null; location: string | null } | null
+  vendors: { vendor_name: string; bank_account: string | null; location: string | null; bank: { account_name: string } | null } | null
   projects: { project_name: string } | null
   accounts: { account_name: string } | null
   categories: { category_name: string } | null
@@ -86,7 +77,7 @@ export default function ExpenseDetailPage() {
         .from('expenses')
         .select(`
           *,
-          vendors:vendor_id ( vendor_name, bank_account, location ),
+          vendors:vendor_id ( vendor_name, bank_account, location, bank:bank_id ( account_name ) ),
           projects:project_id ( project_name ),
           accounts:account_id ( account_name ),
           categories:category_id ( category_name ),
@@ -146,13 +137,16 @@ export default function ExpenseDetailPage() {
     () => Array.from(new Set([...workerStaffIds, expense?.paid_to_staff_id].filter(Boolean) as string[])),
     [workerStaffIds, expense?.paid_to_staff_id],
   )
-  const { data: bankByStaffId = new Map<string, string | null>() } = useQuery({
+  // Account and the bank that holds it: an account number alone isn't a
+  // payment instruction.
+  const { data: bankByStaffId = new Map<string, { account: string | null; bank: string | null }>() } = useQuery({
     queryKey: ['expense-labor-worker-banks', id, payeeStaffIds],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('staff').select('id, bank_account').in('id', payeeStaffIds)
+        .from('staff').select('id, bank_account, bank:bank_id ( account_name )').in('id', payeeStaffIds)
       if (error) throw error
-      return new Map((data ?? []).map(s => [s.id as string, (s.bank_account as string | null) ?? null]))
+      type Row = { id: string; bank_account: string | null; bank: { account_name: string } | null }
+      return new Map(((data ?? []) as unknown as Row[]).map(s => [s.id, { account: s.bank_account ?? null, bank: s.bank?.account_name ?? null }]))
     },
     enabled: payeeStaffIds.length > 0 && canIssuePaymentRequest(role),
   })
@@ -160,10 +154,13 @@ export default function ExpenseDetailPage() {
   const laborWorkers = useMemo(() => rawLaborWorkers.map(w => ({
     ...w,
     employee_name: staffNameById.get(w.staff_id) ?? 'Unknown staff',
-    bank_account: bankByStaffId.get(w.staff_id) ?? null,
+    bank_account: bankByStaffId.get(w.staff_id)?.account ?? null,
+    bank_name: bankByStaffId.get(w.staff_id)?.bank ?? null,
   })), [rawLaborWorkers, staffNameById, bankByStaffId])
   const paidToStaffName = expense?.paid_to_staff_id ? (staffNameById.get(expense.paid_to_staff_id) ?? null) : null
-  const paidToStaffAccount = expense?.paid_to_staff_id ? (bankByStaffId.get(expense.paid_to_staff_id) ?? null) : null
+  const paidToStaffAccount = expense?.paid_to_staff_id ? (bankByStaffId.get(expense.paid_to_staff_id)?.account ?? null) : null
+  const paidToStaffBank = expense?.paid_to_staff_id ? (bankByStaffId.get(expense.paid_to_staff_id)?.bank ?? null) : null
+  const [whtOpen, setWhtOpen] = useState(false)
 
   const { data: requisitionInfo = null } = useQuery({
     queryKey: ['expense-labor-requisition', expense?.rolled_up_from_requisition_id],
@@ -356,8 +353,14 @@ export default function ExpenseDetailPage() {
       ?? paidToStaffName ?? 'Vendor'
     const vendorAccount = expense.vendors?.bank_account ?? expense.vendors_bank_account
       ?? paidToStaffAccount ?? null
+    // The bank holding whichever account is shown. An account typed as free
+    // text on the expense has no bank on file, so it gets none rather than
+    // borrowing the vendor record's.
+    const payeeBank = expense.vendors?.bank_account
+      ? (expense.vendors.bank?.account_name ?? null)
+      : (!expense.vendors_bank_account && paidToStaffAccount ? paidToStaffBank : null)
     const blankLine = {
-      expenseId: expense.id, staffId: expense.id, name: vendorPayee, bankAccount: vendorAccount,
+      expenseId: expense.id, staffId: expense.id, name: vendorPayee, bankAccount: vendorAccount, bankName: payeeBank,
       overtimeHours: null, overtimeAmount: null, gangSize: null, gangMemberNames: null,
       vendorName: null, vendorBankAccount: null,
     }
@@ -542,6 +545,7 @@ export default function ExpenseDetailPage() {
             staffId: w.staff_id,
             name: w.employee_name,
             bankAccount: w.bank_account,
+            bankName: w.bank_name,
             units: w.days_worked,
             unitLabel,
             rate: w.day_rate,
@@ -552,6 +556,7 @@ export default function ExpenseDetailPage() {
             gangMemberNames: w.gang_member_names,
             vendorName: expense.vendors?.vendor_name ?? expense.vendors_name ?? null,
             vendorBankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account ?? null,
+            vendorBankName: expense.vendors?.bank_account ? (expense.vendors.bank?.account_name ?? null) : null,
           }))
         // A purchase order bills real items, so each one is its own line.
         // They share a payee, so the disbursement schedule still resolves to
@@ -567,8 +572,8 @@ export default function ExpenseDetailPage() {
             // The payee names who the bank pays; the breakdown row says what
             // was bought. Same string in both columns tells a reader nothing.
             description: expense.item_service_description ?? null,
-            bankAccount: expense.vendors?.bank_account ?? expense.vendors_bank_account
-              ?? paidToStaffAccount ?? null,
+            bankAccount: vendorAccount,
+            bankName: payeeBank,
             // Fuel records its quantity in its own column rather than the
             // generic quantity/uom pair, so the litres and the birr-per-litre
             // they imply reach the page instead of a pair of dashes.
@@ -614,7 +619,7 @@ export default function ExpenseDetailPage() {
       breakdownKind: laborWorkers.length > 0 ? ('labor' as const) : ('line_items' as const),
       typeLabel: TYPE_THEME[expense.expense_type ?? 'general']?.label ?? null,
     }
-  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, paidToStaffAccount, transportRoute,
+  }, [expense, laborWorkers, requisitionInfo, paidToStaffName, paidToStaffAccount, paidToStaffBank, transportRoute,
       bundleItems, maintenanceRequest, subcontractClaimedElsewhere,
       creditApplied, creditNote])
 
@@ -640,6 +645,9 @@ export default function ExpenseDetailPage() {
 
   const approvalStatus = expense.approval_status ?? 'pending'
   // Single gate since migration 163 — see ExpenseFormPage for the rationale.
+  // Withholding is decided before the money moves; set_expense_withholding()
+  // refuses once the payment has been sent.
+  const canMarkWht = canApproveAsFinance(role) && ['unpaid', 'approved_to_pay'].includes(expense.payment_state ?? '')
   const showFinanceActions = (approvalStatus === 'pending' || approvalStatus === 'manager_approved')
     && canApproveAsFinance(role)
   const canResubmit = approvalStatus === 'rejected' && (role === 'admin' || role === 'executive')
@@ -893,12 +901,36 @@ export default function ExpenseDetailPage() {
             what gets wired once WHT is withheld or a vendor credit is
             applied. Without this the discount on a PO was invisible
             everywhere except the To Pay queue. */}
-        {(creditApplied > 0 || Number(expense.wht_amount ?? 0) > 0) && (
+        {whtOpen && (
+          <WithholdingModal
+            expense={{ ...expense, vendor_name: expense.vendors?.vendor_name ?? expense.vendors_name }}
+            onClose={() => setWhtOpen(false)}
+            onSaved={() => {
+              setWhtOpen(false)
+              toast('Withholding recorded — the amount to send is updated', 'success')
+              qc.invalidateQueries({ queryKey: ['expense-detail', id] })
+              qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
+            }}
+          />
+        )}
+        {/* Also shown, with its button, while finance can still set
+            withholding — the step before payment is where it's decided. */}
+        {(creditApplied > 0 || Number(expense.wht_amount ?? 0) > 0 || canMarkWht) && (
           <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
             <div className="px-5 py-3.5 border-b dark:border-slate-700 flex items-center gap-2">
               <Wallet className="h-4 w-4 text-slate-400" />
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Settlement</h2>
+              {canMarkWht && (
+                <button onClick={() => setWhtOpen(true)} className="ml-auto rounded-md border px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+                  {Number(expense.wht_amount ?? 0) > 0 ? 'Change withholding' : expense.verify_wht ? 'Set WHT amount' : 'Record withholding'}
+                </button>
+              )}
             </div>
+            {expense.verify_wht && !(Number(expense.wht_amount ?? 0) > 0) && (
+              <p className="mx-5 mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                Marked for WHT, but no amount is recorded — so nothing is being withheld from this payment yet.
+              </p>
+            )}
             <div className="p-5 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-500 dark:text-slate-400">Invoice total</span>

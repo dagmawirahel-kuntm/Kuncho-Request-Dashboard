@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Vendor, Expense, SourcingBundle, CpoBond, VendorAttachment, VendorAttachmentCategory, VendorTaxReceipt } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
+import { useAccounts } from '@/hooks/useLookups'
 import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, User, CreditCard,
   FileText, Package, Shield, Check, X, Building2, Tag, ExternalLink,
@@ -109,6 +110,11 @@ export default function VendorDetailPage() {
     },
     enabled: !!id,
   })
+  // Resolved from the shared accounts list rather than a join, so this
+  // page's ['vendor', id] cache stays the same shape as the edit form's.
+  const { data: accountsList = [] } = useAccounts()
+  const bankName = (accountsList as { id: string; account_name: string }[])
+    .find(a => a.id === vendor?.bank_id)?.account_name ?? null
 
   const { data: expenses = [] } = useQuery<ExpenseWithProject[]>({
     queryKey: ['vendor-expenses', id],
@@ -416,6 +422,7 @@ export default function VendorDetailPage() {
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
           <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Financial</h2>
           <InfoRow icon={<FileText className="h-4 w-4" />} label="TIN Number" value={vendor.tin} />
+          <InfoRow icon={<CreditCard className="h-4 w-4" />} label="Bank" value={bankName} />
           <InfoRow icon={<CreditCard className="h-4 w-4" />} label="Bank Account" value={vendor.bank_account} />
           <InfoRow icon={<CreditCard className="h-4 w-4" />} label="Payment Terms" value={vendor.payment_terms} />
           <div className="flex items-center gap-3 pt-1">
