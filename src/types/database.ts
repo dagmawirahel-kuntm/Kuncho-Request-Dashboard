@@ -3469,6 +3469,7 @@ export interface ScheduleTaskBoqItem {
 // physical progress. Amounts are computed by trigger from the contract
 // (migrations 232/233) — never written directly by the client.
 export type PaymentMilestoneStatus = 'pending' | 'progress_met' | 'invoiced' | 'payment_confirmed'
+export type PaymentMilestoneKind = 'advance' | 'progress' | 'final' | 'other'
 
 export interface PaymentMilestone {
   id: string
@@ -3476,8 +3477,10 @@ export interface PaymentMilestone {
   project_id: string
   sequence_number: number
   title: string
-  /** Migration 330: advance falls due on signing; progress and final follow the work. */
-  kind: 'advance' | 'progress' | 'final' | 'other'
+  /** Migration 330: advance falls due on signing; progress and final follow the work.
+   *  Migration 338: an advance needs no progress — it can be requested
+   *  ('invoiced' = payment request sent) and received from pending or due. */
+  kind: PaymentMilestoneKind
   percent_of_contract_value: number
   gross_amount_etb: number
   // VAT-exclusive share of the contract — the base for both retention and WHT.

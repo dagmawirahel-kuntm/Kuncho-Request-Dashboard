@@ -113,13 +113,21 @@ ${p.notes ? `<p style="font-style:italic;color:#555">${p.notes}</p>` : ''}
 </html>`
 }
 
+// What an advance milestone already knows about its request, so the letter
+// opened from it isn't retyped by hand.
+type Prefill = {
+  projectName: string | null
+  contractNumber: string | null
+  contractValue: number | null
+  advancePct: number | null
+}
+
 export default function PaymentRequestPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const previewRef = useRef<HTMLIFrameElement>(null)
   const type = searchParams.get('type') === 'existing' ? 'existing' : 'new'
-  const isNew = type === 'new'
+  const contractId = searchParams.get('contract_id')
+  const milestoneId = searchParams.get('milestone_id')
 
   const { data: client, isLoading } = useQuery<Client>({
     queryKey: ['client', id],
@@ -131,12 +139,56 @@ export default function PaymentRequestPage() {
     enabled: !!id,
   })
 
+  // Opened from a payment milestone (the Advance button on a project), the
+  // contract and the milestone's share of it are already on record.
+  const { data: prefill = null, isLoading: prefillLoading } = useQuery<Prefill | null>({
+    queryKey: ['payment-request-prefill', contractId, milestoneId],
+    queryFn: async () => {
+      const { data: c, error } = await supabase.from('contracts')
+        .select('contract_no, contract_value, projects:project_id ( project_name )')
+        .eq('id', contractId!).single()
+      if (error) throw error
+      let pct: number | null = null
+      if (milestoneId) {
+        const { data: m, error: mErr } = await supabase.from('payment_milestones')
+          .select('percent_of_contract_value').eq('id', milestoneId).single()
+        if (mErr) throw mErr
+        pct = Number(m.percent_of_contract_value)
+      }
+      const row = c as unknown as { contract_no: string | null; contract_value: number | null; projects: { project_name: string } | null }
+      return {
+        projectName: row.projects?.project_name?.trim() ?? null,
+        contractNumber: row.contract_no,
+        contractValue: row.contract_value == null ? null : Number(row.contract_value),
+        advancePct: pct,
+      }
+    },
+    enabled: !!contractId,
+  })
+
+  if (isLoading || (contractId && prefillLoading)) {
+    return <div className="flex items-center justify-center h-64 text-slate-500 dark:text-slate-400">Loading…</div>
+  }
+
+  return <PaymentRequestBody id={id} client={client} type={type} prefill={prefill} />
+}
+
+function PaymentRequestBody({ id, client, type, prefill }: {
+  id?: string
+  client?: Client
+  type: 'new' | 'existing'
+  prefill: Prefill | null
+}) {
+  const navigate = useNavigate()
+  const previewRef = useRef<HTMLIFrameElement>(null)
+  const isNew = type === 'new'
+
   const [refNum, setRefNum]                 = useState('')
   const [date, setDate]                     = useState(() => new Date().toISOString().slice(0, 10))
-  const [projectName, setProjectName]       = useState('')
-  const [contractNumber, setContractNumber] = useState('')
-  const [contractValue, setContractValue]   = useState<number>(0)
-  const [advancePct, setAdvancePct]         = useState<number>(30)
+  const [projectName, setProjectName]       = useState(prefill?.projectName ?? '')
+  const [contractNumber, setContractNumber] = useState(prefill?.contractNumber ?? '')
+  const [contractValue, setContractValue]   = useState<number>(prefill?.contractValue ?? 0)
+  const [advancePct, setAdvancePct]         = useState<number>(prefill?.advancePct ?? 30)
   const [milestone, setMilestone]           = useState('')
   const [previouslyPaid, setPreviouslyPaid] = useState<number>(0)
   const [amountRequested, setAmountRequested] = useState<number>(0)
@@ -159,8 +211,6 @@ export default function PaymentRequestPage() {
       iframe.contentWindow.print()
     }
   }
-
-  if (isLoading) return <div className="flex items-center justify-center h-64 text-slate-500 dark:text-slate-400">Loading…</div>
 
   const title = isNew ? 'Payment Request — New Contract' : 'Payment Request — Existing Contract'
 
