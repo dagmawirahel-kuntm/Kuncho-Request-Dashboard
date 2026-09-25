@@ -825,6 +825,38 @@ export interface Proforma {
 }
 export type ProformaInsert = Omit<Proforma, 'id' | 'created_at' | 'updated_at'>
 
+// Migration 340: what the client is billed for is a share of a proforma (or
+// contract), asked for in a payment request; the invoice is raised from the
+// request, never straight from the proforma.
+export type ClientPaymentRequestStatus = 'issued' | 'invoiced' | 'cancelled'
+export interface ClientPaymentRequest {
+  id: string
+  request_number: string
+  client_id: string
+  proforma_id: string | null
+  contract_id: string | null
+  milestone_id: string | null
+  project_id: string | null
+  kind: PaymentMilestoneKind
+  request_date: string
+  /** The proforma total or contract value the percentage is a share of. */
+  basis_amount: number
+  percent: number | null
+  amount: number
+  title: string | null
+  previously_paid: number
+  bank_name: string | null
+  account_number: string | null
+  account_name: string | null
+  notes: string | null
+  status: ClientPaymentRequestStatus
+  sale_id: string | null
+  cancelled_reason: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ProformaItem {
   id: string
   proforma_id: string

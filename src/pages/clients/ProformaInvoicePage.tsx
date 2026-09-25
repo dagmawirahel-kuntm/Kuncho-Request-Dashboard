@@ -172,7 +172,6 @@ export default function ProformaInvoicePage() {
   const [items, setItems]               = useState<LineItem[]>([])
 
   const [saving, setSaving]           = useState(false)
-  const [converting, setConverting]   = useState(false)
   const [makingBoq, setMakingBoq]     = useState(false)
   const [savedProforma, setSavedProforma] = useState<{ id: string; proforma_number: string } | null>(null)
 
@@ -261,34 +260,6 @@ export default function ProformaInvoicePage() {
     setSaving(false)
   }
 
-  async function handleConvert() {
-    if (!savedProforma) return
-    setConverting(true)
-    const { data: sale, error: saleErr } = await supabase
-      .from('sales')
-      .insert([{
-        sales_description: `${proformaNum || savedProforma.proforma_number} — ${client?.client_name ?? 'Client'}`,
-        amount: total,
-        date,
-        sales_status: 'Invoiced',
-        client_id: id,
-        project_id: projectId || null,
-        payment_method: paymentTerms ? 'Bank Transfer' : null,
-        notes,
-        proforma_id: savedProforma.id,
-      }])
-      .select('id')
-      .single()
-
-    if (saleErr || !sale) { toast(saleErr?.message ?? 'Conversion failed', 'error'); setConverting(false); return }
-
-    await supabase.from('proformas').update({ status: 'converted', converted_sale_id: sale.id }).eq('id', savedProforma.id)
-    qc.invalidateQueries({ queryKey: ['proformas'] })
-    qc.invalidateQueries({ queryKey: ['sales'] })
-    toast('Converted to invoice — redirecting…', 'success')
-    navigate(`/sales/${sale.id}`)
-  }
-
   async function handleMakeBoq() {
     if (!savedProforma || !projectId) return
     setMakingBoq(true)
@@ -336,10 +307,13 @@ export default function ProformaInvoicePage() {
                   <ClipboardList className="w-4 h-4" /> {makingBoq ? 'Creating…' : 'Make it the project BOQ'}
                 </button>
               )}
-              <button onClick={handleConvert} disabled={converting}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">
-                <ArrowRight className="w-4 h-4" /> {converting ? 'Converting…' : 'Convert to Invoice'}
-              </button>
+              {/* Invoices come from payment requests — a share of this
+                  proforma at a time — not from the proforma itself (340). */}
+              <Link to={`/clients/${id}/payment-request?proforma_id=${savedProforma.id}`}
+                title="Ask the client for a share of this proforma — the invoice is raised from the request"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+                <ArrowRight className="w-4 h-4" /> Request Payment
+              </Link>
             </>
           )}
         </div>
