@@ -102,9 +102,8 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
   function set(key: keyof ContractInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   // Contract files live in the client's private folder (client-documents,
-  // migration 330) as a storage path. Files attached before that are public
-  // URLs in the documents bucket and still open as links.
-  const docIsLegacyUrl = !!form.document_url && /^https?:/i.test(form.document_url)
+  // migration 330) as a storage path; a row still holding a full URL opens
+  // it as a link.
   const clientFolder = `${form.client_id ?? 'unassigned'}/contracts`
 
   // Contract numbers already in use, so a clash shows up while typing
@@ -356,9 +355,9 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
               browser's print dialog — use "Save as PDF" there, or print to paper for a physical signature.
             </p>
             <FileUpload
-              bucket={docIsLegacyUrl ? 'documents' : 'client-documents'}
+              bucket="client-documents"
               folder={clientFolder}
-              privateBucket={!docIsLegacyUrl}
+              privateBucket
               fileUrl={form.document_url ?? null}
               fileName={form.document_name ?? null}
               onUpload={(url, name) => { set('document_url', url); set('document_name', name) }}

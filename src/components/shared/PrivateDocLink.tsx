@@ -18,11 +18,14 @@ export function PrivateDocLink({
   bucket = 'tax-documents',
   title = 'View document',
   className = 'text-slate-400 hover:text-brand',
+  children,
 }: {
   path: string
   bucket?: string
   title?: string
   className?: string
+  /** Link text; without it the link is an icon. */
+  children?: React.ReactNode
 }) {
   const [busy, setBusy] = useState(false)
 
@@ -40,7 +43,7 @@ export function PrivateDocLink({
 
   return (
     <button type="button" onClick={open} disabled={busy} title={title} className={`${className} disabled:opacity-50`}>
-      <ExternalLink className="h-3.5 w-3.5" />
+      {children ?? <ExternalLink className="h-3.5 w-3.5" />}
     </button>
   )
 }
