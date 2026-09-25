@@ -821,9 +821,14 @@ export default function ClientDetailPage() {
         <Link to="/clients" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
           <ArrowLeft className="h-4 w-4" /> Clients
         </Link>
-        <Link to={`/clients/${id}/edit`} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link to={`/sales-journey/clients/${id}`} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90">
+            <Handshake className="h-3.5 w-3.5" /> Relationship history
+          </Link>
+          <Link to={`/clients/${id}/edit`} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Link>
+        </div>
       </div>
 
       {/* Hero */}

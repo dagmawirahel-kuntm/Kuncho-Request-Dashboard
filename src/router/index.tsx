@@ -73,6 +73,7 @@ import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
 import GovernmentStatementPage from '@/pages/reports/GovernmentStatementPage'
 import SalesPage from '@/pages/sales/SalesPage'
 import SalesJourneyPage from '@/pages/sales/SalesJourneyPage'
+import ClientHistoryPage from '@/pages/sales/client-history/ClientHistoryPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
 import SaleDetailPage from '@/pages/sales/SaleDetailPage'
 import ProformasPage from '@/pages/sales/ProformasPage'
@@ -102,8 +103,7 @@ import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
 import BatchPaymentDetailPage from '@/pages/batch-payments/BatchPaymentDetailPage'
 import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
 import CpoBondFormPage from '@/pages/cpo-bonds/CpoBondFormPage'
-import ProductsPage from '@/pages/products/ProductsPage'
-import ProductFormPage from '@/pages/products/ProductFormPage'
+import ServicesCatalogPage from '@/pages/catalog/ServicesCatalogPage'
 import EmergencyPayrollPage from '@/pages/emergency-payroll/EmergencyPayrollPage'
 import EmergencyPayrollFormPage from '@/pages/emergency-payroll/EmergencyPayrollFormPage'
 import VendorReceiptsPage from '@/pages/vendor-receipts/VendorReceiptsPage'
@@ -369,6 +369,8 @@ export const router = createBrowserRouter([
               { path: 'sales/:id', element: <SaleDetailPage /> },
               // Every deal, its money and its documents (migration 331).
               { path: 'sales-journey', element: <SalesJourneyPage /> },
+              // One client's whole relationship (migration 334).
+              { path: 'sales-journey/clients/:id', element: <ClientHistoryPage /> },
             ],
           },
           {
@@ -563,11 +565,18 @@ export const router = createBrowserRouter([
             ],
           },
           {
+            // What Kuncho sells (migration 337): everyone who builds or
+            // prices a quote reads it; RLS decides who sees costs and edits.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'sales']} />,
+            children: [{ path: 'catalog', element: <ServicesCatalogPage /> }],
+          },
+          {
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager']} />,
             children: [
-              { path: 'products', element: <ProductsPage /> },
-              { path: 'products/new', element: <ProductFormPage /> },
-              { path: 'products/:id/edit', element: <ProductFormPage /> },
+              // The products list grew into the Services Catalog (migration 337).
+              { path: 'products', element: <Navigate to="/catalog" replace /> },
+              { path: 'products/new', element: <Navigate to="/catalog" replace /> },
+              { path: 'products/:id/edit', element: <Navigate to="/catalog" replace /> },
               { path: 'locations', element: <LocationsPage /> },
               { path: 'locations/new', element: <LocationFormPage /> },
               { path: 'locations/:id/edit', element: <LocationFormPage /> },

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -11,6 +11,7 @@ import type { Opportunity, OpportunityInsert } from '@/types/database'
 import { SOURCES, STAGES } from '@/lib/salesJourney'
 import { useClients, useStaff } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
+import { FileText } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-900 dark:border-slate-600 dark:text-slate-100'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -127,6 +128,14 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
   return (
     <FormPage title={isEdit ? 'Edit Opportunity' : 'New Opportunity'} backTo="/opportunities" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Opportunity'} onSave={handleSave}>
       {isEdit && <TrainerHintBanner entityType="opportunity" entityId={id!} hint={opportunityHint} />}
+      {isEdit && record?.client_id && (
+        // Build the quote from the catalog, a template or a BOQ (migration 337).
+        <Link to={`/clients/${record.client_id}/proforma?opportunity_id=${id}`}
+          className="flex items-center justify-between gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm text-brand hover:bg-brand/10">
+          <span className="flex items-center gap-2 font-medium"><FileText className="h-4 w-4" /> Generate a proforma for this deal</span>
+          <span className="text-xs">from the catalog, a template or a BOQ →</span>
+        </Link>
+      )}
       <Field label="Title *">
         <input type="text" className={inputCls} value={form.title ?? ''} onChange={e => set('title', e.target.value)} placeholder="e.g. XYZ Office Fit-Out" />
       </Field>

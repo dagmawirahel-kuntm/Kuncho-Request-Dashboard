@@ -61,9 +61,9 @@ export default function ManagementDashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Active Projects" value={activeProjects} sub={`${projects.length} total`} icon={FolderKanban} color="bg-blue-50 text-blue-500" to="/projects" />
-        <KpiCard label="Active Products" value={activeProducts} sub={`${products.length} total`} icon={Package} color="bg-emerald-50 text-emerald-500" to="/products" />
+        <KpiCard label="Active Products" value={activeProducts} sub={`${products.length} total`} icon={Package} color="bg-emerald-50 text-emerald-500" to="/catalog" />
         <KpiCard label="Locations" value={locations.length} sub="tracked sites" icon={MapPin} color="bg-purple-50 text-purple-500" to="/locations" />
-        <KpiCard label="Avg Product Price" value={formatCurrency(products.length ? products.reduce((s, p) => s + (p.unit_price ?? 0), 0) / products.length : 0)} sub="across catalog" icon={Package} color="bg-orange-50 text-orange-500" to="/products" />
+        <KpiCard label="Avg Product Price" value={formatCurrency(products.length ? products.reduce((s, p) => s + (p.unit_price ?? 0), 0) / products.length : 0)} sub="across catalog" icon={Package} color="bg-orange-50 text-orange-500" to="/catalog" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -77,7 +77,7 @@ export default function ManagementDashboardPage() {
 
       <div className="flex flex-wrap gap-2">
         <Link to="/projects" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">+ New Project</Link>
-        <Link to="/products" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Product</Link>
+        <Link to="/catalog" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New catalog item</Link>
         <Link to="/locations" className="rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ New Location</Link>
       </div>
     </div>

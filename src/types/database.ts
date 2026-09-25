@@ -903,6 +903,91 @@ export interface SalesEngagementRow {
   docs_missing: number
   created_at: string
 }
+// ── Client history (migration 334) ──────────────────────────────────────
+export type ContactRole = 'decision_maker' | 'procurement' | 'finance' | 'project' | 'site' | 'other'
+export interface ClientContact {
+  id: string
+  client_id: string
+  full_name: string
+  role: ContactRole
+  job_title: string | null
+  phone: string | null
+  email: string | null
+  is_primary: boolean
+  is_active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+export type InteractionKind = 'call' | 'meeting' | 'site_visit' | 'email' | 'whatsapp' | 'other'
+export interface ClientInteraction {
+  id: string
+  client_id: string
+  contact_id: string | null
+  opportunity_id: string | null
+  project_id: string | null
+  kind: InteractionKind
+  occurred_at: string
+  summary: string
+  next_step: string | null
+  next_step_due: string | null
+  next_step_done_at: string | null
+  logged_by: string
+  created_at: string
+}
+export interface ClientRelationshipRow {
+  client_id: string
+  client_name: string
+  logo_url: string | null
+  tin: string | null
+  business_type: string | null
+  phone_number: string | null
+  email: string | null
+  address: string | null
+  client_since: string
+  projects_total: number
+  projects_open: number
+  open_contract_value: number
+  contacts_total: number
+  contacts_active: number
+  last_interaction_at: string | null
+  interactions_recent: number
+  next_step: string | null
+  next_step_due: string | null
+  next_steps_open: number
+  open_deals: number
+  pipeline_value: number
+  lost_deals: number
+  contracts_signed: number
+  contracted_value: number
+  invoiced: number
+  received: number
+  outstanding: number
+  last_payment_at: string | null
+  docs_missing: number
+  active_window_days: number
+  /** The earliest thing on record with the client (migration 335). */
+  first_seen: string
+}
+export type TimelineKind =
+  | 'deal_opened' | 'deal_moved' | 'deal_won' | 'deal_lost'
+  | 'proforma' | 'contract_drafted' | 'contract_signed'
+  | 'invoice' | 'payment'
+  | 'project_started' | 'handover_due'
+  | 'interaction' | 'document'
+export interface ClientTimelineEvent {
+  event_id: string
+  client_id: string
+  event_at: string
+  kind: TimelineKind
+  title: string | null
+  detail: string | null
+  amount: number | null
+  opportunity_id: string | null
+  contract_id: string | null
+  project_id: string | null
+  contact_id: string | null
+}
 export interface ClientAttachment {
   id: string
   client_id: string
@@ -948,6 +1033,69 @@ export interface Product {
   description: string | null
   created_at: string
   updated_at: string
+  // Services catalog (migration 337)
+  service_line_id?: string | null
+  kind?: 'service' | 'product'
+  unit?: string | null
+  item_code?: string | null
+  markup_percent?: number | null
+  sort_order?: number
+}
+export interface CatalogServiceLine {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  markup_percent: number
+  sort_order: number
+  is_active: boolean
+}
+export type ComponentKind = 'material' | 'labour' | 'subcontract' | 'transport' | 'other'
+export interface CatalogComponent {
+  id: string
+  product_id: string
+  kind: ComponentKind
+  description: string
+  stock_item_id: string | null
+  qty_per_unit: number
+  unit: string | null
+  unit_cost: number | null
+  sort_order: number
+}
+export interface CatalogCostingRow {
+  product_id: string
+  product_name: string
+  item_code: string | null
+  kind: 'service' | 'product'
+  unit: string | null
+  active: boolean
+  service_line_id: string | null
+  service_line: string | null
+  list_price: number | null
+  markup_percent: number
+  components: number
+  unpriced_components: number
+  cost_per_unit: number | null
+  suggested_price: number | null
+  margin_at_list_pct: number | null
+  oldest_market_price_at: string | null
+}
+export interface CatalogTemplate {
+  id: string
+  name: string
+  service_line_id: string | null
+  description: string | null
+  is_active: boolean
+}
+export interface CatalogTemplateLine {
+  id: string
+  template_id: string
+  product_id: string | null
+  description: string
+  qty: number
+  unit: string | null
+  unit_price: number | null
+  sort_order: number
 }
 export type ProductInsert = Omit<Product, 'id' | 'created_at' | 'updated_at'>
 
