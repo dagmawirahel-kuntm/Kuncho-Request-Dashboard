@@ -13,6 +13,7 @@ import { KpiCard } from '@/components/shared/KpiCard'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
 import { VrfPaymentsSection } from '@/pages/vendor-receipts/VrfPaymentStep'
+import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type {
   ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow, OpenVendorAdvanceRow,
   ExpensePaymentMethod, AwaitingBankConfirmationRow, AccountStatementSummaryRow, MatchableRow,
@@ -463,6 +464,7 @@ export default function PaymentsDashboardPage() {
   const [sendingBulk, setSendingBulk] = useState(false)
   const [batchModalOpen, setBatchModalOpen] = useState(false)
   const [advancingRow, setAdvancingRow] = useState<ToPayQueueRow | null>(null)
+  const [whtRow, setWhtRow] = useState<ToPayQueueRow | null>(null)
 
   // Pay-in-advance rows need a different action (payment_state = 'advance',
   // not 'sent') — bulk "Mark as Sent" would leave them stranded, since the
@@ -707,7 +709,7 @@ export default function PaymentsDashboardPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-center">
-                        {r.verify_wht && <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
+                        <WhtCell row={r} canAct={canAct} onEdit={() => setWhtRow(r)} />
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                         {r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}
@@ -767,7 +769,9 @@ export default function PaymentsDashboardPage() {
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span className="truncate">{r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}</span>
-                      {r.verify_wht && <span className="flex-shrink-0 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">WHT</span>}
+                      <span className="flex-shrink-0" onClick={e => e.preventDefault()}>
+                        <WhtCell row={r} canAct={canAct} onEdit={() => setWhtRow(r)} />
+                      </span>
                       <span className="ml-auto flex-shrink-0 tabular-nums">{r.days_since_approval != null ? `${Math.floor(r.days_since_approval)}d` : '—'}</span>
                     </div>
                     {isAdvance && (
@@ -1116,6 +1120,18 @@ export default function PaymentsDashboardPage() {
         />
       )}
 
+      {whtRow && (
+        <WithholdingModal
+          expense={whtRow}
+          onClose={() => setWhtRow(null)}
+          onSaved={() => {
+            setWhtRow(null)
+            toast('Withholding recorded — the amount to send is updated', 'success')
+            invalidateAll()
+          }}
+        />
+      )}
+
       {batchModalOpen && payerId && (
         <CreateBatchModal
           rows={toPayQueue.filter(r => selectedQueue.has(r.id))}
@@ -1390,6 +1406,39 @@ function PartialSplitModal({
         </div>
       </div>
     </div>
+  )
+}
+
+// The To-Pay queue's WHT column. It was a static "WHT" badge driven by the
+// verify_wht tick alone, which said nothing about whether anything was
+// actually withheld — 29 payments carried the tick with no amount. Now it
+// shows what is withheld, flags a tick with nothing behind it, and opens
+// the withholding dialog for finance.
+function WhtCell({ row, canAct, onEdit }: { row: ToPayQueueRow; canAct: boolean; onEdit: () => void }) {
+  const wht = Number(row.wht_amount ?? 0)
+  const label = wht > 0
+    ? `WHT −${formatCurrency(wht)}`
+    : row.verify_wht ? 'WHT — no amount' : '+ WHT'
+  const cls = wht > 0
+    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+    : row.verify_wht
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'text-slate-400 hover:text-brand'
+  const title = wht > 0
+    ? 'Withholding recorded — click to change'
+    : row.verify_wht
+      ? 'Marked for WHT but no amount recorded, so nothing is being withheld — click to set it'
+      : 'Record withholding deducted from this payment'
+  if (!canAct) {
+    return wht > 0 || row.verify_wht
+      ? <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>
+      : null
+  }
+  return (
+    <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); onEdit() }} title={title}
+      className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums ${cls}`}>
+      {label}
+    </button>
   )
 }
 

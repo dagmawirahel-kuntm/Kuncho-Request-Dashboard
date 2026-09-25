@@ -305,6 +305,8 @@ export interface Vendor {
   vendor_type: string | null
   tin: string | null
   bank_account: string | null
+  /** Which bank holds bank_account — same registry as staff.bank_id (migration 330). */
+  bank_id: string | null
   phone_contact: string | null
   email: string | null
   category: string | null

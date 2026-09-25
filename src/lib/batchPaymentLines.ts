@@ -27,7 +27,7 @@ export type BatchExpense = {
   rollup_period_end: string | null
   projects: { project_name: string } | null
   vendor_id: string | null
-  vendors: { vendor_name: string; bank_account: string | null } | null
+  vendors: { vendor_name: string; bank_account: string | null; bank: BankRef } | null
   vendors_name: string | null
   vendors_bank_account: string | null
   paid_to_staff_id: string | null
@@ -60,7 +60,7 @@ export type BatchLine = PrWorkerLine & { expenseCode: string | null }
 export const BATCH_EXPENSE_SELECT = `id, expense_code, expense_type, item_service_description, amount_etb, wht_amount, credit_applied_etb,
   verify_wht, wht_handling_method, payment_state, payment_method, quantity, uom,
   rollup_period_start, rollup_period_end, projects(project_name),
-  vendor_id, vendors(vendor_name, bank_account), vendors_name, vendors_bank_account,
+  vendor_id, vendors(vendor_name, bank_account, bank:accounts!vendors_bank_id_fkey(account_name)), vendors_name, vendors_bank_account,
   paid_to_staff_id, paid_to:staff!expenses_paid_to_staff_id_fkey(employee_name, bank_account, bank:accounts!staff_bank_id_fkey(account_name)),
   accounts!expenses_account_id_fkey(account_name),
   finance_approved_by, finance_approved_at,
@@ -122,6 +122,7 @@ export function buildBatchLines(expenses: BatchExpense[], workers: BatchWorkerRo
         gangSize: w.gang_size, gangMemberNames: w.gang_member_names,
         vendorName: e.vendors?.vendor_name ?? null,
         vendorBankAccount: e.vendors?.bank_account ?? null,
+        vendorBankName: e.vendors?.bank?.account_name ?? null,
         whtAmount: whtParts[i] || null,
         creditApplied: creditParts[i] || null,
       }))
@@ -145,6 +146,9 @@ export function buildBatchLines(expenses: BatchExpense[], workers: BatchWorkerRo
       rate: null, subtotal: e.amount_etb,
       overtimeHours: null, overtimeAmount: null, gangSize: null, gangMemberNames: null,
       vendorName, vendorBankAccount: vendorName ? vendorAcct : null,
+      // Only when the account shown is the vendor record's own — a free-text
+      // vendors_bank_account typed on the expense has no bank on file.
+      vendorBankName: vendorName && e.vendors?.bank_account ? (e.vendors?.bank?.account_name ?? null) : null,
       whtAmount: wht || null,
       creditApplied: credit || null,
     })

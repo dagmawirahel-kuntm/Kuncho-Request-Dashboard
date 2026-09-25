@@ -9,6 +9,7 @@ import { ArrowLeft, Layers, CheckCircle2 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
+import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import { useAccounts, useUserProfiles } from '@/hooks/useLookups'
 import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { buildPayeeLines, totalHeadcount } from '@/lib/laborPaymentRequestDocument'
@@ -37,6 +38,7 @@ export default function BatchPaymentDetailPage() {
   const [payerId, setPayerId] = useState<string | null>(null)
   const [approveAccountId, setApproveAccountId] = useState<string | null>(null)
   const [approveMethod, setApproveMethod] = useState<'batch_wire' | 'cash'>('batch_wire')
+  const [whtTarget, setWhtTarget] = useState<BatchExpense | null>(null)
 
   const { data: userProfiles = [] } = useUserProfiles()
   const { data: accounts = [] } = useAccounts()
@@ -254,6 +256,19 @@ export default function BatchPaymentDetailPage() {
 
   return (
       <div className="space-y-5">
+        {whtTarget && (
+          <WithholdingModal
+            expense={{ ...whtTarget, vendor_name: whtTarget.vendors?.vendor_name ?? whtTarget.vendors_name }}
+            onClose={() => setWhtTarget(null)}
+            onSaved={() => {
+              setWhtTarget(null)
+              toast('Withholding recorded', 'success')
+              qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
+              qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
+              qc.invalidateQueries({ queryKey: ['batch-payments'] })
+            }}
+          />
+        )}
         {canRelease && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20 px-4 py-3 space-y-2">
             <div>
@@ -466,6 +481,25 @@ export default function BatchPaymentDetailPage() {
                   <p className="text-xs text-slate-400 truncate">{e.item_service_description}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                  {/* Withholding can still change until the batch is sent. */}
+                  {canConfirm && DISPATCHABLE.includes(e.payment_state) ? (
+                    <button
+                      onClick={() => setWhtTarget(e)}
+                      title="Record withholding deducted from this payment"
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums ${
+                        Number(e.wht_amount ?? 0) > 0
+                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                          : e.verify_wht
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                            : 'text-slate-400 hover:text-brand'}`}
+                    >
+                      {Number(e.wht_amount ?? 0) > 0 ? `WHT −${formatCurrency(Number(e.wht_amount))}` : e.verify_wht ? 'WHT — no amount' : '+ WHT'}
+                    </button>
+                  ) : Number(e.wht_amount ?? 0) > 0 ? (
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 tabular-nums">
+                      WHT −{formatCurrency(Number(e.wht_amount))}
+                    </span>
+                  ) : null}
                   <StatusBadge status={e.payment_state} />
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(e.amount_etb ?? 0)}</p>
                 </div>

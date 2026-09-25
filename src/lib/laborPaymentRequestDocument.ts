@@ -501,10 +501,20 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     const what = hasW && hasC ? `WHT ${money(p.wht)} · credit ${money(p.credit)}` : hasW ? 'WHT' : 'vendor credit'
     return `(${money(p.wht + p.credit)})<div class="sub">${what}</div>`
   }
+  // One block per bank, because that is how the money has to leave: a bulk
+  // transfer at one bank cannot carry another bank's account. Below two banks
+  // the sectioning is noise, so a single-bank schedule prints flat.
+  const bankGroups = groupPayeesByBank(payees)
+  // A flat schedule has no bank header, so an account number would print with
+  // no bank at all — the case for every single-payee request and every batch
+  // that banks in one place. The bank goes under the number instead. Grouped
+  // schedules and per-bank sheets already name it, so they don't repeat it.
+  const inlineBank = !isPerBank && bankGroups.length <= 1
   const payeeRow = (p: PrPayeeLine) => `<tr>
   <td>${esc(p.payee)}${p.kind === 'vendor' ? ' <span class="pill">vendor</span>' : ''}${
       p.workerCount > 1 ? `<div class="sub">${p.workerCount} workers</div>` : ''}</td>
-  <td class="mono">${esc(p.bankAccount) || '<span class="warn">no account on file</span>'}</td>
+  <td class="mono">${esc(p.bankAccount) || '<span class="warn">no account on file</span>'}${
+      inlineBank && p.bankName && p.bankAccount ? `<div class="sub" style="font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif">${esc(p.bankName)}</div>` : ''}</td>
   ${perPayee
     ? `<td class="r nowrap">${money(p.amount)}</td>
   <td class="r nowrap">${deductedCell(p)}</td>
@@ -512,10 +522,6 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     : `<td class="r b nowrap">${money(p.amount)}</td>`}
 </tr>`
 
-  // One block per bank, because that is how the money has to leave: a bulk
-  // transfer at one bank cannot carry another bank's account. Below two banks
-  // the sectioning is noise, so a single-bank schedule prints flat.
-  const bankGroups = groupPayeesByBank(payees)
   const payeeRows = payees.length
     ? bankGroups.length > 1
       ? bankGroups.map(g => `<tr class="bankhead">
