@@ -595,7 +595,8 @@ export const router = createBrowserRouter([
           { path: 'opportunities', element: <OpportunitiesPage /> },
           { path: 'finance/fixed-assets', element: <FixedAssetsPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'sales']} />,
+            // Finance keeps the sales record (migration 330).
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'sales']} />,
             children: [
               { path: 'contracts/new', element: <ContractFormPage /> },
               { path: 'contracts/:id/edit', element: <ContractFormPage /> },

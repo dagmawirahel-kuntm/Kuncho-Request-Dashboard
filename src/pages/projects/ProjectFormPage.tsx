@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Project, ProjectInsert } from '@/types/database'
-import { useStaff, useLocations, useFinanceContacts } from '@/hooks/useLookups'
+import { useStaff, useLocations, useFinanceContacts, useClients } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -53,6 +53,8 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     const { data: staff = [] } = useStaff()
     const { data: locations = [] } = useLocations()
     const { data: financeContacts = [] } = useFinanceContacts()
+    const { data: clients = [] } = useClients()
+    const clientOptions = useMemo(() => (clients as { id: string; client_name: string }[]).map(c => ({ id: c.id, label: c.client_name })), [clients])
     const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
     const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
     const financeContactOptions = useMemo(() => financeContacts.map(f => ({ id: f.id, label: f.full_name })), [financeContacts])
@@ -71,8 +73,10 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
         project_manager_id: record.project_manager_id,
         finance_contact_id: record.finance_contact_id,
         location_id: record.location_id,
+        client_id: record.client_id,
+        is_internal: record.is_internal,
       }
-      : { active_for_year: true }
+      : { active_for_year: true, is_internal: false }
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -83,9 +87,11 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
 
   async function handleSave() {
     if (!form.project_name?.trim()) { setError('Project name is required'); return }
+    if (!form.is_internal && !form.client_id) { setError('Choose the client this project is for, or mark it internal'); return }
+    const payload = form.is_internal ? { ...form, client_id: null } : form
     setError(''); setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('projects').update(form as any).eq('id', id!) : supabase.from('projects').insert([form as any])
+    const op = isEdit ? supabase.from('projects').update(payload as any).eq('id', id!) : supabase.from('projects').insert([payload as any])
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
@@ -101,6 +107,16 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
       <Field label="Project Name *">
         <input type="text" className={inputCls} value={form.project_name ?? ''} onChange={e => set('project_name', e.target.value)} />
       </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label={form.is_internal ? 'Client' : 'Client *'}>
+          <SearchableSelect value={form.client_id ?? null} onChange={id => set('client_id', id)} options={clientOptions}
+            placeholder={form.is_internal ? 'Internal — no client' : 'Select client…'} />
+        </Field>
+        <label className="flex items-end gap-2 pb-2 cursor-pointer text-sm text-slate-600">
+          <input type="checkbox" checked={!!form.is_internal} onChange={e => set('is_internal', e.target.checked)} />
+          Internal (cost bucket or Kuncho's own work — no client)
+        </label>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Department">
           <input type="text" className={inputCls} value={form.department ?? ''} onChange={e => set('department', e.target.value)} />

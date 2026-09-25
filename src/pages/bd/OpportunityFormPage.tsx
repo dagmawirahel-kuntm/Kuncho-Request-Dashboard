@@ -8,6 +8,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import type { Opportunity, OpportunityInsert } from '@/types/database'
+import { SOURCES, STAGES } from '@/lib/salesJourney'
 import { useClients, useStaff } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -57,17 +58,19 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
   const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name })), [clients])
   const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
 
-  // Trainer hint: proformas have no opportunity_id column, so the closest
-  // available check is whether this opportunity's client has any proforma
-  // on record at all.
+  // Trainer hint: a proforma issued for this deal (proformas.opportunity_id,
+  // migration 330), or failing that one for its client.
   const { data: hasProforma } = useQuery({
-    queryKey: ['opportunity-client-has-proforma', record?.client_id],
+    queryKey: ['opportunity-has-proforma', record?.id, record?.client_id],
     queryFn: async () => {
-      const { count, error } = await supabase.from('proformas').select('id', { count: 'exact', head: true }).eq('client_id', record!.client_id!)
+      const q = supabase.from('proformas').select('id', { count: 'exact', head: true })
+      const { count, error } = await (record!.client_id
+        ? q.or(`opportunity_id.eq.${record!.id},client_id.eq.${record!.client_id}`)
+        : q.eq('opportunity_id', record!.id))
       if (error) throw error
       return (count ?? 0) > 0
     },
-    enabled: !!record?.client_id,
+    enabled: !!record,
   })
   const opportunityHint = useMemo(() => {
     if (!record) return null
@@ -91,6 +94,10 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
         owner_staff_id: record.owner_staff_id,
         expected_close_date: record.expected_close_date,
         notes: record.notes,
+        source: record.source,
+        brought_by_staff_id: record.brought_by_staff_id,
+        referrer_name: record.referrer_name,
+        lost_reason: record.lost_reason,
       }
       : { stage: 'lead', client_id: prefillClientId ?? undefined }
   )
@@ -102,9 +109,12 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
   async function handleSave() {
     setError('')
     if (!form.title) { setError('Title is required'); return }
+    if (form.stage === 'won' && !form.client_id) { setError('A won deal needs its client — select or add the client first'); return }
+    if (form.stage === 'lost' && !form.lost_reason?.trim()) { setError('Say why the deal was lost'); return }
+    const payload = form.stage === 'lost' ? form : { ...form, lost_reason: null }
     setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('opportunities').update(form as any).eq('id', id!) : supabase.from('opportunities').insert([form as any])
+    const op = isEdit ? supabase.from('opportunities').update(payload as any).eq('id', id!) : supabase.from('opportunities').insert([payload as any])
     const { error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
@@ -134,14 +144,36 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
         </Field>
         <Field label="Stage">
           <select className={inputCls} value={form.stage ?? ''} onChange={e => set('stage', e.target.value)}>
-            <option value="lead">Lead</option>
-            <option value="qualified">Qualified</option>
-            <option value="quoted">Quoted</option>
-            <option value="won">Won</option>
-            <option value="lost">Lost</option>
+            {STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </Field>
       </div>
+      {form.stage === 'lost' && (
+        <Field label="Why was it lost? *">
+          <input type="text" className={inputCls} value={form.lost_reason ?? ''} onChange={e => set('lost_reason', e.target.value)}
+            placeholder="e.g. price, timing, went with another supplier" />
+        </Field>
+      )}
+
+      <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Where it came from</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Field label="Source">
+          <select className={inputCls} value={form.source ?? ''} onChange={e => set('source', e.target.value || null)}>
+            <option value="">—</option>
+            {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Brought in by">
+          <SearchableSelect value={form.brought_by_staff_id ?? null} onChange={id => set('brought_by_staff_id', id)} options={staffOptions} placeholder="Executive or staff…" />
+        </Field>
+        <Field label="Associate / referrer">
+          <input type="text" className={inputCls} value={form.referrer_name ?? ''} onChange={e => set('referrer_name', e.target.value || null)}
+            placeholder="Who outside Kuncho referred it" />
+        </Field>
+      </div>
+      {form.source === 'tender' && (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">A tender is bid with a CPO — record the bid bond under CPO Bonds and link it to this opportunity.</p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Owner">
           <SearchableSelect value={form.owner_staff_id ?? null} onChange={id => set('owner_staff_id', id)} options={staffOptions} placeholder="Select owner…" />

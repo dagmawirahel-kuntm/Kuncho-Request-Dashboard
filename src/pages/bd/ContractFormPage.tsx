@@ -13,6 +13,7 @@ import { useClients, useProjects, useOpportunities } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { buildContractDocx, contractDocumentFileName, printContract } from '@/lib/generateContractDocument'
 import { FileCog, Printer } from 'lucide-react'
+import { ContractPaymentPlan } from './ContractPaymentPlan'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-900 dark:border-slate-600 dark:text-slate-100'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -90,6 +91,8 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       : {
         status: 'draft', client_id: prefillClientId ?? undefined,
         wht_deduction_mode: 'per_payment', contract_value_includes_vat: false,
+        // Kuncho's clients have not asked for retention (migration 330).
+        retention_percent: 0,
       }
   )
   const [saving, setSaving] = useState(false)
@@ -97,6 +100,12 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
   const [generating, setGenerating] = useState(false)
 
   function set(key: keyof ContractInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  // Contract files live in the client's private folder (client-documents,
+  // migration 330) as a storage path. Files attached before that are public
+  // URLs in the documents bucket and still open as links.
+  const docIsLegacyUrl = !!form.document_url && /^https?:/i.test(form.document_url)
+  const clientFolder = `${form.client_id ?? 'unassigned'}/contracts`
 
   // Full client record (not just the id) — needed to fill in the
   // generated document's client-details section.
@@ -142,19 +151,18 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
     try {
       const blob = await buildContractDocx(contractForDoc, selectedClient)
       const fileName = contractDocumentFileName(contractForDoc)
-      const path = `contracts/${Date.now()}-${fileName}`
-      const { error: upErr } = await supabase.storage.from('documents').upload(path, blob, {
+      const path = `${clientFolder}/${Date.now()}-${fileName}`
+      const { error: upErr } = await supabase.storage.from('client-documents').upload(path, blob, {
         upsert: true,
         contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
-      set('document_url', publicUrl)
+      set('document_url', path)
       set('document_name', fileName)
       // Attach it to the contract record immediately — not just the
       // in-progress form state — so it's saved even if the user
       // navigates away without pressing Save Changes.
-      await supabase.from('contracts').update({ document_url: publicUrl, document_name: fileName }).eq('id', id!)
+      await supabase.from('contracts').update({ document_url: path, document_name: fileName }).eq('id', id!)
       qc.invalidateQueries({ queryKey: ['contract', id] })
       toast('Contract document generated and attached', 'success')
     } catch (err: any) {
@@ -310,8 +318,9 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
               browser's print dialog — use "Save as PDF" there, or print to paper for a physical signature.
             </p>
             <FileUpload
-              bucket="documents"
-              folder="contracts"
+              bucket={docIsLegacyUrl ? 'documents' : 'client-documents'}
+              folder={clientFolder}
+              privateBucket={!docIsLegacyUrl}
               fileUrl={form.document_url ?? null}
               fileName={form.document_name ?? null}
               onUpload={(url, name) => { set('document_url', url); set('document_name', name) }}
@@ -323,6 +332,11 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
         ) : (
           <p className="text-xs text-slate-400">Save the contract first to generate or attach a document.</p>
         )}
+      </Field>
+      <Field label="Payment Plan">
+        {isEdit
+          ? <ContractPaymentPlan contractId={id!} projectId={record?.project_id ?? null} status={record?.status} />
+          : <p className="text-xs text-slate-400">Save the contract first, then set its advance, progress and final payments.</p>}
       </Field>
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
