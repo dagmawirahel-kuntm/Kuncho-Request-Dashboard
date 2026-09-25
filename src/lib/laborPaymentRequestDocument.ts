@@ -60,6 +60,11 @@ export type PrWorkerLine = {
   rate: number | null
   subtotal: number | null
   overtimeHours: number | null
+  /** Already inside `subtotal` — shown as a breakdown of it, never added to
+   *  it. labor_expense_workers stores subtotal with overtime included (every
+   *  row with overtime does, and each expense's amount_etb is the sum of its
+   *  subtotals), and this document used to add overtime on top: the
+   *  disbursement schedule told the bank to pay each worker's overtime twice. */
   overtimeAmount: number | null
   gangSize: number | null
   gangMemberNames: string | null
@@ -67,6 +72,14 @@ export type PrWorkerLine = {
   vendorName: string | null
   vendorBankAccount: string | null
   vendorBankName?: string | null
+  /** Withholding and vendor credit that belong to this line. Only a batch
+   *  sets them: its payees each carry their own deductions, and a single
+   *  document-level WHT figure subtracted from the grand total still leaves
+   *  every row of the schedule telling the bank to send that payee's gross.
+   *  When any line carries one, the schedule grows Gross / Deducted / Net
+   *  columns; when none do, it prints exactly as before. */
+  whtAmount?: number | null
+  creditApplied?: number | null
 }
 
 export type PrDraft = {
@@ -187,11 +200,18 @@ export type PrPayeeLine = {
   bankAccount: string | null
   bankName: string | null
   workerCount: number
+  /** Gross owed to this payee. */
   amount: number
+  /** Withheld from `amount` and remitted to the tax authority, not the payee. */
+  wht: number
+  /** Settled from credit the payee already holds — no cash moves for it. */
+  credit: number
 }
 
 /** Payees that go to one bank, and what that bank is being told to move. */
-export type PrBankGroup = { bank: string | null; payees: PrPayeeLine[]; subtotal: number }
+export type PrBankGroup = { bank: string | null; payees: PrPayeeLine[]; subtotal: number; net: number }
+
+const payeeNet = (p: PrPayeeLine) => p.amount - p.wht - p.credit
 
 const NO_BANK = '\u0000no-bank'
 
@@ -215,8 +235,9 @@ export function groupPayeesByBank(payees: PrPayeeLine[]): PrBankGroup[] {
     if (existing) {
       existing.payees.push(p)
       existing.subtotal += p.amount
+      existing.net += payeeNet(p)
     } else {
-      byBank.set(key, { bank: p.bankName ?? null, payees: [p], subtotal: p.amount })
+      byBank.set(key, { bank: p.bankName ?? null, payees: [p], subtotal: p.amount, net: payeeNet(p) })
     }
   }
   return Array.from(byBank.values()).sort((a, b) => {
@@ -247,7 +268,7 @@ export function buildPayeeLines(workers: PrWorkerLine[], opts?: { isLabor?: bool
   // order's items all share one payee, and counting them would put
   // "2 workers" under a vendor being paid for two boxes of sockets.
   const countsHeads = opts?.isLabor !== false
-  type DraftGroup = { key: string; payee: string; kind: 'worker' | 'vendor'; bankAccount: string | null; bankName: string | null; heads: number; amount: number }
+  type DraftGroup = { key: string; payee: string; kind: 'worker' | 'vendor'; bankAccount: string | null; bankName: string | null; heads: number; amount: number; wht: number; credit: number }
 
   // First pass: collapse to one row per (payee, draft) — several rows for
   // the same payee within a single draft are different real heads (or an
@@ -262,17 +283,22 @@ export function buildPayeeLines(workers: PrWorkerLine[], opts?: { isLabor?: bool
     const payeeKey = `${kind}:${useVendor ? w.vendorName : w.staffId}`
     const draftKey = `${payeeKey}|${w.expenseId}`
 
-    const amount = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
+    // Overtime is inside subtotal already (see PrWorkerLine.overtimeAmount).
+    const amount = w.subtotal ?? 0
+    const wht = Number(w.whtAmount ?? 0)
+    const credit = Number(w.creditApplied ?? 0)
     const heads = countsHeads ? Math.max(w.gangSize ?? 1, 1) : 0
 
     const existing = byDraftPayee.get(draftKey)
     if (existing) {
       existing.amount += amount
+      existing.wht += wht
+      existing.credit += credit
       existing.heads += heads
       existing.bankAccount = existing.bankAccount ?? bankAccount
       existing.bankName = existing.bankName ?? bankName
     } else {
-      byDraftPayee.set(draftKey, { key: payeeKey, payee, kind, bankAccount, bankName, heads, amount })
+      byDraftPayee.set(draftKey, { key: payeeKey, payee, kind, bankAccount, bankName, heads, amount, wht, credit })
     }
   }
 
@@ -286,11 +312,13 @@ export function buildPayeeLines(workers: PrWorkerLine[], opts?: { isLabor?: bool
     const existing = byPayee.get(g.key)
     if (existing) {
       existing.amount += g.amount
+      existing.wht += g.wht
+      existing.credit += g.credit
       existing.workerCount = Math.max(existing.workerCount, g.heads)
       existing.bankAccount = existing.bankAccount ?? g.bankAccount
       existing.bankName = existing.bankName ?? g.bankName
     } else {
-      byPayee.set(g.key, { key: g.key, payee: g.payee, kind: g.kind, bankAccount: g.bankAccount, bankName: g.bankName, workerCount: g.heads, amount: g.amount })
+      byPayee.set(g.key, { key: g.key, payee: g.payee, kind: g.kind, bankAccount: g.bankAccount, bankName: g.bankName, workerCount: g.heads, amount: g.amount, wht: g.wht, credit: g.credit })
     }
   }
 
@@ -347,7 +375,7 @@ function paymentMethodLabel(method: string | null | undefined): string {
   return PAYMENT_METHOD_LABELS[method] ?? method.replace(/_/g, ' ')
 }
 
-function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftCodeById: Map<string, string>, isLabor: boolean): string {
+function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftCodeById: Map<string, string>, isLabor: boolean, projectByExpense?: Map<string, string>): string {
   // Draft? + Who + Qty + Rate + Amount.
   const cols = showDraftCol ? 5 : 4
   if (workers.length === 0) {
@@ -361,11 +389,15 @@ function renderWorkerRows(workers: PrWorkerLine[], showDraftCol: boolean, draftC
             w.gangMemberNames ? `<div class="sub">${esc(w.gangMemberNames)}</div>` : ''}`
         : esc(w.name))
       : esc(w.description || w.name)
-    const sub = w.subNote ? `<div class="sub">${esc(w.subNote)}</div>` : ''
+    const project = projectByExpense?.get(w.expenseId)
+    const sub = (w.subNote ? `<div class="sub">${esc(w.subNote)}</div>` : '')
+      + (project ? `<div class="sub">${esc(project)}</div>` : '')
+    // "incl.", not "+": the overtime is part of the amount beside it, and a
+    // plus sign invites the reader to add it again.
     const ot = (w.overtimeAmount ?? 0) > 0
-      ? `<div class="ot">+ overtime ${w.overtimeHours ? `${esc(w.overtimeHours)}h · ` : ''}${money(w.overtimeAmount)}</div>`
+      ? `<div class="ot">incl. overtime ${w.overtimeHours ? `${esc(w.overtimeHours)}h · ` : ''}${money(w.overtimeAmount)}</div>`
       : ''
-    const lineTotal = (w.subtotal ?? 0) + (w.overtimeAmount ?? 0)
+    const lineTotal = w.subtotal ?? 0
     // A null quantity means "not recorded", so it prints as a bare dash.
     // Pairing it with the unit — "— pcs" — reads as a real measurement.
     const qty = w.units == null ? '—' : `${esc(w.units)} ${esc(w.unitLabel)}`
@@ -451,11 +483,33 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
 
   // The disbursement schedule is the operative half of the document, so
   // it comes before the evidence that justifies it rather than after.
+  //
+  // When payees carry their own deductions (a batch across several vendors,
+  // each with its own WHT), a single Amount column would tell the bank to
+  // send every payee their gross. So the schedule shows Gross / Deducted /
+  // Net per payee, and Net is the figure the bank acts on. Documents whose
+  // lines carry no deductions — every single-expense and payroll request —
+  // keep the one-column layout they have always had.
+  const perPayee = payees.some(p => Math.abs(p.wht) > 0.005 || Math.abs(p.credit) > 0.005)
+  const schedCols = perPayee ? 5 : 3
+  // Says what was taken off, not just how much: WHT goes to the tax
+  // authority, a credit is money the payee already holds.
+  const deductedCell = (p: PrPayeeLine) => {
+    const hasW = Math.abs(p.wht) > 0.005
+    const hasC = Math.abs(p.credit) > 0.005
+    if (!hasW && !hasC) return '—'
+    const what = hasW && hasC ? `WHT ${money(p.wht)} · credit ${money(p.credit)}` : hasW ? 'WHT' : 'vendor credit'
+    return `(${money(p.wht + p.credit)})<div class="sub">${what}</div>`
+  }
   const payeeRow = (p: PrPayeeLine) => `<tr>
   <td>${esc(p.payee)}${p.kind === 'vendor' ? ' <span class="pill">vendor</span>' : ''}${
       p.workerCount > 1 ? `<div class="sub">${p.workerCount} workers</div>` : ''}</td>
   <td class="mono">${esc(p.bankAccount) || '<span class="warn">no account on file</span>'}</td>
-  <td class="r b nowrap">${money(p.amount)}</td>
+  ${perPayee
+    ? `<td class="r nowrap">${money(p.amount)}</td>
+  <td class="r nowrap">${deductedCell(p)}</td>
+  <td class="r b nowrap">${money(payeeNet(p))}</td>`
+    : `<td class="r b nowrap">${money(p.amount)}</td>`}
 </tr>`
 
   // One block per bank, because that is how the money has to leave: a bulk
@@ -465,16 +519,25 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const payeeRows = payees.length
     ? bankGroups.length > 1
       ? bankGroups.map(g => `<tr class="bankhead">
-  <td colspan="2">${g.bank ? esc(g.bank) : '<span class="warn">No bank recorded</span>'}</td>
+  <td colspan="${schedCols - 1}">${g.bank ? esc(g.bank) : '<span class="warn">No bank recorded</span>'}</td>
   <td class="r">${g.payees.length} payee${g.payees.length === 1 ? '' : 's'}</td>
 </tr>${g.payees.map(payeeRow).join('')}<tr class="banksub">
-  <td colspan="2">Subtotal — ${g.bank ? esc(g.bank) : 'no bank recorded'}</td>
-  <td class="r b nowrap">${money(g.subtotal)}</td>
+  <td colspan="${schedCols - 1}">${perPayee ? 'Net subtotal' : 'Subtotal'} — ${g.bank ? esc(g.bank) : 'no bank recorded'}</td>
+  <td class="r b nowrap">${money(perPayee ? g.net : g.subtotal)}</td>
 </tr>`).join('')
       : payees.map(payeeRow).join('')
-    : `<tr><td colspan="3" class="empty">No payees resolved — the worker breakdown is empty.</td></tr>`
+    : `<tr><td colspan="${schedCols}" class="empty">No payees resolved — the worker breakdown is empty.</td></tr>`
+
+  // A batch of vendor bills or lump-sum jobs has exactly one line per draft,
+  // so an Underlying Drafts table would repeat Payment Detail row for row.
+  // Its one extra fact — which project — goes onto the detail row instead.
+  // Crew batches keep the table: there it adds periods and per-draft totals.
+  const oneLinePerDraft = isBatch && !isLabor && workers.length === drafts.length
+    && new Set(workers.map(w => w.expenseId)).size === drafts.length
+  const projectByExpense = new Map(drafts.filter(d => d.projectName).map(d => [d.id, d.projectName as string]))
 
   const payeeTotal = payees.reduce((s, p) => s + p.amount, 0)
+  const payeeDeducted = payees.reduce((s, p) => s + p.wht + p.credit, 0)
   // A mismatch here means the request total and the sum of what the bank
   // is told to pay disagree. Printing it is far safer than reconciling
   // silently to whichever number happens to be handy.
@@ -632,16 +695,21 @@ ${typeDetail ? `
 <h2>Disbursement Schedule <span class="count">— ${payees.length} payee${payees.length === 1 ? '' : 's'}</span></h2>
 ${routingNote}
 <table>
-  <thead><tr><th>Pay To</th><th>Bank Account</th><th class="r">Amount</th></tr></thead>
+  <thead><tr><th>Pay To</th><th>Bank Account</th>${perPayee
+    ? '<th class="r">Gross</th><th class="r">Deducted</th><th class="r">Net to Pay</th>'
+    : '<th class="r">Amount</th>'}</tr></thead>
   <tbody>${payeeRows}</tbody>
   <tfoot>
-    <tr><td colspan="2" class="r">${isReduced ? 'Total' : 'Total to disburse'}</td><td class="r">${money(payeeTotal)}</td></tr>
+    ${perPayee
+      ? `<tr><td colspan="2" class="r">Total</td><td class="r">${money(payeeTotal)}</td><td class="r">(${money(payeeDeducted)})</td><td class="r">${money(payeeTotal - payeeDeducted)}</td></tr>`
+      : `<tr><td colspan="2" class="r">${isReduced ? 'Total' : 'Total to disburse'}</td><td class="r">${money(payeeTotal)}</td></tr>
     ${hasWht ? `<tr><td colspan="2" class="r" style="font-weight:600">Less withholding tax</td><td class="r" style="font-weight:600">(${money(wht)})</td></tr>` : ''}
     ${hasCredit ? `<tr><td colspan="2" class="r" style="font-weight:600">Less vendor credit applied</td><td class="r" style="font-weight:600">(${money(credit)})</td></tr>` : ''}
-    ${isReduced ? `<tr><td colspan="2" class="r">Net to disburse</td><td class="r">${money(payeeTotal - wht - credit)}</td></tr>` : ''}
+    ${isReduced ? `<tr><td colspan="2" class="r">Net to disburse</td><td class="r">${money(payeeTotal - wht - credit)}</td></tr>` : ''}`}
   </tfoot>
 </table>
-${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement schedule totals ${money(payeeTotal)} but the request total is ${money(total)}. Resolve the difference before releasing payment.</div>` : ''}
+${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement schedule totals ${money(payeeTotal)} but the request total is ${money(total)}. Resolve the difference before releasing payment.</div>` : ''}${
+  perPayee && Math.abs(payeeDeducted - (wht + credit)) > 0.005 ? `<div class="alert"><b>Check required.</b> The payees' deductions total ${money(payeeDeducted)} but the request deducts ${money(wht + credit)}. Resolve the difference before releasing payment.</div>` : ''}
 
 <h2>${isLabor
     ? `${esc(noun.charAt(0).toUpperCase() + noun.slice(1))} Breakdown <span class="count">— ${heads} ${esc(noun)}${heads === 1 ? '' : 's'}</span>`
@@ -651,10 +719,10 @@ ${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement sc
     ${isBatch ? '<th>Draft</th>' : ''}
     <th>${isLabor ? 'Worker' : 'Description'}</th><th class="r">Qty</th><th class="r">${isLabor ? 'Rate' : 'Unit Price'}</th><th class="r">Amount</th>
   </tr></thead>
-  <tbody>${renderWorkerRows(workers, isBatch, draftCodeById, isLabor)}</tbody>
+  <tbody>${renderWorkerRows(workers, isBatch, draftCodeById, isLabor, oneLinePerDraft && projects.length > 1 ? projectByExpense : undefined)}</tbody>
 </table>
 
-${isBatch && drafts.length > 0 ? `
+${isBatch && drafts.length > 0 && !oneLinePerDraft ? `
 <h2>Underlying Drafts <span class="count">— ${drafts.length}</span></h2>
 <table>
   <thead><tr><th>Code</th><th>Description</th><th class="r">Period</th><th class="r">Amount</th></tr></thead>

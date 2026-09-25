@@ -141,15 +141,20 @@ export function PaymentRequestActions({
           : sourceType === 'vrf'
             ? 'Vendor Receipt Payment Request'
           : doc.kind === 'batch'
-            ? 'Batch Labor Payment Request'
+            ? doc.breakdownKind === 'line_items'
+              ? `Batch ${doc.typeLabel ?? 'Expense'} Payment Request`
+              : 'Batch Labor Payment Request'
             : doc.breakdownKind === 'line_items'
               ? `${doc.typeLabel ?? 'Expense'} Payment Request`
               : 'Labor Payment Request',
         // The register records what actually leaves the account: WHT is
         // withheld from the total and remitted separately, so a request
-        // carrying it is not a request to send the gross.
-        p_total_amount: doc.total - Number(doc.whtAmount ?? 0),
-        p_amount_in_words: amountInWords(doc.total - Number(doc.whtAmount ?? 0)),
+        // carrying it is not a request to send the gross. A vendor credit is
+        // the same — money the vendor already holds — and the document's own
+        // grand total and amount in words already take it off, so the
+        // register has to as well or the two disagree on every credit.
+        p_total_amount: doc.total - Number(doc.whtAmount ?? 0) - Number(doc.creditApplied ?? 0),
+        p_amount_in_words: amountInWords(doc.total - Number(doc.whtAmount ?? 0) - Number(doc.creditApplied ?? 0)),
         // A vendor billing line items has no workers behind it; the stand-in
         // payee line would otherwise register as a headcount of 1.
         p_worker_count: doc.breakdownKind === 'line_items' ? 0 : heads,

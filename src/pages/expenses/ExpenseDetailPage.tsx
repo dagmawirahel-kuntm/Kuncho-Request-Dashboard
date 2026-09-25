@@ -16,22 +16,12 @@ import {
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
-import type { Expense, ExpenseType } from '@/types/database'
+import type { Expense } from '@/types/database'
+import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
 
-const TYPE_THEME: Record<ExpenseType, { bg: string; label: string; abbr: string }> = {
-  general:        { bg: '#1B3A5C', label: 'General Expense',  abbr: 'GE'  },
-  purchase_order: { bg: '#0C4A6E', label: 'Purchase Order',   abbr: 'PO'  },
-  vrf:            { bg: '#312E81', label: 'Vendor Receipt',    abbr: 'VRF' },
-  cpo_bond:       { bg: '#4C1D95', label: 'CPO Bond',          abbr: 'CPO' },
-  fuel:           { bg: '#92400E', label: 'Fuel',               abbr: 'FUEL' },
-  subcontract:    { bg: '#164E63', label: 'Subcontract',        abbr: 'SUB' },
-  maintenance:    { bg: '#78350F', label: 'Vehicle Maintenance', abbr: 'MNT' },
-  property_rent:  { bg: '#365314', label: 'Property Rent',       abbr: 'RENT' },
-  labor_payment:  { bg: '#0F766E', label: 'Labor Payment',       abbr: 'LBR' },
-  transportation: { bg: '#0369A1', label: 'Transportation',      abbr: 'TRSP' },
-}
+const TYPE_THEME = EXPENSE_TYPE_THEME
 
 type ExpenseWithJoins = Expense & {
   vendors: { vendor_name: string; bank_account: string | null; location: string | null } | null
