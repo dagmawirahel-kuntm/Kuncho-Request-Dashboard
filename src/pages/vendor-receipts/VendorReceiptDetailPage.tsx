@@ -15,6 +15,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { VrfPersonalDraws } from './VrfPersonalDraws'
 import { VrfReturns, VrfReviewPanel } from './VrfReturns'
 import { VrfPaymentPanel } from './VrfPaymentStep'
+import { VrfPaymentRequest } from './VrfPaymentRequest'
 
 interface VrfReceiptItem {
   id: string
@@ -289,6 +290,8 @@ export default function VendorReceiptDetailPage() {
           <ArrowLeft className="h-4 w-4" /> VRF Records
         </Link>
         <div className="flex items-center gap-2">
+          {/* The PRQ authorises paying the vendor, so it follows approval. */}
+          {canAddExpense && reg && vrf.payment_state !== 'to_pay' && <VrfPaymentRequest vrf={vrf} reg={reg} />}
           {canAddExpense && (
             <Link
               to={`/expenses/new?vrf_id=${id}`}

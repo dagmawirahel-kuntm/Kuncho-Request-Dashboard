@@ -164,7 +164,7 @@ export function VrfPaymentPanel({ reg }: { reg: VrfRegisterRow }) {
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {state === 'to_pay' && 'Recorded — nothing has left the bank yet. Admin or finance approves it.'}
-          {state === 'approved' && <>Approved{reg.approved_at ? ` ${formatDate(reg.approved_at)}` : ''} — in the <Link to="/finance/payments" className="text-brand hover:underline">Payments</Link> to-pay list.</>}
+          {state === 'approved' && <>Approved{reg.approved_at ? ` ${formatDate(reg.approved_at)}` : ''} — in the <Link to="/finance/payments" className="text-brand hover:underline">Payments</Link> to-pay list. Issue its Payment Request from the top of the page.</>}
           {state === 'sent' && <>Sent{reg.sent_date ? ` ${formatDate(reg.sent_date)}` : ''}{reg.out_transfer_id ? ' · matched to its bank line' : ''}.</>}
         </p>
       </div>
