@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { useAccounts } from '@/hooks/useLookups'
 import type { Vendor, VendorInsert } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -53,7 +55,7 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
     record
       ? {
           vendor_name: record.vendor_name, vendor_type: record.vendor_type, tin: record.tin,
-          bank_account: record.bank_account, phone_contact: record.phone_contact, category: record.category,
+          bank_account: record.bank_account, bank_id: record.bank_id, phone_contact: record.phone_contact, category: record.category,
           wth_eligible: record.wth_eligible, requires_payment_confirmation: record.requires_payment_confirmation, active: record.active, location: record.location,
           email: record.email, address: record.address, contact_person: record.contact_person,
           payment_terms: record.payment_terms, website: record.website, notes: record.notes,
@@ -66,6 +68,13 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
     
 
     function set(key: keyof VendorInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  // Same bank list staff accounts are picked from.
+  const { data: accounts = [] } = useAccounts()
+  const bankOptions = useMemo(
+    () => (accounts as { id: string; account_name: string }[]).map(a => ({ id: a.id, label: a.account_name })),
+    [accounts],
+  )
 
   async function handleSave() {
     if (!form.vendor_name?.trim()) { setError('Vendor name is required'); return }
@@ -106,9 +115,17 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
           <input type="tel" className={inputCls} value={form.phone_contact ?? ''} onChange={e => set('phone_contact', e.target.value)} />
         </Field>
       </div>
-      <Field label="Bank Account">
-        <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
-      </Field>
+      {/* The bank as well as the number: a Payment Request splits its
+          schedule by bank, and a vendor with no bank on file lands under
+          "No bank recorded" however good the account number is. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Bank">
+          <SearchableSelect value={form.bank_id ?? null} onChange={v => set('bank_id', v)} options={bankOptions} placeholder="Select bank…" />
+        </Field>
+        <Field label="Bank Account">
+          <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
+        </Field>
+      </div>
       <Field label="Location">
         <input type="text" className={inputCls} value={form.location ?? ''} onChange={e => set('location', e.target.value)} />
       </Field>
