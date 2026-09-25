@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { BankReferenceInput } from '@/components/shared/BankReferenceInput'
+import { VrfPaymentsSection } from '@/pages/vendor-receipts/VrfPaymentStep'
 import type {
   ToPayQueueRow, FinancePendingApprovalRow, AccountCashPositionRow, RecentPaymentRow, OpenVendorAdvanceRow,
   ExpensePaymentMethod, AwaitingBankConfirmationRow, AccountStatementSummaryRow, MatchableRow,
@@ -785,6 +786,9 @@ export default function PaymentsDashboardPage() {
           </>
         )}
       </Section>
+
+      {/* VRF payments move through their own step: approve, then mark sent. */}
+      <VrfPaymentsSection />
 
       {/* Open Vendor Advances now render as the hero band near the top. */}
 

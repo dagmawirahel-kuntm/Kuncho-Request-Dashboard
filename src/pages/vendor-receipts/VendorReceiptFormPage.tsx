@@ -77,6 +77,7 @@ type Form = {
  */
 function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: VendorReceiptFacilitation }) {
   const isEdit = !!id
+  const isSent = record?.payment_state === 'sent'
   const navigate = useNavigate()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -188,7 +189,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     if (!form.record_name.trim()) { setError('Give the VRF a name'); return }
     if (!form.facilitator_name.trim()) { setError('Enter the facilitator'); return }
     if (!form.vendor_id) { setError('Choose the vendor that issued the receipt'); return }
-    if (!form.trxn_date) { setError('Enter the date the money was sent'); return }
+    if (!form.trxn_date) { setError('Enter the receipt date'); return }
     if (receipt <= 0) { setError('Enter the receipt amount'); return }
     if (form.wht_overridden && form.wht_amount === '') { setError('Enter the WHT, or let it be calculated'); return }
 
@@ -224,7 +225,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     qc.invalidateQueries({ queryKey: ['vrf-register'] })
     qc.invalidateQueries({ queryKey: ['vrf-fund'] })
     qc.invalidateQueries({ queryKey: ['vrf-holding-accounts'] })
-    toast(isEdit ? 'VRF updated' : 'VRF recorded', 'success')
+    toast(isEdit ? 'VRF updated' : 'VRF recorded — it waits for approval before it is paid', 'success')
     navigate(backTo)
   }
 
@@ -254,7 +255,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
 
       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-2">The receipt</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Field label="Date sent *">
+        <Field label="Receipt date *" hint={isSent ? undefined : 'When it is paid is recorded with Mark sent'}>
           <input type="date" className={inputCls} value={form.trxn_date} onChange={e => set('trxn_date', e.target.value)} />
         </Field>
         <Field label="Receipt amount (ETB) *" hint="The receipt total, VAT included">
@@ -318,7 +319,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
 
       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide pt-2">Accounts</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Sent from">
+        <Field label="Paid from">
           <SearchableSelect value={form.initial_account_id} onChange={v => { set('initial_account_id', v); set('out_transfer_id', null) }}
             options={accountOptions} placeholder="Select the bank account…" />
         </Field>
@@ -327,7 +328,8 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
             options={holdingOptions} placeholder="Select a holding account…" />
         </Field>
       </div>
-      {form.initial_account_id && (
+      {/* A VRF still to pay is matched to its bank line when it is marked sent. */}
+      {isSent && form.initial_account_id && (
         <Field label="Bank line" hint={bankOptions.length === 0 ? 'No unlinked line from this account within 10 days — link it later once the statement is imported' : 'The statement line that paid this VRF, so it is not counted twice'}>
           <SearchableSelect value={form.out_transfer_id} onChange={v => set('out_transfer_id', v)}
             options={bankOptions} placeholder="Not linked yet" />
@@ -337,6 +339,9 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       <Field label="Notes">
         <textarea rows={3} className={inputCls} value={form.notes} onChange={e => set('notes', e.target.value)} />
       </Field>
+      {record?.payment_state === 'approved' && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">This payment is approved. Changing the amount, WHT, commission, vendor or account sends it back for approval.</p>
+      )}
       {isEdit && <p className="text-[11px] text-slate-400">Money that came back is recorded as returns on the VRF page.</p>}
     </FormPage>
   )

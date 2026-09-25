@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { formatCurrency } from '@/lib/utils'
-import type { VrfRegisterRow, VrfStatus } from '@/types/database'
+import type { VrfPaymentState, VrfRegisterRow, VrfStatus } from '@/types/database'
+import { PAYMENT_CLS, PAYMENT_LABEL } from './vrfPayment'
 import { AlertCircle, Pencil, Trash2 } from 'lucide-react'
 
 const STATUS_CLS: Record<VrfStatus, string> = {
@@ -28,6 +29,7 @@ const money = (key: keyof VrfRegisterRow, header: string, cls = ''): ColumnDef<R
 })
 
 const quickFilters: QuickFilter[] = [
+  { columnId: 'payment_state', label: 'Payment', options: (Object.keys(PAYMENT_LABEL) as VrfPaymentState[]).map(p => ({ label: PAYMENT_LABEL[p], value: p })) },
   { columnId: 'status', label: 'Status', options: (['open', 'partial', 'settled'] as VrfStatus[]).map(s => ({ label: s[0].toUpperCase() + s.slice(1), value: s })) },
   { columnId: 'check', label: 'To confirm', options: [{ label: 'To confirm', value: 'To confirm' }, { label: 'Confirmed', value: 'Confirmed' }] },
 ]
@@ -75,6 +77,21 @@ export function VrfTable({ rows, canWrite, onDelete }: {
     money('commission', 'Commission', 'text-amber-700 dark:text-amber-400'),
     money('returned', 'Returned', 'text-green-600 dark:text-green-400'),
     money('held', 'Still held'),
+    {
+      id: 'payment_state',
+      header: 'Payment',
+      accessorFn: r => r.payment_state,
+      filterFn: 'equals',
+      cell: ({ row }) => {
+        const p = row.original.payment_state
+        return (
+          <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAYMENT_CLS[p]}`}
+            title={p === 'sent' && row.original.sent_date ? `Sent ${row.original.sent_date}` : undefined}>
+            {PAYMENT_LABEL[p]}
+          </span>
+        )
+      },
+    },
     {
       id: 'status',
       header: 'Status',
@@ -126,7 +143,7 @@ export function VrfTable({ rows, canWrite, onDelete }: {
       searchPlaceholder="Search VRF, facilitator or vendor…"
       persistKey="vrf-register"
       quickFilters={quickFilters}
-      expandable={{ summaryColumnIds: ['record_name', 'trxn_date', 'vendor_name', 'receipt_amount', 'returned', 'status', 'check'] }}
+      expandable={{ summaryColumnIds: ['record_name', 'trxn_date', 'vendor_name', 'receipt_amount', 'payment_state', 'status', 'check'] }}
     />
   )
 }

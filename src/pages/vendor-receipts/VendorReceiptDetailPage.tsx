@@ -14,6 +14,7 @@ import { useCategories } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { VrfPersonalDraws } from './VrfPersonalDraws'
 import { VrfReturns, VrfReviewPanel } from './VrfReturns'
+import { VrfPaymentPanel } from './VrfPaymentStep'
 
 interface VrfReceiptItem {
   id: string
@@ -401,6 +402,7 @@ export default function VendorReceiptDetailPage() {
         </span>
       </div>
 
+      {reg && <VrfPaymentPanel reg={reg} />}
       {reg && <VrfReviewPanel reg={reg} canEdit={canAddExpense} />}
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
@@ -438,8 +440,8 @@ export default function VendorReceiptDetailPage() {
                 accent="text-slate-600 dark:text-slate-300"
               />
               <SummaryRow
-                label="Sent"
-                sub={`Receipt − WHT${(vrf as any).initial?.account_name ? ` · from ${(vrf as any).initial.account_name}` : ''}${vrf.out_transfer_id ? ' · matched to its bank line' : ''}`}
+                label={vrf.payment_state === 'sent' ? 'Sent' : 'To send'}
+                sub={`Receipt − WHT${(vrf as any).initial?.account_name ? ` · from ${(vrf as any).initial.account_name}` : ''}${vrf.payment_state === 'sent' && vrf.sent_date ? ` · ${formatDate(vrf.sent_date)}` : ''}${vrf.out_transfer_id ? ' · matched to its bank line' : ''}`}
                 value={formatCurrency(transferred)}
                 accent="text-red-600 dark:text-red-400"
               />
