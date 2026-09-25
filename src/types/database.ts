@@ -1033,6 +1033,69 @@ export interface Product {
   description: string | null
   created_at: string
   updated_at: string
+  // Services catalog (migration 337)
+  service_line_id?: string | null
+  kind?: 'service' | 'product'
+  unit?: string | null
+  item_code?: string | null
+  markup_percent?: number | null
+  sort_order?: number
+}
+export interface CatalogServiceLine {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  markup_percent: number
+  sort_order: number
+  is_active: boolean
+}
+export type ComponentKind = 'material' | 'labour' | 'subcontract' | 'transport' | 'other'
+export interface CatalogComponent {
+  id: string
+  product_id: string
+  kind: ComponentKind
+  description: string
+  stock_item_id: string | null
+  qty_per_unit: number
+  unit: string | null
+  unit_cost: number | null
+  sort_order: number
+}
+export interface CatalogCostingRow {
+  product_id: string
+  product_name: string
+  item_code: string | null
+  kind: 'service' | 'product'
+  unit: string | null
+  active: boolean
+  service_line_id: string | null
+  service_line: string | null
+  list_price: number | null
+  markup_percent: number
+  components: number
+  unpriced_components: number
+  cost_per_unit: number | null
+  suggested_price: number | null
+  margin_at_list_pct: number | null
+  oldest_market_price_at: string | null
+}
+export interface CatalogTemplate {
+  id: string
+  name: string
+  service_line_id: string | null
+  description: string | null
+  is_active: boolean
+}
+export interface CatalogTemplateLine {
+  id: string
+  template_id: string
+  product_id: string | null
+  description: string
+  qty: number
+  unit: string | null
+  unit_price: number | null
+  sort_order: number
 }
 export type ProductInsert = Omit<Product, 'id' | 'created_at' | 'updated_at'>
 

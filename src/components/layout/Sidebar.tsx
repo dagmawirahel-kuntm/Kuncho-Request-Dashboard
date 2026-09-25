@@ -122,6 +122,8 @@ const navGroups: NavGroup[] = [
     title: 'Business Development',
     items: [
       { label: 'Sales Journey', to: '/sales-journey', icon: Target, roles: ['admin', 'executive', 'finance', 'sales'] },
+      // What Kuncho sells, its prices and costs (migration 337).
+      { label: 'Services Catalog', to: '/catalog', icon: Package, roles: ['admin', 'executive', 'finance', 'project_manager', 'sales'] },
       { label: 'Sales Overview', to: '/sales-view', icon: TrendingUp, roles: ['admin', 'executive', 'sales'] },
       { label: 'Opportunities', to: '/opportunities', icon: Target },
       { label: 'Contracts', to: '/contracts', icon: FileSignature },
@@ -229,7 +231,6 @@ const navGroups: NavGroup[] = [
       { label: 'Job Descriptions', to: '/ffe-job-descriptions', icon: Award, roles: ['admin', 'executive', 'operations_manager', 'project_manager', 'hr_officer'] },
       { label: 'Rent', to: '/rent', icon: Building2, roles: ['admin', 'executive', 'finance', 'operations_manager'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'executive', 'finance', 'project_manager', 'sales'] },
-      { label: 'Products', to: '/products', icon: Package, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Locations Map', to: '/locations/map', icon: Globe2 },
     ],
