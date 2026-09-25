@@ -98,6 +98,24 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
 
   function set(key: keyof ContractInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
+  // Contract numbers already in use, so a clash shows up while typing
+  // rather than as a failed save. Read-only to every signed-in user
+  // (contracts_read), so this is the same list the person can already see
+  // on the Contracts page — nothing is exposed that wasn't.
+  const { data: takenNumbers = [] } = useQuery({
+    queryKey: ['contract-numbers-taken', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('contracts').select('id, contract_no').not('contract_no', 'is', null)
+      if (error) throw error
+      return (data as { id: string; contract_no: string }[])
+        .filter(c => c.id !== id)
+        .map(c => c.contract_no)
+    },
+  })
+  const trimmedNo = (form.contract_no ?? '').trim()
+  const isDuplicateNo = trimmedNo.length > 0
+    && takenNumbers.some(n => n.toLowerCase() === trimmedNo.toLowerCase())
+
   // Full client record (not just the id) — needed to fill in the
   // generated document's client-details section.
   const { data: selectedClient } = useQuery({
@@ -174,11 +192,26 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
     setError('')
     if (!form.client_id) { setError('Client is required'); return }
     setSaving(true)
+    // contract_no is UNIQUE and optional. A cleared input hands us '',
+    // which is a real value to Postgres — so the first blank contract
+    // would take '' and every later blank one would collide with it on
+    // the unique index. NULL is the value that means "no number", and
+    // Postgres lets any number of rows hold it.
+    const contractNo = form.contract_no?.trim()
+    const payload = { ...form, contract_no: contractNo ? contractNo : null }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('contracts').update(form as any).eq('id', id!) : supabase.from('contracts').insert([form as any])
+    const op = isEdit ? supabase.from('contracts').update(payload as any).eq('id', id!) : supabase.from('contracts').insert([payload as any])
     const { error: err } = await op
     setSaving(false)
-    if (err) { setError(err.message); toast(err.message, 'error'); return }
+    if (err) {
+      // 23505 = unique_violation. Raw Postgres text ("duplicate key value
+      // violates unique constraint contracts_contract_no_key") tells the
+      // person nothing about what to do; name the number instead.
+      const msg = err.code === '23505' && err.message.includes('contract_no')
+        ? `Contract No. ${contractNo ? `"${contractNo}" ` : ''}is already used by another contract. Pick a different one.`
+        : err.message
+      setError(msg); toast(msg, 'error'); return
+    }
     dropRecordCache(qc, 'contract', 'client-for-contract-doc')
     qc.invalidateQueries({ queryKey: ['contracts'] })
     toast(isEdit ? 'Contract updated' : 'Contract created', 'success')
@@ -191,6 +224,11 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Contract No.">
           <input type="text" className={inputCls} value={form.contract_no ?? ''} onChange={e => set('contract_no', e.target.value)} placeholder="e.g. KUN-2026-001" />
+          {isDuplicateNo && (
+            <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
+              Already used by another contract — pick a different number.
+            </p>
+          )}
         </Field>
         <Field label="Status">
           <select className={inputCls} value={form.status ?? ''} onChange={e => set('status', e.target.value)}>
