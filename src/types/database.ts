@@ -844,6 +844,8 @@ export interface Client {
   email: string | null
   additional_email: string | null
   business_type: string | null
+  /** The client's TIN — on invoices and on the WHT certificates it issues (migration 331). */
+  tin: string | null
   address: string | null
   notes: string | null
   receipt_vouched: boolean
@@ -855,6 +857,50 @@ export type ClientInsert = Omit<Client, 'id' | 'created_at' | 'updated_at'>
 
 // ── Client attachments ────────────────────────────────────────────
 export type AttachmentCategory = 'receipt' | 'contract' | 'wht_receipt' | 'other'
+  // Deal documents (migration 331).
+  | 'tin_licence' | 'boq' | 'proforma' | 'bid_bond' | 'invoice' | 'handover'
+
+/** One item of a deal's document checklist (v_sales_engagements, migration 331). */
+export interface SalesChecklistItem {
+  type: AttachmentCategory
+  label: string
+  status: 'have' | 'missing' | 'not_yet' | 'not_needed'
+}
+
+/** One deal, from first contact to final payment (v_sales_engagements, migration 331). */
+export interface SalesEngagementRow {
+  engagement_id: string
+  opportunity_id: string | null
+  contract_id: string | null
+  title: string
+  client_id: string | null
+  client_name: string | null
+  client_tin: string | null
+  stage: OpportunityStage
+  stage_changed_at: string | null
+  source: OpportunitySource | null
+  referrer_name: string | null
+  brought_by_name: string | null
+  estimated_value: number | null
+  lost_reason: string | null
+  contract_no: string | null
+  contract_value: number | null
+  contract_status: ContractStatus | null
+  signed_date: string | null
+  project_id: string | null
+  project_name: string | null
+  invoiced: number
+  received: number
+  outstanding: number
+  not_yet_invoiced: number
+  invoice_count: number
+  wht_certificates_due: number
+  wht_certificates_collected: number
+  checklist: SalesChecklistItem[]
+  docs_have: number
+  docs_missing: number
+  created_at: string
+}
 export interface ClientAttachment {
   id: string
   client_id: string

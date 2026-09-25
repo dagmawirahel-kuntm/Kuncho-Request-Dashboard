@@ -4,12 +4,7 @@ import { useState, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import type { Client, Sale, ClientAttachment, AttachmentCategory, Transfer, SaleWht } from '@/types/database'
-import {
-  ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, FileText,
-  TrendingUp, CheckCircle2, Clock, ExternalLink, Upload,
-  FileBadge, Receipt, Paperclip, Download, X, RotateCcw, Check,
-  AlertTriangle, FileCheck, Banknote, PackageCheck, Landmark, FileSignature,
-} from 'lucide-react'
+import { ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, FileText, TrendingUp, CheckCircle2, Clock, ExternalLink, Upload, FileBadge, Receipt, Paperclip, Download, X, RotateCcw, Check, AlertTriangle, FileCheck, Banknote, PackageCheck, Landmark, FileSignature, ClipboardList, FileSpreadsheet, Handshake, IdCard } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
@@ -98,6 +93,13 @@ const CATEGORIES: { value: AttachmentCategory; label: string; icon: React.ReactN
   { value: 'receipt',     label: 'Receipt',      icon: <Receipt className="h-4 w-4" />,     color: '#10B981' },
   { value: 'contract',    label: 'Contract',     icon: <FileBadge className="h-4 w-4" />,   color: '#3B82F6' },
   { value: 'wht_receipt', label: 'WHT Receipt',  icon: <FileCheck className="h-4 w-4" />,   color: '#F59E0B' },
+  // Deal documents (migration 331) — the Sales Journey checklist reads these.
+  { value: 'tin_licence', label: 'TIN & licence', icon: <IdCard className="h-4 w-4" />,        color: '#0EA5E9' },
+  { value: 'boq',         label: 'BOQ',           icon: <FileSpreadsheet className="h-4 w-4" />, color: '#14B8A6' },
+  { value: 'proforma',    label: 'Proforma',      icon: <FileText className="h-4 w-4" />,      color: '#6366F1' },
+  { value: 'bid_bond',    label: 'Bid bond',      icon: <Landmark className="h-4 w-4" />,      color: '#64748B' },
+  { value: 'invoice',     label: 'Invoice',       icon: <ClipboardList className="h-4 w-4" />, color: '#EC4899' },
+  { value: 'handover',    label: 'Handover',      icon: <Handshake className="h-4 w-4" />,     color: '#22C55E' },
   { value: 'other',       label: 'Other',        icon: <Paperclip className="h-4 w-4" />,   color: '#8B5CF6' },
 ]
 
@@ -791,12 +793,9 @@ export default function ClientDetailPage() {
   const totalPaid    = paidSales.reduce((s, r) => s + Number(r.amount ?? 0), 0)
   const totalPending = pendingSales.reduce((s, r) => s + Number(r.amount ?? 0), 0)
 
-  const docsByCategory: Record<AttachmentCategory, ClientAttachment[]> = {
-    receipt:     attachments.filter(a => a.category === 'receipt'),
-    contract:    attachments.filter(a => a.category === 'contract'),
-    wht_receipt: attachments.filter(a => a.category === 'wht_receipt'),
-    other:       attachments.filter(a => a.category === 'other'),
-  }
+  const docsByCategory = Object.fromEntries(
+    CATEGORIES.map(c => [c.value, attachments.filter(a => a.category === c.value)]),
+  ) as Record<AttachmentCategory, ClientAttachment[]>
 
   // Collections tab badge: how many outstanding WHT receipts
   const whtNeeded = sales.filter(s => saleWht(s).qualifies).length

@@ -121,6 +121,7 @@ const navGroups: NavGroup[] = [
   {
     title: 'Business Development',
     items: [
+      { label: 'Sales Journey', to: '/sales-journey', icon: Target, roles: ['admin', 'executive', 'finance', 'sales'] },
       { label: 'Sales Overview', to: '/sales-view', icon: TrendingUp, roles: ['admin', 'executive', 'sales'] },
       { label: 'Opportunities', to: '/opportunities', icon: Target },
       { label: 'Contracts', to: '/contracts', icon: FileSignature },
