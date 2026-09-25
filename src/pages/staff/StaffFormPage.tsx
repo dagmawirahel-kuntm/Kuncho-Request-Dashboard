@@ -427,8 +427,11 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           )}
         </Field>
         <Field label="ID Document (national ID / passport)">
+          {/* Private bucket: an ID scan opens only through a short-lived signed link (332). */}
           <FileUpload
+            bucket="staff-documents"
             folder="staff-ids"
+            privateBucket
             label="Upload ID"
             fileUrl={form.id_document_url ?? null}
             fileName={form.id_document_name ?? null}

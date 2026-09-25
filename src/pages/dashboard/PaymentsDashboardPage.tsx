@@ -1790,7 +1790,7 @@ function VrfPayModal({
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Payment Confirmation Certificate *</label>
             <FileUpload
-              bucket="documents" folder="vrf-certificates" privateBucket
+              bucket="finance-documents" folder="vrf-certificates" privateBucket
               fileUrl={certUrl} fileName={certName}
               onUpload={(url, name) => { setCertUrl(url); setCertName(name) }}
               onClear={() => { setCertUrl(null); setCertName(null) }}

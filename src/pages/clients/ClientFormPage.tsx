@@ -57,6 +57,7 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
           email: record.email,
           additional_email: record.additional_email,
           business_type: record.business_type,
+          tin: record.tin,
           address: record.address,
           notes: record.notes,
           receipt_vouched: record.receipt_vouched,
@@ -98,6 +99,11 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
         <input type="text" className={inputCls} value={form.client_name ?? ''} onChange={e => set('client_name', e.target.value)} />
       </Field>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <Field label="TIN">
+        <input type="text" inputMode="numeric" className={inputCls} value={form.tin ?? ''} onChange={e => set('tin', e.target.value.trim() || null)}
+          placeholder="On invoices and the WHT certificates they issue" />
+      </Field>
       <Field label="Business Type">
         <select className={inputCls} value={form.business_type ?? ''} onChange={e => set('business_type', e.target.value || null)}>
           <option value="">— Select —</option>
@@ -109,6 +115,7 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
           <option>Other</option>
         </select>
       </Field>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Email">

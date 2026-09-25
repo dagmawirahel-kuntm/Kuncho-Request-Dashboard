@@ -192,6 +192,8 @@ export interface Project {
   finance_contact_id: string | null
   location_id: string | null
   client_id: string | null
+  /** A cost bucket or internal work (Salaries, Workshop…) — no client (migration 330). */
+  is_internal: boolean
   contract_value: number | null
   physical_progress: number | null
   health: ProjectHealth | null
@@ -844,6 +846,8 @@ export interface Client {
   email: string | null
   additional_email: string | null
   business_type: string | null
+  /** The client's TIN — on invoices and on the WHT certificates it issues (migration 331). */
+  tin: string | null
   address: string | null
   notes: string | null
   receipt_vouched: boolean
@@ -855,6 +859,50 @@ export type ClientInsert = Omit<Client, 'id' | 'created_at' | 'updated_at'>
 
 // ── Client attachments ────────────────────────────────────────────
 export type AttachmentCategory = 'receipt' | 'contract' | 'wht_receipt' | 'other'
+  // Deal documents (migration 331).
+  | 'tin_licence' | 'boq' | 'proforma' | 'bid_bond' | 'invoice' | 'handover'
+
+/** One item of a deal's document checklist (v_sales_engagements, migration 331). */
+export interface SalesChecklistItem {
+  type: AttachmentCategory
+  label: string
+  status: 'have' | 'missing' | 'not_yet' | 'not_needed'
+}
+
+/** One deal, from first contact to final payment (v_sales_engagements, migration 331). */
+export interface SalesEngagementRow {
+  engagement_id: string
+  opportunity_id: string | null
+  contract_id: string | null
+  title: string
+  client_id: string | null
+  client_name: string | null
+  client_tin: string | null
+  stage: OpportunityStage
+  stage_changed_at: string | null
+  source: OpportunitySource | null
+  referrer_name: string | null
+  brought_by_name: string | null
+  estimated_value: number | null
+  lost_reason: string | null
+  contract_no: string | null
+  contract_value: number | null
+  contract_status: ContractStatus | null
+  signed_date: string | null
+  project_id: string | null
+  project_name: string | null
+  invoiced: number
+  received: number
+  outstanding: number
+  not_yet_invoiced: number
+  invoice_count: number
+  wht_certificates_due: number
+  wht_certificates_collected: number
+  checklist: SalesChecklistItem[]
+  docs_have: number
+  docs_missing: number
+  created_at: string
+}
 export interface ClientAttachment {
   id: string
   client_id: string
@@ -2202,7 +2250,9 @@ export interface Contract {
 }
 export type ContractInsert = Omit<Contract, 'id' | 'created_at' | 'updated_at'>
 
-export type OpportunityStage = 'lead' | 'qualified' | 'quoted' | 'won' | 'lost'
+export type OpportunityStage = 'lead' | 'qualified' | 'site_visit' | 'quoted' | 'negotiating' | 'won' | 'lost'
+/** Where a deal came from (migration 330). */
+export type OpportunitySource = 'word_of_mouth' | 'associate' | 'repeat_client' | 'tender' | 'other'
 export interface Opportunity {
   id: string
   title: string
@@ -2213,10 +2263,17 @@ export interface Opportunity {
   owner_staff_id: string | null
   expected_close_date: string | null
   notes: string | null
+  /** Migration 330: where it came from, who brought it, and why it was lost. */
+  source: OpportunitySource | null
+  brought_by_staff_id: string | null
+  /** The associate (outside Kuncho) who referred it. */
+  referrer_name: string | null
+  lost_reason: string | null
+  stage_changed_at: string | null
   created_at: string
   updated_at: string
 }
-export type OpportunityInsert = Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>
+export type OpportunityInsert = Omit<Opportunity, 'id' | 'created_at' | 'updated_at' | 'stage_changed_at'>
 
 // ── HR & People ───────────────────────────────────────────────────
 export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'maternity' | 'compassionate' | 'other'
@@ -3271,6 +3328,8 @@ export interface PaymentMilestone {
   project_id: string
   sequence_number: number
   title: string
+  /** Migration 330: advance falls due on signing; progress and final follow the work. */
+  kind: 'advance' | 'progress' | 'final' | 'other'
   percent_of_contract_value: number
   gross_amount_etb: number
   // VAT-exclusive share of the contract — the base for both retention and WHT.

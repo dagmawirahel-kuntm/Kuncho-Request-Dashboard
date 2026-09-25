@@ -13,6 +13,7 @@ import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import { MyAssetsSection } from '@/components/staff/MyAssetsSection'
 import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
 import { StaffTaxCostSection } from '@/components/staff/StaffTaxCostSection'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
   ArrowLeft, Pencil, Phone, Mail, CreditCard, Calendar,
@@ -490,9 +491,9 @@ function OverviewTab({ staff }: { staff: Staff }) {
               value={staff.national_id ?? null} />
             <DetailRow label="ID Document" icon={<Hash className="h-3.5 w-3.5" />}
               value={staff.id_document_url
-                ? <a href={staff.id_document_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                ? <PrivateDocLink path={staff.id_document_url} bucket="staff-documents" title="View ID document" className="text-brand hover:underline">
                     {staff.id_document_name ?? 'View attached ID'}
-                  </a>
+                  </PrivateDocLink>
                 : null} />
             <DetailRow label="Bank Account" icon={<CreditCard className="h-3.5 w-3.5" />}
               value={staff.bank_account ? `•••• ${staff.bank_account.slice(-4)}` : null} />

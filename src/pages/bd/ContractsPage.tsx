@@ -5,11 +5,12 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Contract } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { Plus, Pencil, Trash2, FileText } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 const contractQuickFilters: QuickFilter[] = [
   {
@@ -32,7 +33,7 @@ export default function ContractsPage() {
   const { role } = useAuth()
   // Write access (create/edit/delete) is restricted by RLS to sales, admin,
   // and manager roles — mirror that here so the UI matches what the DB allows.
-  const canWrite = role === 'admin' || role === 'executive' || (role as string) === 'sales'
+  const canWrite = role === 'admin' || role === 'executive' || role === 'finance' || (role as string) === 'sales'
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['contracts'],
@@ -61,14 +62,11 @@ export default function ContractsPage() {
       { accessorKey: 'status', header: 'Status', filterFn: 'equals', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
       {
         id: 'document', header: 'Document',
+        // New contract files are private (client-documents, migration 330);
+        // older ones are public URLs. PrivateDocLink opens either.
         cell: ({ row }) => row.original.document_url ? (
-          <a
-            href={row.original.document_url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-brand hover:underline"
-            title={row.original.document_name ?? 'View document'}
-          >
-            <FileText className="h-3.5 w-3.5" /> View
-          </a>
+          <PrivateDocLink path={row.original.document_url} bucket="client-documents"
+            title={row.original.document_name ?? 'View document'} className="text-brand hover:text-brand/80" />
         ) : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>,
       },
     ]

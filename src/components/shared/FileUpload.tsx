@@ -60,6 +60,9 @@ export function FileUpload({
   }
 
   async function openPrivate(path: string) {
+    // A row can still hold a full URL (pasted by hand, or from before the
+    // file moved to a private bucket) — open that as it is.
+    if (/^https?:\/\//i.test(path)) { window.open(path, '_blank', 'noopener,noreferrer'); return }
     const { data, error: signErr } = await supabase.storage.from(bucket).createSignedUrl(path, 60)
     if (signErr || !data) { setError(`Could not open file: ${signErr?.message ?? 'unknown error'}`); return }
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
