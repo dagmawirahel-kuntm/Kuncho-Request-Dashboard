@@ -2581,7 +2581,7 @@ export interface RollupIntegrityRow {
 // ── Payment Requests (migration 268) ─────────────────────────────────────────
 
 export type PaymentRequestStatus = 'issued' | 'superseded' | 'void'
-export type PaymentRequestSource = 'expense' | 'batch_payment' | 'payroll'
+export type PaymentRequestSource = 'expense' | 'batch_payment' | 'payroll' | 'vrf'
 
 /** Register row — v_payment_requests, which omits the stored document. */
 export interface PaymentRequestRow {
@@ -2623,6 +2623,8 @@ export interface PaymentRequestRow {
   bank_id: string | null
   /** The bank's name, resolved from accounts. Null unless bank_scope is 'bank'. */
   bank_name: string | null
+  /** The VRF a Vendor Receipt Payment Request authorises (migration 328). */
+  vrf_id: string | null
 }
 
 /** How a payroll run's Payment Requests are split. See migration 300. */
@@ -2637,6 +2639,8 @@ export interface PaymentRequestRecord {
   batch_payment_id: string | null
   /** Added by migration 289; the type had not caught up. */
   payroll_id: string | null
+  /** Migration 328: a VRF's own Payment Request. */
+  vrf_id: string | null
   /** Which slice of a split payroll run this is (migration 300). */
   bank_scope: PaymentRequestBankScope
   bank_id: string | null

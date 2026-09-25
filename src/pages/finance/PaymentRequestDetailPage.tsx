@@ -50,7 +50,7 @@ export default function PaymentRequestDetailPage() {
   // Sibling revisions against the same source, so the trail is walkable
   // in both directions rather than only backwards via supersedes_id.
   const { data: siblings = [] } = useQuery({
-    queryKey: ['payment-request-siblings', pr?.expense_id, pr?.batch_payment_id, pr?.payroll_id, pr?.bank_scope, pr?.bank_id],
+    queryKey: ['payment-request-siblings', pr?.expense_id, pr?.batch_payment_id, pr?.payroll_id, pr?.vrf_id, pr?.bank_scope, pr?.bank_id],
     queryFn: async () => {
       // Payroll was never handled here: the ternary fell through to
       // batch_payment_id with a null value, so a payroll request's revision
@@ -58,9 +58,11 @@ export default function PaymentRequestDetailPage() {
       // slice — the other banks' documents for the same run are separate
       // trails, not earlier revisions of this one.
       const col = pr!.source_type === 'expense' ? 'expense_id'
-        : pr!.source_type === 'payroll' ? 'payroll_id' : 'batch_payment_id'
+        : pr!.source_type === 'payroll' ? 'payroll_id'
+        : pr!.source_type === 'vrf' ? 'vrf_id' : 'batch_payment_id'
       const val = pr!.source_type === 'expense' ? pr!.expense_id
-        : pr!.source_type === 'payroll' ? pr!.payroll_id : pr!.batch_payment_id
+        : pr!.source_type === 'payroll' ? pr!.payroll_id
+        : pr!.source_type === 'vrf' ? pr!.vrf_id : pr!.batch_payment_id
       let q = supabase
         .from('v_payment_requests')
         .select('id, request_code, revision, status, issued_at')
@@ -129,7 +131,9 @@ export default function PaymentRequestDetailPage() {
     ? `/expenses/${pr.expense_id}`
     : pr.source_type === 'payroll'
       ? `/payroll/${pr.payroll_id}`
-      : `/batch-payments/${pr.batch_payment_id}`
+      : pr.source_type === 'vrf'
+        ? `/vendor-receipts/${pr.vrf_id}`
+        : `/batch-payments/${pr.batch_payment_id}`
 
   return (
     <div className="space-y-4">

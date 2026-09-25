@@ -37,7 +37,7 @@ type SavedPr = {
 }
 
 interface Props {
-  sourceType: 'expense' | 'batch_payment' | 'payroll'
+  sourceType: 'expense' | 'batch_payment' | 'payroll' | 'vrf'
   sourceId: string
   /** Everything the document needs, minus the fields only issuing can fill in. */
   document: Omit<LaborPaymentRequestInput, 'documentCode' | 'status' | 'revision'>
@@ -76,7 +76,8 @@ export function PaymentRequestActions({
     queryFn: async () => {
       const col = sourceType === 'expense'
         ? 'expense_id'
-        : sourceType === 'payroll' ? 'payroll_id' : 'batch_payment_id'
+        : sourceType === 'payroll' ? 'payroll_id'
+        : sourceType === 'vrf' ? 'vrf_id' : 'batch_payment_id'
       let q = supabase
         .from('v_payment_requests')
         .select('id, request_code, revision, status, issued_at, issued_by_name, total_amount')
@@ -137,6 +138,8 @@ export function PaymentRequestActions({
             : bankScope === 'unassigned'
               ? 'Payroll Payment Request — unassigned payees'
               : 'Payroll Payment Request'
+          : sourceType === 'vrf'
+            ? 'Vendor Receipt Payment Request'
           : doc.kind === 'batch'
             ? 'Batch Labor Payment Request'
             : doc.breakdownKind === 'line_items'
