@@ -51,8 +51,8 @@ function AccountFormPageBody({ id, record }: { id?: string; record?: Account }) 
 
   const [form, setForm] = useState<Partial<AccountInsert>>(
     record
-      ? { account_name: record.account_name, type: record.type, account_number: record.account_number, notes: record.notes, status: record.status }
-      : { status: 'active' }
+      ? { account_name: record.account_name, type: record.type, account_number: record.account_number, notes: record.notes, status: record.status, role: record.role ?? 'other' }
+      : { status: 'active', role: 'collection' }
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -95,6 +95,15 @@ function AccountFormPageBody({ id, record }: { id?: string; record?: Account }) 
           </select>
         </Field>
       </div>
+      <Field label="Used for">
+        <select className={inputCls} value={form.role ?? 'other'} onChange={e => set('role', e.target.value)}>
+          <option value="main">Main account — payments go out from here</option>
+          <option value="collection">Collection — clients pay in, money moves on to the main account</option>
+          <option value="wallet">Wallet — holds money for vendor requests</option>
+          <option value="cash">Cash on hand</option>
+          <option value="other">Other</option>
+        </select>
+      </Field>
       <Field label="Account Number">
         <input type="text" className={inputCls} value={form.account_number ?? ''} onChange={e => set('account_number', e.target.value)} />
       </Field>

@@ -7,6 +7,11 @@ import { ArrowLeft, Pencil, ReceiptText, ArrowLeftRight, TrendingDown, TrendingU
 import type { Account, Expense } from '@/types/database'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { ROLE_LABEL, useAccountControl, useLedgerTieout } from '@/lib/cashControl'
+import { AlertsPanel } from '@/components/cash/AlertsPanel'
+import { CashForecast } from '@/components/cash/CashForecast'
+import { LedgerTieoutCard } from '@/components/cash/LedgerTieout'
+import { AwaitingBankTab, BankLinesTab, BankPosition } from './AccountBankPanels'
 
 interface ReconStatus {
   account_id: string
@@ -28,9 +33,10 @@ function reconStaleness(days: number | null, everReconciled: boolean): { label: 
   return { label: `${d}d — overdue to reconcile`, cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' }
 }
 
-// #8: shows the account's reconciled balance vs live balance, the movement
-// since the last statement, and how stale it is — with a Reconcile action
-// that records a bank-statement balance and adopts it as the new anchor.
+// For an account with no imported statements: its reconciled balance vs live
+// balance, the movement since, and how stale it is — with a Reconcile action
+// that records a statement balance and adopts it as the new anchor. Accounts
+// with statements reconcile line by line and close from Bank Reconciliation.
 function ReconciliationPanel({ accountId, accountName }: { accountId: string; accountName: string }) {
   const { role } = useAuth()
   const { toast } = useToast()
@@ -228,7 +234,7 @@ function bankTheme(name: string) {
   return BANKS.find(b => l.includes(b.key)) ?? { bg: '#64748B', initials: name.slice(0, 2).toUpperCase() }
 }
 
-type Tab = 'expenses' | 'transfers'
+type Tab = 'bank' | 'awaiting' | 'forecast' | 'expenses' | 'transfers'
 
 // ── Group by calendar month ────────────────────────────────────────────────────
 function monthKey(dateStr: string | null) {
@@ -251,7 +257,16 @@ function groupByMonth<T extends { paid_date?: string | null; date?: string | nul
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function AccountDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [tab, setTab] = useState<Tab>('expenses')
+  const { role } = useAuth()
+  const canWrite = role === 'admin' || role === 'finance'
+  const [tabChoice, setTab] = useState<Tab | null>(null)
+  const { data: control = [] } = useAccountControl()
+  const ctl = control.find(c => c.account_id === id)
+  const main = control.find(c => c.role === 'main')
+  const { data: tieouts = [] } = useLedgerTieout(id)
+  const tieout = tieouts[0]
+  const hasStatements = ctl?.statement_date != null
+  const tab: Tab = tabChoice ?? (hasStatements ? 'bank' : 'expenses')
 
   // account
   const { data: account, isLoading: loadingAcct } = useQuery({
@@ -342,6 +357,14 @@ export default function AccountDetailPage() {
     )
   }
 
+  const tabs: { id: Tab; label: string }[] = [
+    ...(hasStatements ? [{ id: 'bank' as Tab, label: `Bank statement${ctl?.open_count ? ` (${ctl.open_count} open)` : ''}` }] : []),
+    ...(canWrite && (ctl?.awaiting_bank_count ?? 0) > 0 ? [{ id: 'awaiting' as Tab, label: `Sent, not on the bank (${ctl!.awaiting_bank_count})` }] : []),
+    ...(canWrite ? [{ id: 'forecast' as Tab, label: 'Forecast' }] : []),
+    { id: 'expenses', label: `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}` },
+    { id: 'transfers', label: `Transfers${transfers.length > 0 ? ` (${transfers.length})` : ''}` },
+  ]
+
   const theme = bankTheme(account.account_name)
   const balance = Number(balRow?.balance ?? 0)
   const totalPaid = expenses.reduce((s, e) => s + Number(e.amount_etb ?? 0), 0)
@@ -412,9 +435,14 @@ export default function AccountDetailPage() {
                     {account.type}
                   </span>
                 )}
+                {ctl?.role && ctl.role !== 'other' && (
+                  <span className="text-xs px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }}>
+                    {ROLE_LABEL[ctl.role]} account
+                  </span>
+                )}
                 {account.status && (
                   <span className="text-xs px-2 py-1 rounded-lg capitalize" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }}>
-                    {account.status}
+                    {ctl?.not_opened ? 'not opened' : account.status}
                   </span>
                 )}
               </div>
@@ -439,27 +467,37 @@ export default function AccountDetailPage() {
         </div>
       </div>
 
-      <ReconciliationPanel accountId={id!} accountName={account.account_name} />
+      {ctl && hasStatements
+        ? <BankPosition c={ctl} main={main?.account_id !== ctl.account_id ? main : undefined} canWrite={canWrite} />
+        : <ReconciliationPanel accountId={id!} accountName={account.account_name} />}
+
+      {canWrite && <AlertsPanel accountId={id} limit={3} title="Needs attention on this account" />}
+
+      {canWrite && tieout && <LedgerTieoutCard row={tieout} />}
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <div className="flex gap-0 border-b dark:border-slate-700">
-        {(['expenses', 'transfers'] as Tab[]).map(t => (
+        {tabs.map(t => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px capitalize transition-colors ${
-              tab === t
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === t.id
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
             }`}
           >
-            {t === 'expenses' ? `Expenses${expenses.length > 0 ? ` (${expenses.length})` : ''}` : `Transfers${transfers.length > 0 ? ` (${transfers.length})` : ''}`}
+            {t.label}
           </button>
         ))}
       </div>
 
       {/* ── Tab content ─────────────────────────────────────────── */}
       <div className="space-y-4">
+
+        {tab === 'bank' && <BankLinesTab accountId={id!} />}
+        {tab === 'awaiting' && <AwaitingBankTab accountId={id!} statementDate={ctl?.statement_date ?? null} />}
+        {tab === 'forecast' && <CashForecast accountId={id!} />}
 
         {/* EXPENSES */}
         {tab === 'expenses' && (

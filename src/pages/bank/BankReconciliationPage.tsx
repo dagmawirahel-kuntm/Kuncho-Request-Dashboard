@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -16,8 +17,15 @@ type Tab = 'queue' | 'import' | 'statements'
  * and close the period at the bank's balance (migrations 344–346).
  */
 export default function BankReconciliationPage() {
-  const [tab, setTab] = useState<Tab | null>(null)
-  const [accountId, setAccountId] = useState<string | null>(null)
+  // Links from Accounts, alerts and the month-end checklist open an account
+  // (?account=), a tab (?tab=) or a line (?line=).
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab | null>(() => {
+    const t = params.get('tab')
+    return t === 'queue' || t === 'import' || t === 'statements' ? t : null
+  })
+  const [accountId, setAccountId] = useState<string | null>(() => params.get('account'))
+  const focusLineId = params.get('line')
 
   const { data: overview = [], isLoading } = useQuery({
     queryKey: ['bank-overview'],
@@ -91,7 +99,7 @@ export default function BankReconciliationPage() {
         )}
       </div>
 
-      {activeTab === 'queue' && <ReviewQueue accountId={accountId} accounts={accounts} />}
+      {activeTab === 'queue' && <ReviewQueue accountId={accountId} accounts={accounts} focusLineId={focusLineId} />}
       {activeTab === 'import' && (
         <ImportStatementPanel onImported={acct => { setAccountId(acct); setTab('queue') }} />
       )}

@@ -9,26 +9,32 @@ import {
   CLASSIFICATIONS, KIND_LABEL, describeReconciled, ruleTextFrom,
   type BankLine, type Suggestion,
 } from '@/lib/bankReconciliation'
+import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import {
   ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
-  Repeat, Search, Sparkles, Undo2, AlertTriangle,
+  Repeat, Search, Sparkles, AlertTriangle,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
-  for (const k of ['bank-lines', 'bank-overview', 'bank-suggestions', 'bank-paid-without-line', 'bank-rules', 'expenses', 'sales', 'accounts', 'payments-dashboard']) {
+  for (const k of ['bank-lines', 'bank-overview', 'bank-suggestions', 'bank-paid-without-line', 'bank-rules', 'bank-line-events', 'bank-alerts',
+    'account-control', 'expenses', 'sales', 'accounts', 'payments-dashboard']) {
     qc.invalidateQueries({ queryKey: [k] })
   }
 }
 
-export function ReviewQueue({ accountId, accounts }: { accountId: string | null; accounts: { id: string; account_name: string }[] }) {
+export function ReviewQueue({ accountId, accounts, focusLineId = null }: {
+  accountId: string | null
+  accounts: { id: string; account_name: string }[]
+  focusLineId?: string | null
+}) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [direction, setDirection] = useState<'all' | 'debit' | 'credit'>('all')
   const [search, setSearch] = useState('')
   const [showDone, setShowDone] = useState(false)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(focusLineId)
   const [running, setRunning] = useState(false)
   const accountName = useMemo(() => new Map(accounts.map(a => [a.id, a.account_name])), [accounts])
 
@@ -435,23 +441,10 @@ function TransferLine({ line, accounts, onDone }: { line: BankLine; accounts: { 
 }
 
 function ReconciledDetail({ line, onDone }: { line: BankLine; onDone: () => void }) {
-  const { toast } = useToast()
-  const [busy, setBusy] = useState(false)
-  const canUndo = line.reconciled_as === 'classified' || line.reconciled_as === 'internal'
   const diff = line.linked_amount != null ? Number(line.amount) - Number(line.linked_amount) : null
 
-  async function undo() {
-    if (!window.confirm('Undo this? The ledger entry is removed and the line goes back to the queue.')) return
-    setBusy(true)
-    const { error } = await supabase.rpc('unclassify_bank_line', { p_line_id: line.line_id })
-    setBusy(false)
-    if (error) { toast(error.message, 'error'); return }
-    toast('Undone — the line is back in the queue', 'success')
-    onDone()
-  }
-
   return (
-    <div className="space-y-1.5 border-t bg-slate-50 px-4 py-3 text-xs dark:border-slate-700 dark:bg-slate-900/40">
+    <div className="space-y-2 border-t bg-slate-50 px-4 py-3 text-xs dark:border-slate-700 dark:bg-slate-900/40">
       <p className="text-slate-600 dark:text-slate-300">
         <span className="font-medium">{KIND_LABEL[line.reconciled_as!]}:</span>{' '}
         {describeReconciled(line).map((d, i) => (
@@ -465,13 +458,8 @@ function ReconciledDetail({ line, onDone }: { line: BankLine; onDone: () => void
           {line.direction === 'debit' && diff > 0 && diff <= 25 ? ' — the bank\'s transfer fee' : ''}.
         </p>
       )}
-      {canUndo ? (
-        <button onClick={undo} disabled={busy} className="flex items-center gap-1 text-red-600 hover:underline disabled:opacity-50">
-          <Undo2 className="h-3.5 w-3.5" /> Undo
-        </button>
-      ) : (
-        <p className="text-slate-400">A payment matched to its bank line is changed from the payment itself.</p>
-      )}
+      <LineHistory lineId={line.line_id} />
+      <UndoMatch line={line} onDone={onDone} />
     </div>
   )
 }

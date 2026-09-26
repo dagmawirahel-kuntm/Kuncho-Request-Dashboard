@@ -1,14 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EntityDirectory, type EntityColumn } from '@/components/shared/EntityDirectory'
 import type { Account } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCurrency } from '@/lib/utils'
-import { Plus, Pencil, Trash2, TrendingUp, Landmark, CreditCard } from 'lucide-react'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import { ROLE_LABEL, ROLE_HINT, SWEEP_AFTER_DAYS, useAccountControl, type AccountControl } from '@/lib/cashControl'
+import { AlertsPanel } from '@/components/cash/AlertsPanel'
+import { MoveMoneyModal } from '@/components/cash/MoveMoneyModal'
+import { Plus, Pencil, Trash2, Landmark, CreditCard, Wallet, Hourglass, Send, ArrowRight, Eye, EyeOff } from 'lucide-react'
 
 // ── Bank theme map ────────────────────────────────────────────────────────────
 // Keys are lowercase substrings matched against account_name (longest/most
@@ -87,8 +90,8 @@ function getBankEntry(name: string): BankEntry {
   return { key: '', logo: '', bg: '#64748B', fg: '#fff', initials }
 }
 
-// ── Card body: balance + % of total ─────────────────────────────────────────
-function AccountBody({ balance, totalBalance, bg }: { balance: number; totalBalance: number; bg: string }) {
+// ── Card body: the app's balance, and what the bank last said ──────────────
+function AccountBody({ c, balance, totalBalance, bg }: { c?: AccountControl; balance: number; totalBalance: number; bg: string }) {
   const isNegative = balance < 0
   const share = totalBalance > 0 ? Math.max(0, balance / totalBalance) : 0
   return (
@@ -97,6 +100,7 @@ function AccountBody({ balance, totalBalance, bg }: { balance: number; totalBala
       <p className={`text-2xl font-bold tabular-nums ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
         {isNegative ? '−' : ''}{formatCurrency(Math.abs(balance))}
       </p>
+      <StatementLine c={c} />
       {totalBalance > 0 && !isNegative && (
         <div className="mt-3">
           <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
@@ -109,6 +113,81 @@ function AccountBody({ balance, totalBalance, bg }: { balance: number; totalBala
   )
 }
 
+function StatementLine({ c }: { c?: AccountControl }) {
+  if (!c || c.statement_date == null) {
+    return <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">No bank statement imported</p>
+  }
+  const age = c.statement_age_days ?? 0
+  const tone = age <= 3 ? 'text-emerald-600 dark:text-emerald-400' : age <= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
+  return (
+    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+      Bank: <span className="font-medium tabular-nums">{formatCurrency(c.statement_balance)}</span>{' '}
+      <span className={tone}>on {formatDate(c.statement_date)}</span>
+      {(c.open_count ?? 0) > 0 && <> · {c.open_count} open</>}
+    </p>
+  )
+}
+
+function RoleChip({ role }: { role: AccountControl['role'] }) {
+  if (!role || role === 'other') return null
+  const cls = role === 'main'
+    ? 'bg-brand/10 text-brand'
+    : role === 'collection' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+    : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+  return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${cls}`} title={ROLE_HINT[role]}>{ROLE_LABEL[role]}</span>
+}
+
+// Money that came into a collection bank and should move on to the main account.
+function WaitingToMove({ rows, main, canWrite }: { rows: AccountControl[]; main?: AccountControl; canWrite: boolean }) {
+  const [moving, setMoving] = useState<AccountControl | null>(null)
+  const waiting = rows.filter(r => r.role === 'collection' && r.waiting_to_move > 0)
+    .sort((a, b) => (b.waiting_days ?? 0) - (a.waiting_days ?? 0))
+  return (
+    <div className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex items-center gap-2 border-b px-4 py-2.5 dark:border-slate-700">
+        <Hourglass className="h-4 w-4 text-sky-600" />
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Waiting to move to {main?.account_name ?? 'the main account'}</h3>
+      </div>
+      {waiting.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">Nothing is sitting in a collection bank.</p>
+      ) : (
+        <ul className="divide-y dark:divide-slate-700">
+          {waiting.map(r => {
+            const late = (r.waiting_days ?? 0) >= SWEEP_AFTER_DAYS
+            return (
+              <li key={r.account_id} className="flex items-center gap-3 px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.account_name}</p>
+                  <p className={`text-xs ${late ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                    {r.waiting_since ? `Since ${formatDate(r.waiting_since)} · ${r.waiting_days} day${r.waiting_days === 1 ? '' : 's'}` : 'Waiting'}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(r.waiting_to_move)}</span>
+                {canWrite && main && (
+                  <button onClick={() => setMoving(r)} className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium text-brand hover:bg-brand/5 dark:border-slate-600">
+                    Move <ArrowRight className="h-3 w-3" />
+                  </button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <p className="border-t px-4 py-2 text-[11px] text-slate-400 dark:border-slate-700">
+        Flagged after {SWEEP_AFTER_DAYS} days. Once that bank's statement is imported, its line takes the place of the move recorded here.
+      </p>
+      {moving && main && (
+        <MoveMoneyModal
+          from={{ id: moving.account_id, name: moving.account_name }}
+          to={{ id: main.account_id, name: main.account_name }}
+          suggested={moving.waiting_to_move}
+          onClose={() => setMoving(null)}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AccountsPage() {
   const { toast } = useToast()
@@ -116,6 +195,7 @@ export default function AccountsPage() {
   const navigate = useNavigate()
   const { role } = useAuth()
   const canWrite = role === 'admin' || role === 'finance'
+  const [showNotOpened, setShowNotOpened] = useState(false)
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -126,44 +206,29 @@ export default function AccountsPage() {
     },
   })
 
-  const { data: balancesRaw = [] } = useQuery({
-    queryKey: ['account-balances'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('v_account_balances').select('id, balance')
-      if (error) throw error
-      return data as { id: string; balance: number }[]
-    },
-  })
+  const { data: control = [] } = useAccountControl()
+  const ctl = useMemo(() => Object.fromEntries(control.map(c => [c.account_id, c])), [control])
+  const main = control.find(c => c.role === 'main')
 
-  const balanceMap = useMemo(
-    () => Object.fromEntries(balancesRaw.map(b => [b.id, b.balance])),
-    [balancesRaw]
-  )
-
-  // Reconciliation age per account — a standing reminder that a balance is
-  // system-computed until a bank statement confirms it.
-  const { data: reconRaw = [] } = useQuery({
-    queryKey: ['account-reconciliation-status'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('v_account_reconciliation_status')
-        .select('account_id, last_reconciled_date, days_since_reconciled')
-      if (error) throw error
-      return data as { account_id: string; last_reconciled_date: string | null; days_since_reconciled: number | null }[]
-    },
-  })
-  const reconMap = useMemo(
-    () => Object.fromEntries(reconRaw.map(r => [r.account_id, r])),
-    [reconRaw]
-  )
+  // Accounts opened only in case a client asks to pay there are kept out of
+  // the way until they are used.
+  const notOpenedCount = control.filter(c => c.not_opened).length
+  const records = useMemo(() => {
+    const list = showNotOpened ? data : data.filter(a => !ctl[a.id]?.not_opened)
+    const rank = (a: Account) => ({ main: 0, collection: 1, wallet: 2, cash: 3, other: 4 }[ctl[a.id]?.role ?? 'other'] ?? 4)
+    return [...list].sort((a, b) =>
+      rank(a) - rank(b) || Math.abs(Number(ctl[b.id]?.app_balance ?? 0)) - Math.abs(Number(ctl[a.id]?.app_balance ?? 0)))
+  }, [data, ctl, showNotOpened])
 
   const stats = useMemo(() => {
-    const balances = data.map(a => Number(balanceMap[a.id] ?? 0))
-    const total = balances.reduce((s, b) => s + b, 0)
-    const positive = balances.filter(b => b > 0).reduce((s, b) => s + b, 0)
-    const activeCount = data.filter(a => (a.status ?? '').toLowerCase() !== 'inactive').length
-    return { total, positive, activeCount, count: data.length }
-  }, [data, balanceMap])
+    const opened = control.filter(c => !c.not_opened)
+    const total = opened.reduce((s, c) => s + Number(c.app_balance), 0)
+    const positive = opened.filter(c => c.app_balance > 0).reduce((s, c) => s + Number(c.app_balance), 0)
+    const waiting = opened.reduce((s, c) => s + Number(c.waiting_to_move), 0)
+    const awaiting = opened.reduce((s, c) => s + Number(c.awaiting_bank_amount), 0)
+    const awaitingCount = opened.reduce((s, c) => s + Number(c.awaiting_bank_count), 0)
+    return { total, positive, waiting, awaiting, awaitingCount }
+  }, [control])
 
   const handleDelete = useCallback(async (id: string, name: string) => {
     if (!window.confirm(`Delete account "${name}"? This cannot be undone.`)) return
@@ -171,10 +236,14 @@ export default function AccountsPage() {
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['accounts'] })
     qc.invalidateQueries({ queryKey: ['accounts-lookup'] })
+    qc.invalidateQueries({ queryKey: ['account-control'] })
     toast('Account deleted', 'success')
   }, [qc, toast])
 
+  const balanceOf = (a: Account) => Number(ctl[a.id]?.app_balance ?? 0)
+
   const columns: EntityColumn<Account>[] = [
+    { key: 'role', label: 'Used for', render: a => <RoleChip role={ctl[a.id]?.role ?? null} /> },
     {
       key: 'type',
       label: 'Type',
@@ -184,21 +253,31 @@ export default function AccountsPage() {
           </span>
         : null,
     },
-    { key: 'status', label: 'Status', render: a => a.status ? <StatusBadge status={a.status} /> : null },
     {
-      key: 'reconciled',
-      label: 'Reconciled',
+      key: 'statement',
+      label: 'Bank statement',
       render: a => {
-        if (!a.type?.toLowerCase().includes('bank')) return null
-        const r = reconMap[a.id]
-        const ever = !!r?.last_reconciled_date
-        const d = r?.days_since_reconciled ?? 0
-        const { label, cls } = !ever
-          ? { label: 'Never', cls: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' }
-          : d <= 35 ? { label: `${d}d`, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }
-          : d <= 75 ? { label: `${d}d`, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' }
-          : { label: `${d}d`, cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' }
-        return <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`} title={ever ? `Last reconciled ${d} days ago` : 'Never reconciled to a bank statement'}>{label}</span>
+        const c = ctl[a.id]
+        if (!c?.statement_date) return <span className="text-xs text-slate-400">None</span>
+        const age = c.statement_age_days ?? 0
+        const cls = age <= 3 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+          : age <= 10 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+        return (
+          <span className="inline-flex items-center gap-2 text-xs">
+            <span className="tabular-nums text-slate-600 dark:text-slate-300">{formatDate(c.statement_date)}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{age}d</span>
+          </span>
+        )
+      },
+    },
+    {
+      key: 'open',
+      label: 'Open lines',
+      align: 'right',
+      render: a => {
+        const n = ctl[a.id]?.open_count ?? 0
+        return n > 0 ? <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">{n}</span> : <span className="text-xs text-slate-300">—</span>
       },
     },
     {
@@ -206,7 +285,7 @@ export default function AccountsPage() {
       label: 'Balance',
       align: 'right',
       render: a => {
-        const bal = Number(balanceMap[a.id] ?? 0)
+        const bal = balanceOf(a)
         return (
           <span className={`font-bold ${bal < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
             {bal < 0 ? '−' : ''}{formatCurrency(Math.abs(bal))}
@@ -220,8 +299,8 @@ export default function AccountsPage() {
     <EntityDirectory
       storageKey="accounts"
       title="Accounts"
-      subtitle="Bank and cash accounts overview"
-      records={data}
+      subtitle="Where the money is, what the bank last said, and what still has to move"
+      records={records}
       isLoading={isLoading}
       getId={a => a.id}
       getName={a => a.account_name}
@@ -233,36 +312,58 @@ export default function AccountsPage() {
       columns={columns}
       summaryStats={[
         {
-          label: 'Total Balance',
+          label: 'Cash today',
           value: formatCurrency(stats.total),
-          icon: <TrendingUp className="h-5 w-5" />,
+          icon: <Wallet className="h-5 w-5" />,
           valueClassName: stats.total >= 0 ? undefined : 'text-red-600 dark:text-red-400',
         },
         {
-          label: 'Funds Available',
-          value: formatCurrency(stats.positive),
+          label: main ? `In ${main.account_name}` : 'In the main account',
+          value: formatCurrency(main?.app_balance ?? 0),
           icon: <Landmark className="h-5 w-5" />,
-          valueClassName: 'text-green-700 dark:text-green-400',
+          valueClassName: (main?.app_balance ?? 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400',
         },
-        { label: 'Active Accounts', value: `${stats.activeCount} of ${stats.count}`, icon: <CreditCard className="h-5 w-5" /> },
+        { label: 'Waiting to move', value: formatCurrency(stats.waiting), icon: <Hourglass className="h-5 w-5" /> },
+        {
+          label: `Sent, not on the bank yet${stats.awaitingCount ? ` (${stats.awaitingCount})` : ''}`,
+          value: formatCurrency(stats.awaiting),
+          icon: <Send className="h-5 w-5" />,
+        },
       ]}
+      toolbar={
+        <div className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="lg:col-span-2"><AlertsPanel /></div>
+            <WaitingToMove rows={control} main={main} canWrite={canWrite} />
+          </div>
+          {notOpenedCount > 0 && (
+            <button onClick={() => setShowNotOpened(v => !v)} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+              {showNotOpened ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {showNotOpened ? 'Hide' : 'Show'} {notOpenedCount} account{notOpenedCount === 1 ? '' : 's'} not opened yet
+            </button>
+          )}
+        </div>
+      }
       onAdd={canWrite ? () => navigate('/accounts/new') : undefined}
       addLabel="Add Account"
       renderCardBody={a => {
         const entry = getBankEntry(a.account_name)
-        return <AccountBody balance={Number(balanceMap[a.id] ?? 0)} totalBalance={stats.positive} bg={entry.bg} />
+        return <AccountBody c={ctl[a.id]} balance={balanceOf(a)} totalBalance={stats.positive} bg={entry.bg} />
+      }}
+      renderCornerBadge={a => {
+        const c = ctl[a.id]
+        if (!c || c.role !== 'collection' || c.waiting_to_move <= 0 || (c.waiting_days ?? 0) < SWEEP_AFTER_DAYS) return null
+        return <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-amber-950" title="Money waiting to move to the main account">Waiting {c.waiting_days}d</span>
       }}
       renderFooterChips={a => (
         <>
+          <RoleChip role={ctl[a.id]?.role ?? null} />
           {a.type && (
             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
               {a.type.toLowerCase().includes('bank') ? <Landmark className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{a.type}
             </span>
           )}
-          {a.status && <StatusBadge status={a.status} />}
-          {a.notes && (
-            <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]" title={a.notes}>{a.notes}</span>
-          )}
+          {ctl[a.id]?.not_opened ? <StatusBadge status="Not opened" /> : a.status && a.status.toLowerCase() !== 'active' && <StatusBadge status={a.status} />}
         </>
       )}
       renderRowActions={canWrite ? a => (
@@ -284,7 +385,7 @@ export default function AccountsPage() {
         </>
       ) : undefined}
       getHref={a => `/accounts/${a.id}`}
-      ctaLabel="View transactions"
+      ctaLabel="Open account"
       emptyIcon={<Landmark className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />}
       emptyMessage="No accounts yet."
       emptyCta={canWrite ? (
