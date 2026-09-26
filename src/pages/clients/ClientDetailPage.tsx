@@ -25,10 +25,15 @@ type ContractRow = { id: string; contract_no: string | null; contract_value: num
 function contractForSale(sale: { contract_id?: string | null }, contracts: ContractRow[]): ContractRow | null {
   return sale.contract_id ? contracts.find(c => c.id === sale.contract_id) ?? null : null
 }
-function saleWht(sale: { wht?: SaleWht | null }) {
+// A client who pays less than the invoice has withheld the difference
+// (recorded when the bank credit is matched, migration 348) and owes a WHT
+// certificate for that amount, whatever the contract threshold says.
+function saleWht(sale: { wht?: SaleWht | null; withheld_by_client?: number | null }) {
+  const withheld = Number(sale.withheld_by_client ?? 0)
   return {
-    qualifies: !!sale.wht?.qualifies,
-    expected: Number(sale.wht?.expected_wht ?? 0),
+    qualifies: !!sale.wht?.qualifies || withheld > 0,
+    expected: withheld > 0 ? withheld : Number(sale.wht?.expected_wht ?? 0),
+    withheld: withheld > 0,
   }
 }
 
@@ -342,7 +347,7 @@ function WhtTracker({
           const age = daysAgo(s.date)
           const overdue = !hasReceipt && age != null && age > 30
           const daysLeft = !hasReceipt && age != null ? 30 - age : null
-          const { expected } = saleWht(s)
+          const { expected, withheld } = saleWht(s)
           const isFinalOnly = contractForSale(s, contracts)?.wht_deduction_mode === 'final_only'
 
           return (
@@ -355,7 +360,7 @@ function WhtTracker({
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="text-xs text-slate-500">{fmt(s.date)}</span>
                   <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                    WHT: {formatCurrency(expected)}{isFinalOnly ? ' (on contract value)' : ''}
+                    {withheld ? 'Withheld by client' : 'WHT'}: {formatCurrency(expected)}{!withheld && isFinalOnly ? ' (on contract value)' : ''}
                   </span>
                   {overdue && <span className="text-xs font-medium text-red-500">Overdue ({age}d ago)</span>}
                   {!hasReceipt && !overdue && daysLeft != null && daysLeft > 0 && (

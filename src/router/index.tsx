@@ -66,7 +66,9 @@ import AccountFormPage from '@/pages/accounts/AccountFormPage'
 import AccountDetailPage from '@/pages/accounts/AccountDetailPage'
 import TransfersPage from '@/pages/transfers/TransfersPage'
 import TransferFormPage from '@/pages/transfers/TransferFormPage'
-import BankStatementImportPage from '@/pages/transfers/BankStatementImportPage'
+import BankReconciliationPage from '@/pages/bank/BankReconciliationPage'
+import CashForecastPage from '@/pages/finance/CashForecastPage'
+import MonthEndPage from '@/pages/finance/MonthEndPage'
 import PLReportPage from '@/pages/reports/PLReportPage'
 import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
 import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
@@ -384,7 +386,9 @@ export const router = createBrowserRouter([
               { path: 'accounts/:id/edit', element: <AccountFormPage /> },
               { path: 'transfers/new', element: <TransferFormPage /> },
               { path: 'transfers/:id/edit', element: <TransferFormPage /> },
-              { path: 'bank-statement-import', element: <BankStatementImportPage /> },
+              { path: 'bank-statement-import', element: <BankReconciliationPage /> },
+              { path: 'cash-forecast', element: <CashForecastPage /> },
+              { path: 'month-end', element: <MonthEndPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
               { path: 'clients/new', element: <ClientFormPage /> },
               { path: 'clients/:id/edit', element: <ClientFormPage /> },

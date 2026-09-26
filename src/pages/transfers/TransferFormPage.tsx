@@ -77,9 +77,16 @@ function TransferFormBody({ id, record }: { id?: string; record?: Transfer }) {
     if (!form.amount || (form.amount as number) <= 0) { setError('Amount must be greater than 0'); return }
     if (form.from_account_id === form.to_account_id) { setError('From and To accounts must be different'); return }
     setError(''); setSaving(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('transfers').update(form as any).eq('id', id!) : supabase.from('transfers').insert([form as any])
-    const { error: err } = await op
+    // A new transfer is recorded as its two sides (migration 346), so each
+    // bank's statement line takes its side's place instead of counting the
+    // money a second time.
+    const { error: err } = isEdit
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? await supabase.from('transfers').update(form as any).eq('id', id!)
+      : await supabase.rpc('record_internal_transfer', {
+          p_from_account_id: form.from_account_id, p_to_account_id: form.to_account_id,
+          p_amount: form.amount, p_date: form.date ?? new Date().toISOString().slice(0, 10), p_note: form.notes ?? null,
+        })
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
     dropRecordCache(qc, 'transfer')

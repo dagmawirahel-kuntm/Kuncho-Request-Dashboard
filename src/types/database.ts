@@ -750,9 +750,12 @@ export interface Account {
   account_number: string | null
   notes: string | null
   status: string | null
+  /** What the account is for (migration 347): CBE is the main account. */
+  role?: AccountRole | null
   created_at: string
   updated_at: string
 }
+export type AccountRole = 'main' | 'collection' | 'wallet' | 'cash' | 'other'
 export type AccountInsert = Omit<Account, 'id' | 'created_at' | 'updated_at'>
 
 // ── Transfers ────────────────────────────────────────────────────
@@ -797,6 +800,9 @@ export interface Sale {
   finance_approved_by: string | null
   finance_approved_at: string | null
   transfer_id: string | null
+  /** What the bank line brought in, and what the client kept back (migration 348). */
+  amount_received?: number | null
+  withheld_by_client?: number | null
   contract_id: string | null
   is_final_payment: boolean
   created_at: string
