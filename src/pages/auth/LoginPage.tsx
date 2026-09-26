@@ -11,7 +11,7 @@ export default function LoginPage() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: Location })?.from?.pathname ?? '/dashboard'
+  const from = (location.state as { from?: Location })?.from?.pathname ?? '/home'
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')

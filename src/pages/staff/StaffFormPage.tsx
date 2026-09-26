@@ -124,6 +124,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           bank_account: record.bank_account,
           starting_date: record.starting_date,
           termination_date: record.termination_date,
+          contract_end_date: record.contract_end_date ?? null,
           phone_number: record.phone_number,
           email: record.email,
           national_id: record.national_id,
@@ -341,7 +342,7 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
             <option value="Labor" />
             <option value="CNC operator" />
             <option value="Workshop Manager" />
-            <option value="Upper Level Managment" />
+            <option value="Upper Level Management" />
           </datalist>
           <p className="mt-1 text-xs text-slate-400">
             Type <code className="rounded bg-slate-100 dark:bg-slate-700 px-1 text-[10px]">site_foreman</code> to give this person residential-site powers.
@@ -376,7 +377,13 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
       </div>
 
       <Field label="Payment Frequency">
-        <input type="text" className={inputCls} value={form.payment_frequency ?? ''} onChange={e => set('payment_frequency', e.target.value)} placeholder="e.g. Monthly, Bi-weekly" />
+        <select className={inputCls} value={form.payment_frequency ?? ''} onChange={e => set('payment_frequency', e.target.value || null)}>
+          <option value="">— Select —</option>
+          <option>Monthly</option>
+          <option>Bi-Weekly</option>
+          <option>Weekly</option>
+          <option>Daily</option>
+        </select>
       </Field>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -393,18 +400,35 @@ function StaffFormPageBody({ id, record }: { id?: string; record?: Staff }) {
           <input type="text" className={inputCls} value={form.national_id ?? ''} onChange={e => set('national_id', e.target.value)} />
         </Field>
         <Field label="Bank Account">
-          <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
+          {isEdit ? (
+            // Accounts live in staff_bank_accounts (a person can hold several);
+            // this field shows the primary one and is changed there.
+            <>
+              <input type="text" className={`${inputCls} bg-slate-50 text-slate-500`} value={form.bank_account ?? ''} readOnly />
+              <p className="mt-1 text-xs text-slate-400">Add or change accounts under Bank accounts on the staff page.</p>
+            </>
+          ) : (
+            <>
+              <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
+              <p className="mt-1 text-xs text-slate-400">Becomes their primary account; pick the bank on the staff page.</p>
+            </>
+          )}
         </Field>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Starting Date">
-          <input type="date" className={inputCls} value={form.starting_date ?? ''} onChange={e => set('starting_date', e.target.value)} />
+          <input type="date" className={inputCls} value={form.starting_date ?? ''} onChange={e => set('starting_date', e.target.value || null)} />
         </Field>
-        <Field label="Termination Date">
-          <input type="date" className={inputCls} value={form.termination_date ?? ''} onChange={e => set('termination_date', e.target.value)} />
+        <Field label="Contract Ends">
+          <input type="date" className={inputCls} value={form.contract_end_date ?? ''} onChange={e => set('contract_end_date', e.target.value || null)} />
         </Field>
       </div>
+
+      <Field label="Left On">
+        <input type="date" className={inputCls} value={form.termination_date ?? ''} onChange={e => set('termination_date', e.target.value || null)} />
+        <p className="mt-1 text-xs text-slate-400">Only when the person has left. A date today or earlier marks them terminated.</p>
+      </Field>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Profile Photo">
