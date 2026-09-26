@@ -1,4 +1,4 @@
--- 342 — Bank statements, phase 2: one review queue with suggestions
+-- 345 — Bank statements, phase 2: one review queue with suggestions
 --
 -- A line is reconciled by pointing a record at its bank transaction (an
 -- expense, a batch, a sale, a payroll run, a vendor request) or by saying
@@ -29,7 +29,7 @@
 --    banks and moves the money to CBE. Both lines of such a move are paired;
 --    when the other bank's statement isn't in yet, a counterpart transaction
 --    is recorded on that account so its balance still drops, and the other
---    bank's line takes its place when that statement arrives (343).
+--    bank's line takes its place when that statement arrives (346).
 -- 5. Rules (bank_line_rules): "narration contains SERVICE CHARGE → bank
 --    charge", "credit mentioning TSEDEY → internal from Tsedey Bank". Applied
 --    on every import, after the reference and narration matches; a

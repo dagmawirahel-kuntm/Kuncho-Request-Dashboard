@@ -1,4 +1,4 @@
-// Shapes and labels for bank reconciliation (migrations 341–343).
+// Shapes and labels for bank reconciliation (migrations 344–346).
 
 export type LineDirection = 'debit' | 'credit'
 

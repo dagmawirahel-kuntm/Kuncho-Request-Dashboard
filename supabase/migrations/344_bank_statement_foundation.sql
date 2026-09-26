@@ -1,4 +1,4 @@
--- 341 — Bank statements, phase 1: one copy of each bank line, statements
+-- 344 — Bank statements, phase 1: one copy of each bank line, statements
 --       that join up, and a status that can't go stale
 --
 -- What was wrong:

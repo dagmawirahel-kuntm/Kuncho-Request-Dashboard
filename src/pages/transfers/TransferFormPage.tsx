@@ -77,7 +77,7 @@ function TransferFormBody({ id, record }: { id?: string; record?: Transfer }) {
     if (!form.amount || (form.amount as number) <= 0) { setError('Amount must be greater than 0'); return }
     if (form.from_account_id === form.to_account_id) { setError('From and To accounts must be different'); return }
     setError(''); setSaving(true)
-    // A new transfer is recorded as its two sides (migration 343), so each
+    // A new transfer is recorded as its two sides (migration 346), so each
     // bank's statement line takes its side's place instead of counting the
     // money a second time.
     const { error: err } = isEdit

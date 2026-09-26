@@ -13,7 +13,7 @@ type Tab = 'queue' | 'import' | 'statements'
 /**
  * Bank reconciliation: import each account's statements (CSV, Excel, PDF),
  * settle every line against what it paid or brought in — or explain it —
- * and close the period at the bank's balance (migrations 341–343).
+ * and close the period at the bank's balance (migrations 344–346).
  */
 export default function BankReconciliationPage() {
   const [tab, setTab] = useState<Tab | null>(null)

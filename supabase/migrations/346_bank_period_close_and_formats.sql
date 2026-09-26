@@ -1,4 +1,4 @@
--- 343 — Bank statements, phase 3: closing a period, other banks' formats,
+-- 346 — Bank statements, phase 3: closing a period, other banks' formats,
 --       and the other side of internal transfers
 --
 -- 1. close_bank_period(): when every line up to a date is reconciled, the
