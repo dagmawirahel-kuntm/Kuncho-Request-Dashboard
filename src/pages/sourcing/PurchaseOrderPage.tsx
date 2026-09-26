@@ -15,6 +15,7 @@ import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
   Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck, Undo2
 } from 'lucide-react'
+import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -22,13 +23,6 @@ const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'medium',    label: 'Medium (truck)' },
   { value: 'heavy',     label: 'Heavy (full truck+)' },
 ]
-
-const VAT_RATE = 0.15
-const WHT_RATE = 0.03
-// Ethiopian withholding rule: a purchase only falls in the WHT bracket once
-// its subtotal (goods/services value before VAT) exceeds this floor. Below
-// it, no WHT applies regardless of the vendor's tax-registration status.
-const WHT_SUBTOTAL_THRESHOLD = 20000
 
 type BundleDetail = {
   id: string
@@ -423,9 +417,11 @@ export default function PurchaseOrderPage() {
   // Advance payment (pattern B, migration 110): the vendor demands
   // payment before goods arrive, so the expense has to exist before a
   // GRN does — the opposite gate from canCreateExpense above, and only
-  // for bundles that actually declared this pattern. Creating the
-  // expense here does NOT itself send money; it still goes through the
-  // normal finance-approval and to-pay-queue flow, landing in
+  // for bundles that actually declared this pattern. Since 342 the
+  // database prepares it the moment the PO is marked ordered, so this
+  // button is only the fallback for one whose expense was unlinked.
+  // Creating the expense does NOT itself send money; it still goes
+  // through the normal finance-approval and to-pay-queue flow, landing in
   // payment_state = 'advance' instead of the usual 'sent'/'paid'.
   const isPayInAdvance = bundle.payment_pattern === 'pay_in_advance'
   const canCreateAdvanceExpense = isPayInAdvance && ['ordered', 'fulfilled'].includes(status) && !grn && !bundle.expense_id
@@ -515,7 +511,15 @@ export default function PurchaseOrderPage() {
       qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
       qc.invalidateQueries({ queryKey: ['order-item-counts'] })
-      toast(`Bundle moved to ${nextStatus}`, 'success')
+      // Ordering a pay-in-advance PO prepares its expense in the database
+      // (342), and cancelling removes one nobody has touched yet.
+      if (nextStatus === 'ordered' || nextStatus === 'cancelled') qc.invalidateQueries({ queryKey: ['expenses'] })
+      toast(
+        nextStatus === 'ordered' && bundle?.payment_pattern === 'pay_in_advance' && !bundle?.expense_id
+          ? 'Marked as ordered — the advance expense is prepared and waiting for finance approval'
+          : `Bundle moved to ${nextStatus}`,
+        'success',
+      )
       setShowRejectPanel(false)
       setFinanceNotes('')
     } catch (err: any) {
