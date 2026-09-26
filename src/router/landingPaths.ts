@@ -39,6 +39,7 @@ export const DEPARTMENT_LANDING: Record<string, string> = {
 /** Every page a person can land on after signing in — where the seasonal
  *  greeting is shown, and nowhere else. */
 export const LANDING_PATHS: ReadonlySet<string> = new Set([
+  '/home',
   '/dashboard',
   ...Object.values(ROLE_LANDING).filter((p): p is string => !!p),
   ...Object.values(DEPARTMENT_LANDING),

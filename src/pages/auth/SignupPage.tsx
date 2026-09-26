@@ -46,7 +46,7 @@ export default function SignupPage() {
       }
       return
     }
-    navigate('/dashboard', { replace: true })
+    navigate('/home', { replace: true })
   }
 
   return (

@@ -149,7 +149,7 @@ export function AppShell() {
 
           {/* Breadcrumb */}
           <nav className="hidden items-center gap-1 text-sm text-slate-500 md:flex dark:text-slate-400">
-            <NavLink to="/dashboard" className="hover:text-slate-700 dark:hover:text-slate-200">Home</NavLink>
+            <NavLink to="/home" className="hover:text-slate-700 dark:hover:text-slate-200">Home</NavLink>
             {segments.map((seg, i) => (
               <span key={seg} className="flex items-center gap-1">
                 <ChevronRight className="h-3.5 w-3.5" />

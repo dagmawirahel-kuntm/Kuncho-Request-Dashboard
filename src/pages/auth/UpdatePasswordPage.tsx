@@ -37,7 +37,7 @@ export default function UpdatePasswordPage() {
     const { error: err } = await supabase.auth.updateUser({ password })
     setLoading(false)
     if (err) { setError(err.message); return }
-    navigate('/dashboard', { replace: true })
+    navigate('/home', { replace: true })
   }
 
   return (

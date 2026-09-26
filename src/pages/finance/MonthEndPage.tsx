@@ -4,41 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Circle, CalendarCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { toEthiopian, toGregorian, ecMonthLength, ecPeriodLabel } from '@/lib/ethiopianCalendar'
+import { recentEcMonths } from '@/lib/ecMonths'
 import { useLedgerTieout, type ChecklistItem } from '@/lib/cashControl'
 import { LedgerTieoutCard } from '@/components/cash/LedgerTieout'
-
-function isoDate(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-interface EcMonth { year: number; month: number; from: string; to: string; label: string }
-
-// Pagume is part of Nehase (fiscal_periods.pagume_attaches_to = 'nehase'),
-// so Nehase's month-end runs to the last day of Pagume.
-function ecMonth(year: number, month: number, suffix = ''): EcMonth {
-  const lastMonth = month === 12 ? 13 : month
-  return {
-    year, month,
-    from: isoDate(toGregorian(year, month, 1)),
-    to: isoDate(toGregorian(year, lastMonth, ecMonthLength(year, lastMonth))),
-    label: ecPeriodLabel(year, month) + suffix,
-  }
-}
-
-// The month in progress, then the last twelve that have ended, newest first.
-function recentMonths(): EcMonth[] {
-  const today = toEthiopian(new Date())
-  let y = today.year
-  let m = today.month === 13 ? 12 : today.month
-  const out: EcMonth[] = [ecMonth(y, m, ' (in progress)')]
-  while (out.length < 13) {
-    m -= 1
-    if (m < 1) { m = 12; y -= 1 }
-    out.push(ecMonth(y, m))
-  }
-  return out
-}
 
 const STATE_ICON = {
   ok: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
@@ -52,7 +20,7 @@ const STATE_ICON = {
  * (migration 350). Months are Ethiopian.
  */
 export default function MonthEndPage() {
-  const months = useMemo(() => recentMonths(), [])
+  const months = useMemo(() => recentEcMonths(), [])
   const [idx, setIdx] = useState(1) // the last month that has ended
   const period = months[idx]
 

@@ -14,6 +14,7 @@ import LoginPage from '@/pages/auth/LoginPage'
 import SignupPage from '@/pages/auth/SignupPage'
 import UpdatePasswordPage from '@/pages/auth/UpdatePasswordPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
+import MyDashboardPage from '@/pages/home/MyDashboardPage'
 import MyRequestsDashboardPage from '@/pages/dashboard/MyRequestsDashboardPage'
 import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
 import ProcurementDashboardPage from '@/pages/dashboard/ProcurementDashboardPage'
@@ -197,6 +198,7 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <LandingRedirect /> },
+          { path: 'home', element: <MyDashboardPage /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'my-home', element: <MyRequestsDashboardPage /> },
           { path: 'my-leave', element: <MyLeavePage /> },
