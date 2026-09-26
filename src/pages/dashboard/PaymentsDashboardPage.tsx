@@ -152,7 +152,7 @@ function CashTicker({ positions, loading, summaries, awaiting }: {
               </span>
             )}
             <Link to="/bank-statement-import" className="ml-auto inline-flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-sky-700">
-              <Landmark className="h-3 w-3" /> Reconcile in bank import
+              <Landmark className="h-3 w-3" /> Reconcile the bank
             </Link>
           </div>
         </div>

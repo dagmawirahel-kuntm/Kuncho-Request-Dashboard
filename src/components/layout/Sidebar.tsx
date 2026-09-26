@@ -154,7 +154,7 @@ const navGroups: NavGroup[] = [
       { label: 'Payment Requests', to: '/finance/payment-requests', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { label: 'Accounts', to: '/accounts', icon: CreditCard, roles: ['admin', 'executive', 'finance'] },
       { label: 'Transfers', to: '/transfers', icon: ArrowLeftRight, roles: ['admin', 'executive', 'finance'] },
-      { label: 'Bank Statement Import', to: '/bank-statement-import', icon: Upload, roles: ['admin', 'finance'] },
+      { label: 'Bank Reconciliation', to: '/bank-statement-import', icon: Upload, roles: ['admin', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },

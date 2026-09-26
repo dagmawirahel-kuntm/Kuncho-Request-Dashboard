@@ -1,5 +1,5 @@
 // Minimal client-side CSV export -- no existing utility in this codebase to
-// match (bankStatementParser only parses CSV in, doesn't write one out).
+// match (lib/bankStatements only reads statements in, it doesn't write one out).
 
 function csvCell(value: unknown): string {
   if (value == null) return ''
