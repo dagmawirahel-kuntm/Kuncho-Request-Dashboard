@@ -1,7 +1,7 @@
 import {
   BellRing, Briefcase, CalendarCheck, CalendarDays, ClipboardCheck, ClipboardList, Clock, FileText, FolderKanban,
   GitPullRequestArrow, Hammer, Handshake, HardHat, Landmark, Package, PackageCheck, PenTool, Pin, Send, ShoppingCart,
-  Truck, Users, UserX, Wallet, Wrench, Banknote, AlertTriangle,
+  Truck, Users, UserX, UserCog, Wallet, Wrench, Banknote, AlertTriangle,
 } from 'lucide-react'
 import {
   WaitingOnYou, MyRequests, MyProjects, MyWorkOrders, MyLeave, MyPay, MyTools, PinnedPages,
@@ -11,7 +11,7 @@ import {
 } from '@/components/dashboard/widgets/finance'
 import {
   Portfolio, PoApprovals, Variations, TransportJobs, FleetMaintenance, OpenIncidents, PoPipeline, GrnQueue, LowStock,
-  PendingDispatch, LeaveApprovals, UnassignedStaff, SalesPipeline, PaymentRequestsOut, DesignPackages,
+  PendingDispatch, LeaveApprovals, UnassignedStaff, StaffIssues, SalesPipeline, PaymentRequestsOut, DesignPackages,
 } from '@/components/dashboard/widgets/operations'
 import type { WidgetContext, WidgetDef } from './types'
 
@@ -56,6 +56,7 @@ export const WIDGETS: WidgetDef[] = [
 
   // People
   { key: 'leave_approvals', title: 'Leave requests pending', description: 'Every leave request waiting for a decision.', icon: Users, group: 'People', defaultSize: 'half', available: role('hr_officer', 'executive'), component: LeaveApprovals },
+  { key: 'staff_issues', title: 'Staff records to fix', description: 'Contracts ending, missing pay rates, shared bank accounts and other gaps in staff records.', icon: UserCog, group: 'People', defaultSize: 'half', available: role('hr_officer'), component: StaffIssues },
   { key: 'unassigned_staff', title: 'Staff with no department', description: 'Active staff not placed in a department.', icon: UserX, group: 'People', defaultSize: 'half', available: role('hr_officer'), component: UnassignedStaff },
 
   // Sales & design

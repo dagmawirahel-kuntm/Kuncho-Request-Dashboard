@@ -471,8 +471,12 @@ function OverviewTab({ staff }: { staff: Staff }) {
           )}
           <DetailRow label="Start Date" icon={<Calendar className="h-3.5 w-3.5" />}
             value={staff.starting_date ? formatDate(staff.starting_date) : null} />
+          {staff.contract_end_date && (
+            <DetailRow label="Contract Ends" icon={<Calendar className="h-3.5 w-3.5" />}
+              value={formatDate(staff.contract_end_date)} />
+          )}
           {staff.termination_date && (
-            <DetailRow label="Termination Date" icon={<Calendar className="h-3.5 w-3.5" />}
+            <DetailRow label="Left On" icon={<Calendar className="h-3.5 w-3.5" />}
               value={formatDate(staff.termination_date)} />
           )}
         </div>
@@ -1052,7 +1056,7 @@ export default function StaffDetailPage() {
         <StatCard
           label="Status"
           value={status.replace('_', ' ')}
-          sub={staff.termination_date ? `Until ${formatDate(staff.termination_date)}` : 'Currently employed'}
+          sub={staff.termination_date ? `Left ${formatDate(staff.termination_date)}` : staff.contract_end_date ? `Contract to ${formatDate(staff.contract_end_date)}` : 'Currently employed'}
           icon={<CheckCircle2 className="h-4 w-4" />}
         />
       </div>

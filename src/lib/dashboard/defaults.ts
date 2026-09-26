@@ -11,7 +11,7 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
 
   switch (ctx.role) {
     case 'admin':
-      add(W('cash_position'), W('bank_alerts'), W('portfolio'), W('po_approvals'), W('payments_to_send'), W('leave_approvals'))
+      add(W('cash_position'), W('bank_alerts'), W('portfolio'), W('po_approvals'), W('payments_to_send'), W('leave_approvals'), W('staff_issues'))
       break
     case 'executive':
       add(W('cash_position'), W('portfolio'), W('sales_pipeline'), W('po_approvals'), W('payment_requests_out'))
@@ -32,7 +32,7 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
       add(W('transport_jobs'), W('fleet_maintenance'))
       break
     case 'hr_officer':
-      add(W('leave_approvals'), W('unassigned_staff'))
+      add(W('leave_approvals'), W('staff_issues'), W('unassigned_staff'))
       break
     case 'hse_officer':
       add(W('open_incidents'))

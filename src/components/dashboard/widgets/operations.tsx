@@ -1,4 +1,4 @@
-import { AlertTriangle, Briefcase, ClipboardCheck, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
+import { AlertTriangle, Briefcase, ClipboardCheck, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { QueryListWidget, type ListRow } from '../WidgetCard'
@@ -246,6 +246,32 @@ export function UnassignedStaff() {
         return { total: count ?? 0, rows: (data ?? []).map(s => ({
           id: s.id, title: s.employee_name, subtitle: [s.role, String(s.employment_type ?? '').replace(/_/g, ' ')].filter(Boolean).join(' · '), to: `/staff/${s.id}`,
         })) }
+      }}
+    />
+  )
+}
+
+// Records HR still has to complete or correct (v_staff_data_issues,
+// migration 353), most urgent first: contracts ending, then pay and bank.
+const ISSUE_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
+export function StaffIssues() {
+  return (
+    <QueryListWidget
+      title="Staff records to fix" icon={UserCog} to="/staff" queryKey={['staff-issues']} empty="Every staff record is complete."
+      fetch={async () => {
+        const { data, error } = await supabase.from('v_staff_data_issues').select('kind, severity, staff_id, employee_name, detail')
+        if (error) throw error
+        const rows = (data ?? []).sort((a, b) => ISSUE_ORDER[a.severity] - ISSUE_ORDER[b.severity] || a.employee_name.localeCompare(b.employee_name))
+        const byKind = new Map<string, number>()
+        for (const r of rows) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + 1)
+        return {
+          total: rows.length,
+          summary: [...byKind.entries()].map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(' · '),
+          rows: rows.slice(0, 7).map((r, i) => ({
+            id: `${r.staff_id}-${r.kind}-${i}`, title: r.employee_name, subtitle: r.detail,
+            badge: r.severity === 'high' ? { text: 'fix', tone: 'red' as const } : null, to: `/staff/${r.staff_id}`,
+          })),
+        }
       }}
     />
   )

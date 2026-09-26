@@ -120,7 +120,10 @@ export interface Staff {
    *  usually the name of the person whose account is actually used. */
   bank_account_note: string | null
   starting_date: string | null
+  /** The day the person left (migration 353); on or before today, status is terminated. */
   termination_date: string | null
+  /** When the employment contract runs to. */
+  contract_end_date?: string | null
   phone_number: string | null
   email: string | null
   national_id: string | null
