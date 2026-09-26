@@ -15,6 +15,7 @@ import {
   ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
   Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck, Undo2
 } from 'lucide-react'
+import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -22,13 +23,6 @@ const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'medium',    label: 'Medium (truck)' },
   { value: 'heavy',     label: 'Heavy (full truck+)' },
 ]
-
-const VAT_RATE = 0.15
-const WHT_RATE = 0.03
-// Ethiopian withholding rule: a purchase only falls in the WHT bracket once
-// its subtotal (goods/services value before VAT) exceeds this floor. Below
-// it, no WHT applies regardless of the vendor's tax-registration status.
-const WHT_SUBTOTAL_THRESHOLD = 20000
 
 type BundleDetail = {
   id: string

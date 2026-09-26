@@ -14,6 +14,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { poTax } from '@/lib/poTax'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
 
@@ -120,7 +121,7 @@ export default function ExpenseFormPage() {
       const { data, error } = await supabase
         .from('sourcing_bundles')
         .select(`
-          id, bundle_code, vendor_id, vendor_name,
+          id, bundle_code, vendor_id, vendor_name, vendors(wth_eligible),
           total_value, items_subtotal_etb, discount_etb, discount_kind, discount_value, discount_reason,
           sourcing_bundle_items(
             quantity_actual, unit_price_actual,
@@ -187,6 +188,7 @@ export default function ExpenseFormPage() {
 
 type LinkedBundle = {
   id: string; bundle_code: string; vendor_id: string | null; vendor_name: string | null
+  vendors: { wth_eligible: boolean | null } | null
   total_value: number | null; items_subtotal_etb: number | null; discount_etb: number | null
   discount_kind: SourcingBundleDiscountKind | null; discount_value: number | null; discount_reason: string | null
   sourcing_bundle_items: {
@@ -419,21 +421,36 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       // lines here would bill the vendor the undiscounted figure, which is
       // not what the PO was approved at. The fallback only covers a bundle
       // row that somehow arrives without it.
-      const total = linkedBundle.total_value
-        ?? items.reduce((sum, i) => sum + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0)
+      const total = Number(linkedBundle.total_value
+        ?? items.reduce((sum, i) => sum + (i.quantity_actual ?? 0) * (i.unit_price_actual ?? 0), 0))
       const discount = Number(linkedBundle.discount_etb ?? 0)
       const projectIds = new Set(items.map(i => i.order_items?.orders?.project_id).filter(Boolean))
       const itemNames = items.map(i => i.order_items?.item_name).filter(Boolean).join(', ')
+      // The expense is the PO's gross — subtotal + VAT, as the PO prints it
+      // — with the WHT set to be withheld at payment, exactly as the GRN
+      // trigger raises one (341). Billing the subtotal left the VAT unpaid.
+      const tax = poTax(total, !!linkedBundle.vendors?.wth_eligible)
       return {
         expense_type: 'purchase_order' as const,
         item_service_description: `PO ${linkedBundle.bundle_code}${itemNames ? ` — ${itemNames}` : ''}`,
-        amount_etb: total || undefined,
-        ...(discount > 0 ? {
-          notes: `Vendor discount of ${formatCurrency(discount)} applied: `
-            + `${formatCurrency(Number(linkedBundle.items_subtotal_etb ?? 0))} before discount, `
-            + `${formatCurrency(Number(total))} billed.`
-            + (linkedBundle.discount_reason ? ` ${linkedBundle.discount_reason}` : ''),
+        amount_etb: total ? tax.gross : undefined,
+        ...(tax.wht > 0 ? {
+          wht_amount: tax.wht,
+          verify_wht: true,
+          wht_handling_method: 'Withheld & Remitted',
         } : {}),
+        notes: [
+          discount > 0
+            ? `Vendor discount of ${formatCurrency(discount)} applied: `
+              + `${formatCurrency(Number(linkedBundle.items_subtotal_etb ?? 0))} before discount, `
+              + `${formatCurrency(total)} billed.`
+              + (linkedBundle.discount_reason ? ` ${linkedBundle.discount_reason}` : '')
+            : null,
+          total
+            ? `PO subtotal ${formatCurrency(total)} + VAT 15% ${formatCurrency(tax.vat)} = ${formatCurrency(tax.gross)}.`
+              + (tax.wht > 0 ? ` WHT 3% ${formatCurrency(tax.wht)} withheld; ${formatCurrency(tax.gross - tax.wht)} to the vendor.` : '')
+            : null,
+        ].filter(Boolean).join('\n') || undefined,
         vendor_id: linkedBundle.vendor_id ?? undefined,
         vendors_name: linkedBundle.vendor_id ? undefined : (linkedBundle.vendor_name ?? undefined),
         project_id: projectIds.size === 1 ? [...projectIds][0] as string : undefined,
