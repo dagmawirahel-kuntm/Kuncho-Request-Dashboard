@@ -220,13 +220,13 @@ function ClientRowActions({
                 onClick={() => { setOpen(false); navigate(`/clients/${client.id}/payment-request?type=new`) }}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
               >
-                <FilePlus className="h-4 w-4 text-slate-400 flex-shrink-0" /> Payment Request (New Contract)
+                <FilePlus className="h-4 w-4 text-slate-400 flex-shrink-0" /> Payment Request (Advance)
               </button>
               <button
                 onClick={() => { setOpen(false); navigate(`/clients/${client.id}/payment-request?type=existing`) }}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
               >
-                <FilePlus className="h-4 w-4 text-slate-400 flex-shrink-0" /> Payment Request (Existing)
+                <FilePlus className="h-4 w-4 text-slate-400 flex-shrink-0" /> Payment Request (Progress)
               </button>
             </div>
           </>

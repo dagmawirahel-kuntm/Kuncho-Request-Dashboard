@@ -825,6 +825,38 @@ export interface Proforma {
 }
 export type ProformaInsert = Omit<Proforma, 'id' | 'created_at' | 'updated_at'>
 
+// Migration 340: what the client is billed for is a share of a proforma (or
+// contract), asked for in a payment request; the invoice is raised from the
+// request, never straight from the proforma.
+export type ClientPaymentRequestStatus = 'issued' | 'invoiced' | 'cancelled'
+export interface ClientPaymentRequest {
+  id: string
+  request_number: string
+  client_id: string
+  proforma_id: string | null
+  contract_id: string | null
+  milestone_id: string | null
+  project_id: string | null
+  kind: PaymentMilestoneKind
+  request_date: string
+  /** The proforma total or contract value the percentage is a share of. */
+  basis_amount: number
+  percent: number | null
+  amount: number
+  title: string | null
+  previously_paid: number
+  bank_name: string | null
+  account_number: string | null
+  account_name: string | null
+  notes: string | null
+  status: ClientPaymentRequestStatus
+  sale_id: string | null
+  cancelled_reason: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ProformaItem {
   id: string
   proforma_id: string
@@ -3469,6 +3501,7 @@ export interface ScheduleTaskBoqItem {
 // physical progress. Amounts are computed by trigger from the contract
 // (migrations 232/233) — never written directly by the client.
 export type PaymentMilestoneStatus = 'pending' | 'progress_met' | 'invoiced' | 'payment_confirmed'
+export type PaymentMilestoneKind = 'advance' | 'progress' | 'final' | 'other'
 
 export interface PaymentMilestone {
   id: string
@@ -3476,8 +3509,10 @@ export interface PaymentMilestone {
   project_id: string
   sequence_number: number
   title: string
-  /** Migration 330: advance falls due on signing; progress and final follow the work. */
-  kind: 'advance' | 'progress' | 'final' | 'other'
+  /** Migration 330: advance falls due on signing; progress and final follow the work.
+   *  Migration 338: an advance needs no progress — it can be requested
+   *  ('invoiced' = payment request sent) and received from pending or due. */
+  kind: PaymentMilestoneKind
   percent_of_contract_value: number
   gross_amount_etb: number
   // VAT-exclusive share of the contract — the base for both retention and WHT.

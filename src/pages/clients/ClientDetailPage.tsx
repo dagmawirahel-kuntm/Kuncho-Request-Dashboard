@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ClientPaymentRequests } from '@/components/shared/ClientPaymentRequests'
 import { Link, useParams } from 'react-router-dom'
 import { useState, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -904,6 +905,7 @@ export default function ClientDetailPage() {
       {/* ── SALES ─────────────────────────────────────────────────── */}
       {tab === 'sales' && (
         <>
+          <ClientPaymentRequests clientId={id!} />
           {loadingSales && <p className="text-center text-sm text-slate-400 py-12">Loading…</p>}
           {!loadingSales && sales.length === 0 && (
             <div className="rounded-2xl border-2 border-dashed dark:border-slate-700 py-14 text-center space-y-2">

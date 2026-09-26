@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -11,7 +12,7 @@ import { LinkMilestoneBoqItemsModal } from './LinkMilestoneBoqItemsModal'
 import type { PaymentMilestone, ContractMilestonePlanTotals } from '@/types/database'
 import type { ContractTerms } from '@/lib/milestoneAmounts'
 import {
-  Banknote, Plus, Link2, AlertTriangle, CheckCircle2, FileText, Pencil, Trash2, X,
+  Banknote, Plus, Link2, AlertTriangle, CheckCircle2, FileText, Pencil, Trash2, X, Send,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -23,6 +24,7 @@ interface Props {
 
 type ContractRow = ContractTerms & {
   id: string
+  client_id: string | null
   contract_no: string | null
   status: string | null
   wht_deduction_mode: string
@@ -46,7 +48,7 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contracts')
-        .select('id, contract_no, contract_value, contract_value_includes_vat, wht_rate, retention_percent, wht_deduction_mode, status')
+        .select('id, client_id, contract_no, contract_value, contract_value_includes_vat, wht_rate, retention_percent, wht_deduction_mode, status')
         .eq('project_id', projectId)
         .order('signed_date', { ascending: false, nullsFirst: false })
       if (error) throw error
@@ -213,6 +215,11 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
             const allComplete = myLinks.length > 0 &&
               myLinks.every(l => (itemById.get(l.boq_item_id)?.progress_pct ?? -1) >= 100)
             const isPending = m.status === 'pending'
+            // An advance is paid before the work starts: it is requested and
+            // received, with no progress to meet (migration 338). It is open
+            // while pending or due (due = contract signed, migration 330).
+            const isAdvance = m.kind === 'advance'
+            const advanceOpen = isAdvance && (m.status === 'pending' || m.status === 'progress_met')
 
             return (
               <div key={m.id} className="rounded-lg border dark:border-slate-700 p-3 space-y-2">
@@ -220,6 +227,11 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
                       <span className="text-slate-400 mr-1.5">{m.sequence_number}.</span>{m.title}
+                      {isAdvance && (
+                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                          Advance
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
                       {m.percent_of_contract_value}% · gross {formatCurrency(m.gross_amount_etb)}
@@ -231,13 +243,22 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
                     <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
                       {formatCurrency(m.net_payable_etb)}
                     </span>
-                    <StatusBadge status={m.status} />
+                    {/* For an advance, "invoiced" means the payment request went out. */}
+                    <StatusBadge status={!isAdvance ? m.status
+                      : m.status === 'invoiced' ? 'requested'
+                      : m.status === 'progress_met' ? 'due' : m.status} />
                   </div>
                 </div>
 
                 {/* Completion condition */}
                 <div className="text-xs space-y-1">
-                  {myLinks.length === 0 ? (
+                  {isAdvance ? (
+                    <p className="text-slate-500 dark:text-slate-400">
+                      Paid before work starts — there is no progress to meet.
+                      {m.status !== 'payment_confirmed' && ' Work on the next milestone waits until this is received.'}
+                      {m.status === 'invoiced' && m.invoiced_at && ` Requested ${formatDate(m.invoiced_at)}.`}
+                    </p>
+                  ) : myLinks.length === 0 ? (
                     <p className="text-slate-400 dark:text-slate-500 italic">
                       No BOQ items linked — link the scope that defines completion.
                     </p>
@@ -278,11 +299,13 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
                 <div className="flex items-center gap-2 flex-wrap pt-1">
                   {isPending && canEditPlan && (
                     <>
-                      <button onClick={() => setLinking(m)} disabled={!approvedBoq}
-                        title={approvedBoq ? undefined : 'No approved BOQ for this project yet'}
-                        className="flex items-center gap-1 rounded-md border dark:border-slate-600 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
-                        <Link2 className="h-3.5 w-3.5" /> Link BOQ items
-                      </button>
+                      {!isAdvance && (
+                        <button onClick={() => setLinking(m)} disabled={!approvedBoq}
+                          title={approvedBoq ? undefined : 'No approved BOQ for this project yet'}
+                          className="flex items-center gap-1 rounded-md border dark:border-slate-600 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
+                          <Link2 className="h-3.5 w-3.5" /> Link BOQ items
+                        </button>
+                      )}
                       <button onClick={() => setEditing(m)}
                         className="flex items-center gap-1 rounded-md border dark:border-slate-600 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
                         <Pencil className="h-3.5 w-3.5" /> Edit
@@ -294,7 +317,30 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
                     </>
                   )}
 
-                  {isPending && canMarkProgress && (
+                  {/* Advance: the request letter, then recording that it went
+                      out, then the payment — no progress stage. */}
+                  {advanceOpen && canInvoice && contract.client_id && (
+                    <Link
+                      to={`/clients/${contract.client_id}/payment-request?type=new&contract_id=${contract.id}&milestone_id=${m.id}`}
+                      className="flex items-center gap-1 rounded-md border dark:border-slate-600 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+                      <FileText className="h-3.5 w-3.5" /> Payment request
+                    </Link>
+                  )}
+                  {advanceOpen && canInvoice && (
+                    <button onClick={() => setInvoicing(m)}
+                      className="flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand/90">
+                      <Send className="h-3.5 w-3.5" /> Record request sent
+                    </button>
+                  )}
+                  {advanceOpen && canConfirm && (
+                    <button onClick={() => setConfirming(m)}
+                      title="Received without a request logged here"
+                      className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700">
+                      Confirm Payment
+                    </button>
+                  )}
+
+                  {!isAdvance && isPending && canMarkProgress && (
                     <button onClick={() => handleMarkProgressMet(m)} disabled={busy || !allComplete}
                       title={allComplete ? undefined : 'All linked BOQ items must reach 100% first'}
                       className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
@@ -302,7 +348,7 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
                     </button>
                   )}
 
-                  {m.status === 'progress_met' && canInvoice && (
+                  {!isAdvance && m.status === 'progress_met' && canInvoice && (
                     <button onClick={() => setInvoicing(m)}
                       className="flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand/90">
                       <FileText className="h-3.5 w-3.5" /> Mark Invoiced
@@ -361,6 +407,9 @@ function InvoiceModal({ milestone, onClose, onDone }: { milestone: PaymentMilest
   const [url, setUrl] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
+  // For an advance the bill is the payment request letter, sent before any
+  // proforma or invoice exists.
+  const isAdvance = milestone.kind === 'advance'
 
   async function submit() {
     setSaving(true)
@@ -371,30 +420,34 @@ function InvoiceModal({ milestone, onClose, onDone }: { milestone: PaymentMilest
     })
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
-    toast('Marked as invoiced', 'success')
+    toast(isAdvance ? 'Payment request recorded' : 'Marked as invoiced', 'success')
     onDone(); onClose()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Mark Invoiced — {milestone.title}</h3>
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+          {isAdvance ? 'Record Payment Request' : 'Mark Invoiced'} — {milestone.title}
+        </h3>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Records a reference to an invoice you raised elsewhere; no document is generated here.
+          {isAdvance
+            ? 'Records that the advance payment request went to the client. Confirm the payment when it arrives.'
+            : 'Records a reference to an invoice you raised elsewhere; no document is generated here.'}
         </p>
         <div>
-          <label className="text-xs text-slate-500 dark:text-slate-400">Invoice date</label>
+          <label className="text-xs text-slate-500 dark:text-slate-400">{isAdvance ? 'Date sent' : 'Invoice date'}</label>
           <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />
         </div>
         <div>
-          <label className="text-xs text-slate-500 dark:text-slate-400">Invoice document link (optional)</label>
+          <label className="text-xs text-slate-500 dark:text-slate-400">{isAdvance ? 'Request letter link (optional)' : 'Invoice document link (optional)'}</label>
           <input className={inputCls} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" />
         </div>
         <div className="flex items-center justify-end gap-2 pt-1">
           <button onClick={onClose} className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
           <button onClick={submit} disabled={saving}
             className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
-            {saving ? 'Saving…' : 'Mark Invoiced'}
+            {saving ? 'Saving…' : isAdvance ? 'Record Request' : 'Mark Invoiced'}
           </button>
         </div>
       </div>

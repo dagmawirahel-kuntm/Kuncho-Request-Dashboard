@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { computeMilestoneAmounts, type ContractTerms } from '@/lib/milestoneAmounts'
-import type { PaymentMilestone, ContractWhtBasis } from '@/types/database'
+import type { PaymentMilestone, PaymentMilestoneKind, ContractWhtBasis } from '@/types/database'
 import { X } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -29,7 +29,15 @@ export function MilestoneFormModal({
   const [percent, setPercent] = useState<string>(
     milestone ? String(milestone.percent_of_contract_value) : ''
   )
+  // New milestones default to progress; 'other' is legacy (pre-330) and kept
+  // as-is on edit unless a type is picked.
+  const [kind, setKind] = useState<PaymentMilestoneKind>(milestone?.kind ?? 'progress')
   const [saving, setSaving] = useState(false)
+
+  function chooseKind(t: PaymentMilestoneKind) {
+    setKind(t)
+    if (t === 'advance' && !title.trim()) setTitle('Advance payment')
+  }
 
   // The same WHT basis the save trigger uses (migration 310), so the preview
   // and the stored amounts come from one rule.
@@ -59,6 +67,7 @@ export function MilestoneFormModal({
       sequence_number: sequence,
       title: title.trim(),
       percent_of_contract_value: pct,
+      kind,
     }
 
     const { error } = milestone
@@ -82,6 +91,23 @@ export function MilestoneFormModal({
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
             <X className="h-4 w-4" />
           </button>
+        </div>
+
+        {/* An advance is paid so the work can start, so it has no progress to
+            meet — it is requested and received, and that's all. */}
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ['advance', 'Advance', 'Paid before work starts — no progress to meet'],
+            ['progress', 'Progress', 'Paid when the linked work is complete'],
+            ['final', 'Final', 'Paid on completion and handover'],
+          ] as const).map(([value, label, sub]) => (
+            <button key={value} type="button" onClick={() => chooseKind(value)}
+              className={`rounded-md border px-3 py-2 text-left text-xs dark:border-slate-600 ${
+                kind === value ? 'border-brand bg-brand/5 dark:bg-brand/10' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+              <span className="block font-medium text-slate-700 dark:text-slate-200">{label}</span>
+              <span className="block text-[11px] text-slate-400">{sub}</span>
+            </button>
+          ))}
         </div>
 
         <div className="grid grid-cols-3 gap-2">
