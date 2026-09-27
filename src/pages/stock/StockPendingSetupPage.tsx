@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
-import { ClipboardCheck, ArrowRight, PackageSearch } from 'lucide-react'
+import { useStockDuplicateGroups } from '@/lib/stockDuplicates'
+import { ClipboardCheck, ArrowRight, PackageSearch, Copy } from 'lucide-react'
 
 interface PendingSetupRow {
   id: string
@@ -25,6 +26,11 @@ export default function StockPendingSetupPage() {
       return data as PendingSetupRow[]
     },
   })
+  // Many of these are an item already in stock under another spelling —
+  // merging those first saves setting the same item up twice.
+  const { data: dupGroups = [] } = useStockDuplicateGroups()
+  const dupIds = new Set(dupGroups.flatMap(g => g.members.map(m => m.id)))
+  const dupCount = data.filter(i => dupIds.has(i.id)).length
 
   return (
     <div className="space-y-5">
@@ -34,6 +40,17 @@ export default function StockPendingSetupPage() {
           Items auto-created from received purchase orders — finish setting each one up before it counts toward stock-on-hand.
         </p>
       </div>
+
+      {dupCount > 0 && (
+        <Link to="/stock/duplicates"
+          className="flex items-center gap-3 rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/15 px-4 py-3 hover:border-amber-300">
+          <Copy className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          <p className="flex-1 text-sm text-amber-900 dark:text-amber-200">
+            <strong>{dupCount}</strong> of these look like items already in stock under another name. Merge them first, then set up what's left.
+          </p>
+          <ArrowRight className="h-4 w-4 text-amber-600" />
+        </Link>
+      )}
 
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
@@ -56,6 +73,12 @@ export default function StockPendingSetupPage() {
                     Pending Setup
                   </span>
                   <span className="text-xs text-slate-400">{item.unit}</span>
+                  {dupIds.has(item.id) && (
+                    <Link to={`/stock/duplicates?q=${encodeURIComponent(item.item_name)}`}
+                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 hover:underline">
+                      Possible duplicate
+                    </Link>
+                  )}
                 </div>
                 {item.notes && (
                   <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">{item.notes}</p>

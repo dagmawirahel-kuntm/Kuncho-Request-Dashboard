@@ -1,7 +1,8 @@
-import { AlertTriangle, Briefcase, ClipboardCheck, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
+import { AlertTriangle, Briefcase, ClipboardCheck, Copy, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { QueryListWidget, type ListRow } from '../WidgetCard'
+import { groupDuplicates, type DuplicatePair, type StockUsageRow } from '@/lib/stockDuplicates'
 
 // ── Projects & operations ─────────────────────────────────────────────────
 export function Portfolio() {
@@ -192,6 +193,31 @@ export function LowStock() {
           id: s.stock_item_id, title: s.item_name, subtitle: [s.warehouse_zone, `reorder at ${s.reorder_level} ${s.unit ?? ''}`].filter(Boolean).join(' · '),
           right: `${Number(s.qty_on_hand ?? 0)} ${s.unit ?? ''}`, badge: Number(s.qty_on_hand ?? 0) <= 0 ? { text: 'out', tone: 'red' as const } : null,
           to: `/stock/${s.stock_item_id}`,
+        })) }
+      }}
+    />
+  )
+}
+
+// Stock items that are one item under two names (v_stock_duplicate_pairs,
+// 354) — each set counted once, newest from goods received first.
+export function StockDuplicates() {
+  return (
+    <QueryListWidget
+      title="Duplicate stock items" icon={Copy} to="/stock/duplicates" queryKey={['stock-duplicates-widget']} empty="No duplicates in the stock list."
+      fetch={async () => {
+        const [pairsRes, usageRes] = await Promise.all([
+          supabase.from('v_stock_duplicate_pairs').select('item_a, item_b, reason, score'),
+          supabase.from('v_stock_item_usage').select('*'),
+        ])
+        if (pairsRes.error) throw pairsRes.error
+        if (usageRes.error) throw usageRes.error
+        const groups = groupDuplicates((pairsRes.data ?? []) as DuplicatePair[], (usageRes.data ?? []) as StockUsageRow[])
+        return { total: groups.length, rows: groups.slice(0, 6).map(g => ({
+          id: g.key, title: g.members.map(m => m.item_name).join(' · '),
+          subtitle: `${g.members.length} items${g.recent ? ' · new from goods received' : ''}`,
+          badge: g.exact ? { text: 'same name', tone: 'green' as const } : null,
+          to: `/stock/duplicates?q=${encodeURIComponent(g.members[0].item_name)}`,
         })) }
       }}
     />

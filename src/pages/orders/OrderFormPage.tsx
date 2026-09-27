@@ -9,8 +9,11 @@ import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Order, OrderInsert, OrderPriority, OrderItem, OrderItemStatus } from '@/types/database'
 import {
   useProjects, useStaff, useVendors, useUserProfiles, useSubCategoriesAll, useRecentOrderItems,
-  useStockItems, useStockOnHand,
 } from '@/hooks/useLookups'
+import { useStockMatches, useStockUnits, canonicalUnit, stockNameKey, FALLBACK_UNITS, type StockMatch } from '@/lib/stockMatch'
+import { StockNameInput } from '@/components/stock/StockNameInput'
+import { UnitSelect } from '@/components/stock/UnitSelect'
+import { LinkedStockChip, DidYouMean } from '@/components/stock/StockLineLink'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects } from '@/hooks/useMyStaff'
@@ -21,7 +24,7 @@ import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckMod
 import { formatCurrency as fmtCurrency } from '@/lib/utils'
 import {
   ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
-  Warehouse, Link2, Unlink, Sparkles,
+  Sparkles, Copy,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
@@ -53,8 +56,6 @@ const PRIORITY_OPTS: { value: OrderPriority; label: string; cls: string }[] = [
   { value: 'critical', label: 'Critical', cls: 'text-red-700 bg-red-50 dark:bg-red-900/30' },
 ]
 
-const COMMON_UNITS = ['pcs', 'kg', 'liters', 'meters', 'sheets', 'bags', 'boxes', 'sets', 'pairs', 'rolls']
-
 const ITEM_STATUSES: { value: OrderItemStatus; label: string }[] = [
   { value: 'pending',                label: 'Pending' },
   { value: 'sourced',                label: 'Sourced' },
@@ -81,6 +82,7 @@ type LineItem = {
   status: OrderItemStatus
   fulfillment_notes: string
   showSpecs: boolean
+  not_in_stock: boolean  // the requester said it isn't any of the stock matches (form only)
 }
 
 function newLine(overrides: Partial<LineItem> = {}): LineItem {
@@ -98,6 +100,7 @@ function newLine(overrides: Partial<LineItem> = {}): LineItem {
     status: 'pending',
     fulfillment_notes: '',
     showSpecs: false,
+    not_in_stock: false,
     ...overrides,
   }
 }
@@ -203,80 +206,28 @@ function MiniCatalog({
 }
 
 // ── Materials stock-first check (per line row) ─────────────────────────────────
-// A line linked to a catalogued stock_item shows its live on-hand qty inline —
-// the automatic, no-extra-click check the PR flow requires (091's
+// A line linked to a stock item shows its live on-hand qty inline — the
+// automatic, no-extra-click check the PR flow requires (091's
 // check_and_fulfill_from_stock RPC does the actual fulfillment on save; this
 // is just the "does stock cover this" preview so the requester isn't
-// surprised by what happens after they hit save).
-function StockLinkControl({
-  item, stockItems, onChange,
-}: {
-  item: LineItem
-  stockItems: ReturnType<typeof useStockItems>['data']
-  onChange: (patch: Partial<LineItem>) => void
-}) {
-  const [linking, setLinking] = useState(false)
-  const { data: onHand } = useStockOnHand(item.stock_item_id)
-  const stockOptions = useMemo(
-    () => (stockItems ?? []).map((s: any) => ({ id: s.id, label: s.item_name, sub: s.item_code ?? undefined })),
-    [stockItems]
-  )
-  const linkedItem = item.stock_item_id ? (stockItems ?? []).find((s: any) => s.id === item.stock_item_id) : null
-  const requestedQty = parseFloat(item.quantity) || 0
-
-  if (item.stock_item_id && linkedItem) {
-    const qty = onHand?.qty_on_hand ?? 0
-    const covers = requestedQty > 0 && qty >= requestedQty
-    const partial = qty > 0 && !covers
+// surprised by what happens after they hit save). Linking happens in the
+// name box: picking a stock match, or typing a name that is exactly one.
+function StockLinkControl({ item, onChange }: { item: LineItem; onChange: (patch: Partial<LineItem>) => void }) {
+  if (item.stock_item_id) {
     return (
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-          covers ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-            : partial ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-            : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-        }`}>
-          <Warehouse className="h-3 w-3" />
-          {(linkedItem as any).item_name}: {qty} {(linkedItem as any).unit ?? ''} on hand
-          {covers ? ' — fully covers this line' : partial ? ' — partial coverage' : ' — none available'}
-        </span>
-        <button type="button" onClick={() => onChange({ stock_item_id: null })}
-          title="Unlink from stock catalog"
-          className="rounded p-0.5 text-slate-400 hover:text-red-500">
-          <Unlink className="h-3 w-3" />
-        </button>
-      </div>
+      <LinkedStockChip stockItemId={item.stock_item_id} requestedQty={parseFloat(item.quantity) || 0}
+        onUnlink={() => onChange({ stock_item_id: null, not_in_stock: true })} />
     )
   }
-
-  if (linking) {
-    return (
-      <div className="flex items-center gap-1.5 max-w-xs">
-        <SearchableSelect
-          value={null}
-          onChange={v => { onChange({ stock_item_id: v, propose_new_stock_item: false }); setLinking(false) }}
-          options={stockOptions}
-          placeholder="Search stock catalog…"
-        />
-        <button type="button" onClick={() => setLinking(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Cancel</button>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex items-center gap-3">
-      <button type="button" onClick={() => setLinking(true)}
-        className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-brand transition-colors">
-        <Link2 className="h-3 w-3" /> Link to stock item
-      </button>
-      <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer select-none transition-colors ${
-        item.propose_new_stock_item ? 'text-brand' : 'text-slate-400 hover:text-brand'
-      }`}>
-        <input type="checkbox" className="accent-brand"
-          checked={item.propose_new_stock_item}
-          onChange={e => onChange({ propose_new_stock_item: e.target.checked })} />
-        <Sparkles className="h-3 w-3" /> Worth cataloging for reorder (not a one-off)
-      </label>
-    </div>
+    <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer select-none transition-colors w-fit ${
+      item.propose_new_stock_item ? 'text-brand' : 'text-slate-400 hover:text-brand'
+    }`}>
+      <input type="checkbox" className="accent-brand"
+        checked={item.propose_new_stock_item}
+        onChange={e => onChange({ propose_new_stock_item: e.target.checked })} />
+      <Sparkles className="h-3 w-3" /> New to stock — worth cataloguing for reorder (not a one-off)
+    </label>
   )
 }
 
@@ -332,17 +283,48 @@ function MarketPriceHint({ item, onChange }: { item: LineItem; onChange: (patch:
 
 // ── Line item row ──────────────────────────────────────────────────────────────
 function LineItemRow({
-  item, index, isEdit, subCategories, recentItems, stockItems,
-  onChange, onRemove,
+  item, index, isEdit, subCategories, recentItems, dupOf, canCombine,
+  onChange, onRemove, onCombine,
 }: {
   item: LineItem; index: number; isEdit: boolean
   subCategories: ReturnType<typeof useSubCategoriesAll>['data']
   recentItems: ReturnType<typeof useRecentOrderItems>['data']
-  stockItems: ReturnType<typeof useStockItems>['data']
+  dupOf: number | null      // an earlier line of this request that is the same item
+  canCombine: boolean
   onChange: (patch: Partial<LineItem>) => void
   onRemove: () => void
+  onCombine: () => void
 }) {
   const [showCatalog, setShowCatalog] = useState(false)
+  const [nameFocused, setNameFocused] = useState(false)
+  const { data: unitList } = useStockUnits()
+  const units = unitList?.length ? unitList : FALLBACK_UNITS
+  const { data: matches = [], isFetching: matching } = useStockMatches(item.item_name, { enabled: !item.stock_item_id })
+  const liveMatches = item.stock_item_id ? [] : matches
+
+  function pickStock(m: StockMatch) {
+    onChange({
+      stock_item_id: m.id,
+      item_name: m.item_name,
+      unit: m.unit,
+      sub_category_id: item.sub_category_id ?? m.sub_category_id,
+      propose_new_stock_item: false,
+      not_in_stock: false,
+    })
+  }
+
+  // Leaving the name box on a name that IS a stock item (same words, any
+  // order, case or punctuation — or a name it was merged from) in the same
+  // unit links it without asking. Anything less certain is a suggestion.
+  function autoLinkExact() {
+    if (item.stock_item_id || item.not_in_stock) return
+    const key = stockNameKey(item.item_name)
+    const top = matches[0]
+    if (!key || !top || top.match !== 'same') return
+    const sameName = stockNameKey(top.item_name) === key || (!!top.alias_name && stockNameKey(top.alias_name) === key)
+    const unit = canonicalUnit(units, item.unit)
+    if (sameName && (!unit || unit === top.unit)) pickStock(top)
+  }
 
   function pickCatalogEntry(entry: CatalogEntry) {
     onChange({
@@ -402,11 +384,16 @@ function LineItemRow({
                 }`}>
                 <Package className="h-3.5 w-3.5" />
               </button>
-              <input
-                className={`${inputCls} font-medium flex-1 min-w-0`}
-                placeholder={`Item ${index + 1} name…`}
+              <StockNameInput
+                className={`${inputCls} font-medium`}
+                placeholder={`Item ${index + 1} — start typing to search stock…`}
                 value={item.item_name}
-                onChange={e => onChange({ item_name: e.target.value })}
+                matches={liveMatches}
+                loading={matching && !item.stock_item_id}
+                onPick={pickStock}
+                onChange={v => onChange({ item_name: v, not_in_stock: false, ...(item.stock_item_id ? { stock_item_id: null } : {}) })}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => { setNameFocused(false); autoLinkExact() }}
               />
             </div>
             {/* Linked GL account badge */}
@@ -439,9 +426,7 @@ function LineItemRow({
             value={item.quantity} onChange={e => onChange({ quantity: e.target.value })} />
 
           <div className="min-w-0">
-            <input type="text" className={inputCls} placeholder="unit" list={`units-${item._id}`}
-              value={item.unit} onChange={e => onChange({ unit: e.target.value })} />
-            <datalist id={`units-${item._id}`}>{COMMON_UNITS.map(u => <option key={u} value={u} />)}</datalist>
+            <UnitSelect className={`${inputCls} px-2`} value={item.unit} onChange={u => onChange({ unit: u })} />
           </div>
         </div>
 
@@ -483,10 +468,27 @@ function LineItemRow({
               Ask procurement: check market price
             </label>
           </div>
+          {dupOf != null && (
+            <div className="flex items-center gap-2 flex-wrap rounded-md bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-700/40 px-2.5 py-1.5">
+              <Copy className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+              <span className="text-[11px] text-sky-800 dark:text-sky-300">Same item as line {dupOf + 1}.</span>
+              {canCombine ? (
+                <button type="button" onClick={onCombine} className="text-[11px] font-medium text-brand hover:underline">
+                  Add this quantity to line {dupOf + 1}
+                </button>
+              ) : (
+                <span className="text-[11px] text-sky-700/80 dark:text-sky-300/80">Different units — check both lines.</span>
+              )}
+            </div>
+          )}
+          {!item.stock_item_id && !item.not_in_stock && !nameFocused && item.item_name.trim().length >= 3 && (
+            <DidYouMean matches={matches} unit={item.unit} onPick={pickStock}
+              onDifferent={() => onChange({ not_in_stock: true })} />
+          )}
           {/* Market-price hint for the linked stock item (freshness + budget suggestion) */}
           <MarketPriceHint item={item} onChange={onChange} />
           {/* Materials stock-first check — see check_and_fulfill_from_stock (091) */}
-          <StockLinkControl item={item} stockItems={stockItems} onChange={onChange} />
+          <StockLinkControl item={item} onChange={onChange} />
           {item.showSpecs && (
             <textarea rows={2} className={`${inputCls} text-xs w-full`}
               placeholder="Specifications, grade, dimensions, brand, quality grade…"
@@ -551,7 +553,6 @@ function PurchaseRequestFormBody({
   const { data: userProfiles = [] } = useUserProfiles()
   const { data: subCategories = [] } = useSubCategoriesAll()
   const { data: recentItems = [] }  = useRecentOrderItems()
-  const { data: stockItems = [] }   = useStockItems()
 
   // A purchase request must be raised against a project the requester is
   // actually responsible for. Roles with company-wide remit keep the
@@ -619,6 +620,7 @@ function PurchaseRequestFormBody({
         status: item.status,
         fulfillment_notes: item.fulfillment_notes ?? '',
         showSpecs: !!item.specifications,
+        not_in_stock: false,
       }))
     }
     return [newLine()]
@@ -638,6 +640,34 @@ function PurchaseRequestFormBody({
   }, [])
 
   const addLine = useCallback(() => setLines(ls => [...ls, newLine()]), [])
+
+  // Two lines of one request that are the same item (same stock item, or
+  // names that reduce to the same words) — offered as one line instead.
+  const dupOf = useMemo(() => {
+    const seen = new Map<string, number>()
+    return lines.map((l, i) => {
+      const keys = [
+        l.stock_item_id ? `id:${l.stock_item_id}` : '',
+        l.item_name.trim() ? `name:${stockNameKey(l.item_name)}` : '',
+      ].filter(k => k && k !== 'name:')
+      const hit = keys.map(k => seen.get(k)).find(v => v !== undefined)
+      if (hit !== undefined) return hit
+      for (const k of keys) seen.set(k, i)
+      return null
+    })
+  }, [lines])
+
+  const combineLine = useCallback((idx: number, into: number) => {
+    setLines(ls => {
+      const from = ls[idx], to = ls[into]
+      if (!from || !to) return ls
+      const qty = (parseFloat(to.quantity) || 0) + (parseFloat(from.quantity) || 0)
+      const specs = [to.specifications, from.specifications].filter(Boolean).join('\n')
+      return ls
+        .map((l, i) => i === into ? { ...l, quantity: qty ? String(qty) : l.quantity, specifications: specs, showSpecs: l.showSpecs || !!specs } : l)
+        .filter((_, i) => i !== idx)
+    })
+  }, [])
 
   // ── Phase 2 warn-only budget check — per cost group present across the
   // line items, since one PR can span several. Never blocks; a request
@@ -893,7 +923,7 @@ function PurchaseRequestFormBody({
         <div className="flex items-center justify-between border-b dark:border-slate-700 pb-2 mb-1">
           <div>
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Line Items</p>
-            <p className="text-xs text-slate-400">Click <Package className="inline h-3 w-3" /> to pick from sub-ledger catalog</p>
+            <p className="text-xs text-slate-400">Type an item name to pick it from stock · <Package className="inline h-3 w-3" /> picks the GL sub-ledger</p>
           </div>
           <span className="text-xs text-slate-400">{filledCount} item{filledCount !== 1 ? 's' : ''}</span>
         </div>
@@ -924,9 +954,11 @@ function PurchaseRequestFormBody({
               isEdit={isEdit}
               subCategories={subCategories}
               recentItems={recentItems}
-              stockItems={stockItems}
+              dupOf={dupOf[idx]}
+              canCombine={dupOf[idx] != null && line.status === 'pending' && lines[dupOf[idx]!].status === 'pending' && lines[dupOf[idx]!].unit === line.unit}
               onChange={patch => updateLine(idx, patch)}
               onRemove={() => removeLine(idx)}
+              onCombine={() => { if (dupOf[idx] != null) combineLine(idx, dupOf[idx]!) }}
             />
           ))}
         </div>

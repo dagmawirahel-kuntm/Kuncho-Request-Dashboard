@@ -23,10 +23,10 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
       add(W('po_approvals'), W('variations'), W('portfolio'), W('fleet_maintenance'), W('transport_jobs'))
       break
     case 'procurement_officer':
-      add(W('po_pipeline'), W('grn_queue'), W('low_stock'))
+      add(W('po_pipeline'), W('grn_queue'), W('low_stock'), W('stock_duplicates'))
       break
     case 'stock_manager':
-      add(W('grn_queue'), W('pending_dispatch'), W('low_stock'), W('my_tools'))
+      add(W('grn_queue'), W('pending_dispatch'), W('low_stock'), W('stock_duplicates'), W('my_tools'))
       break
     case 'logistics_officer':
       add(W('transport_jobs'), W('fleet_maintenance'))
@@ -61,7 +61,7 @@ export function defaultPins(ctx: WidgetContext): string[] {
   const r = ctx.role
   if (r === 'finance') return ['/finance/payments', '/bank-statement-import', '/cash-forecast', '/accounts', '/month-end']
   if (r === 'procurement_officer') return ['/sourcing', '/procurement', '/vendors', '/goods-received']
-  if (r === 'stock_manager') return ['/stock', '/goods-received', '/stock/dispatch-queue', '/stock/tools']
+  if (r === 'stock_manager') return ['/stock', '/goods-received', '/stock/dispatch-queue', '/stock/duplicates', '/stock/tools']
   if (r === 'hr_officer') return ['/staff', '/leave-requests', '/payroll', '/hr/casual-workers']
   if (r === 'logistics_officer') return ['/transportation', '/fleet/maintenance', '/logistics']
   if (r === 'sales') return ['/opportunities', '/clients', '/proformas', '/contracts']

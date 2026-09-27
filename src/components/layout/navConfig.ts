@@ -5,7 +5,7 @@ import {
   Layers, Archive, Shield, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag
+  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -240,6 +240,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Stock Catalog', to: '/stock', icon: Warehouse, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { label: 'Pending Setup', to: '/stock/pending-setup', icon: ClipboardCheck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
+      { label: 'Duplicates', to: '/stock/duplicates', icon: Copy, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { label: 'Dispatch Queue', to: '/stock/dispatch-queue', icon: Truck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'executive', 'stock_manager'] },
     ],
