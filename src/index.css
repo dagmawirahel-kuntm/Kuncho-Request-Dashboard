@@ -357,3 +357,133 @@ html.theme-transition *::after {
 @media (prefers-reduced-motion: reduce) {
   .vrf-motion, .vrf-motion * { animation: none !important; transition: none !important; }
 }
+
+/* ── Client world (components/clientWorld) ───────────────────────────────
+   A client's pages are painted in the colours of its logo. The colours
+   arrive as --w1..--w3 (accents) and --wd1/--wd2 (dark, for white text);
+   registering them lets a change of client fade rather than jump. */
+@property --w1 { syntax: '<color>'; inherits: true; initial-value: #64748b; }
+@property --w2 { syntax: '<color>'; inherits: true; initial-value: #94a3b8; }
+@property --w3 { syntax: '<color>'; inherits: true; initial-value: #475569; }
+@property --wd1 { syntax: '<color>'; inherits: true; initial-value: #1e293b; }
+@property --wd2 { syntax: '<color>'; inherits: true; initial-value: #334155; }
+@property --wa { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+.world-atmo {
+  transition: --w1 .9s ease, --w2 .9s ease, --w3 .9s ease, --wd1 .9s ease, --wd2 .9s ease;
+  animation: world-enter 1.3s cubic-bezier(.16, 1, .3, 1) both;
+}
+.world-base {
+  background-color: #f8fafc;
+  background-image: linear-gradient(160deg, color-mix(in srgb, var(--w1) 11%, transparent), transparent 46%, color-mix(in srgb, var(--w2) 9%, transparent));
+}
+.dark .world-base {
+  background-color: #0f172a;
+  background-image: linear-gradient(160deg, color-mix(in srgb, var(--w1) 16%, transparent), transparent 46%, color-mix(in srgb, var(--w2) 12%, transparent));
+}
+.gold .world-base { background-color: #0c0a07; }
+.world-blob { position: absolute; border-radius: 9999px; filter: blur(72px); opacity: .36; will-change: transform; }
+.dark .world-blob { opacity: .26; }
+.world-blob-1 { width: 50vw; height: 50vw; left: -12vw; top: -16vw; background: radial-gradient(circle, var(--w1), transparent 68%); animation: world-drift-1 26s ease-in-out infinite alternate; }
+.world-blob-2 { width: 42vw; height: 42vw; right: -10vw; top: 16%; background: radial-gradient(circle, var(--w2), transparent 68%); animation: world-drift-2 31s ease-in-out infinite alternate; }
+.world-blob-3 { width: 46vw; height: 46vw; left: 24%; bottom: -24vw; background: radial-gradient(circle, var(--w3), transparent 68%); animation: world-drift-3 37s ease-in-out infinite alternate; }
+.world-vignette { background: radial-gradient(120% 90% at 50% 38%, transparent 55%, color-mix(in srgb, var(--wd1) 14%, transparent) 100%); }
+
+@keyframes world-enter { from { opacity: 0; transform: scale(1.06); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes world-drift-1 { 0% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(9vw, 7vh, 0) scale(1.14); } 100% { transform: translate3d(-3vw, 12vh, 0) scale(.92); } }
+@keyframes world-drift-2 { 0% { transform: translate3d(0, 0, 0) scale(1.05); } 50% { transform: translate3d(-8vw, 10vh, 0) scale(.9); } 100% { transform: translate3d(-2vw, -6vh, 0) scale(1.12); } }
+@keyframes world-drift-3 { 0% { transform: translate3d(0, 0, 0) scale(.95); } 50% { transform: translate3d(-10vw, -8vh, 0) scale(1.1); } 100% { transform: translate3d(6vw, -3vh, 0) scale(1); } }
+
+/* Hero */
+.world-hero { --mx: 0; --my: 0; isolation: isolate; }
+.world-hero-bg {
+  background: linear-gradient(125deg, var(--wd1) 0%, color-mix(in srgb, var(--wd1) 50%, var(--wd2)) 50%, var(--wd2) 100%);
+  background-size: 180% 180%;
+  animation: world-pan 18s ease-in-out infinite alternate;
+}
+.world-orb { position: absolute; border-radius: 9999px; filter: blur(46px); opacity: .55; pointer-events: none; transition: translate .7s cubic-bezier(.16, 1, .3, 1); }
+.world-orb-1 { width: 340px; height: 340px; right: -70px; top: -150px; background: var(--w1); translate: calc(var(--mx) * -28px) calc(var(--my) * -20px); animation: world-breathe 9s ease-in-out infinite alternate; }
+.world-orb-2 { width: 260px; height: 260px; left: 18%; bottom: -170px; background: var(--w2); opacity: .45; translate: calc(var(--mx) * 22px) calc(var(--my) * 16px); animation: world-breathe 12s ease-in-out infinite alternate-reverse; }
+.world-wallpaper {
+  position: absolute; inset: -50%; pointer-events: none;
+  background-repeat: repeat; background-size: 150px auto;
+  opacity: .055; filter: brightness(0) invert(1);
+  rotate: -14deg;
+  translate: calc(var(--mx) * 14px) calc(var(--my) * 10px);
+  transition: translate .7s cubic-bezier(.16, 1, .3, 1);
+  animation: world-wall 70s linear infinite;
+}
+.world-sheen {
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .13) 50%, transparent 62%);
+  background-size: 260% 100%;
+  animation: world-sheen 8s ease-in-out infinite 1.4s;
+}
+.world-rise { animation: world-rise .75s cubic-bezier(.16, 1, .3, 1) both; animation-delay: var(--d, 0ms); }
+
+@keyframes world-pan { from { background-position: 0% 30%; } to { background-position: 100% 70%; } }
+@keyframes world-breathe { from { scale: 1; } to { scale: 1.22; } }
+@keyframes world-wall { from { background-position: 0 0; } to { background-position: 900px 450px; } }
+@keyframes world-sheen { 0%, 55% { background-position: 130% 0; } 100% { background-position: -30% 0; } }
+@keyframes world-rise { from { opacity: 0; transform: translateY(12px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* Emblem */
+.world-arrive { animation: world-arrive 1.05s cubic-bezier(.2, 1.15, .3, 1) both; }
+.world-float { animation: world-float 6.5s ease-in-out infinite; }
+.world-tilt {
+  transform: perspective(700px) rotateX(calc(var(--my, 0) * -14deg)) rotateY(calc(var(--mx, 0) * 16deg));
+  transition: transform .4s cubic-bezier(.16, 1, .3, 1);
+}
+.world-halo, .world-glow {
+  position: absolute; pointer-events: none;
+  background: conic-gradient(from var(--wa), var(--w1), var(--w2), var(--w3), var(--w1));
+  animation: world-turn 7s linear infinite;
+}
+.world-halo { inset: -3px; }
+.world-glow { inset: -12px; filter: blur(16px); opacity: .75; }
+.world-glint {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 36%, rgba(255, 255, 255, .6) 50%, transparent 64%);
+  background-size: 280% 100%;
+  mix-blend-mode: soft-light;
+  animation: world-sheen 6s ease-in-out infinite 2s;
+}
+@keyframes world-arrive { 0% { opacity: 0; scale: 2.2; filter: blur(12px); } 55% { opacity: 1; filter: blur(0); } 100% { opacity: 1; scale: 1; } }
+@keyframes world-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -6px; } }
+@keyframes world-turn { to { --wa: 360deg; } }
+
+/* The bar that follows you down the page */
+.world-bar {
+  translate: 0 -150%; opacity: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--wd1) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 10px 30px -10px color-mix(in srgb, var(--w1) 55%, transparent);
+  transition: translate .5s cubic-bezier(.16, 1, .3, 1), opacity .3s ease;
+}
+.world-bar[data-show='true'] { translate: 0 0; opacity: 1; pointer-events: auto; }
+
+/* A client card that glows in its own colours on hover */
+.world-card { transition: translate .25s ease, box-shadow .3s ease, border-color .3s ease; }
+.world-card:hover {
+  border-color: color-mix(in srgb, var(--w1) 55%, transparent);
+  box-shadow: 0 14px 34px -14px color-mix(in srgb, var(--w1) 70%, transparent);
+}
+
+/* Inside a client's world, panels turn to frosted glass so the world
+   shows through. :where() keeps these at utility weight, so hover
+   colours still win. */
+@layer utilities {
+  :where(.client-world :is(.rounded-xl, .rounded-2xl)).bg-white {
+    background-color: color-mix(in srgb, #fff 80%, transparent);
+    backdrop-filter: blur(14px) saturate(1.15);
+  }
+  :where(.client-world :is(.rounded-xl, .rounded-2xl)).dark\:bg-slate-800:is(.dark *) {
+    background-color: color-mix(in srgb, var(--color-slate-800) 74%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-atmo, .world-blob, .world-hero-bg, .world-orb, .world-wallpaper, .world-sheen, .world-rise,
+  .world-arrive, .world-float, .world-halo, .world-glow, .world-glint { animation: none !important; }
+  .world-tilt, .world-orb, .world-wallpaper { transform: none; translate: none; transition: none; }
+}
