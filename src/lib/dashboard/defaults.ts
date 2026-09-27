@@ -11,16 +11,16 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
 
   switch (ctx.role) {
     case 'admin':
-      add(W('cash_position'), W('bank_alerts'), W('portfolio'), W('po_approvals'), W('payments_to_send'), W('leave_approvals'), W('staff_issues'))
+      add(W('stuck_work'), W('cash_position'), W('bank_alerts'), W('portfolio'), W('po_approvals'), W('payments_to_send'), W('leave_approvals'), W('staff_issues'))
       break
     case 'executive':
-      add(W('cash_position'), W('portfolio'), W('sales_pipeline'), W('po_approvals'), W('payment_requests_out'))
+      add(W('stuck_work'), W('cash_position'), W('portfolio'), W('sales_pipeline'), W('po_approvals'), W('payment_requests_out'))
       break
     case 'finance':
       add(W('cash_position'), W('payments_to_send'), W('finance_approvals'), W('vendors_to_verify'), W('awaiting_bank'), W('bank_alerts'), W('month_end'))
       break
     case 'operations_manager':
-      add(W('po_approvals'), W('variations'), W('portfolio'), W('fleet_maintenance'), W('transport_jobs'))
+      add(W('stuck_work'), W('po_approvals'), W('variations'), W('portfolio'), W('fleet_maintenance'), W('transport_jobs'))
       break
     case 'procurement_officer':
       add(W('po_pipeline'), W('grn_queue'), W('vendors_to_verify'), W('low_stock'), W('stock_duplicates'))
