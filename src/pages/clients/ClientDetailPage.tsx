@@ -11,8 +11,11 @@ import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { clientColor, clientInitials, profileScore, computeClientTiers, TierBadge, TierIconBadge, TIER_STYLES } from './ClientsPage'
+import { clientColor, profileScore, computeClientTiers, TierBadge, TierIconBadge, TIER_STYLES } from './ClientsPage'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
+import { emblemTransitionName, riseDelay, useClientWorld } from '@/lib/clientWorld'
+import { ClientAtmosphere, type Mote } from '@/components/clientWorld/ClientAtmosphere'
+import { ClientEmblem, WorldBar, WorldHero } from '@/components/clientWorld/ClientWorld'
 
 // ── WHT per sale ────────────────────────────────────────────────────────────
 // This page used to decide WHT itself, with 20,000 and 3% hardcoded, and it
@@ -65,33 +68,6 @@ function fmtSize(b: number | null) {
 function daysAgo(dateStr: string | null): number | null {
   if (!dateStr) return null
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
-}
-
-// ── Logo ──────────────────────────────────────────────────────────────────────
-function ClientLogo({ client, tier }: { client: Client; tier: import('./ClientsPage').ClientTier }) {
-  const logoUrl = getClientLogoUrl(client.logo_url, client.email)
-  const [failed, setFailed] = useState(false)
-
-  const avatar = logoUrl && !failed ? (
-    <div className="h-20 w-20 rounded-2xl bg-white/20 border-2 border-white/40 overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg">
-      <img src={logoUrl} alt={client.client_name} className="h-full w-full object-contain p-2" onError={() => setFailed(true)} />
-    </div>
-  ) : (
-    <div className="h-20 w-20 rounded-2xl bg-white/20 border-2 border-white/40 flex items-center justify-center text-3xl font-black text-white flex-shrink-0 shadow-lg">
-      {clientInitials(client.client_name)}
-    </div>
-  )
-
-  return (
-    <div className="relative flex-shrink-0">
-      {avatar}
-      {tier && (
-        <span className="absolute -bottom-2 -right-2 z-10">
-          <TierIconBadge tier={tier} size="lg" />
-        </span>
-      )}
-    </div>
-  )
 }
 
 // ── Attachment categories ─────────────────────────────────────────────────────
@@ -735,6 +711,11 @@ export default function ClientDetailPage() {
     return computeClientTiers(m, allClientIds)[client.id] ?? null
   }, [allSalesStats, allClientIds, client])
 
+  // Their world: the page is painted in the colours of their logo.
+  const heroRef = useRef<HTMLElement>(null)
+  const world = useClientWorld(client?.client_name, client ? getClientLogoUrl(client.logo_url, client.email) : null, clientColor(client?.client_name ?? ''))
+  const motes = useMemo<Mote[]>(() => [{ key: id ?? '', logo: world.logo, initials: world.initials }], [id, world.logo, world.initials])
+
   async function markRefunded(saleId: string) {
     setRefunding(saleId)
     const { error } = await supabase.from('sales').update({ sales_status: 'Refunded' }).eq('id', saleId)
@@ -792,7 +773,6 @@ export default function ClientDetailPage() {
     )
   }
 
-  const color = clientColor(client.client_name)
   const paidSales    = sales.filter(s => s.sales_status === 'Paid')
   const pendingSales = sales.filter(s => s.sales_status !== 'Paid' && s.sales_status !== 'Cancelled' && s.sales_status !== 'Refunded')
   const totalRevenue = sales.filter(s => s.sales_status !== 'Refunded' && s.sales_status !== 'Cancelled').reduce((s, r) => s + Number(r.amount ?? 0), 0)
@@ -820,15 +800,20 @@ export default function ClientDetailPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="client-world space-y-5">
+      <ClientAtmosphere palette={world.palette} motes={motes} count={16} />
+      <WorldBar world={world} heroRef={heroRef} meta={<>
+        <span>Paid <b className="text-white">{formatCurrency(totalPaid)}</b></span>
+        {totalPending > 0 && <span>Pending <b className="text-white">{formatCurrency(totalPending)}</b></span>}
+      </>} />
 
       {/* Back + Edit */}
       <div className="flex items-center justify-between">
-        <Link to="/clients" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+        <Link to="/clients" viewTransition className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
           <ArrowLeft className="h-4 w-4" /> Clients
         </Link>
         <div className="flex items-center gap-2">
-          <Link to={`/sales-journey/clients/${id}`} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90">
+          <Link to={`/sales-journey/clients/${id}`} viewTransition className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90">
             <Handshake className="h-3.5 w-3.5" /> Relationship history
           </Link>
           <Link to={`/clients/${id}/edit`} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
@@ -838,55 +823,44 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Hero */}
-      <div className="rounded-2xl overflow-hidden"
-        style={{
-          background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
-          ...(tier ? {
-            outline: `2px solid ${TIER_STYLES[tier].color}`,
-            boxShadow: `0 0 0 2px ${TIER_STYLES[tier].color}, 0 8px 32px ${TIER_STYLES[tier].shadow}`,
-          } : {}),
-        }}
-      >
-        {/* Tier accent strip */}
-        {tier && (
-          <div className="h-1 w-full" style={{ background: TIER_STYLES[tier].bg }} />
-        )}
-        <div className="relative px-6 py-7 overflow-hidden">
-          <span className="pointer-events-none select-none absolute -right-4 -bottom-4 font-black leading-none opacity-[0.1] text-white" style={{ fontSize: '10rem' }} aria-hidden>
-            {clientInitials(client.client_name)}
-          </span>
-          <div className="relative z-10 flex items-center gap-5">
-            <ClientLogo client={client} tier={tier} />
-            <div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-black text-white leading-tight">{client.client_name}</h1>
-                <TierBadge tier={tier} size="lg" />
+      <WorldHero world={world} heroRef={heroRef}
+        style={tier ? { outline: `2px solid ${TIER_STYLES[tier].color}`, boxShadow: `0 0 0 2px ${TIER_STYLES[tier].color}, 0 8px 32px ${TIER_STYLES[tier].shadow}` } : undefined}
+        footer={
+          <div className="grid grid-cols-2 text-center divide-x divide-white/10 sm:grid-cols-4" style={{ background: 'rgba(0,0,0,0.22)' }}>
+            {[
+              { label: 'Sales', value: String(sales.length) },
+              { label: 'Revenue', value: formatCurrency(totalRevenue) },
+              { label: 'Paid', value: formatCurrency(totalPaid) },
+              { label: 'Pending', value: formatCurrency(totalPending) },
+            ].map(({ label, value }, i) => (
+              <div key={label} className="world-rise py-3 px-2" style={riseDelay(4 + i)}>
+                <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider">{label}</p>
+                <p className="text-sm font-bold text-white mt-0.5 tabular-nums">{value}</p>
               </div>
-              {client.business_type && (
-                <div className="flex items-center gap-1.5 mt-1"><Building2 className="h-3.5 w-3.5 text-white/70" /><span className="text-sm text-white/80">{client.business_type}</span></div>
-              )}
-              <div className="flex items-center gap-3 mt-2 flex-wrap">
-                {client.email && <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors"><Mail className="h-3 w-3" />{client.email}</a>}
-                {client.phone_number && <span className="flex items-center gap-1.5 text-xs text-white/80"><Phone className="h-3 w-3" />{client.phone_number}</span>}
-                {client.address && <span className="flex items-center gap-1.5 text-xs text-white/80"><MapPin className="h-3 w-3" />{client.address}</span>}
-              </div>
+            ))}
+          </div>
+        }>
+        {tier && <div className="h-1 w-full" style={{ background: TIER_STYLES[tier].bg }} />}
+        <div className="flex items-center gap-5 px-6 py-7">
+          <ClientEmblem world={world} size="lg" halo float arrive transitionName={emblemTransitionName(client.id)}>
+            {tier && <span className="absolute -bottom-2 -right-2 z-10"><TierIconBadge tier={tier} size="lg" /></span>}
+          </ClientEmblem>
+          <div className="min-w-0">
+            <div className="world-rise flex items-center gap-3 flex-wrap" style={riseDelay(0)}>
+              <h1 className="text-2xl font-black text-white leading-tight">{client.client_name}</h1>
+              <TierBadge tier={tier} size="lg" />
+            </div>
+            {client.business_type && (
+              <div className="world-rise flex items-center gap-1.5 mt-1" style={riseDelay(1)}><Building2 className="h-3.5 w-3.5 text-white/70" /><span className="text-sm text-white/80">{client.business_type}</span></div>
+            )}
+            <div className="world-rise flex items-center gap-3 mt-2 flex-wrap" style={riseDelay(2)}>
+              {client.email && <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors"><Mail className="h-3 w-3" />{client.email}</a>}
+              {client.phone_number && <span className="flex items-center gap-1.5 text-xs text-white/80"><Phone className="h-3 w-3" />{client.phone_number}</span>}
+              {client.address && <span className="flex items-center gap-1.5 text-xs text-white/80"><MapPin className="h-3 w-3" />{client.address}</span>}
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-4 text-center divide-x divide-white/10" style={{ background: 'rgba(0,0,0,0.22)' }}>
-          {[
-            { label: 'Sales', value: String(sales.length) },
-            { label: 'Revenue', value: formatCurrency(totalRevenue) },
-            { label: 'Paid', value: formatCurrency(totalPaid) },
-            { label: 'Pending', value: formatCurrency(totalPending) },
-          ].map(({ label, value }) => (
-            <div key={label} className="py-3 px-2">
-              <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider">{label}</p>
-              <p className="text-sm font-bold text-white mt-0.5 tabular-nums">{value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      </WorldHero>
 
       <TrainerHintBanner entityType="client" entityId={id!} hint={clientHint} />
 

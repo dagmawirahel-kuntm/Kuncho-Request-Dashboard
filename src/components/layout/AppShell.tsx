@@ -1,5 +1,5 @@
 import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
@@ -9,6 +9,7 @@ import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
+import { AtmosphereContext } from '@/components/clientWorld/atmosphereSlot'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
 import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings } from 'lucide-react'
 
@@ -117,6 +118,11 @@ export function AppShell() {
     document.documentElement.classList.toggle('meskel', festive)
   }, [festive])
 
+  // The layer client pages paint their world into (components/clientWorld).
+  const [layer, setLayer] = useState<HTMLDivElement | null>(null)
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
+  const slot = useMemo(() => ({ layer, scroller }), [layer, scroller])
+
   function cycleTheme() {
     const root = document.documentElement
     root.classList.add('theme-transition')
@@ -137,7 +143,7 @@ export function AppShell() {
         onToggleTheme={cycleTheme}
         festive={festive}
       />
-      <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
+      <div className="relative flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         {/* Header */}
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6 dark:bg-slate-800 dark:border-slate-700 print:hidden">
           <button
@@ -198,13 +204,17 @@ export function AppShell() {
           </div>
         </header>
 
+        <div ref={setLayer} className="pointer-events-none absolute inset-x-0 bottom-0 top-14 overflow-hidden print:hidden" aria-hidden />
+
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
+        <main ref={setScroller} className="relative flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
           {season?.greeting && LANDING_PATHS.has(location.pathname) && (
             <div className="print:hidden"><SeasonalGreeting moment={season} /></div>
           )}
           <div key={location.pathname} className="animate-fade-in">
-            <Outlet />
+            <AtmosphereContext.Provider value={slot}>
+              <Outlet />
+            </AtmosphereContext.Provider>
           </div>
         </main>
       </div>

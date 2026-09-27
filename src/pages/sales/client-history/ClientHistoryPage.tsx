@@ -8,6 +8,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { getClientLogoUrl } from '@/hooks/useClientLogo'
 import { clientColor, clientInitials } from '@/pages/clients/ClientsPage'
+import { emblemTransitionName, riseDelay, useClientWorld } from '@/lib/clientWorld'
+import { ClientAtmosphere, type Mote } from '@/components/clientWorld/ClientAtmosphere'
+import { ClientEmblem, WorldBar, WorldHero } from '@/components/clientWorld/ClientWorld'
 import { CONTACT_ROLES, CONTACT_ROLE_LABEL, INTERACTION_BY_VALUE, daysSince, warmth, whatsappLink, type Strand } from '@/lib/clientHistory'
 import { OPEN_STAGES, STAGE_BY_VALUE } from '@/lib/salesJourney'
 import type {
@@ -56,6 +59,7 @@ export default function ClientHistoryPage() {
   const contactsRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const moneyRef = useRef<HTMLDivElement>(null)
+  const heroRef = useRef<HTMLElement>(null)
   const canWrite = role === 'admin' || role === 'executive' || role === 'finance' || (role as string) === 'sales'
 
   const { data: rel, isLoading } = useQuery({
@@ -144,6 +148,10 @@ export default function ClientHistoryPage() {
     },
   })
 
+  // Their world: the page is painted in the colours of their logo.
+  const world = useClientWorld(rel?.client_name, rel ? getClientLogoUrl(rel.logo_url, rel.email) : null, clientColor(rel?.client_name ?? ''))
+  const motes = useMemo<Mote[]>(() => [{ key: id, logo: world.logo, initials: world.initials }], [id, world.logo, world.initials])
+
   const warmDays = settings?.contact_warm_days ?? 30
   const activeDays = settings?.contact_active_days ?? rel?.active_window_days ?? 90
   const lastTalk = useMemo(() => {
@@ -172,17 +180,20 @@ export default function ClientHistoryPage() {
     )
   }
 
-  const color = clientColor(rel.client_name)
-  const logo = getClientLogoUrl(rel.logo_url, rel.email)
   const sinceYear = toEthiopian(rel.first_seen ?? rel.client_since).year
   const lastDays = daysSince(rel.last_interaction_at)
   const openDeals = deals.filter(d => d.opportunity_id && OPEN_STAGES.includes(d.stage))
   const ringFor = (f: Focus) => (focus === f ? 'ring-2 ring-brand ring-offset-2 dark:ring-offset-slate-900' : '')
 
   return (
-    <div className="space-y-5">
+    <div className="client-world space-y-5">
+      <ClientAtmosphere palette={world.palette} motes={motes} count={16} />
+      <WorldBar world={world} heroRef={heroRef} meta={<>
+        <span>Owes <b className="text-white">{formatCurrencyCompact(Number(rel.outstanding))}</b></span>
+        <span>{rel.projects_open} open project{rel.projects_open === 1 ? '' : 's'}</span>
+      </>} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link to="/sales-journey" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+        <Link to="/sales-journey" viewTransition className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
           <ArrowLeft className="h-4 w-4" /> Sales Journey
         </Link>
         <div className="flex flex-wrap gap-2">
@@ -202,53 +213,47 @@ export default function ClientHistoryPage() {
           <Link to={`/clients/${id}/proforma`} className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
             <FileText className="h-3.5 w-3.5" /> Proforma
           </Link>
-          <Link to={`/clients/${id}`} className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          <Link to={`/clients/${id}`} viewTransition className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
             <Building2 className="h-3.5 w-3.5" /> Client file
           </Link>
         </div>
       </div>
 
       {/* Hero */}
-      <div className="overflow-hidden rounded-2xl" style={{ background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)` }}>
-        <div className="relative overflow-hidden px-6 py-6">
-          <span className="pointer-events-none absolute -bottom-6 -right-2 select-none font-black leading-none text-white opacity-10" style={{ fontSize: '9rem' }} aria-hidden>
-            {clientInitials(rel.client_name)}
-          </span>
-          <div className="relative z-10 flex flex-wrap items-center gap-5">
-            <div className="flex h-12 w-12 shrink-0 items-center sm:h-16 sm:w-16 justify-center overflow-hidden rounded-2xl bg-white/15 text-xl font-black text-white ring-2 ring-white/30">
-              {logo ? <img src={logo} alt="" className="h-full w-full bg-white object-contain p-1.5" onError={e => { e.currentTarget.style.display = 'none' }} /> : clientInitials(rel.client_name)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-black leading-tight text-white sm:text-2xl">{rel.client_name}</h1>
-              <p className="mt-1 text-sm text-white/80">
-                {rel.business_type ? `${rel.business_type} · ` : ''}Client since {sinceYear} E.C.{rel.tin ? ` · TIN ${rel.tin}` : ''}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full bg-black/20 px-2.5 py-1 text-white">
-                  {lastDays == null ? 'No conversation logged yet' : `Last spoke ${lastDays === 0 ? 'today' : lastDays === 1 ? 'yesterday' : `${lastDays} days ago`}`}
-                </span>
-                {rel.next_step && (
-                  <span className={`rounded-full px-2.5 py-1 ${rel.next_step_due && rel.next_step_due < new Date().toISOString().slice(0, 10) ? 'bg-red-500 text-white' : 'bg-white text-slate-800'}`}>
-                    Next: {rel.next_step}{rel.next_step_due ? ` · ${formatDate(rel.next_step_due)}` : ''}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+      <WorldHero world={world} heroRef={heroRef} footer={
         <div className="grid grid-cols-3 divide-x divide-white/10 text-center" style={{ background: 'rgba(0,0,0,0.22)' }}>
           {[
             { label: 'Contracted', value: formatCurrencyCompact(Number(rel.contracted_value)), full: formatCurrency(Number(rel.contracted_value)) },
             { label: 'Received', value: formatCurrencyCompact(Number(rel.received)), full: formatCurrency(Number(rel.received)) },
             { label: 'Last payment', value: rel.last_payment_at ? formatDate(rel.last_payment_at) : '—', full: undefined },
-          ].map(x => (
-            <div key={x.label} className="px-2 py-2.5">
+          ].map((x, i) => (
+            <div key={x.label} className="world-rise px-2 py-2.5" style={riseDelay(4 + i)}>
               <p className="text-[10px] uppercase tracking-wide text-white/60">{x.label}</p>
               <p className="truncate text-sm font-bold tabular-nums text-white" title={x.full ?? x.value}>{x.value}</p>
             </div>
           ))}
         </div>
-      </div>
+      }>
+        <div className="flex flex-wrap items-center gap-5 px-6 py-7">
+          <ClientEmblem world={world} size="lg" halo float arrive transitionName={emblemTransitionName(id)} />
+          <div className="min-w-0 flex-1">
+            <h1 className="world-rise text-xl font-black leading-tight text-white sm:text-2xl" style={riseDelay(0)}>{rel.client_name}</h1>
+            <p className="world-rise mt-1 text-sm text-white/80" style={riseDelay(1)}>
+              {rel.business_type ? `${rel.business_type} · ` : ''}Client since {sinceYear} E.C.{rel.tin ? ` · TIN ${rel.tin}` : ''}
+            </p>
+            <div className="world-rise mt-2 flex flex-wrap gap-2 text-xs" style={riseDelay(2)}>
+              <span className="rounded-full bg-black/20 px-2.5 py-1 text-white">
+                {lastDays == null ? 'No conversation logged yet' : `Last spoke ${lastDays === 0 ? 'today' : lastDays === 1 ? 'yesterday' : `${lastDays} days ago`}`}
+              </span>
+              {rel.next_step && (
+                <span className={`rounded-full px-2.5 py-1 ${rel.next_step_due && rel.next_step_due < new Date().toISOString().slice(0, 10) ? 'bg-red-500 text-white' : 'bg-white text-slate-800'}`}>
+                  Next: {rel.next_step}{rel.next_step_due ? ` · ${formatDate(rel.next_step_due)}` : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </WorldHero>
 
       {/* Number tiles — each filters the timeline and jumps to its panel */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">

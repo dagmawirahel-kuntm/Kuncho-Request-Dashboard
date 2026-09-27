@@ -6,12 +6,20 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { OPEN_STAGES, SOURCE_LABEL, STAGE_BY_VALUE } from '@/lib/salesJourney'
-import type { SalesChecklistItem, SalesEngagementRow } from '@/types/database'
+import type { ClientRelationshipRow, SalesChecklistItem, SalesEngagementRow } from '@/types/database'
 import { KpiCard } from '@/components/shared/KpiCard'
+import { getClientLogoUrl } from '@/hooks/useClientLogo'
+import { clientColor, clientInitials } from '@/pages/clients/ClientsPage'
+import { fallbackPalette, useClientWorld } from '@/lib/clientWorld'
+import { ClientAtmosphere, type Mote } from '@/components/clientWorld/ClientAtmosphere'
 import { ClientsStrip } from './client-history/ClientsStrip'
+import { isEngaged, useClientRelationships } from './client-history/useClientRelationships'
 import { AlertTriangle, Banknote, CheckCircle2, ChevronDown, Circle, FileWarning, Target, TrendingUp, Upload } from 'lucide-react'
 
 type Filter = 'all' | 'open' | 'won' | 'missing_docs' | 'owed'
+
+// The journey's own sky, until a client is hovered and lends it theirs.
+const JOURNEY_PALETTE = fallbackPalette('#6366F1')
 
 const DOC_CLS: Record<SalesChecklistItem['status'], string> = {
   have:       'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800/40',
@@ -40,6 +48,16 @@ export default function SalesJourneyPage() {
   const canUpload = role === 'admin' || role === 'executive' || role === 'finance' || (role as string) === 'sales'
   const [filter, setFilter] = useState<Filter>('all')
   const [open, setOpen] = useState<string | null>(null)
+  const [peek, setPeek] = useState<ClientRelationshipRow | null>(null)
+  const peekWorld = useClientWorld(peek?.client_name, peek ? getClientLogoUrl(peek.logo_url, peek.email) : null, clientColor(peek?.client_name ?? ''))
+
+  // Every client we work with drifts behind the page, each in its colour.
+  const { data: relationships = [] } = useClientRelationships()
+  const motes = useMemo<Mote[]>(() => relationships.filter(isEngaged)
+    .sort((a, b) => b.projects_open - a.projects_open || Number(b.invoiced) - Number(a.invoiced))
+    .slice(0, 24)
+    .map(r => ({ key: r.client_id, logo: getClientLogoUrl(r.logo_url, r.email), initials: clientInitials(r.client_name), color: clientColor(r.client_name) })),
+  [relationships])
 
   const { data: deals = [], isLoading } = useQuery({
     queryKey: ['sales-engagements'],
@@ -117,10 +135,18 @@ export default function SalesJourneyPage() {
       : Number(d.outstanding) > 0 || Number(d.wht_certificates_due) > Number(d.wht_certificates_collected))
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Sales Journey</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Every deal from first contact to final payment — the money and the paperwork.</p>
+    <div className="client-world space-y-5">
+      <ClientAtmosphere palette={peek ? peekWorld.palette : JOURNEY_PALETTE} motes={motes} focusKey={peek?.client_id ?? null} />
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Sales Journey</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Every deal from first contact to final payment — the money and the paperwork.</p>
+        </div>
+        {peek && (
+          <p key={peek.client_id} className="world-rise hidden text-xs font-semibold sm:block" style={{ color: peekWorld.palette.colors[0] }}>
+            Step into {peek.client_name} →
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -155,7 +181,7 @@ export default function SalesJourneyPage() {
         )}
       </div>
 
-      <ClientsStrip />
+      <ClientsStrip onPeek={setPeek} />
 
       {/* Deals */}
       <div className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
@@ -269,7 +295,7 @@ function DealDetail({ d, canUpload }: { d: SalesEngagementRow; canUpload: boolea
           {d.opportunity_id && <Link to={`/opportunities/${d.opportunity_id}/edit`} className="text-brand hover:underline">Open the deal</Link>}
           {d.contract_id && <Link to={`/contracts/${d.contract_id}/edit`} className="text-brand hover:underline">Contract & payment plan</Link>}
           {d.project_id && <Link to={`/projects/${d.project_id}`} className="text-brand hover:underline">Project{d.project_name ? ` · ${d.project_name}` : ''}</Link>}
-          {d.client_id && <Link to={`/sales-journey/clients/${d.client_id}`} className="text-brand hover:underline">Client history</Link>}
+          {d.client_id && <Link to={`/sales-journey/clients/${d.client_id}`} viewTransition className="text-brand hover:underline">Client history</Link>}
           {d.client_id && <Link to={`/clients/${d.client_id}`} className="text-brand hover:underline">Client file</Link>}
         </div>
       </div>
