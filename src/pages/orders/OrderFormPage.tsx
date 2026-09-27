@@ -594,7 +594,11 @@ function PurchaseRequestFormBody({
       vendor_recommendation:   record.vendor_recommendation,
       status:                  record.status,
       is_new_item:             record.is_new_item ?? false,
-    } : { status: 'pending', priority: 'normal', is_new_item: false, requested_by_user_id: profile?.id ?? null }
+    } : {
+      status: 'pending', priority: 'normal', is_new_item: false, requested_by_user_id: profile?.id ?? null,
+      // Opened from a project page (?project_id=): that project is already chosen.
+      project_id: new URLSearchParams(window.location.search).get('project_id'),
+    }
   )
 
   // Line items state

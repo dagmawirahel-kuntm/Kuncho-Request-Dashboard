@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
@@ -15,6 +14,8 @@ import { ScheduleSection } from '@/components/projects/ScheduleSection'
 import { BoqSection } from '@/components/projects/BoqSection'
 import { PaymentMilestonesSection } from '@/components/projects/PaymentMilestonesSection'
 import { resolveHint } from '@/lib/trainerHints'
+import { useTabParam } from '@/lib/useTabParam'
+import { FactList, Panel, Pill, RecordHeader, RecordLayout, RecordTabs, Stat, StatusSteps, type TabDef } from '@/components/record/Record'
 import { useStaff, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
 import type {
@@ -24,10 +25,11 @@ import type {
   WorkOrder, WorkOrderStatus, WorkOrderCostRow,
 } from '@/types/database'
 import {
-  ChevronLeft, Building2, User, CalendarClock, Wallet, Receipt,
-  Clock3, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
+  Building2, User, CalendarClock, Wallet, Receipt,
+  ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
   Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
   Trash2, UserPlus, PackageOpen, Wrench, Hammer,
+  LayoutDashboard, Layers, Banknote, Users, Boxes, Activity, ShoppingCart, Flag,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -36,11 +38,6 @@ type ProjectDetail = Project & {
   locations: { location_name: string } | null
 }
 
-const HEALTH_CLS: Record<string, string> = {
-  'On Track':  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  'At Risk':   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  'Off Track': 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-}
 
 // Operations manual §6.1 — seven lifecycle gates, in order
 const STAGE_STEPS: { stage: ProjectStage; label: string; icon: React.ReactNode }[] = [
@@ -52,7 +49,8 @@ const STAGE_STEPS: { stage: ProjectStage; label: string; icon: React.ReactNode }
   { stage: 'quality_snagging_handover',      label: 'Snagging',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   { stage: 'closeout_final_accounts',        label: 'Closeout',        icon: <FileCheck2 className="h-3.5 w-3.5" /> },
 ]
-const STAGE_ORDER: ProjectStage[] = STAGE_STEPS.map(s => s.stage)
+const PROJECT_TABS = ['overview', 'budget', 'boq', 'payments', 'team', 'materials', 'activity'] as const
+type ProjectTab = typeof PROJECT_TABS[number]
 const HEALTH_OPTIONS: ProjectHealth[] = ['On Track', 'At Risk', 'Off Track']
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -676,6 +674,7 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
 
 export default function ProjectWorkspacePage() {
   const { id } = useParams<{ id: string }>()
+  const [tab, setTab] = useTabParam(PROJECT_TABS, 'overview')
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -1052,162 +1051,304 @@ export default function ProjectWorkspacePage() {
     })),
   ]
 
+  const pendingVariations = variations.filter(v => v.status === 'pending')
+  const overGroups = groups.filter(g => g.cost_group_id && g.remaining_amount < 0)
+  const awaitingDelivery = openBundles.filter(b => b.status === 'ordered')
+  const stageLabel = STAGE_STEPS.find(s => s.stage === project.stage)?.label
+  const remaining = summary ? summary.total_budget - summary.total_actual_core - summary.total_committed_core : null
+  const marginBelowBid = summary?.projected_margin_core != null && summary.bid_margin != null && summary.projected_margin_core < summary.bid_margin
+
+  // What needs someone's attention on this project, each with where to go.
+  const attention: { key: string; text: string; tone: 'red' | 'amber'; tab?: ProjectTab }[] = [
+    ...(daysLeft != null && daysLeft < 0 ? [{ key: 'late', text: `Handover was due ${formatDate(project.target_handover_date)} — ${Math.abs(daysLeft)} days overdue`, tone: 'red' as const }] : []),
+    ...(daysLeft != null && daysLeft >= 0 && daysLeft <= 14 ? [{ key: 'soon', text: `Handover in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`, tone: 'amber' as const, tab: 'boq' as ProjectTab }] : []),
+    ...overGroups.map(g => ({ key: `over-${g.cost_group_id}`, text: `${g.cost_group_name} is over budget by ${formatCurrency(Math.abs(g.remaining_amount))}`, tone: 'red' as const, tab: 'budget' as ProjectTab })),
+    ...(pendingVariations.length ? [{ key: 'var', text: `${pendingVariations.length} budget variation${pendingVariations.length === 1 ? '' : 's'} waiting for a decision`, tone: 'amber' as const, tab: 'budget' as ProjectTab }] : []),
+    ...(marginBelowBid ? [{ key: 'margin', text: `Projected margin ${(summary!.projected_margin_core! * 100).toFixed(1)}% is below the bid's ${(summary!.bid_margin! * 100).toFixed(1)}%`, tone: 'amber' as const, tab: 'budget' as ProjectTab }] : []),
+    ...(awaitingDelivery.length ? [{ key: 'grn', text: `${awaitingDelivery.length} purchase order${awaitingDelivery.length === 1 ? '' : 's'} ordered, not received yet`, tone: 'amber' as const, tab: 'activity' as ProjectTab }] : []),
+  ]
+
+  const tabs: TabDef<ProjectTab>[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'budget', label: 'Budget', icon: Wallet, count: pendingVariations.length },
+    { id: 'boq', label: 'BOQ & Schedule', icon: Layers },
+    { id: 'payments', label: 'Payments', icon: Banknote },
+    { id: 'team', label: 'Team & work', icon: Users },
+    { id: 'materials', label: 'Materials', icon: Boxes },
+    { id: 'activity', label: 'Activity', icon: Activity },
+  ]
+
+  const statRow = (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <Stat label="Budget used" value={budgetUsedPct != null ? `${budgetUsedPct.toFixed(0)}%` : '—'}
+        tone={budgetUsedPct != null && project.physical_progress != null && budgetUsedPct > Number(project.physical_progress) + 10 ? 'amber' : undefined}
+        sub={project.physical_progress != null ? `${Number(project.physical_progress).toFixed(0)}% built` : 'progress not set'} />
+      <Stat label="Remaining" value={remaining != null ? formatCurrencyCompact(remaining) : '—'} title={remaining != null ? formatCurrency(remaining) : undefined}
+        tone={summary?.any_group_over_budget ? 'red' : undefined} sub={summary ? `of ${formatCurrencyCompact(summary.total_budget)}` : undefined} />
+      <Stat label="Committed" value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'} title={summary ? formatCurrency(summary.total_committed_core) : undefined}
+        sub={summary ? `${formatCurrencyCompact(summary.total_actual_core)} paid` : undefined} />
+      <Stat label="Margin" value={summary?.projected_margin_core != null ? `${(summary.projected_margin_core * 100).toFixed(1)}%` : '—'}
+        tone={marginBelowBid ? 'amber' : undefined} sub={summary?.bid_margin != null ? `bid ${(summary.bid_margin * 100).toFixed(1)}%` : undefined} />
+    </div>
+  )
+
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Link to="/projects" className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500">
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{project.project_name}</h1>
-              {project.health && (
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${HEALTH_CLS[project.health] ?? ''}`}>
-                  {project.health}
-                </span>
-              )}
-              {summary?.budget_baseline_locked_at && (
-                <span className="flex items-center gap-1 rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-300">
-                  <ShieldCheck className="h-3 w-3" /> Baseline locked {formatDate(summary.budget_baseline_locked_at)}
-                </span>
-              )}
-              {checkMode && (
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${checkMode.enforcing ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
-                  Budget checks: {checkMode.enforcing ? 'enforcing' : 'preview only'}
-                </span>
-              )}
-              {canManageBudget && (
-                <button onClick={openDetailsEditor} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600" title="Edit project details">
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-3 flex-wrap mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-              <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {project.clients?.client_name ?? '—'}</span>
-              <span className="flex items-center gap-1"><User className="h-3.5 w-3.5" /> {project.staff?.employee_name ?? '—'}</span>
-              {project.target_handover_date && (
-                <span className="flex items-center gap-1">
-                  <CalendarClock className="h-3.5 w-3.5" /> {formatDate(project.target_handover_date)}
-                  {daysLeft != null && (
-                    <span className={daysLeft < 0 ? 'text-red-500 font-medium' : ''}>
-                      {' '}({daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`})
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="pb-20 sm:pb-0">
+      <RecordHeader
+        back={{ to: '/projects', label: 'Projects' }}
+        title={project.project_name}
+        pills={<>
+          {stageLabel && <Pill tone="brand">{stageLabel}</Pill>}
+          {project.health && <Pill tone={project.health === 'On Track' ? 'green' : project.health === 'At Risk' ? 'amber' : 'red'}>{project.health}</Pill>}
+          {isLocked && <Pill icon={ShieldCheck}>Budget locked</Pill>}
+        </>}
+        meta={[
+          { icon: Building2, value: project.clients?.client_name ?? 'No client' },
+          { icon: User, value: project.staff?.employee_name ?? 'No PM' },
+          ...(project.target_handover_date ? [{
+            icon: CalendarClock,
+            value: `${formatDate(project.target_handover_date)}${daysLeft != null ? ` · ${daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`}` : ''}`,
+            tone: daysLeft != null && daysLeft < 0 ? 'red' as const : daysLeft != null && daysLeft <= 14 ? 'amber' as const : undefined,
+          }] : []),
+        ]}
+        actions={[
+          { label: 'New purchase request', icon: ShoppingCart, to: `/purchase-requests/new?project_id=${id}`, primary: true },
+          { label: 'New work order', icon: Hammer, to: `/work-orders/new?project_id=${id}`, hidden: !canManageWorkOrders },
+          { label: 'Edit details', icon: Pencil, onClick: openDetailsEditor, hidden: !canManageBudget },
+        ]}
+        tabs={<RecordTabs tabs={tabs} active={tab} onChange={setTab} />}
+      />
 
-      <TrainerHintBanner entityType="project" entityId={project.id} hint={projectHint} />
+      <div className="space-y-4">
+        <TrainerHintBanner entityType="project" entityId={project.id} hint={projectHint} />
 
-      {/* Project details editor */}
-      {editingDetails && (
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Edit Project Details</h3>
+        {/* Project details editor */}
+        {editingDetails && (
+          <Panel title="Edit project details" icon={Pencil} action={
             <button onClick={() => setEditingDetails(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Contract Value (ETB)</label>
-              <input type="number" step="0.01" className={inputCls} value={detailsForm.contract_value} onChange={e => setDetailsForm(f => ({ ...f, contract_value: e.target.value }))} />
+          }>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Contract Value (ETB)</label>
+                <input type="number" step="0.01" className={inputCls} value={detailsForm.contract_value} onChange={e => setDetailsForm(f => ({ ...f, contract_value: e.target.value }))} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Target Handover</label>
+                <input type="date" className={inputCls} value={detailsForm.target_handover_date} onChange={e => setDetailsForm(f => ({ ...f, target_handover_date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Physical Progress (%)</label>
+                <input type="number" min={0} max={100} className={inputCls} value={detailsForm.physical_progress} onChange={e => setDetailsForm(f => ({ ...f, physical_progress: e.target.value }))} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Health</label>
+                <select className={inputCls} value={detailsForm.health} onChange={e => setDetailsForm(f => ({ ...f, health: e.target.value as ProjectHealth }))}>
+                  <option value="">— Select —</option>
+                  {HEALTH_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Target Handover</label>
-              <input type="date" className={inputCls} value={detailsForm.target_handover_date} onChange={e => setDetailsForm(f => ({ ...f, target_handover_date: e.target.value }))} />
+            <div className="mt-3 flex items-center gap-2">
+              <button onClick={saveDetails} disabled={savingDetails} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
+                {savingDetails ? 'Saving…' : 'Save Details'}
+              </button>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Physical Progress (%)</label>
-              <input type="number" min={0} max={100} className={inputCls} value={detailsForm.physical_progress} onChange={e => setDetailsForm(f => ({ ...f, physical_progress: e.target.value }))} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Health</label>
-              <select className={inputCls} value={detailsForm.health} onChange={e => setDetailsForm(f => ({ ...f, health: e.target.value as ProjectHealth }))}>
-                <option value="">— Select —</option>
-                {HEALTH_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={saveDetails} disabled={savingDetails} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
-              {savingDetails ? 'Saving…' : 'Save Details'}
-            </button>
-          </div>
-        </div>
-      )}
+          </Panel>
+        )}
 
-      {/* Stage timeline + editor */}
-      {project.stage && (
-        <div id="stage" className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm space-y-3">
-          <div className="flex items-center gap-0">
-            {STAGE_STEPS.map((step, i) => {
-              const stageIdx = STAGE_ORDER.indexOf(project.stage!)
-              const stepIdx = STAGE_ORDER.indexOf(step.stage)
-              const isComplete = stageIdx > stepIdx
-              const isCurrent = stageIdx === stepIdx
-              return (
-                <div key={step.stage} className="flex items-center flex-1 min-w-0">
-                  <div className={`flex items-center gap-1.5 shrink-0 ${
-                    isComplete ? 'text-green-500' : isCurrent ? 'text-brand' : 'text-slate-300 dark:text-slate-600'
-                  }`}>
-                    <div className={`rounded-full p-1.5 ${
-                      isComplete ? 'bg-green-50 dark:bg-green-900/20' : isCurrent ? 'bg-brand/10' : 'bg-slate-100 dark:bg-slate-700'
-                    }`}>
-                      {step.icon}
-                    </div>
-                    <span className={`text-[10px] font-medium hidden sm:block whitespace-nowrap ${
-                      isCurrent ? 'text-brand' : isComplete ? 'text-green-600 dark:text-green-400' : ''
-                    }`}>{step.label}</span>
-                  </div>
-                  {i < STAGE_STEPS.length - 1 && (
-                    <div className={`h-px flex-1 mx-2 ${isComplete ? 'bg-green-300 dark:bg-green-700' : 'bg-slate-200 dark:bg-slate-700'}`} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          {canManageBudget && (
-            <div className="flex items-center gap-2 pt-2 border-t dark:border-slate-700">
-              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Change stage:</label>
-              <select
-                className={`${inputCls} max-w-xs`}
-                value=""
-                disabled={savingStage}
-                onChange={e => { if (e.target.value) handleStageSelect(e.target.value as ProjectStage) }}
-              >
-                <option value="">— Select new stage —</option>
-                {STAGE_STEPS.filter(s => s.stage !== project.stage).map(s => (
-                  <option key={s.stage} value={s.stage}>{s.label}</option>
-                ))}
-              </select>
+        {/* ── Overview ─────────────────────────────────────────────────── */}
+        {tab === 'overview' && (
+          <RecordLayout
+            main={<>
+              {project.stage && (
+                <Panel title="Stage" icon={Flag} action={canManageBudget && (
+                  <select className="rounded-md border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" value="" disabled={savingStage}
+                    onChange={e => { if (e.target.value) handleStageSelect(e.target.value as ProjectStage) }}>
+                    <option value="">Move to…</option>
+                    {STAGE_STEPS.filter(s => s.stage !== project.stage).map(s => <option key={s.stage} value={s.stage}>{s.label}</option>)}
+                  </select>
+                )}>
+                  <StatusSteps current={project.stage}
+                    steps={STAGE_STEPS.map(s => ({ key: s.stage, label: s.label }))} />
+                </Panel>
+              )}
+              {statRow}
+              <Panel title="Needs attention" icon={AlertTriangle} count={attention.length}>
+                {attention.length === 0 ? (
+                  <p className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-4 w-4" /> Nothing on this project needs attention.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {attention.map(a => (
+                      <li key={a.key} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${a.tone === 'red' ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        <span className="flex-1">{a.text}</span>
+                        {a.tab && <button onClick={() => setTab(a.tab!)} className="shrink-0 text-xs font-semibold underline-offset-2 hover:underline">Open</button>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+              <ProgressVsSpendCard physicalProgress={project.physical_progress} budgetUsedPct={budgetUsedPct} />
+              <RecentActivityFeed title="Latest" items={activityItems} emptyText="No activity recorded for this project yet" limit={5} />
+            </>}
+            rail={<>
+              <Panel title="Details" icon={ClipboardList}>
+                <FactList facts={[
+                  { label: 'Client', value: project.clients?.client_name ?? '—' },
+                  { label: 'Project manager', value: project.staff?.employee_name ?? '—' },
+                  { label: 'Location', value: project.locations?.location_name ?? '—' },
+                  { label: 'Handover', value: project.target_handover_date ? formatDate(project.target_handover_date) : '—',
+                    hint: daysLeft != null ? (daysLeft < 0 ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days left`) : undefined,
+                    tone: daysLeft != null && daysLeft < 0 ? 'red' : undefined },
+                  { label: 'Progress', value: project.physical_progress != null ? `${Number(project.physical_progress).toFixed(0)}%` : '—' },
+                ]} />
+              </Panel>
+              <Panel title="Money" icon={Wallet}>
+                <FactList facts={[
+                  { label: 'Contract value', value: project.contract_value != null ? formatCurrency(project.contract_value) : '—' },
+                  { label: 'Cost budget', value: summary ? formatCurrency(summary.total_budget) : '—', hint: project.budget_version ? `version ${project.budget_version}` : undefined },
+                  { label: 'Paid', value: summary ? formatCurrency(summary.total_actual_core) : '—', hint: summary ? `${formatCurrency(summary.total_actual_with_labor)} with labor` : undefined },
+                  { label: 'Committed', value: summary ? formatCurrency(summary.total_committed_core) : '—' },
+                  { label: 'Remaining', value: remaining != null ? formatCurrency(remaining) : '—', tone: summary?.any_group_over_budget ? 'red' : undefined },
+                ]} />
+                <p className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+                  {isLocked && <Pill icon={ShieldCheck}>Baseline locked {formatDate(summary?.budget_baseline_locked_at ?? project.budget_baseline_locked_at)}</Pill>}
+                  {checkMode && <Pill tone={checkMode.enforcing ? 'green' : 'amber'}>Budget checks {checkMode.enforcing ? 'enforcing' : 'preview only'}</Pill>}
+                </p>
+              </Panel>
+            </>}
+          />
+        )}
+
+        {/* ── Budget ───────────────────────────────────────────────────── */}
+        {tab === 'budget' && (
+          <>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <Stat label="Remaining" value={remaining != null ? formatCurrencyCompact(remaining) : '—'} title={remaining != null ? formatCurrency(remaining) : undefined} tone={summary?.any_group_over_budget ? 'red' : undefined} />
+              <Stat label="Committed" value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'} sub={summary ? `${formatCurrencyCompact(summary.total_committed_with_labor)} incl. labor` : undefined} />
+              <Stat label="Cost budget" value={summary ? formatCurrencyCompact(summary.total_budget) : '—'} title={summary ? formatCurrency(summary.total_budget) : undefined} />
+              <Stat label="Paid" value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'} sub={summary ? `${formatCurrencyCompact(summary.total_actual_with_labor)} incl. labor` : undefined} />
+              <Stat label="Contract" value={project.contract_value != null ? formatCurrencyCompact(project.contract_value) : '—'} title={project.contract_value != null ? formatCurrency(project.contract_value) : undefined} />
+              <Stat label="Margin" value={summary?.projected_margin_core != null ? `${(summary.projected_margin_core * 100).toFixed(1)}%` : '—'} tone={marginBelowBid ? 'amber' : undefined}
+                sub={summary?.bid_margin != null ? `bid ${(summary.bid_margin * 100).toFixed(1)}%` : undefined} />
             </div>
-          )}
-        </div>
-      )}
+
+            <BudgetGroupBar title="Budget vs actual by cost group" groups={groups} />
+            {canManageBudget && (
+              <div className="flex flex-wrap items-center gap-2">
+                {!isLocked && (
+                  <button onClick={editingBudget ? saveBudget : openBudgetEditor} disabled={savingBudget}
+                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+                    <Pencil className="h-3.5 w-3.5" /> {savingBudget ? 'Saving…' : editingBudget ? 'Save budget' : 'Set budget'}
+                  </button>
+                )}
+                {groups.filter(g => g.cost_group_id).map(g => (
+                  <button key={g.cost_group_id} onClick={() => { setVariationGroup(g); setVariationDelta(''); setVariationReason('') }}
+                    className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">
+                    <Plus className="h-3 w-3" /> Vary {g.cost_group_name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {editingBudget && !isLocked && (
+              <Panel title="Set budget by cost group" icon={Pencil}>
+                <div className="space-y-2">
+                  {costGroups.map(g => (
+                    <div key={g.id} className="flex items-center justify-between gap-3">
+                      <label className="w-32 shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{g.name}</label>
+                      <input type="number" step="0.01" className={inputCls} value={budgetForm[g.id] ?? ''} onChange={e => setBudgetForm(f => ({ ...f, [g.id]: e.target.value }))} />
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
+
+            <Panel title="Variations" icon={History} count={variations.length} padded={variations.length === 0}>
+              {variations.length === 0 ? <p className="text-sm text-slate-400">No budget variations requested.</p> : (
+                <div className="divide-y dark:divide-slate-700">
+                  {variations.map(v => (
+                    <div key={v.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-700 dark:text-slate-200">
+                          <span className="font-medium">{v.cost_groups?.name ?? '—'}</span>
+                          {' '}{v.requested_amount_delta >= 0 ? '+' : ''}{formatCurrency(v.requested_amount_delta)}
+                          {v.resulting_version && <span className="text-xs text-slate-400"> · v{v.resulting_version}</span>}
+                        </p>
+                        <p className="max-w-md truncate text-xs text-slate-400">{v.reason} — {v.requester?.full_name ?? 'unknown'}, {formatDate(v.created_at)}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {v.status === 'pending' && canManageBudget ? (
+                          <>
+                            <button onClick={() => decideVariation(v.id, 'approved')} className="flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-green-700">
+                              <Check className="h-3 w-3" /> Approve
+                            </button>
+                            <button onClick={() => decideVariation(v.id, 'rejected')} className="flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 dark:border-red-800/40 dark:hover:bg-red-900/20">
+                              <X className="h-3 w-3" /> Reject
+                            </button>
+                          </>
+                        ) : (
+                          <Pill tone={v.status === 'approved' ? 'green' : v.status === 'rejected' ? 'red' : 'amber'}>{v.status}</Pill>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </>
+        )}
+
+        {/* ── BOQ & schedule ───────────────────────────────────────────── */}
+        {tab === 'boq' && (
+          <>
+            <BoqSection projectId={id!} projectName={project.project_name} />
+            <ScheduleSection projectId={id!} projectName={project.project_name} />
+          </>
+        )}
+
+        {/* ── Payments ─────────────────────────────────────────────────── */}
+        {tab === 'payments' && (
+          <PaymentMilestonesSection projectId={id!} projectManagerId={project.project_manager_id ?? null} />
+        )}
+
+        {/* ── Team & work ──────────────────────────────────────────────── */}
+        {tab === 'team' && (
+          <>
+            <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />
+            <WorkOrdersSection projectId={id!} projectName={project.project_name} canManage={canManageWorkOrders} />
+          </>
+        )}
+
+        {/* ── Materials ────────────────────────────────────────────────── */}
+        {tab === 'materials' && (
+          <>
+            <MaterialsBalanceSection projectId={id!} />
+            <ReturnToStockSection projectId={id!} projectManagerId={project.project_manager_id ?? null} />
+          </>
+        )}
+
+        {/* ── Activity ─────────────────────────────────────────────────── */}
+        {tab === 'activity' && (
+          <RecentActivityFeed title="Recent activity" items={activityItems} emptyText="No activity recorded for this project yet" limit={40} />
+        )}
+      </div>
 
       {/* Stage 3->4 lock confirmation */}
       {confirmLockOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+          <div className="w-full max-w-sm space-y-3 rounded-xl bg-white p-5 shadow-xl dark:bg-slate-800">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">
               <ShieldCheck className="h-4 w-4 text-amber-500" /> Lock Budget?
             </h3>
             <p className="text-sm text-slate-600 dark:text-slate-300">
               This locks the approved budget for {project.project_name}. Budgets can only change afterward through a variation order. Continue?
             </p>
-            <div className="flex items-center gap-2 justify-end pt-1">
-              <button onClick={() => { setConfirmLockOpen(false); setPendingStage('') }} className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => { setConfirmLockOpen(false); setPendingStage('') }} className="rounded-md px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700">
                 Cancel
               </button>
-              <button
-                onClick={() => pendingStage && applyStageChange(pendingStage)}
-                disabled={savingStage}
-                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
-              >
+              <button onClick={() => pendingStage && applyStageChange(pendingStage)} disabled={savingStage}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60">
                 {savingStage ? 'Locking…' : 'Lock Budget & Continue'}
               </button>
             </div>
@@ -1215,90 +1356,10 @@ export default function ProjectWorkspacePage() {
         </div>
       )}
 
-      {/* Summary band — compact currency notation (full value on hover/tap-hold) so tiles don't overflow on phone-width screens.
-          Order: Remaining and Committed lead (top row on the grid-cols-2 mobile reflow) since those are what a PM checking
-          their phone mid-day needs first; Contract Value and Projected Margin trail, reachable one scroll further down. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard
-          label="Remaining"
-          value={summary ? formatCurrencyCompact(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : '—'}
-          title={summary ? formatCurrency(summary.total_budget - summary.total_actual_core - summary.total_committed_core) : undefined}
-          icon={summary?.any_group_over_budget ? AlertTriangle : Wallet}
-          color={summary?.any_group_over_budget ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}
-        />
-        <KpiCard
-          label="Committed"
-          value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'}
-          title={summary ? formatCurrency(summary.total_committed_core) : undefined}
-          sub={summary ? `${formatCurrencyCompact(summary.total_committed_with_labor)} incl. labor` : undefined}
-          icon={Clock3} color="bg-amber-50 text-amber-600"
-        />
-        <KpiCard
-          label="Cost Budget"
-          value={summary ? formatCurrencyCompact(summary.total_budget) : '—'}
-          title={summary ? formatCurrency(summary.total_budget) : undefined}
-          icon={Wallet} color="bg-slate-100 text-slate-600"
-        />
-        <KpiCard
-          label="Actual (Paid)"
-          value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'}
-          title={summary ? formatCurrency(summary.total_actual_core) : undefined}
-          sub={summary ? `${formatCurrencyCompact(summary.total_actual_with_labor)} incl. labor` : undefined}
-          icon={Receipt} color="bg-emerald-50 text-emerald-600"
-        />
-        <KpiCard
-          label="Contract Value"
-          value={project.contract_value != null ? formatCurrencyCompact(project.contract_value) : '—'}
-          title={project.contract_value != null ? formatCurrency(project.contract_value) : undefined}
-          icon={Wallet} color="bg-blue-50 text-blue-600"
-        />
-        <KpiCard
-          label="Projected Margin"
-          value={summary?.projected_margin_core != null ? `${(summary.projected_margin_core * 100).toFixed(1)}%` : '—'}
-          sub={summary?.bid_margin != null ? `bid ${(summary.bid_margin * 100).toFixed(1)}%` : undefined}
-          icon={summary?.projected_margin_core != null && summary.bid_margin != null && summary.projected_margin_core < summary.bid_margin ? TrendingDown : TrendingUp}
-          color="bg-purple-50 text-purple-600"
-        />
-      </div>
-
-      {/* Budget vs actual by cost group + progress vs spend */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-3">
-          <BudgetGroupBar title="Budget vs Actual by Cost Group" groups={groups} />
-          {canManageBudget && (
-            <div className="flex items-center gap-2 flex-wrap">
-              {!isLocked && (
-                <button onClick={editingBudget ? saveBudget : openBudgetEditor} disabled={savingBudget}
-                  className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">
-                  <Pencil className="h-3.5 w-3.5" /> {savingBudget ? 'Saving…' : editingBudget ? 'Save Budget' : 'Set Budget'}
-                </button>
-              )}
-              {groups.filter(g => g.cost_group_id).map(g => (
-                <button key={g.cost_group_id} onClick={() => { setVariationGroup(g); setVariationDelta(''); setVariationReason('') }}
-                  className="flex items-center gap-1 rounded-full border dark:border-slate-600 px-2.5 py-1 text-[11px] text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700">
-                  <Plus className="h-3 w-3" /> Vary {g.cost_group_name}
-                </button>
-              ))}
-            </div>
-          )}
-          {editingBudget && !isLocked && (
-            <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm space-y-2">
-              {costGroups.map(g => (
-                <div key={g.id} className="flex items-center justify-between gap-3">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300 w-28 shrink-0">{g.name}</label>
-                  <input type="number" step="0.01" className={inputCls} value={budgetForm[g.id] ?? ''} onChange={e => setBudgetForm(f => ({ ...f, [g.id]: e.target.value }))} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <ProgressVsSpendCard physicalProgress={project.physical_progress} budgetUsedPct={budgetUsedPct} />
-      </div>
-
       {/* Variation request modal */}
       {variationGroup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
+          <div className="w-full max-w-sm space-y-3 rounded-xl bg-white p-5 shadow-xl dark:bg-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Request Variation — {variationGroup.cost_group_name}</h3>
               <button onClick={() => setVariationGroup(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
@@ -1318,7 +1379,7 @@ export default function ProjectWorkspacePage() {
               <textarea rows={2} className={inputCls} value={variationReason} onChange={e => setVariationReason(e.target.value)} placeholder="Why this change is needed…" />
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button onClick={() => setVariationGroup(null)} className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">Cancel</button>
+              <button onClick={() => setVariationGroup(null)} className="rounded-md px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700">Cancel</button>
               <button onClick={submitVariation} disabled={savingVariation} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
                 {savingVariation ? 'Submitting…' : 'Submit Request'}
               </button>
@@ -1326,89 +1387,6 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       )}
-
-      {/* Variation history */}
-      {variations.length > 0 && (
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-            <History className="h-4 w-4" /> Variation History
-          </h3>
-          <div className="mt-3 divide-y dark:divide-slate-700">
-            {variations.map(v => (
-              <div key={v.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <p className="text-sm text-slate-700 dark:text-slate-200">
-                    <span className="font-medium">{v.cost_groups?.name ?? '—'}</span>
-                    {' '}{v.requested_amount_delta >= 0 ? '+' : ''}{formatCurrency(v.requested_amount_delta)}
-                    {v.resulting_version && <span className="text-slate-400 text-xs"> · v{v.resulting_version}</span>}
-                  </p>
-                  <p className="text-xs text-slate-400 truncate max-w-md">{v.reason} — {v.requester?.full_name ?? 'unknown'}, {formatDate(v.created_at)}</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {v.status === 'pending' && canManageBudget ? (
-                    <>
-                      <button onClick={() => decideVariation(v.id, 'approved')} className="flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-green-700">
-                        <Check className="h-3 w-3" /> Approve
-                      </button>
-                      <button onClick={() => decideVariation(v.id, 'rejected')} className="flex items-center gap-1 rounded-md border border-red-200 dark:border-red-800/40 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-                        <X className="h-3 w-3" /> Reject
-                      </button>
-                    </>
-                  ) : (
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
-                      v.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                      : v.status === 'rejected' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                    }`}>{v.status}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Workshop/production work for this project — no listing here yet,
-          just a fast, pre-linked entry point rather than a blank form. */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-          <ClipboardList className="h-4 w-4" /> Work Orders
-        </h3>
-        <Link to={`/work-orders/new?project_id=${id}`}
-          className="text-xs text-slate-400 hover:text-brand transition-colors">
-          Need workshop or site work done? Create a work order →
-        </Link>
-      </div>
-
-      {/* BOQ (PR 9a.5): the frontend half of PR 9a, which only ever shipped
-          as database migrations -- Excel import, manual tree entry, and
-          approval. Placed before Schedule since a BOQ is the thing Schedule
-          links against. */}
-      <BoqSection projectId={id!} projectName={project?.project_name ?? ''} />
-
-      {/* Schedule (PR 9b): tasks with baseline tracking, working-day-aware
-          dates, simple dependencies, BOQ linkage, WO spawning. */}
-      <ScheduleSection projectId={id!} projectName={project?.project_name ?? ''} />
-
-      {/* Payment milestones (PR 9d): contract-value-based payment stages,
-          gated on the BOQ physical progress above. Renders nothing unless the
-          project has a contract with a value, which is most projects. */}
-      <PaymentMilestonesSection projectId={id!} projectManagerId={project?.project_manager_id ?? null} />
-
-      {/* Labor Tier 1: routine assignment, no approval */}
-      <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />
-
-      {/* What is actually open on this site, scoped to this project */}
-      <WorkOrdersSection projectId={id!} projectName={project?.project_name ?? ''} canManage={canManageWorkOrders} />
-
-      {/* Return to stock (148): project reports what's coming back;
-          stock_manager confirming receipt is what actually restores it
-          to stock — see StockManagerViewPage's own queue for that half. */}
-      <MaterialsBalanceSection projectId={id!} />
-      <ReturnToStockSection projectId={id!} projectManagerId={project?.project_manager_id ?? null} />
-
-      {/* Activity */}
-      <RecentActivityFeed title="Recent Activity" items={activityItems} emptyText="No activity recorded for this project yet" />
     </div>
   )
 }
