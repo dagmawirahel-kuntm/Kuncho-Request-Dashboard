@@ -1,11 +1,5 @@
 import {
-  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban,
-  Users, DollarSign, CreditCard, TrendingUp, FileText,
-  Package, MapPin, Clock, Wallet, BarChart3, Building2,
-  Layers, Archive, Shield, Globe2, BookOpen,
-  ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
-  PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity
+  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -164,7 +158,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },
       { label: 'BOQ Change Orders', to: '/finance/boq-change-orders', icon: FileText, roles: ['admin', 'executive', 'finance'] },
-      { label: 'Labor Expense Drafts', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Labour Pay', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       // Read-only for everyone (register + book value), actions gated
       // inside the page itself — no roles restriction here on purpose.
       { label: 'Fixed Assets', to: '/finance/fixed-assets', icon: Archive },
@@ -241,7 +235,9 @@ export const navGroups: NavGroup[] = [
     title: 'Stock',
     items: [
       { label: 'Stock Catalog', to: '/stock', icon: Warehouse, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
-      { label: 'Pending Setup', to: '/stock/pending-setup', icon: ClipboardCheck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
+      { label: 'Issue to a Project', to: '/stock/issue', icon: Send, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
+      { label: 'Stock Counts', to: '/stock/counts', icon: ClipboardList, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
+      { label: 'Set Up Items', to: '/stock/pending-setup', icon: ClipboardCheck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { label: 'Duplicates', to: '/stock/duplicates', icon: Copy, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { label: 'Dispatch Queue', to: '/stock/dispatch-queue', icon: Truck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'executive', 'stock_manager'] },

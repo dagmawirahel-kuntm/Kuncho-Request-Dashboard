@@ -170,6 +170,9 @@ import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
 import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
 import StockDuplicatesPage from '@/pages/stock/StockDuplicatesPage'
 import StockDispatchQueuePage from '@/pages/stock/StockDispatchQueuePage'
+import StockIssuePage from '@/pages/stock/StockIssuePage'
+import StockCountsPage from '@/pages/stock/StockCountsPage'
+import StockCountPage from '@/pages/stock/StockCountPage'
 import ProjectManagerViewPage from '@/pages/views/ProjectManagerViewPage'
 import OperationsManagerViewPage from '@/pages/views/OperationsManagerViewPage'
 import StockManagerViewPage from '@/pages/views/StockManagerViewPage'
@@ -240,6 +243,9 @@ export const router = createBrowserRouter([
               { path: 'stock/dispatch-queue', element: <StockDispatchQueuePage /> },
               { path: 'stock/tools', element: <StockToolsPage /> },
               { path: 'stock/movement/new', element: <StockMovementPage /> },
+              { path: 'stock/issue', element: <StockIssuePage /> },
+              { path: 'stock/counts', element: <StockCountsPage /> },
+              { path: 'stock/counts/:id', element: <StockCountPage /> },
               { path: 'stock/:id', element: <StockItemDetailPage /> },
               { path: 'stock/:id/edit', element: <StockItemFormPage /> },
             ],

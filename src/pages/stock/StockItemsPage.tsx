@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { StockItem, StockMainCategory, BoothStructureType } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2, Search, Warehouse, Wrench, Package, Flame, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Warehouse, Wrench, Package, ChevronRight, AlertTriangle, ClipboardList, Send, ClipboardCheck } from 'lucide-react'
+import { Stat } from '@/components/record/Record'
+import { useStockLocations } from '@/lib/stockLocations'
 
 const BOOTH_STRUCTURE_BADGE: Record<BoothStructureType, { label: string; cls: string }> = {
   standalone:  { label: 'Standalone',  cls: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
@@ -79,6 +81,9 @@ export default function StockItemsPage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<StockMainCategory | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'raw_material' | 'tool' | 'consumable'>('all')
+  const [stockFilter, setStockFilter] = useState<'all' | 'held' | 'low' | 'pending' | 'sites'>('all')
+  const [locationFilter, setLocationFilter] = useState('')
+  const { data: locations = [] } = useStockLocations()
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['stock-items'],
@@ -93,33 +98,42 @@ export default function StockItemsPage() {
     },
   })
 
-  // Warehouse stock per item. Goods delivered straight to a project site
-  // are not in the warehouse; they're shown separately (migration 358).
+  // Warehouse stock per item, set up or not. Goods delivered straight to a
+  // project site are not in the warehouse; they're shown apart (358).
   const { data: levels = [] } = useQuery({
     queryKey: ['stock-levels'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('v_stock_levels')
-        .select('id, current_stock, total_in, total_out, delivered_to_sites')
-      return (data ?? []) as { id: string; current_stock: number; total_in: number; total_out: number; delivered_to_sites: number }[]
+      const { data } = await supabase.from('v_stock_item_usage').select('id, qty_on_hand, qty_delivered_to_sites')
+      return (data ?? []) as { id: string; qty_on_hand: number; qty_delivered_to_sites: number }[]
     },
   })
 
   const levelMap = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const l of levels) m[l.id] = Number(l.current_stock)
+    for (const l of levels) m[l.id] = Number(l.qty_on_hand ?? 0)
     return m
   }, [levels])
   const siteMap = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const l of levels) m[l.id] = Number(l.delivered_to_sites ?? 0)
+    for (const l of levels) m[l.id] = Number(l.qty_delivered_to_sites ?? 0)
     return m
   }, [levels])
+  // Low or out: a set-up item at or below its reorder level, or empty.
+  const isLow = (i: StockItem) => {
+    if (i.catalog_status !== 'active') return false
+    const q = levelMap[i.id] ?? 0
+    return q <= 0 || (i.reorder_level != null && q <= i.reorder_level)
+  }
 
   const filtered = useMemo(() => {
     let list = data
     if (categoryFilter !== 'all') list = list.filter(i => i.main_category === categoryFilter)
     if (typeFilter !== 'all') list = list.filter(i => i.item_type === typeFilter)
+    if (locationFilter) list = list.filter(i => i.warehouse_zone === locationFilter)
+    if (stockFilter === 'held') list = list.filter(i => (levelMap[i.id] ?? 0) > 0)
+    if (stockFilter === 'low') list = list.filter(isLow)
+    if (stockFilter === 'pending') list = list.filter(i => i.catalog_status === 'pending_setup')
+    if (stockFilter === 'sites') list = list.filter(i => (levelMap[i.id] ?? 0) <= 0 && (siteMap[i.id] ?? 0) > 0)
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(i =>
@@ -131,7 +145,8 @@ export default function StockItemsPage() {
       )
     }
     return list
-  }, [data, categoryFilter, typeFilter, search])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, categoryFilter, typeFilter, search, stockFilter, locationFilter, levelMap, siteMap])
 
   // Group by main category
   const grouped = useMemo(() => {
@@ -145,19 +160,20 @@ export default function StockItemsPage() {
   }, [filtered])
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Delete this stock item?')) return
+    if (!window.confirm('Deactivate this stock item? Its history stays; it just stops being offered.')) return
     const { error } = await supabase.from('stock_items').update({ active: false }).eq('id', id)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['stock-items'] })
-    toast('Stock item removed', 'success')
+    toast('Stock item deactivated', 'success')
   }
 
   const stats = useMemo(() => ({
     total: data.length,
-    tools: data.filter(i => i.is_tool).length,
-    rawMaterial: data.filter(i => i.item_type === 'raw_material').length,
-    consumable: data.filter(i => i.item_type === 'consumable').length,
-  }), [data])
+    held: data.filter(i => (levelMap[i.id] ?? 0) > 0).length,
+    low: data.filter(isLow).length,
+    pending: data.filter(i => i.catalog_status === 'pending_setup').length,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [data, levelMap, siteMap])
 
   return (
     <div className="space-y-5">
@@ -166,27 +182,46 @@ export default function StockItemsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Stock Catalog</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Inventory classification and warehouse items</p>
         </div>
-        <Link to="/stock/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> Add Item
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/stock/issue" className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Send className="h-4 w-4" /> Issue to a project
+          </Link>
+          <Link to="/stock/counts" className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+            <ClipboardList className="h-4 w-4" /> Count stock
+          </Link>
+          {stats.pending > 0 && (
+            <Link to="/stock/pending-setup" className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300">
+              <ClipboardCheck className="h-4 w-4" /> Set up {stats.pending}
+            </Link>
+          )}
+          <Link to="/stock/new" className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+            <Plus className="h-4 w-4" /> Add item
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Items', value: stats.total, icon: <Package className="h-4 w-4" /> },
-          { label: 'Tools', value: stats.tools, icon: <Wrench className="h-4 w-4" /> },
-          { label: 'Raw Materials', value: stats.rawMaterial, icon: <Warehouse className="h-4 w-4" /> },
-          { label: 'Consumables', value: stats.consumable, icon: <Flame className="h-4 w-4" /> },
-        ].map(s => (
-          <div key={s.label} className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 flex items-center gap-3 shadow-sm">
-            <div className="rounded-lg bg-slate-100 dark:bg-slate-700 p-2 text-slate-500">{s.icon}</div>
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide">{s.label}</p>
-              <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{s.value}</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat label="Items" value={stats.total} />
+        <Stat label="Holding stock" value={stats.held} sub="in the warehouse" />
+        <Stat label="Low or out" value={stats.low} tone={stats.low ? 'amber' : undefined} />
+        <Stat label="Not set up" value={stats.pending} tone={stats.pending ? 'amber' : undefined} sub="not offered from stock" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {([['all', 'All'], ['held', 'In the warehouse'], ['low', 'Low or out'], ['pending', 'Not set up'], ['sites', 'Only delivered to sites']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setStockFilter(k)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${stockFilter === k ? 'border-brand bg-brand text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+            {label}
+          </button>
         ))}
+        {locations.length > 0 && (
+          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} aria-label="Location"
+            className="ml-auto rounded-md border bg-white px-2 py-1 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <option value="">Every location</option>
+            {locations.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Filters */}
@@ -264,6 +299,9 @@ export default function StockItemsPage() {
                             {item.item_code}
                           </span>
                         )}
+                        {item.catalog_status === 'pending_setup' && (
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Not set up</span>
+                        )}
                         {levelBadge && (
                           <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${levelBadge.cls}`}>
                             {levelBadge.icon}{levelBadge.label}
@@ -312,7 +350,7 @@ export default function StockItemsPage() {
                         className="rounded p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(item.id) }}
+                      <button onClick={e => { e.stopPropagation(); handleDelete(item.id) }} title="Deactivate"
                         className="rounded p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
