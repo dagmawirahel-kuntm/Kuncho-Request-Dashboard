@@ -59,6 +59,7 @@ import VendorCreditsPage from '@/pages/vendors/VendorCreditsPage'
 import PaymentRequestsPage from '@/pages/finance/PaymentRequestsPage'
 import PaymentRequestDetailPage from '@/pages/finance/PaymentRequestDetailPage'
 import VendorContractPage from '@/pages/vendors/VendorContractPage'
+import VendorReviewPage from '@/pages/vendors/VendorReviewPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import ProjectWorkspacePage from '@/pages/projects/ProjectWorkspacePage'
@@ -276,6 +277,7 @@ export const router = createBrowserRouter([
               { path: 'sales-receipts/new', element: <SalesReceiptFormPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
+              { path: 'vendors/review', element: <VendorReviewPage /> },
               { path: 'vendors/:id', element: <VendorDetailPage /> },
               { path: 'vendors/:id/edit', element: <VendorFormPage /> },
               { path: 'vendors/:id/contract', element: <VendorContractPage /> },

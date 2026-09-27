@@ -1,3 +1,4 @@
+import { UnverifiedVendorFlag } from '@/components/vendors/UnverifiedVendorFlag'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useState, useMemo } from 'react'
@@ -843,6 +844,7 @@ export default function ExpenseDetailPage() {
             <div className="py-3 px-2">
               <p className="text-white/50 text-xs uppercase tracking-wide">Vendor</p>
               <p className="text-white font-bold text-sm truncate">{vendorName ?? '—'}</p>
+              <UnverifiedVendorFlag vendorId={expense.vendor_id} compact />
             </div>
           </div>
         </div>

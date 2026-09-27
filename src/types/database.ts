@@ -325,10 +325,16 @@ export interface Vendor {
   payment_terms: string | null
   website: string | null
   notes: string | null
+  /** Maker-checker on TIN / bank details (see verify_vendor_record, migration 356). */
+  verification_status: 'pending_verification' | 'verified'
+  entered_by: string | null
+  entered_at: string | null
+  verified_by: string | null
+  verified_at: string | null
   created_at: string
   updated_at: string
 }
-export type VendorInsert = Omit<Vendor, 'id' | 'created_at' | 'updated_at'>
+export type VendorInsert = Omit<Vendor, 'id' | 'created_at' | 'updated_at' | 'verification_status' | 'entered_by' | 'entered_at' | 'verified_by' | 'verified_at'>
 
 // ── Vendor Attachments ────────────────────────────────────────────
 export type VendorAttachmentCategory =

@@ -1,4 +1,4 @@
-import { AlertTriangle, Briefcase, ClipboardCheck, Copy, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
+import { AlertTriangle, Briefcase, ClipboardCheck, Copy, ShieldAlert, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { QueryListWidget, type ListRow } from '../WidgetCard'
@@ -218,6 +218,28 @@ export function StockDuplicates() {
           subtitle: `${g.members.length} items${g.recent ? ' · new from goods received' : ''}`,
           badge: g.exact ? { text: 'same name', tone: 'green' as const } : null,
           to: `/stock/duplicates?q=${encodeURIComponent(g.members[0].item_name)}`,
+        })) }
+      }}
+    />
+  )
+}
+
+// Vendors whose TIN or bank details changed and wait for the other
+// department to check them (356) — biggest amount waiting to be paid first.
+export function VendorsToVerify() {
+  return (
+    <QueryListWidget
+      title="Vendor bank details to check" icon={ShieldAlert} to="/vendors/review" queryKey={['vendors-to-verify-widget']} empty="Every vendor's bank details are checked."
+      fetch={async () => {
+        const { data, error } = await supabase.from('v_vendor_verification_queue').select('id, vendor_name, entered_by_name, entered_at, owed, paid_since_change')
+        if (error) throw error
+        const rows = (data ?? []).sort((a, b) => Number(b.owed) - Number(a.owed))
+        return { total: rows.length, rows: rows.slice(0, 6).map(r => ({
+          id: r.id, title: r.vendor_name,
+          subtitle: [r.entered_by_name, r.entered_at ? formatDate(r.entered_at) : null].filter(Boolean).join(' · '),
+          right: Number(r.owed) > 0 ? formatCurrency(Number(r.owed)) : undefined,
+          badge: Number(r.paid_since_change) > 0 ? { text: 'paid since', tone: 'red' as const } : null,
+          to: `/vendors/review?vendor=${r.id}`,
         })) }
       }}
     />

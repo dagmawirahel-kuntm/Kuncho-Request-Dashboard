@@ -1,7 +1,7 @@
 import {
   BellRing, Briefcase, CalendarCheck, CalendarDays, ClipboardCheck, ClipboardList, Clock, FileText, FolderKanban,
   GitPullRequestArrow, Hammer, Handshake, HardHat, Landmark, Package, PackageCheck, PenTool, Pin, Send, ShoppingCart,
-  Truck, Users, UserX, UserCog, Wallet, Wrench, Banknote, AlertTriangle, Copy,
+  Truck, Users, UserX, UserCog, Wallet, Wrench, Banknote, AlertTriangle, Copy, ShieldAlert,
 } from 'lucide-react'
 import {
   WaitingOnYou, MyRequests, MyProjects, MyWorkOrders, MyLeave, MyPay, MyTools, PinnedPages,
@@ -11,7 +11,7 @@ import {
 } from '@/components/dashboard/widgets/finance'
 import {
   Portfolio, PoApprovals, Variations, TransportJobs, FleetMaintenance, OpenIncidents, PoPipeline, GrnQueue, LowStock,
-  PendingDispatch, StockDuplicates, LeaveApprovals, UnassignedStaff, StaffIssues, SalesPipeline, PaymentRequestsOut, DesignPackages,
+  PendingDispatch, StockDuplicates, VendorsToVerify, LeaveApprovals, UnassignedStaff, StaffIssues, SalesPipeline, PaymentRequestsOut, DesignPackages,
 } from '@/components/dashboard/widgets/operations'
 import type { WidgetContext, WidgetDef } from './types'
 
@@ -51,6 +51,7 @@ export const WIDGETS: WidgetDef[] = [
   // Procurement & stock
   { key: 'po_pipeline', title: 'Purchase order pipeline', description: 'Purchase orders by stage, with their value.', icon: ClipboardCheck, group: 'Procurement & stock', defaultSize: 'half', available: role('procurement_officer', 'operations_manager', 'executive', 'finance'), component: PoPipeline },
   { key: 'grn_queue', title: 'Orders to receive', description: 'Ordered goods not received yet, and late deliveries.', icon: PackageCheck, group: 'Procurement & stock', defaultSize: 'half', available: role('procurement_officer', 'stock_manager', 'operations_manager'), component: GrnQueue },
+  { key: 'vendors_to_verify', title: 'Vendor bank details to check', description: 'Vendors whose TIN or bank details changed and wait for the other department to check them.', icon: ShieldAlert, group: 'Procurement & stock', defaultSize: 'half', available: role('finance', 'procurement_officer', 'executive'), component: VendorsToVerify },
   { key: 'stock_duplicates', title: 'Duplicate stock items', description: 'Stock items that are one item under different names, to merge.', icon: Copy, group: 'Procurement & stock', defaultSize: 'half', available: role('procurement_officer', 'stock_manager', 'executive'), component: StockDuplicates },
   { key: 'low_stock', title: 'Low stock', description: 'Items at or below their reorder level.', icon: Package, group: 'Procurement & stock', defaultSize: 'half', available: role('procurement_officer', 'stock_manager', 'operations_manager'), component: LowStock },
   { key: 'pending_dispatch', title: 'To dispatch from stock', description: 'Requested items waiting to go out of the store.', icon: AlertTriangle, group: 'Procurement & stock', defaultSize: 'half', available: role('stock_manager', 'operations_manager'), component: PendingDispatch },
