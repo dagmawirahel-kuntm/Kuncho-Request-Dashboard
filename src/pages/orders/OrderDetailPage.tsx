@@ -10,10 +10,11 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
+import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/record/Record'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
-  ChevronDown, ChevronRight, Zap, Copy, Receipt,
+  ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList,
 } from 'lucide-react'
 
 const ITEM_S: Record<OrderItemStatus, { label: string; bg: string; border: string }> = {
@@ -207,382 +208,200 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const requestedByName  = profileName((order as any).requested_by_user_id)
   const unfilledCount = items.filter(i => i.status === 'unfulfilled').length
 
+  const rest = fulfillment.total - fulfillment.fulfilled - fulfillment.partial - fulfillment.blocked
+  const seg = (n: number) => `${Math.max((n / Math.max(fulfillment.total, 1)) * 100, n > 0 ? 4 : 0)}%`
+  const dueTone: 'red' | 'amber' | undefined = reqDiff == null ? undefined : reqDiff < 0 ? 'red' : reqDiff <= 3 ? 'amber' : undefined
+  const dueText = reqDiff == null ? null
+    : reqDiff < 0 ? `${Math.abs(reqDiff)} day${Math.abs(reqDiff) !== 1 ? 's' : ''} overdue`
+    : reqDiff === 0 ? 'Needed today' : reqDiff === 1 ? 'Needed tomorrow' : `Needed in ${reqDiff} days`
+
   return (
-    <div className="space-y-4">
-
-      {/* Top bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <Link to="/purchase-requests"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand transition-colors">
-          <ArrowLeft className="h-4 w-4" />Purchase Requests
-        </Link>
-        {canCreate && (
-          <Link to={`/purchase-requests/${order.id}/edit`}
-            className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:border-brand hover:text-brand transition-colors shadow-sm">
-            <Pencil className="h-3.5 w-3.5" />Edit Request
-          </Link>
-        )}
-      </div>
-
-      <TrainerHintBanner entityType="purchase_request" entityId={order.id} hint={orderHint} />
-
-      {/* Hero card */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            {order.request_code && (
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-mono text-sm font-bold text-brand tracking-wider">{order.request_code}</span>
-                <button
-                  onClick={() => { navigator.clipboard.writeText(order.request_code!); toast('Copied to clipboard', 'success') }}
-                  className="rounded p-0.5 text-slate-400 hover:text-brand hover:bg-brand/10 transition-colors"
-                  title="Copy code">
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 leading-snug">
-              {order.order_name || 'Untitled Request'}
-            </h1>
-            {order.item_service_description && (
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                {order.item_service_description}
-              </p>
-            )}
-          </div>
-
-          {/* Status chips */}
-          <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
-            {order.is_new_item && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
-                <Zap className="h-3 w-3" />Market search
-              </span>
-            )}
-            {order.priority && order.priority !== 'normal' && (
-              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                order.priority === 'critical'
-                  ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-              }`}>
-                {order.priority === 'critical'
-                  ? <AlertCircle className="h-3 w-3" />
-                  : <AlertTriangle className="h-3 w-3" />}
-                {order.priority === 'critical' ? 'Critical' : 'Urgent'}
-              </span>
-            )}
-            <FulfillmentChip order={order} f={fulfillment} />
-          </div>
-        </div>
-
-        {/* Required-by row */}
-        {reqDiff !== null && (
-          <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${
-            reqDiff < 0
-              ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'
-              : reqDiff <= 3
-              ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400'
-              : 'bg-slate-50 text-slate-500 dark:bg-slate-700/40'
-          }`}>
-            <Calendar className="h-4 w-4" />
-            {reqDiff < 0
-              ? `${Math.abs(reqDiff)} day${Math.abs(reqDiff) !== 1 ? 's' : ''} overdue`
-              : reqDiff === 0 ? 'Required today'
-              : reqDiff === 1 ? 'Required tomorrow'
-              : `Required in ${reqDiff} days · ${formatDate(order.required_by_date)}`}
-          </div>
-        )}
-      </div>
-
-      {/* Metadata strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { icon: <Building2 className="h-4 w-4" />, label: 'Project',              value: projectName },
-          { icon: <User className="h-4 w-4" />,      label: 'Requested By',         value: requestedByName ?? '—' },
-          { icon: <User className="h-4 w-4" />,      label: 'Procurement Officer',  value: procOfficerName },
-          { icon: <Calendar className="h-4 w-4" />,  label: 'Submitted',            value: formatDate(order.created_at) ?? '—' },
-        ].map(m => (
-          <div key={m.label} className="flex items-center gap-3 rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 shadow-sm">
-            <div className="rounded-lg bg-slate-100 dark:bg-slate-700 p-2 text-slate-500 flex-shrink-0">{m.icon}</div>
-            <div className="min-w-0">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium">{m.label}</p>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{m.value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Fulfillment panel — replaces the dead approval-ladder stepper.
-          approval_status stopped moving once the manager→finance ladder
-          was retired (migrations 149/163); this reads the same real
-          signal the list page does: each line's own status plus finance
-          sourcing review, both of which are live below. */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fulfillment</p>
+    <div className="pb-20 sm:pb-0">
+      <RecordHeader
+        back={{ to: '/purchase-requests', label: 'Purchase requests' }}
+        code={order.request_code}
+        title={order.order_name || 'Untitled request'}
+        subtitle={order.item_service_description}
+        pills={<>
           <FulfillmentChip order={order} f={fulfillment} />
-        </div>
+          {order.priority === 'critical' && <Pill tone="red" icon={AlertCircle}>Critical</Pill>}
+          {order.priority && order.priority !== 'normal' && order.priority !== 'critical' && <Pill tone="amber" icon={AlertTriangle}>Urgent</Pill>}
+          {order.is_new_item && <Pill tone="amber" icon={Zap}>Market search</Pill>}
+        </>}
+        meta={[
+          { icon: Building2, value: projectName },
+          ...(dueText ? [{ icon: Calendar, value: `${dueText} · ${formatDate(order.required_by_date)}`, tone: dueTone }] : []),
+          { icon: User, value: requestedByName ?? '—' },
+        ]}
+        actions={[
+          { label: 'Reopen request', onClick: () => handleApproval('pending', { rejection_reason: null }), primary: true, hidden: !(approvalStatus === 'rejected' && canCancelRequest) },
+          { label: 'Edit', icon: Pencil, to: `/purchase-requests/${order.id}/edit`, hidden: !canCreate },
+          { label: "Reject — don't source", icon: XCircle, onClick: () => setRejecting(true), danger: true, hidden: !(approvalStatus !== 'rejected' && canCancelRequest) },
+        ]}
+      />
 
-        {approvalStatus !== 'rejected' && fulfillment.total > 0 && (() => {
-          const rest = fulfillment.total - fulfillment.fulfilled - fulfillment.partial - fulfillment.blocked
-          const seg = (n: number) => `${Math.max((n / fulfillment.total) * 100, n > 0 ? 4 : 0)}%`
-          return (
-            <div className="space-y-2">
-              <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
-                {fulfillment.fulfilled > 0 && <span className="h-full bg-green-500" style={{ width: seg(fulfillment.fulfilled) }} />}
-                {fulfillment.partial > 0   && <span className="h-full bg-sky-500"   style={{ width: seg(fulfillment.partial) }} />}
-                {rest > 0                  && <span className="h-full"              style={{ width: seg(rest) }} />}
-                {fulfillment.blocked > 0   && <span className="h-full bg-red-500"   style={{ width: seg(fulfillment.blocked) }} />}
-              </div>
-              <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-500 dark:text-slate-400">
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-green-500" />{fulfillment.fulfilled} sourced</span>
-                {fulfillment.partial > 0 && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-sky-500" />{fulfillment.partial} partial</span>}
-                {rest > 0 && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-600" />{rest} waiting</span>}
-                {fulfillment.blocked > 0 && (
-                  <span className="flex items-center gap-1 font-medium text-red-600 dark:text-red-400"><span className="h-1.5 w-1.5 rounded-full bg-red-500" />{fulfillment.blocked} stuck</span>
-                )}
-              </div>
-            </div>
-          )
-        })()}
+      <div className="space-y-4">
+        <TrainerHintBanner entityType="purchase_request" entityId={order.id} hint={orderHint} />
 
-        {/* Historical approval record — only the handful of requests
-            approved under the old ladder before it was retired show
-            anything here. */}
-        {(order.manager_approved_by || order.finance_approved_by) && (
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">
-            {order.manager_approved_by && (
-              <>Approved by {profileName(order.manager_approved_by) ?? '—'}{order.manager_approved_at ? ` on ${formatDate(order.manager_approved_at)}` : ''} under the previous approval process.{order.finance_approved_by ? ' ' : ''}</>
-            )}
-            {order.finance_approved_by && (
-              <>Finance-approved by {profileName(order.finance_approved_by) ?? '—'}{order.finance_approved_at ? ` on ${formatDate(order.finance_approved_at)}` : ''}.</>
-            )}
-          </p>
-        )}
-
-        {/* Rejection notice */}
         {approvalStatus === 'rejected' && order.rejection_reason && (
-          <div className="flex items-start gap-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 p-3.5">
-            <XCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 dark:border-red-700/40 dark:bg-red-900/20">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
             <div>
-              <p className="text-xs font-semibold text-red-700 dark:text-red-400 mb-0.5">Rejection reason</p>
+              <p className="text-xs font-semibold text-red-700 dark:text-red-400">Rejected — not to be sourced</p>
               <p className="text-sm text-red-600 dark:text-red-300">{order.rejection_reason}</p>
             </div>
           </div>
         )}
 
-        {approvalStatus !== 'rejected' && canCancelRequest && !rejecting && (
-          <div className="flex gap-2 pt-1 border-t dark:border-slate-700">
-            <button
-              onClick={() => setRejecting(true)}
-              className="rounded-md bg-white dark:bg-slate-700 border dark:border-slate-600 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-              Reject — don't source this
-            </button>
-          </div>
-        )}
-
-        {/* Rejection form */}
         {canCancelRequest && rejecting && (
-          <div className="space-y-2.5 pt-1 border-t dark:border-slate-700">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Enter a reason so the requester knows what to fix:</p>
-            <textarea rows={2} className={inputCls} placeholder="Rejection reason (required)…"
-              value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} autoFocus />
-            <div className="flex gap-2">
-              <button
-                disabled={!rejectionReason.trim()}
-                onClick={() => handleApproval('rejected', { rejection_reason: rejectionReason })}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors">
-                Confirm Rejection
-              </button>
-              <button
-                onClick={() => { setRejecting(false); setRejectionReason('') }}
-                className="rounded-md border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                Cancel
-              </button>
+          <Panel title="Reject this request" icon={XCircle}>
+            <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Say why, so the requester knows what to fix:</p>
+            <textarea rows={2} className={inputCls} placeholder="Reason (required)…" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} autoFocus />
+            <div className="mt-2 flex gap-2">
+              <button disabled={!rejectionReason.trim()} onClick={() => handleApproval('rejected', { rejection_reason: rejectionReason })}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">Confirm rejection</button>
+              <button onClick={() => { setRejecting(false); setRejectionReason('') }}
+                className="rounded-md border px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Cancel</button>
             </div>
-          </div>
+          </Panel>
         )}
 
-        {/* Reopen a rejected request so it can be sourced again */}
-        {approvalStatus === 'rejected' && canCancelRequest && (
-          <div className="pt-1 border-t dark:border-slate-700">
-            <button
-              onClick={() => handleApproval('pending', { rejection_reason: null })}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 transition-colors shadow-sm">
-              Reopen Request
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Line items */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm">
-        <div className="flex items-center justify-between px-4 py-3 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Line Items
-            <span className="ml-2 text-xs font-normal text-slate-400">{items.length} item{items.length !== 1 ? 's' : ''}</span>
-          </p>
-          {unfilledCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-              <AlertCircle className="h-3 w-3" />{unfilledCount} unfulfilled
-            </span>
-          )}
-        </div>
-
-        {items.length === 0 ? (
-          <div className="py-12 text-center">
-            <Package className="mx-auto h-6 w-6 text-slate-300 mb-2" />
-            <p className="text-sm text-slate-400">No line items on this request.</p>
-          </div>
-        ) : (
-          <>
-            {/* Column headers */}
-            <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-slate-50 dark:bg-slate-700/30 border-b dark:border-slate-700">
-              <span className="w-6 text-[10px] text-slate-400 font-bold">#</span>
-              <span className="flex-1 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Item</span>
-              <span className="w-28 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Qty</span>
-              <span className="w-28 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Est. Price</span>
-              <span className="w-32 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Status</span>
-              <span className="w-28 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-right">Expense</span>
-            </div>
-
-            <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
-              {items.map((item, idx) => {
-                const st = ITEM_S[item.status] ?? ITEM_S.pending
-                const isExpanded = expanded.has(item.id)
-                return (
-                  <div key={item.id} className={`border-l-4 ${st.border} transition-all`}>
-                    <div className="flex items-center gap-3 px-4 py-3">
-                      <span className="flex-shrink-0 text-xs text-slate-400 font-mono w-6 text-center">{idx + 1}</span>
-
-                      {/* Name + specs toggle + market check badge */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className={`text-sm font-medium ${
-                            item.status === 'cancelled'
-                              ? 'line-through text-slate-400'
-                              : 'text-slate-800 dark:text-slate-100'
-                          }`}>
-                            {item.item_name}
-                          </p>
-                          {(item as any).needs_market_check && (
-                            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 flex-shrink-0">
-                              <Zap className="h-2.5 w-2.5" />Check price
-                            </span>
-                          )}
-                        </div>
-                        {item.specifications && (
-                          <button
-                            onClick={() => toggleExpand(item.id)}
-                            className="mt-0.5 inline-flex items-center gap-0.5 text-[11px] text-slate-400 hover:text-brand transition-colors">
-                            {isExpanded
-                              ? <><ChevronDown className="h-3 w-3" />Hide specs</>
-                              : <><ChevronRight className="h-3 w-3" />Show specs</>}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Qty + Unit */}
-                      <div className="flex-shrink-0 text-right w-28">
-                        {item.quantity
-                          ? <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                              {item.quantity} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
-                            </p>
-                          : <p className="text-xs text-slate-300">—</p>
-                        }
-                      </div>
-
-                      {/* Est price */}
-                      <div className="flex-shrink-0 text-right w-28 hidden sm:block">
-                        {item.unit_price_est
-                          ? <p className="text-sm text-slate-600 dark:text-slate-300">
-                              {Number(item.unit_price_est).toLocaleString()} ETB
-                            </p>
-                          : <p className="text-xs text-slate-300">—</p>
-                        }
-                      </div>
-
-                      {/* Status: select for authorized, badge for others */}
-                      {canUpdateItems ? (
-                        <select
-                          value={item.status}
-                          onChange={e => handleItemStatus(item.id, e.target.value as OrderItemStatus)}
-                          className="flex-shrink-0 w-32 rounded-md border dark:border-slate-600 px-2 py-1 text-xs outline-none bg-white dark:bg-slate-800 focus:ring-2 focus:ring-brand text-slate-600 dark:text-slate-300 cursor-pointer">
-                          {ALL_STATUSES.map(s => (
-                            <option key={s} value={s}>{ITEM_S[s].label}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${st.bg}`}>
-                          {st.label}
-                        </span>
-                      )}
-
-                      {/* Create Expense link (procurement officer / admin) */}
-                      {canUpdateItems && item.status !== 'cancelled' && (
-                        <Link
-                          to={`/expenses/new?pr_id=${order.id}&line_id=${item.id}`}
-                          title="Create expense for this line item"
-                          className="flex-shrink-0 w-28 inline-flex items-center justify-end gap-1 text-xs text-brand hover:underline">
-                          <Receipt className="h-3.5 w-3.5" />Create expense
-                        </Link>
-                      )}
-                      {(!canUpdateItems || item.status === 'cancelled') && (
-                        <span className="flex-shrink-0 w-28" />
-                      )}
-                    </div>
-
-                    {/* Expanded specs */}
-                    {isExpanded && item.specifications && (
-                      <div className="px-4 pb-3 pl-12">
-                        <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/40 rounded-lg px-3 py-2 leading-relaxed">
-                          {item.specifications}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Fulfillment notes */}
-                    {item.fulfillment_notes && item.status !== 'pending' && (
-                      <div className="px-4 pb-3 pl-12">
-                        <p className="text-xs text-slate-400 dark:text-slate-500 italic">{item.fulfillment_notes}</p>
-                      </div>
-                    )}
-
+        <RecordLayout
+          main={<>
+            <Panel title="Items" icon={Package} count={items.length} padded={false}
+              action={unfilledCount > 0 && <Pill tone="red" icon={AlertCircle}>{unfilledCount} can't be sourced</Pill>}>
+              {items.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Package className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+                  <p className="text-sm text-slate-400">No items on this request.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="hidden grid-cols-[2rem_minmax(0,1fr)_6rem_7rem_9rem] gap-3 border-b bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:grid dark:border-slate-700 dark:bg-slate-900/30">
+                    <span>#</span><span>Item</span><span className="text-right">Qty</span><span className="text-right">Est. price</span><span className="text-right">Status</span>
                   </div>
-                )
-              })}
-            </div>
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                    {items.map((item, idx) => {
+                      const st = ITEM_S[item.status] ?? ITEM_S.pending
+                      const isExpanded = expanded.has(item.id)
+                      const cancelled = item.status === 'cancelled'
+                      return (
+                        <li key={item.id} className={`border-l-4 ${st.border}`}>
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-4 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_6rem_7rem_9rem] sm:items-center">
+                            <span className="hidden font-mono text-xs text-slate-400 sm:block">{idx + 1}</span>
+                            <div className="min-w-0">
+                              <p className={`text-sm font-medium ${cancelled ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
+                                <span className="mr-1 font-mono text-xs text-slate-400 sm:hidden">{idx + 1}.</span>{item.item_name}
+                              </p>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+                                <span className="sm:hidden">{item.quantity ? `${item.quantity} ${item.unit ?? ''}` : 'no qty'}{item.unit_price_est ? ` · ${Number(item.unit_price_est).toLocaleString()} ETB each` : ''}</span>
+                                {(item as { needs_market_check?: boolean }).needs_market_check && <span className="inline-flex items-center gap-0.5 text-amber-600"><Zap className="h-3 w-3" />Check price</span>}
+                                {item.specifications && (
+                                  <button onClick={() => toggleExpand(item.id)} className="inline-flex items-center gap-0.5 hover:text-brand">
+                                    {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Specs
+                                  </button>
+                                )}
+                                {canUpdateItems && !cancelled && (
+                                  <Link to={`/expenses/new?pr_id=${order.id}&line_id=${item.id}`} className="inline-flex items-center gap-0.5 text-brand hover:underline">
+                                    <Receipt className="h-3 w-3" />Create expense
+                                  </Link>
+                                )}
+                              </div>
+                            </div>
+                            <span className="hidden text-right text-sm font-semibold text-slate-700 sm:block dark:text-slate-200">
+                              {item.quantity ? <>{item.quantity} <span className="text-xs font-normal text-slate-400">{item.unit}</span></> : '—'}
+                            </span>
+                            <span className="hidden text-right text-sm text-slate-600 sm:block dark:text-slate-300">
+                              {item.unit_price_est ? `${Number(item.unit_price_est).toLocaleString()}` : '—'}
+                            </span>
+                            <div className="row-span-2 flex justify-end sm:row-span-1">
+                              {canUpdateItems ? (
+                                <select value={item.status} onChange={e => handleItemStatus(item.id, e.target.value as OrderItemStatus)} aria-label="Line status"
+                                  className="w-36 cursor-pointer rounded-md border bg-white px-2 py-1 text-xs text-slate-600 outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                  {ALL_STATUSES.map(s => <option key={s} value={s}>{ITEM_S[s].label}</option>)}
+                                </select>
+                              ) : (
+                                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${st.bg}`}>{st.label}</span>
+                              )}
+                            </div>
+                          </div>
+                          {isExpanded && item.specifications && (
+                            <p className="mx-4 mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500 sm:ml-12 dark:bg-slate-700/40 dark:text-slate-400">{item.specifications}</p>
+                          )}
+                          {item.fulfillment_notes && item.status !== 'pending' && (
+                            <p className="px-4 pb-3 text-xs italic text-slate-400 sm:pl-12 dark:text-slate-500">{item.fulfillment_notes}</p>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {unfilledCount > 0 && (
+                    <div className="m-4 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700/40 dark:bg-amber-900/20">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <p className="text-xs text-amber-700 dark:text-amber-300">
+                        {unfilledCount} item{unfilledCount !== 1 ? 's' : ''} could not be sourced. Raise a new request for the remainder, or mark {unfilledCount !== 1 ? 'them' : 'it'} cancelled if no longer needed.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </Panel>
 
-            {/* Unfulfilled warning */}
-            {unfilledCount > 0 && (
-              <div className="flex items-start gap-2.5 m-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 p-3">
-                <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  {unfilledCount} line item{unfilledCount !== 1 ? 's' : ''} could not be sourced.
-                  A new purchase request should be created for the remainder, or mark as cancelled if no longer needed.
-                </p>
+            {(order.notes || order.vendor_recommendation) && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {order.notes && (
+                  <Panel title="Notes" icon={StickyNote}>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{order.notes}</p>
+                  </Panel>
+                )}
+                {order.vendor_recommendation && (
+                  <Panel title="Vendor notes" icon={Store}>
+                    <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">{order.vendor_recommendation}</p>
+                  </Panel>
+                )}
               </div>
             )}
-          </>
-        )}
+          </>}
+          rail={<>
+            <Panel title="Fulfillment" icon={CheckCircle2}>
+              {approvalStatus !== 'rejected' && fulfillment.total > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                    {fulfillment.fulfilled > 0 && <span className="h-full bg-green-500" style={{ width: seg(fulfillment.fulfilled) }} />}
+                    {fulfillment.partial > 0 && <span className="h-full bg-sky-500" style={{ width: seg(fulfillment.partial) }} />}
+                    {rest > 0 && <span className="h-full" style={{ width: seg(rest) }} />}
+                    {fulfillment.blocked > 0 && <span className="h-full bg-red-500" style={{ width: seg(fulfillment.blocked) }} />}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green-500" />{fulfillment.fulfilled} sourced</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-sky-500" />{fulfillment.partial} partial</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />{rest} waiting</span>
+                    <span className={`flex items-center gap-1.5 ${fulfillment.blocked ? 'font-medium text-red-600 dark:text-red-400' : ''}`}><span className="h-2 w-2 rounded-full bg-red-500" />{fulfillment.blocked} stuck</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">{approvalStatus === 'rejected' ? 'Rejected — nothing will be sourced.' : 'No items yet.'}</p>
+              )}
+              {(order.manager_approved_by || order.finance_approved_by) && (
+                <p className="mt-3 border-t pt-2 text-[11px] text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                  {order.manager_approved_by && <>Approved by {profileName(order.manager_approved_by) ?? '—'}{order.manager_approved_at ? ` on ${formatDate(order.manager_approved_at)}` : ''} under the previous approval process.{order.finance_approved_by ? ' ' : ''}</>}
+                  {order.finance_approved_by && <>Finance-approved by {profileName(order.finance_approved_by) ?? '—'}{order.finance_approved_at ? ` on ${formatDate(order.finance_approved_at)}` : ''}.</>}
+                </p>
+              )}
+            </Panel>
+            <Panel title="Details" icon={ClipboardList}>
+              <FactList facts={[
+                { label: 'Project', value: order.project_id ? <Link to={`/projects/${order.project_id}`} className="text-brand hover:underline">{projectName}</Link> : '—' },
+                { label: 'Needed by', value: order.required_by_date ? formatDate(order.required_by_date) : '—', hint: dueText ?? undefined, tone: dueTone },
+                { label: 'Priority', value: order.priority ? order.priority[0].toUpperCase() + order.priority.slice(1) : 'Normal', tone: order.priority === 'critical' ? 'red' : order.priority && order.priority !== 'normal' ? 'amber' : undefined },
+                { label: 'Requested by', value: requestedByName ?? '—' },
+                { label: 'Procurement officer', value: procOfficerName },
+                { label: 'Submitted', value: formatDate(order.created_at) ?? '—' },
+              ]} />
+            </Panel>
+          </>}
+        />
       </div>
-
-      {/* Notes + vendor context */}
-      {(order.notes || order.vendor_recommendation) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {order.notes && (
-            <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Notes</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{order.notes}</p>
-            </div>
-          )}
-          {order.vendor_recommendation && (
-            <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Vendor Notes</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{order.vendor_recommendation}</p>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

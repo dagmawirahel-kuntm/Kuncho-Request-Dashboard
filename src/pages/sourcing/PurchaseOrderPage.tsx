@@ -11,8 +11,9 @@ import { resolveHint } from '@/lib/trainerHints'
 import { documentBaseCss, renderLetterhead, renderFooter } from '@/lib/documentTheme'
 import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
+import { FactList, Panel, Pill, RecordHeader, RecordLayout, StatusSteps, type Tone } from '@/components/record/Record'
 import {
-  ChevronLeft, Pencil, FileText, Clock, CheckCircle2,
+  Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
   Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck, Undo2
 } from 'lucide-react'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
@@ -89,14 +90,6 @@ const STATUS_STEPS: { status: SourcingBundleStatus; label: string; icon: React.R
 
 const STATUS_ORDER: SourcingBundleStatus[] = ['drafting', 'submitted', 'approved', 'ordered', 'fulfilled', 'cancelled']
 
-const STATUS_CLS: Record<SourcingBundleStatus, string> = {
-  drafting:  'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
-  submitted: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  approved:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  ordered:   'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  fulfilled: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  cancelled: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-}
 
 function fmt(n: number): string {
   return `ETB ${n.toLocaleString('en-ET', { minimumFractionDigits: 2 })}`
@@ -616,626 +609,384 @@ export default function PurchaseOrderPage() {
     toast('Reverted to Ordered — you can now record a GRN', 'success')
   }
 
+  const STATUS_TONE: Record<SourcingBundleStatus, Tone> = { drafting: 'slate', submitted: 'amber', approved: 'blue', ordered: 'violet', fulfilled: 'green', cancelled: 'red' }
+  const statusLabel = STATUS_STEPS.find(s => s.status === status)?.label ?? status
+  const projectNames = [...new Set(sortedItems.map(i => i.order_items?.orders?.projects?.project_name).filter(Boolean))] as string[]
+  const stepDates: Record<string, string | null> = {
+    drafting: bundle.created_at, submitted: bundle.submitted_at, approved: bundle.approved_at, ordered: bundle.ordered_at, fulfilled: bundle.fulfilled_at,
+  }
+  const lateDelivery = status === 'ordered' && !!bundle.expected_delivery_date && bundle.expected_delivery_date < new Date().toISOString().slice(0, 10)
+
+  // What happens next, in one sentence, for whoever is looking.
+  const nextStep = status === 'drafting' ? (canSubmit ? 'Check the items and prices, then submit it for approval.' : 'Procurement is still preparing this order.')
+    : status === 'submitted' ? (canApprove ? 'Review it and approve, or send it back with what to change.'
+      : `Waiting for approval — up to ${formatCurrency(PROCUREMENT_APPROVAL_CAP)} procurement, up to ${formatCurrency(OPS_MANAGER_APPROVAL_CAP)} operations manager, above that the CEO.`)
+    : status === 'approved' ? (canMarkOrdered ? 'Place the order with the vendor, then mark it ordered.' : 'Approved — waiting for procurement to place the order.')
+    : status === 'ordered' ? (grn ? 'Goods received.' : lateDelivery ? `Delivery was expected ${formatDate(bundle.expected_delivery_date)} — follow up with the vendor.` : 'Waiting for the goods. Record a GRN when they arrive.')
+    : status === 'fulfilled' ? `Received${bundle.fulfilled_at ? ` on ${formatDate(bundle.fulfilled_at)}` : ''}.`
+    : 'This purchase order was cancelled.'
+
   return (
-    <div className="space-y-5">
+    <div className="pb-20 sm:pb-0">
       <iframe ref={printRef} srcDoc={poHtml} title="Purchase Order Print" style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }} />
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Link to="/sourcing" className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500">
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-mono">{bundle.bundle_code}</h1>
-              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_CLS[status]}`}>
-                {STATUS_STEPS.find(s => s.status === status)?.label ?? status}
-              </span>
-              {isPayInAdvance && (
-                <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                  Pay in Advance
-                </span>
-              )}
+      <RecordHeader
+        back={{ to: '/sourcing', label: 'Purchase orders' }}
+        code={bundle.bundle_code}
+        title={vendorDisplay}
+        pills={<>
+          <Pill tone={STATUS_TONE[status]}>{status === 'cancelled' ? 'Cancelled' : statusLabel}</Pill>
+          {isPayInAdvance && <Pill tone="amber">Pay in advance</Pill>}
+          {lateDelivery && <Pill tone="red" icon={AlertCircle}>Delivery late</Pill>}
+        </>}
+        meta={[
+          { icon: Receipt, value: <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(netPayable)}</span>, label: 'Net' },
+          ...(bundle.expected_delivery_date ? [{ icon: TruckIcon, value: `Delivery ${formatDate(bundle.expected_delivery_date)}`, tone: lateDelivery ? 'red' as const : undefined }] : []),
+          ...(projectNames.length ? [{ icon: Building2, value: projectNames.length === 1 ? projectNames[0] : `${projectNames.length} projects` }] : []),
+        ]}
+        actions={[
+          { label: 'Submit for approval', icon: Send, onClick: () => transition('submitted'), primary: true, disabled: transitioning, hidden: !canSubmit },
+          { label: 'Approve', icon: Check, onClick: () => transition('approved', { finance_notes: financeNotes || null }), primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
+          { label: 'Mark as ordered', icon: TruckIcon, onClick: () => transition('ordered'), primary: true, disabled: transitioning, hidden: !canMarkOrdered },
+          { label: 'Record goods received', icon: ClipboardCheck, to: `/sourcing/${id}/grn/new`, primary: true, hidden: !canRecordGrn },
+          { label: 'Request changes', icon: Undo2, onClick: () => setShowRejectPanel(true), hidden: !canReject || showRejectPanel },
+          { label: 'Edit', icon: Pencil, to: `/sourcing/${id}/edit`, hidden: !canEdit },
+          { label: 'Queue pickup', icon: TruckIcon, onClick: () => setShowQueuePanel(true), hidden: !canRequestTransport || showQueuePanel },
+          { label: 'Print', icon: Printer, onClick: handlePrint },
+          { label: 'Save as file', icon: Save, onClick: handleSaveFile },
+          { label: 'Cancel purchase order', icon: XCircle, onClick: () => { if (window.confirm('Cancel this purchase order? Its items go back to their requests to be sourced again.')) transition('cancelled') }, danger: true, disabled: transitioning, hidden: !canCancel },
+          { label: 'Delete', icon: Trash2, onClick: handleDelete, danger: true, hidden: !((isAdmin || isManager) && status === 'drafting') },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <TrainerHintBanner entityType="purchase_order" entityId={bundle.id} hint={bundleHint} />
+
+        <Panel>
+          <StatusSteps current={status === 'cancelled' ? (STATUS_STEPS[Math.max(0, statusIdx - 1)]?.status ?? 'drafting') : status}
+            done={status === 'fulfilled'} cancelled={status === 'cancelled'}
+            steps={STATUS_STEPS.map(s => ({ key: s.status, label: s.label, at: stepDates[s.status] ? formatDate(stepDates[s.status]) : null }))} />
+        </Panel>
+
+        {bundle.finance_notes && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Notes from approval</p>
+              <p className="mt-0.5 text-sm text-amber-700 dark:text-amber-300">{bundle.finance_notes}</p>
             </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Purchase Order — {vendorDisplay}</p>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleSaveFile}
-            className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Save className="h-3.5 w-3.5" /> Save PO
-          </button>
-          <button onClick={handlePrint}
-            className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Printer className="h-3.5 w-3.5" /> Print PO
-          </button>
-          {canEdit && (
-            <Link to={`/sourcing/${id}/edit`}
-              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Link>
-          )}
-          {canCancel && (
-            <button onClick={() => transition('cancelled')}
-              disabled={transitioning}
-              className="flex items-center gap-1.5 rounded-md border border-red-200 dark:border-red-800/40 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60">
-              <XCircle className="h-3.5 w-3.5" /> Cancel Bundle
-            </button>
-          )}
-        </div>
-      </div>
+        )}
 
-      <TrainerHintBanner entityType="purchase_order" entityId={bundle.id} hint={bundleHint} />
-
-      {/* Status timeline */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-4 shadow-sm">
-        <div className="flex items-center gap-0">
-          {STATUS_STEPS.map((step, i) => {
-            const stepIdx = STATUS_ORDER.indexOf(step.status)
-            const isComplete = status !== 'cancelled' && statusIdx > stepIdx
-            const isCurrent = status !== 'cancelled' && statusIdx === stepIdx
-            const isCancelled = status === 'cancelled'
-            return (
-              <div key={step.status} className="flex items-center flex-1 min-w-0">
-                <div className={`flex items-center gap-1.5 shrink-0 ${
-                  isCancelled ? 'text-slate-300 dark:text-slate-600'
-                  : isComplete ? 'text-green-500'
-                  : isCurrent ? 'text-brand'
-                  : 'text-slate-300 dark:text-slate-600'
-                }`}>
-                  <div className={`rounded-full p-1.5 ${
-                    isCancelled ? 'bg-slate-100 dark:bg-slate-700'
-                    : isComplete ? 'bg-green-50 dark:bg-green-900/20'
-                    : isCurrent ? 'bg-brand/10'
-                    : 'bg-slate-100 dark:bg-slate-700'
-                  }`}>
-                    {step.icon}
-                  </div>
-                  <span className={`text-[10px] font-medium hidden sm:block whitespace-nowrap ${
-                    isCurrent ? 'text-brand' : isComplete ? 'text-green-600 dark:text-green-400' : ''
-                  }`}>{step.label}</span>
-                </div>
-                {i < STATUS_STEPS.length - 1 && (
-                  <div className={`h-px flex-1 mx-2 ${
-                    !isCancelled && statusIdx > STATUS_ORDER.indexOf(step.status) ? 'bg-green-300 dark:bg-green-700' : 'bg-slate-200 dark:bg-slate-700'
-                  }`} />
-                )}
+        <RecordLayout
+          main={<>
+            <Panel title="Items" icon={Package} count={sortedItems.length} padded={false}>
+              {/* Wide screens: a table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30">
+                      <th className="w-8 px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">#</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">Item</th>
+                      <th className="hidden px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 lg:table-cell">Request · project</th>
+                      <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Qty</th>
+                      <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Unit price</th>
+                      <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y dark:divide-slate-700">
+                    {sortedItems.map((item, i) => {
+                      const oi = item.order_items
+                      const lineTotal = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-700/20">
+                          <td className="px-4 py-3 text-xs text-slate-400">{i + 1}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-slate-800 dark:text-slate-100">{oi?.item_name ?? '—'}</p>
+                            {oi?.specifications && <p className="mt-0.5 text-xs text-slate-400">{oi.specifications}</p>}
+                            {item.notes && <p className="mt-0.5 text-xs italic text-slate-400">{item.notes}</p>}
+                          </td>
+                          <td className="hidden px-4 py-3 lg:table-cell">
+                            {oi?.order_id ? <Link to={`/purchase-requests/${oi.order_id}`} className="font-mono text-xs text-brand hover:underline">{oi.orders?.request_code ?? '—'}</Link> : '—'}
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{oi?.orders?.projects?.project_name ?? ''}</p>
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                            {item.quantity_actual ?? oi?.quantity ?? '—'} <span className="text-xs text-slate-400">{oi?.unit ?? ''}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">{item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}</td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{lineTotal > 0 ? formatCurrency(lineTotal) : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
-            )
-          })}
-          {status === 'cancelled' && (
-            <div className="ml-3 flex items-center gap-1.5 text-red-500">
-              <XCircle className="h-4 w-4" />
-              <span className="text-xs font-medium">Cancelled</span>
-            </div>
-          )}
-        </div>
-      </div>
+              {/* Phones: one card per item */}
+              <ul className="divide-y md:hidden dark:divide-slate-700">
+                {sortedItems.map((item, i) => {
+                  const oi = item.order_items
+                  const qty = item.quantity_actual ?? oi?.quantity
+                  const lineTotal = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
+                  return (
+                    <li key={item.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-w-0 text-sm font-medium text-slate-800 dark:text-slate-100"><span className="mr-1 text-xs text-slate-400">{i + 1}.</span>{oi?.item_name ?? '—'}</p>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{lineTotal > 0 ? formatCurrency(lineTotal) : '—'}</p>
+                      </div>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        {qty ?? '—'} {oi?.unit ?? ''} × {item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}
+                      </p>
+                      {oi?.specifications && <p className="mt-0.5 text-xs text-slate-400">{oi.specifications}</p>}
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        {oi?.order_id && <Link to={`/purchase-requests/${oi.order_id}`} className="font-mono text-brand">{oi.orders?.request_code}</Link>}
+                        {oi?.orders?.projects?.project_name ? ` · ${oi.orders.projects.project_name}` : ''}
+                      </p>
+                    </li>
+                  )
+                })}
+              </ul>
 
-      {/* Finance notes (if any) */}
-      {bundle.finance_notes && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10 px-4 py-3">
-          <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Finance Notes</p>
-            <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">{bundle.finance_notes}</p>
-          </div>
-        </div>
-      )}
-
-      {/* PO Document */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden print:shadow-none print:border-0">
-        {/* PO header */}
-        <div className="bg-[#1E3A5F] text-white px-6 py-5 flex items-start justify-between gap-4 print:bg-[#1E3A5F]">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-blue-200 mb-1">Purchase Order</p>
-            <h2 className="text-2xl font-bold font-mono tracking-tight">{bundle.bundle_code}</h2>
-            <p className="text-sm text-blue-200 mt-1">KUNCHO Operations</p>
-          </div>
-          <div className="text-right text-sm text-blue-100 space-y-0.5">
-            <p><span className="text-blue-300 text-xs">Date:</span> {formatDate(bundle.created_at)}</p>
-            {bundle.expected_delivery_date && (
-              <p><span className="text-blue-300 text-xs">Expected delivery:</span> {formatDate(bundle.expected_delivery_date)}</p>
-            )}
-            {bundle.submitted_at && (
-              <p><span className="text-blue-300 text-xs">Submitted:</span> {formatDate(bundle.submitted_at)}</p>
-            )}
-            {bundle.approved_at && (
-              <p><span className="text-blue-300 text-xs">Approved:</span> {formatDate(bundle.approved_at)}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Vendor + officer info */}
-        <div className="px-6 py-4 border-b dark:border-slate-700 grid grid-cols-2 gap-6">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Vendor / Supplier</p>
-            <p className="text-base font-semibold text-slate-800 dark:text-slate-100">{vendorDisplay}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Procurement Officer</p>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-              {(bundle.procurement_officer as any)?.full_name ?? '—'}
-            </p>
-            {bundle.approver && (
-              <>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-2 mb-1">Approved by</p>
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                  {(bundle.approver as any)?.full_name}
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Items table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-700/40 border-b dark:border-slate-700">
-                <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-8">#</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Item Description</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider hidden md:table-cell">Source PR</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider hidden lg:table-cell">Project</th>
-                <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Qty</th>
-                <th className="text-left px-3 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Unit</th>
-                <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Unit Price</th>
-                <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y dark:divide-slate-700">
-              {sortedItems.map((item, i) => {
-                const oi = item.order_items
-                const lineTotal = (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0)
-                return (
-                  <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-800 dark:text-slate-100">{oi?.item_name ?? '—'}</p>
-                      {oi?.specifications && <p className="text-xs text-slate-400 mt-0.5">{oi.specifications}</p>}
-                      {item.notes && <p className="text-xs text-slate-400 italic mt-0.5">{item.notes}</p>}
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <span className="font-mono text-xs text-brand">
-                        {oi?.orders?.request_code ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {oi?.orders?.projects?.project_name ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
-                      {item.quantity_actual ?? oi?.quantity ?? '—'}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">
-                      {oi?.unit ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
-                      {item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-100">
-                      {lineTotal > 0 ? formatCurrency(lineTotal) : '—'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-            <tfoot>
-              {discountEtb > 0 && (
-                <>
-                  <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
-                    <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">Subtotal before discount</td>
-                    <td className="px-4 py-2 text-right text-sm text-slate-500 dark:text-slate-400 tabular-nums">{formatCurrency(itemsSubtotal)}</td>
-                  </tr>
-                  <tr className="bg-slate-50 dark:bg-slate-700/30">
-                    <td colSpan={7} className="px-4 py-2 text-right text-xs text-emerald-600 dark:text-emerald-400">
-                      Vendor discount
-                      {bundle.discount_kind === 'percent' && ` (${Number(bundle.discount_value)}%)`}
-                      {bundle.discount_reason && ` — ${bundle.discount_reason}`}
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm text-emerald-600 dark:text-emerald-400 tabular-nums">−{formatCurrency(discountEtb)}</td>
-                  </tr>
-                </>
-              )}
-              <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
-                <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">Subtotal</td>
-                <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(grandTotal)}</td>
-              </tr>
-              <tr className="bg-slate-50 dark:bg-slate-700/30">
-                <td colSpan={7} className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400">VAT (15%, added)</td>
-                <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300 tabular-nums">{formatCurrency(vatAmount)}</td>
-              </tr>
-              {whtEligible && (
-                <>
-                  <tr className="border-t dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
-                    <td colSpan={7} className="px-4 py-2 text-right text-xs font-medium text-slate-600 dark:text-slate-300">Gross Total (before WHT)</td>
-                    <td className="px-4 py-2 text-right text-sm font-medium text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(grossTotal)}</td>
-                  </tr>
-                  <tr className="bg-slate-50 dark:bg-slate-700/30">
-                    <td colSpan={7} className="px-4 py-2 text-right text-xs text-amber-600 dark:text-amber-400">WHT (3%, withheld)</td>
-                    <td className="px-4 py-2 text-right text-sm text-amber-600 dark:text-amber-400 tabular-nums">−{formatCurrency(whtAmount)}</td>
-                  </tr>
-                </>
-              )}
-              {!whtEligible && bundle.vendors?.wth_eligible && grandTotal <= WHT_SUBTOTAL_THRESHOLD && (
-                <tr className="bg-slate-50 dark:bg-slate-700/30">
-                  <td colSpan={8} className="px-4 py-2 text-right text-[11px] text-slate-400 italic">
-                    No WHT — subtotal ({formatCurrency(grandTotal)}) is at or below the {formatCurrency(WHT_SUBTOTAL_THRESHOLD)} withholding bracket floor.
-                  </td>
-                </tr>
-              )}
-              <tr className="border-t-2 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
-                <td colSpan={7} className="px-4 py-3 text-right text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  Net Payable to Vendor
-                </td>
-                <td className="px-4 py-3 text-right text-base font-bold text-slate-800 dark:text-slate-100 tabular-nums">
-                  {formatCurrency(netPayable)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        {/* Project cost allocation */}
-        {Object.keys(projectAllocations).length > 1 && (
-          <div className="px-6 py-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-700/20">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Cost Allocation by Project</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {Object.values(projectAllocations).map(proj => (
-                <div key={proj.name} className="rounded-lg bg-white dark:bg-slate-800 border dark:border-slate-700 px-3 py-2">
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{proj.name}</p>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 tabular-nums">
-                    {formatCurrency(proj.total)}
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    {grandTotal > 0 ? Math.round((proj.total / grandTotal) * 100) : 0}% of total
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {bundle.notes && (
-          <div className="px-6 py-4 border-t dark:border-slate-700">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Notes</p>
-            <p className="text-sm text-slate-600 dark:text-slate-300">{bundle.notes}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Action panel */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4 print:hidden">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Actions</h3>
-
-        {canSubmit && (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => transition('submitted')}
-              disabled={transitioning}
-              className="flex items-center gap-1.5 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
-              <Send className="h-3.5 w-3.5" /> Submit to Finance
-            </button>
-            <p className="text-xs text-slate-400">Finance will review and approve this purchase order</p>
-          </div>
-        )}
-
-        {canApprove && !showRejectPanel && (
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => transition('approved', { finance_notes: financeNotes || null })}
-              disabled={transitioning}
-              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-              <Check className="h-3.5 w-3.5" /> Approve PO
-            </button>
-            {canReject && (
-              <button
-                onClick={() => setShowRejectPanel(true)}
-                className="flex items-center gap-1.5 rounded-md border border-red-200 dark:border-red-800/40 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-                <XCircle className="h-3.5 w-3.5" /> Request Changes
-              </button>
-            )}
-          </div>
-        )}
-
-        {showRejectPanel && (
-          <div className="space-y-3 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10 p-4">
-            <p className="text-sm font-medium text-red-700 dark:text-red-400">Request changes / send back to drafting</p>
-            <textarea
-              value={financeNotes}
-              onChange={e => setFinanceNotes(e.target.value)}
-              rows={3}
-              placeholder="Explain what needs to be corrected…"
-              className="w-full rounded-md border border-red-200 dark:border-red-700/50 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-400/40 resize-none" />
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => transition('drafting', { finance_notes: financeNotes || null })}
-                disabled={transitioning || !financeNotes.trim()}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60">
-                {transitioning ? 'Sending…' : 'Send Back'}
-              </button>
-              <button onClick={() => { setShowRejectPanel(false); setFinanceNotes('') }}
-                className="rounded-md px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {canMarkOrdered && (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => transition('ordered')}
-              disabled={transitioning}
-              className="flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-60">
-              <TruckIcon className="h-3.5 w-3.5" /> Mark as Ordered
-            </button>
-            <p className="text-xs text-slate-400">Confirm the order has been placed with the vendor</p>
-          </div>
-        )}
-
-        {/* Transportation — optional, procurement/admin/manager queue it right
-            at PO placement instead of only through a separate later step */}
-        {canRequestTransport && !showQueuePanel && (
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              type="button" onClick={() => setShowQueuePanel(true)}
-              className="flex items-center gap-1.5 rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700">
-              <TruckIcon className="h-3.5 w-3.5" /> Queue Pickup for this PO
-            </button>
-            <Link
-              to={`/transportation/new?bundle_id=${id}`}
-              className="text-xs text-purple-700 dark:text-purple-300 hover:underline">
-              …or open the full transport form
-            </Link>
-          </div>
-        )}
-
-        {canRequestTransport && showQueuePanel && (
-          <div className="rounded-lg border border-purple-200 dark:border-purple-800/40 bg-purple-50/40 dark:bg-purple-900/10 p-3 space-y-2.5">
-            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
-              <TruckIcon className="h-3.5 w-3.5" /> Queue Pickup — {bundle.bundle_code}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Driver</label>
-                <SearchableSelect value={queueDriverId} onChange={pickQueueDriver} options={driverOptions} placeholder="Select driver…" />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Cargo Size</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                  value={queueCargoSize} onChange={e => {
-                    setQueueCargoSize(e.target.value as VehicleCapacityClass | '')
-                    if (!queueDriverId || !vehicleByDriver.has(queueDriverId)) setQueueVehicleId(null)
-                  }}>
-                  <option value="">— Not specified —</option>
-                  {CARGO_SIZES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Vehicle</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                  value={queueVehicleId ?? ''} onChange={e => setQueueVehicleId(e.target.value || null)}>
-                  <option value="">— Select vehicle —</option>
-                  {suggestedVehicles.map(v => (
-                    <option key={v.vehicle_id} value={v.vehicle_id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
-                      {v.name} — {v.status.replace('_', ' ')}
-                      {queueDriverId && vehicleByDriver.get(queueDriverId)?.id === v.vehicle_id ? ' (their dedicated vehicle)' : ''}
-                      {v.fit_rank === 0 ? ' ✓ good fit' : v.fit_rank === 1 ? ' (larger than needed)' : v.fit_rank === 3 ? ' ⚠ may be too small' : ''}
-                    </option>
-                  ))}
-                </select>
-                {queueDriverId && vehicleByDriver.get(queueDriverId) && vehicleByDriver.get(queueDriverId)!.status !== 'available' && (
-                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                    Their dedicated vehicle is {vehicleByDriver.get(queueDriverId)!.status.replace('_', ' ')} — pick a different one or clear it to leave unassigned for now.
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Expected Duration (hours)</label>
-                <input
-                  type="number" step="0.5" min="0.1"
-                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                  value={queueDurationHours} onChange={e => setQueueDurationHours(e.target.value)} placeholder="e.g. 4" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={handleQueuePickup} disabled={queuing}
-                className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 disabled:opacity-60">
-                {queuing ? 'Queuing…' : 'Queue Pickup'}
-              </button>
-              <button type="button" onClick={() => setShowQueuePanel(false)} className="rounded-md border px-3 py-1.5 text-xs dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">
-                Cancel
-              </button>
-              <p className="text-[11px] text-slate-400">Driver and vehicle are optional here — leave blank to dispatch later from the Transportation page.</p>
-            </div>
-          </div>
-        )}
-        {transportJob && status !== 'fulfilled' && (
-          <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-            <TruckIcon className="h-3.5 w-3.5" />
-            <Link to={`/transportation/${transportJob.id}/edit`} className="hover:underline text-brand">
-              {transportJob.request_name ?? 'Transport job'}
-            </Link>
-            <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[11px] font-medium capitalize">
-              {transportJob.job_status.replace('_', ' ')}
-            </span>
-          </div>
-        )}
-
-        {/* Fulfillment — only ever the result of a real GRN, never a self-click */}
-        {canRecordGrn && (
-          <div className="flex items-center gap-3">
-            <Link
-              to={`/sourcing/${id}/grn/new`}
-              className="flex items-center gap-1.5 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
-              <ClipboardCheck className="h-3.5 w-3.5" /> Record Goods Received (GRN)
-            </Link>
-            <p className="text-xs text-slate-400">Confirms receipt and marks this PO fulfilled</p>
-          </div>
-        )}
-        {isStockOrLogistics && !isAdmin && status !== 'ordered' && status !== 'fulfilled' && (
-          <p className="text-xs text-slate-400">A GRN can be recorded once this PO has been marked as ordered.</p>
-        )}
-
-        {status === 'fulfilled' && (
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-              <CheckCircle2 className="h-4 w-4" />
-              <p className="text-sm font-medium">
-                Fulfilled{bundle.fulfilled_at ? ` on ${formatDate(bundle.fulfilled_at)}` : ''}
-              </p>
-            </div>
-            {grn && (
-              <div className="flex items-center gap-2 flex-wrap rounded-md bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/40 px-3 py-2">
-                <ClipboardCheck className="h-3.5 w-3.5 text-green-600 dark:text-green-400 shrink-0" />
-                <span className="font-mono text-xs font-semibold text-green-700 dark:text-green-300">{grn.grn_code}</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">received {formatDate(grn.received_at)}</span>
-                {grn.categories?.category_name && (
-                  <span className="rounded-full bg-white dark:bg-slate-800 border dark:border-slate-600 px-2 py-0.5 text-[11px] text-slate-600 dark:text-slate-300">
-                    {grn.categories.category_name}
-                  </span>
-                )}
-              </div>
-            )}
-            {grn && (isAdmin || isStockOrLogistics) && (
-              <button onClick={handleUndoFulfillment}
-                className="flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
-                <Undo2 className="h-3.5 w-3.5" /> Undo Fulfillment
-              </button>
-            )}
-            {!grn && (
-              <div className="flex items-start gap-2 rounded-md bg-slate-50 dark:bg-slate-700/30 border dark:border-slate-600 px-3 py-2">
-                <AlertCircle className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Fulfilled before GRN tracking existed — there's no goods received record behind this PO.
-                  </p>
-                  {(isAdmin || isStockOrLogistics) && (
-                    <button onClick={handleRevertLegacyFulfillment}
-                      className="mt-1.5 flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
-                      <Undo2 className="h-3.5 w-3.5" /> Revert to Ordered
-                    </button>
+              {/* Totals */}
+              <div className="border-t bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30">
+                <dl className="ml-auto max-w-sm space-y-1 text-sm">
+                  {discountEtb > 0 && (
+                    <>
+                      <div className="flex justify-between text-slate-500 dark:text-slate-400"><dt>Before discount</dt><dd className="tabular-nums">{formatCurrency(itemsSubtotal)}</dd></div>
+                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                        <dt>Vendor discount{bundle.discount_kind === 'percent' ? ` (${Number(bundle.discount_value)}%)` : ''}{bundle.discount_reason ? ` — ${bundle.discount_reason}` : ''}</dt>
+                        <dd className="tabular-nums">−{formatCurrency(discountEtb)}</dd>
+                      </div>
+                    </>
                   )}
-                </div>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-300"><dt>Subtotal</dt><dd className="tabular-nums">{formatCurrency(grandTotal)}</dd></div>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-300"><dt>VAT (15%)</dt><dd className="tabular-nums">{formatCurrency(vatAmount)}</dd></div>
+                  {whtEligible && (
+                    <>
+                      <div className="flex justify-between font-medium text-slate-700 dark:text-slate-200"><dt>Gross (before WHT)</dt><dd className="tabular-nums">{formatCurrency(grossTotal)}</dd></div>
+                      <div className="flex justify-between text-amber-600 dark:text-amber-400"><dt>WHT (3%, withheld)</dt><dd className="tabular-nums">−{formatCurrency(whtAmount)}</dd></div>
+                    </>
+                  )}
+                  {!whtEligible && bundle.vendors?.wth_eligible && grandTotal <= WHT_SUBTOTAL_THRESHOLD && (
+                    <p className="text-right text-[11px] italic text-slate-400">No WHT — subtotal is at or below the {formatCurrency(WHT_SUBTOTAL_THRESHOLD)} floor.</p>
+                  )}
+                  <div className="flex justify-between border-t pt-1.5 text-base font-bold text-slate-900 dark:border-slate-600 dark:text-slate-50"><dt>Net payable</dt><dd className="tabular-nums">{formatCurrency(netPayable)}</dd></div>
+                </dl>
               </div>
+            </Panel>
+
+            {Object.keys(projectAllocations).length > 1 && (
+              <Panel title="Split by project" icon={Building2}>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {Object.values(projectAllocations).map(proj => (
+                    <div key={proj.name} className="rounded-lg border px-3 py-2 dark:border-slate-700">
+                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">{proj.name}</p>
+                      <p className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(proj.total)}</p>
+                      <p className="text-[10px] text-slate-400">{grandTotal > 0 ? Math.round((proj.total / grandTotal) * 100) : 0}% of total</p>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
             )}
-          </div>
-        )}
 
-        {status === 'cancelled' && (
-          <p className="text-sm text-slate-400">This bundle has been cancelled.</p>
-        )}
+            {bundle.notes && (
+              <Panel title="Notes" icon={FileText}>
+                <p className="whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{bundle.notes}</p>
+              </Panel>
+            )}
+          </>}
+          rail={<>
+            <Panel title="Next step" icon={ArrowRightCircle}>
+              <p className={`text-sm ${lateDelivery ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>{nextStep}</p>
 
-        {/* Reconcile to an expense once the order has actually been placed */}
-        {['ordered', 'fulfilled'].includes(status) && (isAdmin || isManager || isFinance || isProcurement) && (
-          <div className="space-y-1.5 pt-2 border-t dark:border-slate-700">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Receipt className="h-3.5 w-3.5" /> Reconciled Expense
-            </label>
-            {bundle.expenses ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">
-                    <span className="font-mono text-xs font-semibold text-brand mr-1.5">{bundle.expenses.expense_code}</span>
-                    {bundle.expenses.item_service_description}
-                    {bundle.expenses.amount_etb != null && ` — ${formatCurrency(bundle.expenses.amount_etb)}`}
-                  </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    bundle.expenses.payment_state === 'paid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                    : bundle.expenses.payment_state === 'advance' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                    : bundle.expenses.approval_status === 'pending' ? 'bg-slate-200 text-slate-600 dark:bg-slate-600 dark:text-slate-300'
-                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                  }`}>
-                    {bundle.expenses.payment_state === 'paid' ? 'Paid'
-                      : bundle.expenses.payment_state === 'advance' ? 'Advance Sent — awaiting GRN'
-                      : bundle.expenses.payment_state === 'approved_to_pay' ? (isPayInAdvance ? 'Approved — ready to send advance' : 'Approved — ready to pay')
-                      : bundle.expenses.approval_status === 'pending' ? 'Awaiting Finance Approval'
-                      : 'Unpaid'}
-                  </span>
-                  <Link to={`/expenses/${bundle.expenses.id}`} className="text-xs text-brand hover:underline">View expense</Link>
-                  <button onClick={() => linkExpense(null)}
-                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
-                    <Link2Off className="h-3 w-3" /> Unlink
-                  </button>
+              {canApprove && !showRejectPanel && (
+                <div className="mt-3 space-y-1">
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Note with the approval (optional)</label>
+                  <textarea value={financeNotes} onChange={e => setFinanceNotes(e.target.value)} rows={2} placeholder="Add a note when approving…"
+                    className="w-full resize-none rounded-md border bg-slate-50 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-200" />
                 </div>
-                {canCloseAdvance && (
-                  <button onClick={handleCloseAdvance} disabled={closingAdvance}
-                    className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {closingAdvance ? 'Closing…' : 'Close Advance — Mark Paid'}
-                  </button>
-                )}
-                {isPayInAdvance && bundle.expenses.payment_state === 'advance' && !grn && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">Waiting on a GRN before this advance can be closed to a real expense.</p>
-                )}
-              </div>
-            ) : canCreateExpense || canCreateAdvanceExpense ? (
-              <div className="space-y-2">
-                {canCreateAdvanceExpense && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    No GRN yet — this records the advance payment now. Closing it to a real expense will require a GRN once goods arrive.
-                  </p>
-                )}
-                <Link
-                  to={`/expenses/new?bundle_id=${id}`}
-                  className="flex w-fit items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
-                >
-                  <Plus className="h-3.5 w-3.5" /> {canCreateAdvanceExpense ? 'Record Advance Payment for this PO' : 'Create Expense for this PO'}
-                </Link>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-slate-400">or link an existing one:</span>
-                  <div className="max-w-xs flex-1">
-                    <SearchableSelect
-                      value={null}
-                      onChange={linkExpense}
-                      options={expenseOptions}
-                      placeholder="Search expenses…"
-                    />
+              )}
+
+              {showRejectPanel && (
+                <div className="mt-3 space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/40 dark:bg-red-900/10">
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Send back to drafting</p>
+                  <textarea value={financeNotes} onChange={e => setFinanceNotes(e.target.value)} rows={3} placeholder="What needs to be corrected…" autoFocus
+                    className="w-full resize-none rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-400/40 dark:border-red-700/50 dark:bg-slate-800 dark:text-slate-200" />
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => transition('drafting', { finance_notes: financeNotes || null })} disabled={transitioning || !financeNotes.trim()}
+                      className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60">{transitioning ? 'Sending…' : 'Send back'}</button>
+                    <button onClick={() => { setShowRejectPanel(false); setFinanceNotes('') }} className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700">Cancel</button>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 px-3 py-2">
-                <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  {!grn
-                    ? 'Payment can\'t be created until a GRN confirms the goods were received.'
-                    : 'The linked transport job needs to be started before payment can be created.'}
-                </p>
-              </div>
+              )}
+
+              {isStockOrLogistics && !isAdmin && status !== 'ordered' && status !== 'fulfilled' && (
+                <p className="mt-2 text-xs text-slate-400">A GRN can be recorded once this purchase order is marked ordered.</p>
+              )}
+            </Panel>
+
+            {(status === 'ordered' || status === 'fulfilled' || transportJob || showQueuePanel) && (
+              <Panel title="Delivery" icon={TruckIcon}>
+                <div className="space-y-3 text-sm">
+                  {transportJob ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link to={`/transportation/${transportJob.id}/edit`} className="text-brand hover:underline">{transportJob.request_name ?? 'Transport job'}</Link>
+                      <Pill>{transportJob.job_status.replace('_', ' ')}</Pill>
+                    </div>
+                  ) : canRequestTransport && !showQueuePanel ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="button" onClick={() => setShowQueuePanel(true)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+                        <TruckIcon className="h-3.5 w-3.5" /> Queue pickup
+                      </button>
+                      <Link to={`/transportation/new?bundle_id=${id}`} className="text-xs text-slate-500 hover:underline">or the full transport form</Link>
+                    </div>
+                  ) : !transportJob && <p className="text-xs text-slate-400">No transport arranged.</p>}
+
+                  {canRequestTransport && showQueuePanel && (
+                    <div className="space-y-2.5 rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-800/40 dark:bg-violet-900/10">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Driver</label>
+                        <SearchableSelect value={queueDriverId} onChange={pickQueueDriver} options={driverOptions} placeholder="Select driver…" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Cargo size</label>
+                        <select className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                          value={queueCargoSize} onChange={e => {
+                            setQueueCargoSize(e.target.value as VehicleCapacityClass | '')
+                            if (!queueDriverId || !vehicleByDriver.has(queueDriverId)) setQueueVehicleId(null)
+                          }}>
+                          <option value="">— Not specified —</option>
+                          {CARGO_SIZES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Vehicle</label>
+                        <select className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                          value={queueVehicleId ?? ''} onChange={e => setQueueVehicleId(e.target.value || null)}>
+                          <option value="">— Select vehicle —</option>
+                          {suggestedVehicles.map(v => (
+                            <option key={v.vehicle_id} value={v.vehicle_id} disabled={v.status === 'maintenance' || v.status === 'offline'}>
+                              {v.name} — {v.status.replace('_', ' ')}
+                              {queueDriverId && vehicleByDriver.get(queueDriverId)?.id === v.vehicle_id ? ' (their dedicated vehicle)' : ''}
+                              {v.fit_rank === 0 ? ' ✓ good fit' : v.fit_rank === 1 ? ' (larger than needed)' : v.fit_rank === 3 ? ' ⚠ may be too small' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {queueDriverId && vehicleByDriver.get(queueDriverId) && vehicleByDriver.get(queueDriverId)!.status !== 'available' && (
+                          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                            Their dedicated vehicle is {vehicleByDriver.get(queueDriverId)!.status.replace('_', ' ')} — pick another or leave it for now.
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-300">Expected duration (hours)</label>
+                        <input type="number" step="0.5" min="0.1" value={queueDurationHours} onChange={e => setQueueDurationHours(e.target.value)} placeholder="e.g. 4"
+                          className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={handleQueuePickup} disabled={queuing}
+                          className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-60">{queuing ? 'Queuing…' : 'Queue pickup'}</button>
+                        <button type="button" onClick={() => setShowQueuePanel(false)} className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Cancel</button>
+                      </div>
+                      <p className="text-[11px] text-slate-400">Driver and vehicle can be left blank and dispatched later from Transportation.</p>
+                    </div>
+                  )}
+
+                  {grn ? (
+                    <div className="space-y-2 border-t pt-3 dark:border-slate-700">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+                        <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300">{grn.grn_code}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">received {formatDate(grn.received_at)}</span>
+                        {grn.categories?.category_name && <Pill>{grn.categories.category_name}</Pill>}
+                      </div>
+                      {(isAdmin || isStockOrLogistics) && (
+                        <button onClick={handleUndoFulfillment} className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-800/40 dark:text-amber-400 dark:hover:bg-amber-900/20">
+                          <Undo2 className="h-3.5 w-3.5" /> Undo fulfillment
+                        </button>
+                      )}
+                    </div>
+                  ) : status === 'fulfilled' ? (
+                    <div className="border-t pt-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                      Fulfilled before goods-received tracking existed — there's no GRN behind it.
+                      {(isAdmin || isStockOrLogistics) && (
+                        <button onClick={handleRevertLegacyFulfillment} className="mt-1.5 flex items-center gap-1.5 rounded-md border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-800/40 dark:text-amber-400 dark:hover:bg-amber-900/20">
+                          <Undo2 className="h-3.5 w-3.5" /> Revert to ordered
+                        </button>
+                      )}
+                    </div>
+                  ) : canRecordGrn ? (
+                    <Link to={`/sourcing/${id}/grn/new`} className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                      <ClipboardCheck className="h-3.5 w-3.5" /> Record goods received
+                    </Link>
+                  ) : null}
+                </div>
+              </Panel>
             )}
-            <p className="text-[11px] text-slate-400">
-              {bundle.expenses ? 'The expense record where this vendor payment was recorded, for audit traceability.' : 'Vendor, amount, and project carry over automatically — just review and save.'}
-            </p>
-          </div>
-        )}
 
-        {/* Finance notes input for approve action */}
-        {canApprove && !showRejectPanel && (
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Finance notes (optional)</label>
-            <textarea
-              value={financeNotes}
-              onChange={e => setFinanceNotes(e.target.value)}
-              rows={2}
-              placeholder="Add a note when approving…"
-              className="w-full rounded-md border dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40 resize-none" />
-          </div>
-        )}
+            {['ordered', 'fulfilled'].includes(status) && (isAdmin || isManager || isFinance || isProcurement) && (
+              <Panel title="Payment" icon={Receipt}>
+                {bundle.expenses ? (
+                  <div className="space-y-2">
+                    <Link to={`/expenses/${bundle.expenses.id}`} className="block rounded-lg border px-3 py-2 hover:border-brand dark:border-slate-600">
+                      <span className="font-mono text-xs font-semibold text-brand">{bundle.expenses.expense_code}</span>
+                      <span className="block truncate text-sm text-slate-700 dark:text-slate-200">{bundle.expenses.item_service_description}</span>
+                      {bundle.expenses.amount_etb != null && <span className="text-sm font-semibold tabular-nums">{formatCurrency(bundle.expenses.amount_etb)}</span>}
+                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Pill tone={bundle.expenses.payment_state === 'paid' ? 'green' : bundle.expenses.payment_state === 'advance' ? 'amber' : bundle.expenses.approval_status === 'pending' ? 'slate' : 'blue'}>
+                        {bundle.expenses.payment_state === 'paid' ? 'Paid'
+                          : bundle.expenses.payment_state === 'advance' ? 'Advance sent — awaiting GRN'
+                          : bundle.expenses.payment_state === 'approved_to_pay' ? (isPayInAdvance ? 'Approved — ready to send advance' : 'Approved — ready to pay')
+                          : bundle.expenses.approval_status === 'pending' ? 'Awaiting finance approval'
+                          : 'Unpaid'}
+                      </Pill>
+                      <button onClick={() => linkExpense(null)} className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
+                        <Link2Off className="h-3 w-3" /> Unlink
+                      </button>
+                    </div>
+                    {canCloseAdvance && (
+                      <button onClick={handleCloseAdvance} disabled={closingAdvance}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> {closingAdvance ? 'Closing…' : 'Close advance — mark paid'}
+                      </button>
+                    )}
+                    {isPayInAdvance && bundle.expenses.payment_state === 'advance' && !grn && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">Waiting on a GRN before this advance can be closed.</p>
+                    )}
+                  </div>
+                ) : canCreateExpense || canCreateAdvanceExpense ? (
+                  <div className="space-y-2">
+                    {canCreateAdvanceExpense && <p className="text-[11px] text-amber-600 dark:text-amber-400">No GRN yet — this records the advance now; closing it needs a GRN once goods arrive.</p>}
+                    <Link to={`/expenses/new?bundle_id=${id}`} className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90">
+                      <Plus className="h-3.5 w-3.5" /> {canCreateAdvanceExpense ? 'Record advance payment' : 'Create expense for this PO'}
+                    </Link>
+                    <div>
+                      <p className="mb-1 text-[11px] text-slate-400">or link an existing expense:</p>
+                      <SearchableSelect value={null} onChange={linkExpense} options={expenseOptions} placeholder="Search expenses…" />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {!grn ? "Payment can't be created until a GRN confirms the goods arrived." : 'The transport job needs to start before payment can be created.'}
+                  </p>
+                )}
+              </Panel>
+            )}
 
-        {/* Danger zone */}
-        {(isAdmin || isManager) && status === 'drafting' && (
-          <div className="pt-2 border-t dark:border-slate-700">
-            <button onClick={handleDelete}
-              className="text-xs text-red-400 hover:text-red-600 hover:underline">
-              Delete this bundle
-            </button>
-          </div>
-        )}
+            <Panel title="Details" icon={FileText}>
+              <FactList facts={[
+                { label: 'Vendor', value: bundle.vendor_id ? <Link to={`/vendors/${bundle.vendor_id}`} className="text-brand hover:underline">{vendorDisplay}</Link> : vendorDisplay },
+                { label: 'Procurement officer', value: bundle.procurement_officer?.full_name ?? '—' },
+                ...(bundle.approver ? [{ label: 'Approved by', value: bundle.approver.full_name, hint: bundle.approved_at ? formatDate(bundle.approved_at) : undefined }] : []),
+                { label: 'Created', value: formatDate(bundle.created_at) },
+                { label: 'Expected delivery', value: bundle.expected_delivery_date ? formatDate(bundle.expected_delivery_date) : '—', tone: lateDelivery ? 'red' as const : undefined },
+                { label: 'Payment', value: isPayInAdvance ? 'In advance' : 'On delivery' },
+                { label: 'Projects', value: projectNames.length ? projectNames.join(', ') : '—' },
+              ]} />
+            </Panel>
+          </>}
+        />
       </div>
     </div>
   )

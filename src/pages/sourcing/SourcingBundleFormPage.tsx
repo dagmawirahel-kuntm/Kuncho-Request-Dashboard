@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import type { SourcingBundleInsert, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
+import { BundleLineStock } from '@/components/stock/BundleLineStock'
 import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers, Tag } from 'lucide-react'
 
 type OrderRow = {
@@ -32,6 +33,7 @@ type OrderItemRow = {
   unit_price_est: number | null
   status: string
   stock_dispatch_qty: number | null
+  stock_item_id: string | null
   sub_categories: { parent_category_id: string | null; categories: { cost_group_id: string | null } | null } | null
 }
 
@@ -56,6 +58,8 @@ type BundleLineItem = {
   unit_price_actual: string
   notes: string
   sort_order: number
+  stock_item_id: string | null
+  orig_stock_item_id: string | null  // as saved on the request line; changed ones are written back
 }
 
 export default function SourcingBundleFormPage() {
@@ -279,6 +283,8 @@ export default function SourcingBundleFormPage() {
         unit_price_actual: sbi.unit_price_actual != null ? String(sbi.unit_price_actual) : '',
         notes: sbi.notes ?? '',
         sort_order: sbi.sort_order ?? 0,
+        stock_item_id: oi?.stock_item_id ?? null,
+        orig_stock_item_id: oi?.stock_item_id ?? null,
       }
     })
     setBundleItems(items)
@@ -351,6 +357,8 @@ export default function SourcingBundleFormPage() {
       unit_price_actual: item.unit_price_est != null ? String(item.unit_price_est) : '',
       notes: '',
       sort_order: sortOrder,
+      stock_item_id: item.stock_item_id,
+      orig_stock_item_id: item.stock_item_id,
     }
   }
 
@@ -516,7 +524,10 @@ export default function SourcingBundleFormPage() {
         const requested = item.quantity_requested
         const actual = parseFloat(item.quantity_actual) || 0
         const status = requested > 0 && actual < requested ? 'partially_sourced' : 'sourced'
-        return supabase.from('order_items').update({ status }).eq('id', item.order_item_id)
+        // A stock link procurement set or corrected here goes back onto the
+        // request line, so goods received books the stock to that item.
+        const relink = item.stock_item_id !== item.orig_stock_item_id ? { stock_item_id: item.stock_item_id } : {}
+        return supabase.from('order_items').update({ status, ...relink }).eq('id', item.order_item_id)
       })
       const revertUpdates = removedIds.length > 0
         ? [supabase.from('order_items').update({ status: 'pending' }).in('id', removedIds)]
@@ -541,7 +552,7 @@ export default function SourcingBundleFormPage() {
         })
       }
 
-      dropRecordCache(qc, 'sourcing-bundle', 'order-items-for-sourcing', 'bundled-order-item-ids', 'stock-issued-by-order-item', 'finance-sourcing-reviews-for-sourcing')
+      dropRecordCache(qc, 'sourcing-bundle', 'order-items-for-sourcing', 'bundled-order-item-ids', 'stock-issued-by-order-item', 'finance-sourcing-reviews-for-sourcing', 'order-items')
       qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
       qc.invalidateQueries({ queryKey: ['bundled-order-item-ids'] })
       qc.invalidateQueries({ queryKey: ['order-item-counts'] })
@@ -902,6 +913,14 @@ export default function SourcingBundleFormPage() {
                           </p>
                         </div>
                       </div>
+                      <BundleLineStock
+                        itemName={item.item_name}
+                        unit={item.unit}
+                        stockItemId={item.stock_item_id}
+                        qty={parseFloat(item.quantity_actual) || 0}
+                        unitPrice={parseFloat(item.unit_price_actual) || 0}
+                        onLink={sid => updateItem(item.order_item_id, { stock_item_id: sid })}
+                      />
                       <input
                         type="text"
                         value={item.notes}

@@ -59,6 +59,7 @@ import VendorCreditsPage from '@/pages/vendors/VendorCreditsPage'
 import PaymentRequestsPage from '@/pages/finance/PaymentRequestsPage'
 import PaymentRequestDetailPage from '@/pages/finance/PaymentRequestDetailPage'
 import VendorContractPage from '@/pages/vendors/VendorContractPage'
+import VendorReviewPage from '@/pages/vendors/VendorReviewPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import ProjectWorkspacePage from '@/pages/projects/ProjectWorkspacePage'
@@ -166,6 +167,7 @@ import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
 import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
 import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
+import StockDuplicatesPage from '@/pages/stock/StockDuplicatesPage'
 import StockDispatchQueuePage from '@/pages/stock/StockDispatchQueuePage'
 import ProjectManagerViewPage from '@/pages/views/ProjectManagerViewPage'
 import OperationsManagerViewPage from '@/pages/views/OperationsManagerViewPage'
@@ -232,6 +234,7 @@ export const router = createBrowserRouter([
               { path: 'stock', element: <StockItemsPage /> },
               { path: 'stock/new', element: <StockItemFormPage /> },
               { path: 'stock/pending-setup', element: <StockPendingSetupPage /> },
+              { path: 'stock/duplicates', element: <StockDuplicatesPage /> },
               { path: 'stock/dispatch-queue', element: <StockDispatchQueuePage /> },
               { path: 'stock/tools', element: <StockToolsPage /> },
               { path: 'stock/movement/new', element: <StockMovementPage /> },
@@ -274,6 +277,7 @@ export const router = createBrowserRouter([
               { path: 'sales-receipts/new', element: <SalesReceiptFormPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
+              { path: 'vendors/review', element: <VendorReviewPage /> },
               { path: 'vendors/:id', element: <VendorDetailPage /> },
               { path: 'vendors/:id/edit', element: <VendorFormPage /> },
               { path: 'vendors/:id/contract', element: <VendorContractPage /> },

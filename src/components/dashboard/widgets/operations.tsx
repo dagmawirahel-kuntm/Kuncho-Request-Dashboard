@@ -1,7 +1,8 @@
-import { AlertTriangle, Briefcase, ClipboardCheck, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
+import { AlertTriangle, Briefcase, ClipboardCheck, Copy, ShieldAlert, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { QueryListWidget, type ListRow } from '../WidgetCard'
+import { groupDuplicates, type DuplicatePair, type StockUsageRow } from '@/lib/stockDuplicates'
 
 // ── Projects & operations ─────────────────────────────────────────────────
 export function Portfolio() {
@@ -192,6 +193,53 @@ export function LowStock() {
           id: s.stock_item_id, title: s.item_name, subtitle: [s.warehouse_zone, `reorder at ${s.reorder_level} ${s.unit ?? ''}`].filter(Boolean).join(' · '),
           right: `${Number(s.qty_on_hand ?? 0)} ${s.unit ?? ''}`, badge: Number(s.qty_on_hand ?? 0) <= 0 ? { text: 'out', tone: 'red' as const } : null,
           to: `/stock/${s.stock_item_id}`,
+        })) }
+      }}
+    />
+  )
+}
+
+// Stock items that are one item under two names (v_stock_duplicate_pairs,
+// 354) — each set counted once, newest from goods received first.
+export function StockDuplicates() {
+  return (
+    <QueryListWidget
+      title="Duplicate stock items" icon={Copy} to="/stock/duplicates" queryKey={['stock-duplicates-widget']} empty="No duplicates in the stock list."
+      fetch={async () => {
+        const [pairsRes, usageRes] = await Promise.all([
+          supabase.from('v_stock_duplicate_pairs').select('item_a, item_b, reason, score'),
+          supabase.from('v_stock_item_usage').select('*'),
+        ])
+        if (pairsRes.error) throw pairsRes.error
+        if (usageRes.error) throw usageRes.error
+        const groups = groupDuplicates((pairsRes.data ?? []) as DuplicatePair[], (usageRes.data ?? []) as StockUsageRow[])
+        return { total: groups.length, rows: groups.slice(0, 6).map(g => ({
+          id: g.key, title: g.members.map(m => m.item_name).join(' · '),
+          subtitle: `${g.members.length} items${g.recent ? ' · new from goods received' : ''}`,
+          badge: g.exact ? { text: 'same name', tone: 'green' as const } : null,
+          to: `/stock/duplicates?q=${encodeURIComponent(g.members[0].item_name)}`,
+        })) }
+      }}
+    />
+  )
+}
+
+// Vendors whose TIN or bank details changed and wait for the other
+// department to check them (356) — biggest amount waiting to be paid first.
+export function VendorsToVerify() {
+  return (
+    <QueryListWidget
+      title="Vendor bank details to check" icon={ShieldAlert} to="/vendors/review" queryKey={['vendors-to-verify-widget']} empty="Every vendor's bank details are checked."
+      fetch={async () => {
+        const { data, error } = await supabase.from('v_vendor_verification_queue').select('id, vendor_name, entered_by_name, entered_at, owed, paid_since_change')
+        if (error) throw error
+        const rows = (data ?? []).sort((a, b) => Number(b.owed) - Number(a.owed))
+        return { total: rows.length, rows: rows.slice(0, 6).map(r => ({
+          id: r.id, title: r.vendor_name,
+          subtitle: [r.entered_by_name, r.entered_at ? formatDate(r.entered_at) : null].filter(Boolean).join(' · '),
+          right: Number(r.owed) > 0 ? formatCurrency(Number(r.owed)) : undefined,
+          badge: Number(r.paid_since_change) > 0 ? { text: 'paid since', tone: 'red' as const } : null,
+          to: `/vendors/review?vendor=${r.id}`,
         })) }
       }}
     />

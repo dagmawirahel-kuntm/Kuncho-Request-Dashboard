@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -8,16 +8,27 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { useAccounts } from '@/hooks/useLookups'
 import type { Vendor, VendorInsert } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useVendorTypes, useVendorCategories, useVendorMatches, MATCH_REASON } from '@/lib/vendors'
+import { AlertTriangle, ShieldAlert, ExternalLink } from 'lucide-react'
 
-const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: React.ReactNode }) {
   const required = label.endsWith('*')
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-slate-600">
+      <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
         {required ? label.slice(0, -1).trim() : label}
         {required && <span className="text-brand"> *</span>}
       </label>
+      {children}
+      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
+    </div>
+  )
+}
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b dark:border-slate-700 pb-1.5">{title}</p>
       {children}
     </div>
   )
@@ -43,13 +54,13 @@ export default function VendorFormPage() {
   return <VendorFormPageBody id={id} record={record} />
 }
 
+const clean = (s: string | null | undefined) => (s ?? '').replace(/\s/g, '')
+
 function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
   const isEdit = !!id
-    const navigate = useNavigate()
-    const { toast } = useToast()
-    const qc = useQueryClient()
-  
-    
+  const navigate = useNavigate()
+  const { toast } = useToast()
+  const qc = useQueryClient()
 
   const [form, setForm] = useState<Partial<VendorInsert>>(
     record
@@ -62,12 +73,11 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
         }
       : { wth_eligible: false, active: true }
   )
-    const [saving, setSaving] = useState(false)
-    const [error, setError] = useState('')
-  
-    
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [confirmedDifferent, setConfirmedDifferent] = useState(false)
 
-    function set(key: keyof VendorInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+  function set(key: keyof VendorInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
   // Same bank list staff accounts are picked from.
   const { data: accounts = [] } = useAccounts()
@@ -75,97 +85,161 @@ function VendorFormPageBody({ id, record }: { id?: string; record?: Vendor }) {
     () => (accounts as { id: string; account_name: string }[]).map(a => ({ id: a.id, label: a.account_name })),
     [accounts],
   )
+  const { data: types = [] } = useVendorTypes()
+  const { data: categories = [] } = useVendorCategories()
+  const typeHint = types.find(t => t.code === form.vendor_type)?.hint
+
+  // Someone already on file with this bank account, TIN or (nearly) this name.
+  const { data: matches = [] } = useVendorMatches(form.vendor_name ?? '', form.tin ?? '', form.bank_account ?? '', id)
+  const strongMatch = matches.some(m => m.reasons.includes('same_bank_account') || m.reasons.includes('same_tin') || m.reasons.includes('same_name'))
+
+  const bankDetailsChanged = isEdit && !!record && (
+    clean(form.tin) !== clean(record.tin) || clean(form.bank_account) !== clean(record.bank_account) || (form.bank_id ?? null) !== (record.bank_id ?? null))
 
   async function handleSave() {
     if (!form.vendor_name?.trim()) { setError('Vendor name is required'); return }
+    if (strongMatch && !confirmedDifferent) {
+      setError('This looks like a vendor already on file — open it, or tick “It’s a different vendor” below.')
+      return
+    }
     setError(''); setSaving(true)
+    const payload = { ...form, vendor_type: form.vendor_type || null, category: form.category?.trim() || null }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const op = isEdit ? supabase.from('vendors').update(form as any).eq('id', id!) : supabase.from('vendors').insert([form as any])
-    const { error: err } = await op
+    const res = isEdit ? await supabase.from('vendors').update(payload as any).eq('id', id!) : await supabase.from('vendors').insert([payload as any]).select('id').single()
     setSaving(false)
-    if (err) { setError(err.message); toast(err.message, 'error'); return }
+    if (res.error) { setError(res.error.message); toast(res.error.message, 'error'); return }
     dropRecordCache(qc, 'vendor')
-    qc.invalidateQueries({ queryKey: ['vendors'] })
-    qc.invalidateQueries({ queryKey: ['vendors-lookup'] })
-    toast(isEdit ? 'Vendor updated' : 'Vendor added', 'success')
-    navigate('/vendors')
+    for (const k of ['vendors', 'vendors-lookup', 'vendor-money', 'unverified-vendor-ids', 'vendor-verification-queue', 'vendor-categories', 'vendor-missing-details']) {
+      qc.invalidateQueries({ queryKey: [k] })
+    }
+    const newId = isEdit ? id! : (res.data as { id: string } | null)?.id
+    toast(isEdit
+      ? (bankDetailsChanged ? 'Vendor updated — bank details sent for verification' : 'Vendor updated')
+      : 'Vendor added — its TIN and bank details go to the other department to verify', 'success')
+    navigate(newId ? `/vendors/${newId}` : '/vendors')
   }
 
   return (
-    <FormPage title={isEdit ? 'Edit Vendor' : 'New Vendor'} backTo="/vendors" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Vendor'} onSave={handleSave}>
-      <Field label="Vendor Name *">
-        <input type="text" className={inputCls} value={form.vendor_name ?? ''} onChange={e => set('vendor_name', e.target.value)} />
-      </Field>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Vendor Type">
-          <select className={inputCls} value={form.vendor_type ?? ''} onChange={e => set('vendor_type', e.target.value)}>
-            <option value="">— Select —</option>
-            <option>Supplier</option><option>Service Provider</option><option>Contractor</option><option>Individual</option><option>Other</option>
-          </select>
+    <FormPage title={isEdit ? 'Edit Vendor' : 'New Vendor'} backTo={isEdit ? `/vendors/${id}` : '/vendors'} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Add Vendor'} onSave={handleSave}>
+      <Section title="Who they are">
+        <Field label="Vendor Name *">
+          <input type="text" className={inputCls} value={form.vendor_name ?? ''} onChange={e => set('vendor_name', e.target.value)} />
         </Field>
-        <Field label="Category">
-          <input type="text" className={inputCls} value={form.category ?? ''} onChange={e => set('category', e.target.value)} />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="TIN Number">
-          <input type="text" className={inputCls} value={form.tin ?? ''} onChange={e => set('tin', e.target.value)} />
-        </Field>
-        <Field label="Phone / Contact">
-          <input type="tel" className={inputCls} value={form.phone_contact ?? ''} onChange={e => set('phone_contact', e.target.value)} />
-        </Field>
-      </div>
-      {/* The bank as well as the number: a Payment Request splits its
-          schedule by bank, and a vendor with no bank on file lands under
-          "No bank recorded" however good the account number is. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Bank">
-          <SearchableSelect value={form.bank_id ?? null} onChange={v => set('bank_id', v)} options={bankOptions} placeholder="Select bank…" />
-        </Field>
-        <Field label="Bank Account">
-          <input type="text" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
-        </Field>
-      </div>
-      <Field label="Location">
-        <input type="text" className={inputCls} value={form.location ?? ''} onChange={e => set('location', e.target.value)} />
-      </Field>
-      <Field label="Address">
-        <input type="text" className={inputCls} value={form.address ?? ''} onChange={e => set('address', e.target.value)} />
-      </Field>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Contact Person">
-          <input type="text" className={inputCls} value={form.contact_person ?? ''} onChange={e => set('contact_person', e.target.value)} />
-        </Field>
-        <Field label="Email">
-          <input type="email" className={inputCls} value={form.email ?? ''} onChange={e => set('email', e.target.value)} />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Website">
-          <input type="url" className={inputCls} value={form.website ?? ''} onChange={e => set('website', e.target.value)} placeholder="https://" />
-        </Field>
-        <Field label="Payment Terms">
-          <input type="text" className={inputCls} value={form.payment_terms ?? ''} onChange={e => set('payment_terms', e.target.value)} placeholder="e.g. Net 30, COD" />
-        </Field>
-      </div>
-      <Field label="Notes">
-        <textarea rows={3} className={inputCls + ' resize-none'} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
-      </Field>
-      <div className="flex items-center gap-6 text-sm">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={!!form.wth_eligible} onChange={e => set('wth_eligible', e.target.checked)} />
-          WHT Eligible
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer" title="This vendor releases goods only against proof of payment — bank payments to them should carry a payment certificate.">
+        {matches.length > 0 && (
+          <div className={`rounded-lg border px-3 py-2.5 space-y-1.5 ${strongMatch ? 'border-amber-300 bg-amber-50 dark:border-amber-700/60 dark:bg-amber-900/15' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60'}`}>
+            <p className="flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5" /> Already on file?
+            </p>
+            <ul className="space-y-1">
+              {matches.map(m => (
+                <li key={m.id} className="flex items-center gap-2 flex-wrap text-xs">
+                  <Link to={`/vendors/${m.id}`} target="_blank" className="font-medium text-slate-700 dark:text-slate-200 hover:text-brand inline-flex items-center gap-1">
+                    {m.vendor_name} <ExternalLink className="h-3 w-3" />
+                  </Link>
+                  <span className="text-slate-500 dark:text-slate-400">— {m.reasons.map(r => MATCH_REASON[r] ?? r).join(', ')}</span>
+                  {!m.active && <span className="text-[10px] text-slate-400">(inactive)</span>}
+                </li>
+              ))}
+            </ul>
+            {strongMatch && (
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                <input type="checkbox" checked={confirmedDifferent} onChange={e => setConfirmedDifferent(e.target.checked)} />
+                It’s a different vendor — save anyway
+              </label>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Vendor Type" hint={typeHint}>
+            <select className={inputCls} value={form.vendor_type ?? ''} onChange={e => set('vendor_type', e.target.value || null)}>
+              <option value="">— Select —</option>
+              {form.vendor_type && !types.some(t => t.code === form.vendor_type) && <option value={form.vendor_type}>{form.vendor_type}</option>}
+              {types.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
+            </select>
+          </Field>
+          <Field label="Category" hint="What they supply — pick one already in use where it fits.">
+            <input type="text" className={inputCls} list="vendor-categories" value={form.category ?? ''} onChange={e => set('category', e.target.value)} placeholder="e.g. Building Materials" />
+            <datalist id="vendor-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
+          </Field>
+        </div>
+      </Section>
+
+      <Section title="Tax and bank">
+        {(bankDetailsChanged || !isEdit) && (
+          <p className="flex items-start gap-1.5 rounded-md bg-sky-50 dark:bg-sky-900/20 px-3 py-2 text-xs text-sky-800 dark:text-sky-300">
+            <ShieldAlert className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            {isEdit
+              ? 'You changed the TIN or bank details. After saving, someone from the other department (finance ↔ procurement) has to check them; payments show a warning until then.'
+              : 'TIN and bank details on a new vendor are checked by the other department (finance ↔ procurement) before payments stop showing a warning.'}
+          </p>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="TIN Number" hint="Needed on withholding receipts.">
+            <input type="text" inputMode="numeric" className={inputCls} value={form.tin ?? ''} onChange={e => set('tin', e.target.value)} />
+          </Field>
+          <div className="flex items-end gap-5 pb-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.wth_eligible} onChange={e => set('wth_eligible', e.target.checked)} />
+              WHT Eligible
+            </label>
+          </div>
+        </div>
+        {/* The bank as well as the number: a Payment Request splits its
+            schedule by bank, and a vendor with no bank on file lands under
+            "No bank recorded" however good the account number is. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Bank">
+            <SearchableSelect value={form.bank_id ?? null} onChange={v => set('bank_id', v)} options={bankOptions} placeholder="Select bank…" />
+          </Field>
+          <Field label="Bank Account">
+            <input type="text" inputMode="numeric" className={inputCls} value={form.bank_account ?? ''} onChange={e => set('bank_account', e.target.value)} />
+          </Field>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer text-sm" title="This vendor releases goods only against proof of payment — bank payments to them should carry a payment certificate.">
           <input type="checkbox" checked={!!form.requires_payment_confirmation} onChange={e => set('requires_payment_confirmation', e.target.checked)} />
-          Requires payment confirmation
+          Releases goods only against proof of payment
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
+      </Section>
+
+      <Section title="Contact">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Contact Person">
+            <input type="text" className={inputCls} value={form.contact_person ?? ''} onChange={e => set('contact_person', e.target.value)} />
+          </Field>
+          <Field label="Phone">
+            <input type="tel" className={inputCls} value={form.phone_contact ?? ''} onChange={e => set('phone_contact', e.target.value)} placeholder="09…" />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Email">
+            <input type="email" className={inputCls} value={form.email ?? ''} onChange={e => set('email', e.target.value)} />
+          </Field>
+          <Field label="Website">
+            <input type="url" className={inputCls} value={form.website ?? ''} onChange={e => set('website', e.target.value)} placeholder="https://" />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Location">
+            <input type="text" className={inputCls} value={form.location ?? ''} onChange={e => set('location', e.target.value)} placeholder="e.g. Merkato" />
+          </Field>
+          <Field label="Address">
+            <input type="text" className={inputCls} value={form.address ?? ''} onChange={e => set('address', e.target.value)} />
+          </Field>
+        </div>
+      </Section>
+
+      <Section title="Terms and notes">
+        <Field label="Payment Terms">
+          <input type="text" className={inputCls} value={form.payment_terms ?? ''} onChange={e => set('payment_terms', e.target.value)} placeholder="e.g. 50% advance, rest on delivery · Net 30 · Cash on delivery" />
+        </Field>
+        <Field label="Notes">
+          <textarea rows={3} className={inputCls + ' resize-none'} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
+        </Field>
+        <label className="flex items-center gap-2 cursor-pointer text-sm">
           <input type="checkbox" checked={!!form.active} onChange={e => set('active', e.target.checked)} />
-          Active
+          Active — offered when picking a vendor
         </label>
-      </div>
+      </Section>
     </FormPage>
   )
 }
-

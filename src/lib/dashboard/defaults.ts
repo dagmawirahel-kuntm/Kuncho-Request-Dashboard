@@ -17,16 +17,16 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
       add(W('cash_position'), W('portfolio'), W('sales_pipeline'), W('po_approvals'), W('payment_requests_out'))
       break
     case 'finance':
-      add(W('cash_position'), W('payments_to_send'), W('finance_approvals'), W('awaiting_bank'), W('bank_alerts'), W('month_end'))
+      add(W('cash_position'), W('payments_to_send'), W('finance_approvals'), W('vendors_to_verify'), W('awaiting_bank'), W('bank_alerts'), W('month_end'))
       break
     case 'operations_manager':
       add(W('po_approvals'), W('variations'), W('portfolio'), W('fleet_maintenance'), W('transport_jobs'))
       break
     case 'procurement_officer':
-      add(W('po_pipeline'), W('grn_queue'), W('low_stock'))
+      add(W('po_pipeline'), W('grn_queue'), W('vendors_to_verify'), W('low_stock'), W('stock_duplicates'))
       break
     case 'stock_manager':
-      add(W('grn_queue'), W('pending_dispatch'), W('low_stock'), W('my_tools'))
+      add(W('grn_queue'), W('pending_dispatch'), W('low_stock'), W('stock_duplicates'), W('my_tools'))
       break
     case 'logistics_officer':
       add(W('transport_jobs'), W('fleet_maintenance'))
@@ -60,8 +60,8 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
 export function defaultPins(ctx: WidgetContext): string[] {
   const r = ctx.role
   if (r === 'finance') return ['/finance/payments', '/bank-statement-import', '/cash-forecast', '/accounts', '/month-end']
-  if (r === 'procurement_officer') return ['/sourcing', '/procurement', '/vendors', '/goods-received']
-  if (r === 'stock_manager') return ['/stock', '/goods-received', '/stock/dispatch-queue', '/stock/tools']
+  if (r === 'procurement_officer') return ['/sourcing', '/procurement', '/vendors', '/vendors/review', '/goods-received']
+  if (r === 'stock_manager') return ['/stock', '/goods-received', '/stock/dispatch-queue', '/stock/duplicates', '/stock/tools']
   if (r === 'hr_officer') return ['/staff', '/leave-requests', '/payroll', '/hr/casual-workers']
   if (r === 'logistics_officer') return ['/transportation', '/fleet/maintenance', '/logistics']
   if (r === 'sales') return ['/opportunities', '/clients', '/proformas', '/contracts']

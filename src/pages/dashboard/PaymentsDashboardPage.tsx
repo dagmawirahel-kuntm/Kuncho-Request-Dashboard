@@ -7,6 +7,7 @@ import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { useToast } from '@/contexts/ToastContext'
 import { useUserProfiles, useAccounts } from '@/hooks/useLookups'
 import { FileUpload } from '@/components/shared/FileUpload'
+import { UnverifiedVendorFlag } from '@/components/vendors/UnverifiedVendorFlag'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { KpiCard } from '@/components/shared/KpiCard'
@@ -686,6 +687,7 @@ export default function PaymentsDashboardPage() {
                         {isAdvance && (
                           <span className="ml-1.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Advance</span>
                         )}
+                        <span className="ml-1.5"><UnverifiedVendorFlag vendorId={r.vendor_id} /></span>
                       </td>
                       <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
                         {r.project_name ?? '—'}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
@@ -756,7 +758,10 @@ export default function PaymentsDashboardPage() {
                   )}
                   <Link to={`/expenses/${r.id}`} className="min-w-0 flex-1 py-2 pr-2">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-medium text-slate-800 dark:text-slate-100 truncate">{r.vendor_name ?? r.item_service_description ?? r.expense_code}</span>
+                      <span className="min-w-0">
+                        <span className="block font-medium text-slate-800 dark:text-slate-100 truncate">{r.vendor_name ?? r.item_service_description ?? r.expense_code}</span>
+                        <UnverifiedVendorFlag vendorId={r.vendor_id} plain compact />
+                      </span>
                       <span className="flex-shrink-0 text-right">
                         <span className="block font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.cash_to_send ?? r.net_payable ?? r.amount_etb ?? 0)}</span>
                         {(r.wht_amount ?? 0) > 0 && (
