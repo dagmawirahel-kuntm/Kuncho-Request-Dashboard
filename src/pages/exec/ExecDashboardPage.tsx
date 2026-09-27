@@ -26,12 +26,6 @@ export default function ExecDashboardPage() {
   const navigate = useNavigate()
   const { toast } = useToast()
 
-  // Route guard: non-exec/admin bounce to landing.
-  if (role && !['executive', 'admin'].includes(role)) {
-    setTimeout(() => navigate('/', { replace: true }), 0)
-    return null
-  }
-
   const { data: projects = [], isLoading } = useExecProjects()
   const { data: lastRefresh } = useLastRefresh()
   const refresh = useRefreshExecDashboard()
@@ -76,6 +70,13 @@ export default function ExecDashboardPage() {
     for (const p of projects) c[p.health_status]++
     return c
   }, [projects])
+
+  // Route guard: non-exec/admin bounce to landing. After every hook, so a
+  // role that arrives after the first render doesn't change the hook order.
+  if (role && !['executive', 'admin'].includes(role)) {
+    setTimeout(() => navigate('/', { replace: true }), 0)
+    return null
+  }
 
   async function handleRefresh() {
     try { await refresh.mutateAsync(); toast('Dashboard refreshed', 'success') }

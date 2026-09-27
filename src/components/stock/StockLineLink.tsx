@@ -22,7 +22,7 @@ export function LinkedStockChip({ stockItemId, requestedQty, onUnlink }: {
           : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
       }`}>
         <Warehouse className="h-3 w-3" />
-        Stock: {item.item_name}{item.item_code ? ` (${item.item_code})` : ''} · {qty} {item.unit} on hand
+        Stock: {item.item_name}{item.item_code ? ` (${item.item_code})` : ''} · {qty} {item.unit} in warehouse
         {!pending && requestedQty ? (covers ? ' — covers this line' : partial ? ' — covers part' : '') : ''}
       </span>
       {pending && qty > 0 && (
@@ -62,7 +62,7 @@ export function DidYouMean({ matches, unit, onPick, onDifferent }: {
             className="rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 px-2 py-1 text-left hover:border-brand hover:text-brand transition-colors">
             <span className="block text-xs font-medium text-slate-700 dark:text-slate-200">{m.item_name}</span>
             <span className="block text-[10px] text-slate-400">
-              {m.qty_on_hand > 0 ? `${m.qty_on_hand} ${m.unit} in stock` : `counted in ${m.unit}`}
+              {m.qty_on_hand > 0 ? `${m.qty_on_hand} ${m.unit} in warehouse` : `counted in ${m.unit}`}
               {m.last_price != null && ` · last ${formatCurrency(m.last_price)}`}
               {unit && m.unit !== unit && ` · stock counts in ${m.unit}`}
             </span>

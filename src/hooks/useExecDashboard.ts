@@ -44,7 +44,7 @@ export function useExecProjects() {
     queryKey: ['exec-projects'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_project_exec_summary').select('*')
+      const { data, error } = await supabase.from('v_exec_project_summary').select('*')
       if (error) throw error
       return (data ?? []) as ProjectExecRow[]
     },
@@ -56,7 +56,7 @@ export function useCashRunway() {
     queryKey: ['exec-cash-runway'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_exec_gadget_cash_runway').select('*').maybeSingle()
+      const { data, error } = await supabase.from('v_exec_cash_runway').select('*').maybeSingle()
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (data ?? null) as any
@@ -69,7 +69,7 @@ export function useArAging() {
     queryKey: ['exec-ar-aging'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_exec_gadget_ar_aging').select('*').maybeSingle()
+      const { data, error } = await supabase.from('v_exec_ar_aging').select('*').maybeSingle()
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (data ?? null) as any
@@ -82,7 +82,7 @@ export function useApAging() {
     queryKey: ['exec-ap-aging'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_exec_gadget_ap_aging').select('*').maybeSingle()
+      const { data, error } = await supabase.from('v_exec_ap_aging').select('*').maybeSingle()
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (data ?? null) as any
@@ -95,7 +95,7 @@ export function useMarginLeaderboard() {
     queryKey: ['exec-margin-leaderboard'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_exec_gadget_margin_leaderboard').select('*').order('rank')
+      const { data, error } = await supabase.from('v_exec_margin_leaderboard').select('*').order('rank')
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (data ?? []) as any[]
@@ -108,7 +108,7 @@ export function useLedgerFailures() {
     queryKey: ['exec-ledger-failures'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_exec_gadget_ledger_failures').select('*').order('days_since', { ascending: false })
+      const { data, error } = await supabase.from('v_exec_ledger_failures').select('*').order('days_since', { ascending: false })
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (data ?? []) as any[]
@@ -121,7 +121,7 @@ export function useGovernanceFlags() {
     queryKey: ['exec-governance-flags'],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('mv_exec_gadget_governance_flags').select('*')
+      const { data, error } = await supabase.from('v_exec_governance_flags').select('*')
       if (error) throw error
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (data ?? []) as any[]
