@@ -2642,8 +2642,27 @@ export interface LaborRequisition {
   scope_of_work: string | null
   site_location: string | null
   created_at: string
+  // Migration 362: why it was approved/rejected, and closing it early.
+  decision_note?: string | null
+  closed_at?: string | null
+  closed_by?: string | null
+  close_reason?: string | null
 }
-export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'slots_filled' | 'slots_status' | 'created_at'>
+export type LaborRequisitionInsert = Omit<LaborRequisition, 'id' | 'estimated_total_cost' | 'status' | 'approved_by' | 'approved_at' | 'slots_filled' | 'slots_status' | 'created_at' | 'decision_note' | 'closed_at' | 'closed_by' | 'close_reason'>
+
+/** Money on one labour requisition (v_labor_requisition_money, migration 362). */
+export interface LaborRequisitionMoney {
+  labor_requisition_id: string
+  estimated: number | null
+  committed_amount: number | null
+  commitment_status: string | null
+  paid: number
+  approved_unpaid: number
+  drafted: number
+  rollups: number
+  undrafted_entries: number
+  last_work_date: string | null
+}
 
 // ── Subcontract ──────────────────────────────────────────────────
 export type SubcontractorEngagementStatus = 'drafting' | 'agreed' | 'in_progress' | 'completed' | 'terminated'

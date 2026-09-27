@@ -222,6 +222,28 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   })
   const workOrderOptions = useMemo(() => projectWorkOrders.map(w => ({ id: w.id, label: w.scope_of_work })), [projectWorkOrders])
 
+  // Another open requisition for the same role on this project is usually a
+  // duplicate: extend that one or raise its headcount instead.
+  const roleKey = (form.role_needed ?? '').trim()
+  const { data: similar = [] } = useQuery({
+    queryKey: ['labor-req-similar', form.project_id, roleKey.toLowerCase(), id],
+    enabled: !!form.project_id && roleKey.length >= 3,
+    staleTime: 30_000,
+    queryFn: async () => {
+      let q = supabase.from('labor_requisitions')
+        .select('id, role_needed, headcount, slots_filled, status, start_date, end_date')
+        .eq('project_id', form.project_id!)
+        .in('status', ['pending', 'approved'])
+        .is('closed_at', null)
+        .ilike('role_needed', `%${roleKey.replace(/[%_]/g, '')}%`)
+        .or(`end_date.is.null,end_date.gte.${new Date().toISOString().slice(0, 10)}`)
+      if (id) q = q.neq('id', id)
+      const { data, error } = await q.limit(5)
+      if (error) throw error
+      return (data ?? []) as { id: string; role_needed: string; headcount: number; slots_filled: number; status: string; start_date: string; end_date: string | null }[]
+    },
+  })
+
   // Roster + candidate + trade catalog lookups — each cheap and cached.
   const { data: roster = [] } = useQuery({
     queryKey: ['tier2-roster-list'],
@@ -305,7 +327,14 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   }
 
   async function handleSave() {
-    setError(''); setSaving(true)
+    setError('')
+    // A requisition commits its estimate to the project's labour budget on
+    // approval; without one it commits nothing and the budget reads as spare.
+    if (form.payment_basis !== 'per_volume') {
+      if (!form.estimated_days || Number(form.estimated_days) <= 0) { setError('How many days is this for? The estimate is committed to the project budget on approval.'); return }
+      if (assignMode !== 'roster' && !(Number(form.estimated_day_rate) > 0)) { setError('Enter the day rate, so the cost can be estimated.'); return }
+    }
+    setSaving(true)
     let cleaned: FormState = form.payment_model === 'individual'
       ? { ...form, gang_leader_vendor_id: null }
       : form
@@ -419,6 +448,9 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       <Field label="Work Order (optional)">
         <SearchableSelect value={form.work_order_id ?? null} onChange={id => set('work_order_id', id)} options={workOrderOptions} placeholder={form.project_id ? 'Select a work order…' : 'Pick a project first'} />
         <p className="mt-1 text-[11px] text-slate-400">If set, the hired worker is automatically added to this work order's crew once they're actually active on site.</p>
+        {!form.work_order_id && workOrderOptions.length > 0 && (
+          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">This project has {workOrderOptions.length} work order{workOrderOptions.length === 1 ? '' : 's'} — link one so the labour cost lands on the right scope.</p>
+        )}
       </Field>
 
       {/* ── Assignment mode ─────────────────────────────────────────────── */}
@@ -497,6 +529,19 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Role Needed *">
           <input type="text" className={inputCls} value={form.role_needed ?? ''} onChange={e => set('role_needed', e.target.value)} placeholder="e.g. Site Electrician" />
+          {similar.length > 0 && (
+            <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/15 dark:text-amber-300">
+              <p className="font-semibold">Already open on this project — extend or add to it instead?</p>
+              <ul className="mt-1 space-y-0.5">
+                {similar.map(r => (
+                  <li key={r.id}>
+                    <a href={`/labor-requisitions/${r.id}`} target="_blank" rel="noreferrer" className="underline">{r.role_needed}</a>
+                    {` · ${r.status === 'pending' ? 'waiting for approval' : `${r.slots_filled} of ${r.headcount} placed`} · ${r.start_date}${r.end_date ? ` → ${r.end_date}` : ''}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Field>
         <Field label="Headcount *">
           <input type="number" min={1} className={inputCls}
