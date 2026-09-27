@@ -133,22 +133,24 @@ export default function SourcingBundleFormPage() {
     },
   })
 
-  const orderIds = useMemo(() => approvedOrders.map(o => o.id), [approvedOrders])
-
-  const { data: allOrderItems = [] } = useQuery({
-    queryKey: ['order-items-for-sourcing', orderIds],
+  // Every open request line, filtered to the non-rejected requests here
+  // rather than by listing the request ids in the URL: with a few hundred
+  // requests that URL ran to 13 KB and grew with every new request.
+  const { data: openOrderItems = [] } = useQuery({
+    queryKey: ['order-items-for-sourcing'],
     queryFn: async () => {
-      if (!orderIds.length) return []
       const { data, error } = await supabase
         .from('order_items')
         .select('*, sub_categories(parent_category_id, categories(cost_group_id))')
-        .in('order_id', orderIds)
         .neq('status', 'cancelled')
       if (error) throw error
       return (data ?? []) as unknown as OrderItemRow[]
     },
-    enabled: orderIds.length > 0,
   })
+  const allOrderItems = useMemo(() => {
+    const sourceable = new Set(approvedOrders.map(o => o.id))
+    return openOrderItems.filter(i => sourceable.has(i.order_id))
+  }, [openOrderItems, approvedOrders])
 
   const { data: bundledItemIds = new Set<string>() } = useQuery({
     queryKey: ['bundled-order-item-ids', id],
@@ -166,21 +168,20 @@ export default function SourcingBundleFormPage() {
     },
   })
 
-  const orderItemIds = useMemo(() => allOrderItems.map(i => i.id), [allOrderItems])
-
   // How much of each line has actually left the warehouse already
   // (stock_issues is the source of truth for that — order_items.
   // stock_dispatch_qty only holds the *proposed* amount and gets
   // cleared once signed off). Advisory only: informs the quantity a
-  // procurement officer types in below, never auto-fills it.
+  // procurement officer types in below, never auto-fills it. Every issue
+  // tied to a request line, rather than one filter per line: the per-line
+  // list made a 37 KB URL the gateway refused, and the form hung on it.
   const { data: stockIssuedByItem = {} } = useQuery({
-    queryKey: ['stock-issued-by-order-item', orderItemIds],
+    queryKey: ['stock-issued-by-order-item'],
     queryFn: async () => {
-      if (!orderItemIds.length) return {} as Record<string, number>
       const { data, error } = await supabase
         .from('stock_issues')
         .select('order_item_id, quantity')
-        .in('order_item_id', orderItemIds)
+        .not('order_item_id', 'is', null)
       if (error) throw error
       const map: Record<string, number> = {}
       for (const row of data ?? []) {
@@ -189,7 +190,6 @@ export default function SourcingBundleFormPage() {
       }
       return map
     },
-    enabled: orderItemIds.length > 0,
   })
 
   function stockBadge(item: OrderItemRow | undefined) {
