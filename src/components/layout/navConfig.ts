@@ -5,7 +5,7 @@ import {
   Layers, Archive, Shield, Globe2, BookOpen,
   ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car,
   PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle,
-  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck
+  HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -61,6 +61,7 @@ export const navGroups: NavGroup[] = [
       // starting from a default for their role and assignments.
       { label: 'My Dashboard', to: '/home', icon: LayoutDashboard },
       { label: 'General Dashboard', to: '/dashboard', icon: Layers, roles: ['admin', 'operations_manager'] },
+      { label: 'Operations Health', to: '/ops-health', icon: Activity, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'hr_officer', 'operations_manager', 'logistics_officer', 'project_manager', 'stock_manager'], showIfAssignedProjectManager: true, showIfLogisticsOfficer: true },
       { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Site Petty Cash Requests', to: '/pm/site-petty-cash-requests', icon: Wallet, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'BOQ Change Orders', to: '/pm/boq-change-orders', icon: FileText, roles: ['project_manager'], showIfAssignedProjectManager: true },

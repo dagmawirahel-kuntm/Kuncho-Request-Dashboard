@@ -138,26 +138,30 @@ function LaborRequisitionFormPageBody({ id, record }: { id?: string; record?: La
   // Sync candidateIds when attachedCands arrives (edit mode) — only for
   // still-unpromoted candidates; already-hired ones shouldn't be edited.
   const attachedSig = attachedCands.map(c => c.candidate_id).sort().join(',')
-  useMemo(() => {
+  // Adjusting state when fetched data arrives: done during render against
+  // the last-seen signature (React's recommended pattern), not in a memo.
+  const [seenCandsSig, setSeenCandsSig] = useState('')
+  if (attachedSig !== seenCandsSig) {
+    setSeenCandsSig(attachedSig)
     if (attachedCands.length > 0 && candidateIds.length === 0) {
       setCandidateIds(attachedCands.map(c => c.candidate_id))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attachedSig])
+  }
 
   // Multi-worker roster group, same pattern as candidateIds above. Falls
   // back to the legacy single pointer for a requisition created before 261
   // whose backfill row hasn't loaded yet.
   const [staffIds, setStaffIds] = useState<string[]>([])
   const workersSig = attachedWorkers.map(w => w.staff_id).sort().join(',')
-  useMemo(() => {
+  const [seenWorkersSig, setSeenWorkersSig] = useState<string | null>(null)
+  if (workersSig !== seenWorkersSig) {
+    setSeenWorkersSig(workersSig)
     if (attachedWorkers.length > 0 && staffIds.length === 0) {
       setStaffIds(attachedWorkers.map(w => w.staff_id))
     } else if (attachedWorkers.length === 0 && staffIds.length === 0 && r?.specific_staff_id) {
       setStaffIds([r.specific_staff_id])
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workersSig])
+  }
 
   // Workers whose allocation already exists — editing them off the
   // requisition wouldn't undo the allocation, so they're locked.

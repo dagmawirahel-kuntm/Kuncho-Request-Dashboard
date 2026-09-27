@@ -1,8 +1,9 @@
-import { AlertTriangle, Briefcase, ClipboardCheck, Copy, ShieldAlert, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
+import { AlertTriangle, Activity, Briefcase, ClipboardCheck, Copy, ShieldAlert, GitPullRequestArrow, HardHat, Package, PackageCheck, ShoppingCart, Truck, Users, UserX, UserCog, Wrench, Handshake, PenTool, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { QueryListWidget, type ListRow } from '../WidgetCard'
 import { groupDuplicates, type DuplicatePair, type StockUsageRow } from '@/lib/stockDuplicates'
+import { KIND_META } from '@/lib/opsHealth'
 
 // ── Projects & operations ─────────────────────────────────────────────────
 export function Portfolio() {
@@ -240,6 +241,33 @@ export function VendorsToVerify() {
           right: Number(r.owed) > 0 ? formatCurrency(Number(r.owed)) : undefined,
           badge: Number(r.paid_since_change) > 0 ? { text: 'paid since', tone: 'red' as const } : null,
           to: `/vendors/review?vendor=${r.id}`,
+        })) }
+      }}
+    />
+  )
+}
+
+// Work that has stopped moving (v_ops_health_items, 360), counted by kind,
+// most urgent first — for anyone who owns a queue.
+export function StuckWork() {
+  return (
+    <QueryListWidget
+      title="Stuck work" icon={Activity} to="/ops-health" queryKey={['ops-health-widget']} empty="Nothing is stuck."
+      fetch={async () => {
+        const { data, error } = await supabase.from('v_ops_health_items').select('kind, amount, urgent')
+        if (error) throw error
+        const by = new Map<string, { n: number; urgent: number; amount: number }>()
+        for (const r of data ?? []) {
+          const g = by.get(r.kind) ?? { n: 0, urgent: 0, amount: 0 }
+          g.n += 1; g.urgent += r.urgent ? 1 : 0; g.amount += Number(r.amount ?? 0)
+          by.set(r.kind, g)
+        }
+        const rows = [...by.entries()].sort((a, b) => b[1].urgent - a[1].urgent || b[1].n - a[1].n)
+        return { total: data?.length ?? 0, rows: rows.slice(0, 6).map(([kind, g]) => ({
+          id: kind, title: KIND_META[kind]?.label ?? kind,
+          subtitle: `${g.n} item${g.n === 1 ? '' : 's'}${g.amount > 0 ? ` · ${formatCurrency(g.amount)}` : ''}`,
+          badge: g.urgent > 0 ? { text: `${g.urgent} urgent`, tone: 'red' as const } : null,
+          to: `/ops-health?kind=${kind}`,
         })) }
       }}
     />

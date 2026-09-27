@@ -93,20 +93,26 @@ export default function StockItemsPage() {
     },
   })
 
-  // Stock levels (may not exist until migration 030 is applied — tolerate error)
+  // Warehouse stock per item. Goods delivered straight to a project site
+  // are not in the warehouse; they're shown separately (migration 358).
   const { data: levels = [] } = useQuery({
     queryKey: ['stock-levels'],
     queryFn: async () => {
       const { data } = await supabase
         .from('v_stock_levels')
-        .select('id, current_stock, total_in, total_out')
-      return (data ?? []) as { id: string; current_stock: number; total_in: number; total_out: number }[]
+        .select('id, current_stock, total_in, total_out, delivered_to_sites')
+      return (data ?? []) as { id: string; current_stock: number; total_in: number; total_out: number; delivered_to_sites: number }[]
     },
   })
 
   const levelMap = useMemo(() => {
     const m: Record<string, number> = {}
     for (const l of levels) m[l.id] = Number(l.current_stock)
+    return m
+  }, [levels])
+  const siteMap = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const l of levels) m[l.id] = Number(l.delivered_to_sites ?? 0)
     return m
   }, [levels])
 
@@ -286,8 +292,11 @@ export default function StockItemsPage() {
                             item.reorder_level && currentStock <= item.reorder_level ? 'text-amber-600' :
                             'text-slate-400'
                           }`}>
-                            {currentStock} {item.unit}
+                            {currentStock} {item.unit} in warehouse
                           </span>
+                        )}
+                        {siteMap[item.id] > 0 && (
+                          <span className="text-xs text-slate-400">{siteMap[item.id]} {item.unit} delivered to sites</span>
                         )}
                         {item.sub_categories && <span className="text-xs text-slate-400">GL: {item.sub_categories.item_name}</span>}
                         {!currentStock && item.reorder_level && (

@@ -16,7 +16,8 @@ export interface StockMatch {
   unit: string
   catalog_status: 'active' | 'pending_setup' | 'inactive'
   sub_category_id: string | null
-  qty_on_hand: number
+  qty_on_hand: number            // in the warehouse (358)
+  qty_delivered_to_sites: number // delivered straight to project sites
   last_price: number | null
   last_price_date: string | null
   match: StockMatchKind
@@ -33,6 +34,7 @@ export interface StockItemBrief {
   unit: string
   catalog_status: 'active' | 'pending_setup' | 'inactive'
   qty_on_hand: number
+  qty_delivered_to_sites: number
 }
 
 export interface PurchaseHistoryRow {
@@ -121,7 +123,7 @@ export function useStockItemBrief(id: string | null | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_stock_item_usage')
-        .select('id, item_code, item_name, unit, catalog_status, qty_on_hand')
+        .select('id, item_code, item_name, unit, catalog_status, qty_on_hand, qty_delivered_to_sites')
         .eq('id', id!)
         .maybeSingle()
       if (error) throw error

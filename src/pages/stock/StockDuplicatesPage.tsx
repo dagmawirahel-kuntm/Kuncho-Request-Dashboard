@@ -195,7 +195,7 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
                   <p className="text-[11px] text-slate-400">
                     {m.request_lines} request line{m.request_lines === 1 ? '' : 's'} · {m.receipts} receipt{m.receipts === 1 ? '' : 's'}
                     {m.issues > 0 && ` · ${m.issues} issued`}
-                    {' · '}<span className={Number(m.qty_on_hand) > 0 ? 'text-slate-600 dark:text-slate-300 font-medium' : ''}>{Number(m.qty_on_hand)} on hand</span>
+                    {' · '}<span className={Number(m.qty_on_hand) > 0 ? 'text-slate-600 dark:text-slate-300 font-medium' : ''}>{Number(m.qty_on_hand)} in warehouse</span>{Number(m.qty_delivered_to_sites) > 0 && ` · ${Number(m.qty_delivered_to_sites)} to sites`}
                     {' · added '}{formatDate(m.created_at)}{m.from_receipt ? ' at goods received' : ''}
                   </p>
                 </div>
@@ -224,7 +224,7 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
             </p>
             <p className="text-xs text-amber-800 dark:text-amber-300">
               Moves {totals.lines} request line{totals.lines === 1 ? '' : 's'}, {totals.receipts} receipt{totals.receipts === 1 ? '' : 's'}
-              {totals.issues > 0 && `, ${totals.issues} issue${totals.issues === 1 ? '' : 's'}`} and {totals.qty} {keeper.unit} on hand onto {keeper.item_name},
+              {totals.issues > 0 && `, ${totals.issues} issue${totals.issues === 1 ? '' : 's'}`} and {totals.qty} {keeper.unit} in the warehouse onto {keeper.item_name},
               then removes the merged items. Their names are kept as other names for {keeper.item_name}. This can't be undone from here.
             </p>
             <div className="flex gap-2">

@@ -20,7 +20,8 @@ export interface StockUsageRow {
   receipts: number
   issues: number
   tool_units: number
-  qty_on_hand: number
+  qty_on_hand: number            // in the warehouse
+  qty_delivered_to_sites: number
   from_receipt: boolean
 }
 

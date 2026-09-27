@@ -30,7 +30,7 @@ export function StockMatchRow({ m, active, onPick }: { m: StockMatch; active?: b
         </span>
         <span className="block text-[11px] text-slate-400 truncate">
           {m.item_code ? `${m.item_code} · ` : ''}
-          {m.qty_on_hand > 0 ? `${m.qty_on_hand} ${m.unit} in stock` : `none in stock · ${m.unit}`}
+          {m.qty_on_hand > 0 ? `${m.qty_on_hand} ${m.unit} in warehouse` : `none in warehouse · ${m.unit}`}
           {m.last_price != null && ` · last ${formatCurrency(m.last_price)}`}
           {m.catalog_status === 'pending_setup' && ' · not set up yet'}
           {m.alias_name && ` · also “${m.alias_name}”`}

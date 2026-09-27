@@ -202,7 +202,10 @@ export default function StockItemDetailPage() {
   })
 
   // ── Computed stats ──────────────────────────────────────────────────────────
-  const totalIn  = useMemo(() => receipts.reduce((s, r) => s + Number(r.quantity), 0), [receipts])
+  // Goods delivered straight to a project site never enter the warehouse,
+  // so they don't count toward what's in it (migration 358).
+  const totalIn  = useMemo(() => receipts.filter(r => r.destination !== 'site').reduce((s, r) => s + Number(r.quantity), 0), [receipts])
+  const toSites  = useMemo(() => receipts.filter(r => r.destination === 'site').reduce((s, r) => s + Number(r.quantity), 0), [receipts])
   const totalOut = useMemo(() => issues.reduce((s, i) => s + Number(i.quantity), 0), [issues])
   const current  = totalIn - totalOut
 
@@ -354,16 +357,21 @@ export default function StockItemDetailPage() {
         </div>
 
         {/* Stat strip */}
-        <div className="grid grid-cols-3 text-center divide-x divide-white/10" style={{ background: 'rgba(0,0,0,0.22)' }}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 text-center divide-x divide-white/10" style={{ background: 'rgba(0,0,0,0.22)' }}>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Current Stock</p>
+            <p className="text-white/50 text-xs uppercase tracking-wide">In Warehouse</p>
             <p className={`font-bold text-xl ${current < 0 ? 'text-red-300' : 'text-white'}`}>{current}</p>
             <p className="text-white/30 text-[10px]">{item.unit}</p>
           </div>
           <div className="py-3">
-            <p className="text-white/50 text-xs uppercase tracking-wide">Total Received</p>
+            <p className="text-white/50 text-xs uppercase tracking-wide">Into Warehouse</p>
             <p className="text-white font-bold text-xl">{totalIn}</p>
-            <p className="text-white/30 text-[10px]">{receipts.length} receipt{receipts.length !== 1 ? 's' : ''}</p>
+            <p className="text-white/30 text-[10px]">{receipts.filter(r => r.destination !== 'site').length} receipt{receipts.filter(r => r.destination !== 'site').length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="py-3">
+            <p className="text-white/50 text-xs uppercase tracking-wide">To Sites</p>
+            <p className="text-white font-bold text-xl">{toSites}</p>
+            <p className="text-white/30 text-[10px]">delivered straight to projects</p>
           </div>
           <div className="py-3">
             <p className="text-white/50 text-xs uppercase tracking-wide">Total Issued</p>
