@@ -1,16 +1,17 @@
 import { useState, useRef, useMemo } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Trash2, Printer, Save, ArrowRight, CheckCircle2, ClipboardList, Package } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Trash2, Printer, Save, ArrowRight, CheckCircle2, ClipboardList, Package, Scale } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { documentBaseCss, renderLetterhead, renderFooter } from '@/lib/documentTheme'
-import { COST_ROLES, marginTone, useCatalogCosting, useVatRate, type DraftLine } from '@/lib/catalog'
+import { COST_ROLES, costIsOld, marginTone, useCatalogCosting, useVatRate, type DraftLine } from '@/lib/catalog'
 import { DEFAULT_PLAN, OPEN_STAGES } from '@/lib/salesJourney'
 import type { Client } from '@/types/database'
 import { ProformaSources } from './ProformaSources'
+import { ProformaPriceGuide } from './ProformaPriceGuide'
 
 type LineItem = DraftLine
 
@@ -174,6 +175,7 @@ export default function ProformaInvoicePage() {
   const [saving, setSaving]           = useState(false)
   const [makingBoq, setMakingBoq]     = useState(false)
   const [savedProforma, setSavedProforma] = useState<{ id: string; proforma_number: string } | null>(null)
+  const [guideFor, setGuideFor]       = useState<string | null>(null)
 
   const { data: vatRate, isLoading: vatLoading } = useVatRate(date)
 
@@ -181,6 +183,15 @@ export default function ProformaInvoicePage() {
   const removeItem = (itemId: string) => setItems(p => p.filter(i => i.id !== itemId))
   const updateItem = (itemId: string, field: keyof LineItem, value: string | number) =>
     setItems(p => p.map(i => i.id === itemId ? { ...i, [field]: value } : i))
+  const patchItem = (itemId: string, patch: Partial<LineItem>) =>
+    setItems(p => p.map(i => i.id === itemId ? { ...i, ...patch } : i))
+
+  // A cost built in the price guide wins over the catalog recipe's.
+  const recipeCostOf = (i: LineItem) => {
+    const c = i.productId ? costBy.get(i.productId) : undefined
+    return c?.cost_per_unit != null ? Number(c.cost_per_unit) : null
+  }
+  const costOf = (i: LineItem) => i.cost?.perUnit ?? recipeCostOf(i)
 
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0)
   const rate     = vatRate ?? 0
@@ -189,15 +200,17 @@ export default function ProformaInvoicePage() {
 
   // Cost of the catalog lines that have a recipe; margin on those lines.
   const costed = useMemo(() => {
-    let cost = 0, revenue = 0, missing = 0, below = 0
+    let cost = 0, revenue = 0, missing = 0, below = 0, old = 0
     for (const i of items) {
-      const c = i.productId ? costBy.get(i.productId) : undefined
-      if (c?.cost_per_unit == null) { if (i.unitPrice > 0) missing++; continue }
-      cost += i.qty * Number(c.cost_per_unit)
+      const unitCost = costOf(i)
+      if (costIsOld(i.cost)) old++
+      if (unitCost == null) { if (i.unitPrice > 0) missing++; continue }
+      cost += i.qty * unitCost
       revenue += i.qty * i.unitPrice
-      if (i.unitPrice < Number(c.cost_per_unit)) below++
+      if (i.unitPrice < unitCost) below++
     }
-    return { cost, revenue, missing, below, margin: revenue > 0 ? Math.round(((revenue - cost) / revenue) * 1000) / 10 : null }
+    return { cost, revenue, missing, below, old, margin: revenue > 0 ? Math.round(((revenue - cost) / revenue) * 1000) / 10 : null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, costBy])
 
   const previewDoc = useMemo(
@@ -238,7 +251,7 @@ export default function ProformaInvoicePage() {
 
     if (pfErr || !pf) { toast(pfErr?.message ?? 'Save failed', 'error'); setSaving(false); return }
 
-    const { error: itemErr } = await supabase.from('proforma_items').insert(
+    const { data: savedLines, error: itemErr } = await supabase.from('proforma_items').insert(
       lines.map((it, idx) => ({
         proforma_id: pf.id,
         product_id: it.productId,
@@ -249,8 +262,39 @@ export default function ProformaInvoicePage() {
         vat_rate: vatRate,
         sort_order: idx,
       }))
-    )
+    ).select('id, sort_order')
     if (itemErr) { toast(itemErr.message, 'error'); setSaving(false); return }
+
+    // What each line costs us, and where the figure came from (367).
+    if (canSeeCost) {
+      const idAt = new Map((savedLines ?? []).map(r => [r.sort_order as number, r.id as string]))
+      const costs = lines.flatMap((it, idx) => {
+        const lineId = idAt.get(idx)
+        const recipe = recipeCostOf(it)
+        if (!lineId) return []
+        if (it.cost) {
+          const one = it.cost.parts.length === 1 ? it.cost.parts[0] : null
+          const dates = it.cost.parts.map(p => p.pricedAt).filter(Boolean) as string[]
+          return [{
+            proforma_item_id: lineId,
+            cost_per_unit: it.cost.perUnit,
+            cost_source: it.cost.parts.length ? 'market' : 'manual',
+            market_price_id: one?.marketPriceId ?? null,
+            stock_item_id: one?.stockItemId ?? null,
+            basis_note: [
+              ...it.cost.parts.map(p => `${p.qtyPer} ${p.unit} ${p.label} @ ${p.price}`),
+              ...(it.cost.extra ? [`labour/other ${it.cost.extra}`] : []),
+            ].join(' + ') || null,
+            priced_at: dates.length ? dates.sort()[0] : null,
+          }]
+        }
+        return recipe != null ? [{ proforma_item_id: lineId, cost_per_unit: recipe, cost_source: 'recipe', market_price_id: null, stock_item_id: null, basis_note: 'Catalog recipe', priced_at: null }] : []
+      })
+      if (costs.length) {
+        const { error: costErr } = await supabase.from('proforma_item_costs').insert(costs)
+        if (costErr) toast(`Saved, but the line costs weren't: ${costErr.message}`, 'error')
+      }
+    }
 
     setSavedProforma({ id: pf.id, proforma_number: pf.proforma_number ?? '' })
     if (!proformaNum) setProformaNum(pf.proforma_number ?? '')
@@ -385,29 +429,44 @@ export default function ProformaInvoicePage() {
               <p className="py-6 text-center text-sm text-slate-400">Pick from the catalog, drop in a template, or pull a BOQ to start.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[720px] table-fixed text-sm">
                   <thead>
                     <tr className="border-b dark:border-slate-700 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
                       <th className="pb-2 pr-2">Description</th>
-                      <th className="pb-2 pr-2 w-16">Qty</th>
+                      <th className="pb-2 pr-2 w-20">Qty</th>
                       <th className="pb-2 pr-2 w-16">Unit</th>
-                      <th className="pb-2 pr-2 w-24">Unit Price</th>
+                      <th className="pb-2 pr-2 w-28">Unit Price</th>
                       <th className="pb-2 pr-2 w-32 text-right">Total</th>
-                      {canSeeCost && <th className="pb-2 pl-1 pr-1 w-16">Margin</th>}
+                      {canSeeCost && <th className="pb-2 pl-1 pr-1 w-[4.5rem]">Margin</th>}
                       <th className="pb-2 w-8"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y dark:divide-slate-700">
                     {items.map(item => {
-                      const c = item.productId ? costBy.get(item.productId) : undefined
-                      const m = c?.cost_per_unit != null && item.unitPrice > 0 ? Math.round(((item.unitPrice - Number(c.cost_per_unit)) / item.unitPrice) * 1000) / 10 : null
+                      const unitCost = costOf(item)
+                      const m = unitCost != null && item.unitPrice > 0 ? Math.round(((item.unitPrice - unitCost) / item.unitPrice) * 1000) / 10 : null
                       return (
                         <tr key={item.id}>
                           <td className="py-2 pr-3">
                             <div className="flex items-center gap-1.5">
                               {item.productId && <Package className="h-3.5 w-3.5 shrink-0 text-brand" aria-label="From the catalog" />}
                               <input className={inputCls} placeholder="Description" value={item.description} onChange={e => updateItem(item.id, 'description', e.target.value)} disabled={!!savedProforma} />
+                              {!savedProforma && (
+                                <button type="button" onClick={() => setGuideFor(item.id)} title="Price guide: what the materials cost us"
+                                  aria-label={`Price guide for ${item.description || 'this line'}`}
+                                  className={`shrink-0 rounded-lg border p-2 transition-colors ${item.cost ? 'border-brand/40 bg-brand/5 text-brand' : 'border-slate-200 text-slate-400 hover:border-brand hover:text-brand dark:border-slate-600'}`}>
+                                  <Scale className="h-4 w-4" />
+                                </button>
+                              )}
                             </div>
+                            {item.cost && (
+                              <p className={`mt-1 truncate pl-0.5 text-[11px] ${costIsOld(item.cost) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                                {canSeeCost ? `Costs ${formatCurrency(item.cost.perUnit)} per ${item.unit}` : 'Costed'}
+                                {item.cost.parts.length ? ` · ${item.cost.parts.map(p => p.label).join(', ')}` : ''}
+                                {item.cost.extra ? ' + labour' : ''}
+                                {costIsOld(item.cost) ? ' · old price, check first' : ''}
+                              </p>
+                            )}
                           </td>
                           <td className="py-2 pr-2">
                             <input type="number" min={0} className={numCls} value={item.qty} onChange={e => updateItem(item.id, 'qty', Number(e.target.value))} disabled={!!savedProforma} />
@@ -422,7 +481,7 @@ export default function ProformaInvoicePage() {
                             {fmt(item.qty * item.unitPrice)}
                           </td>
                           {canSeeCost && (
-                            <td className="py-2 pl-1 pr-1" title={c?.cost_per_unit != null ? `Cost ${formatCurrency(Number(c.cost_per_unit))} per ${item.unit}` : 'No cost recipe'}>
+                            <td className="py-2 pl-1 pr-1" title={unitCost != null ? `Cost ${formatCurrency(unitCost)} per ${item.unit}${item.cost ? ' (price guide)' : ' (catalog recipe)'}` : 'No cost yet: open the price guide'}>
                               <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${marginTone(m)}`}>{m != null ? `${m}%` : '—'}</span>
                             </td>
                           )}
@@ -455,8 +514,9 @@ export default function ProformaInvoicePage() {
                     </p>
                     {costed.below > 0 && <p className="flex items-center gap-1 text-red-600 dark:text-red-400"><AlertTriangle className="h-3.5 w-3.5" /> {costed.below} line{costed.below === 1 ? ' is' : 's are'} priced below cost</p>}
                   </>
-                ) : <p className="text-slate-400">Catalog lines with a cost recipe show their margin here.</p>}
-                {costed.missing > 0 && <p className="text-slate-400">{costed.missing} line{costed.missing === 1 ? ' has' : 's have'} no cost to compare — <Link to="/catalog" className="text-brand hover:underline">add recipes in the catalog</Link>.</p>}
+                ) : <p className="text-slate-400">Cost the lines in the price guide (<Scale className="inline h-3 w-3" />) or from catalog recipes to see the margin here.</p>}
+                {costed.old > 0 && <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" /> {costed.old} line{costed.old === 1 ? ' is' : 's are'} costed from old prices — check before sending</p>}
+                {costed.missing > 0 && <p className="text-slate-400">{costed.missing} line{costed.missing === 1 ? ' has' : 's have'} no cost yet — use the price guide (<Scale className="inline h-3 w-3" />) or <Link to="/catalog" className="text-brand hover:underline">catalog recipes</Link>.</p>}
               </div>
             ) : <div />}
             <div className="ml-auto w-full max-w-xs space-y-2 text-sm">
@@ -469,6 +529,17 @@ export default function ProformaInvoicePage() {
             </div>
           </div>
         </div>
+
+        {guideFor && (() => {
+          const line = items.find(i => i.id === guideFor)
+          if (!line) return null
+          const c = line.productId ? costBy.get(line.productId) : undefined
+          return (
+            <ProformaPriceGuide line={line} recipeCost={recipeCostOf(line)} canSeeCost={canSeeCost}
+              defaultMarkup={c?.markup_percent != null ? Number(c.markup_percent) : 25}
+              onApply={patch => patchItem(line.id, patch)} onClose={() => setGuideFor(null)} />
+          )
+        })()}
 
         {/* ── Preview column ── */}
         <div className="hidden lg:block w-[460px] flex-shrink-0 sticky top-0">

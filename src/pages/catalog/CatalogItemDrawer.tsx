@@ -200,16 +200,14 @@ function Recipe({ productId, costing, canEdit, onUseSuggested }: {
     queryKey: ['catalog-market-prices', stockIds.join(',')],
     enabled: stockIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase.from('market_prices').select('stock_item_id, unit_price, sourced_at').in('stock_item_id', stockIds).order('sourced_at', { ascending: false })
+      // The same latest price Market Trends shows: newest real price, in the item's own unit (367).
+      const { data, error } = await supabase.from('v_stock_item_latest_price')
+        .select('stock_item_id, display_price, display_price_sourced_at, freshness').in('stock_item_id', stockIds).not('display_price', 'is', null)
       if (error) throw error
-      return data as { stock_item_id: string; unit_price: number; sourced_at: string }[]
+      return (data ?? []) as { stock_item_id: string; display_price: number; display_price_sourced_at: string; freshness: string }[]
     },
   })
-  const latest = useMemo(() => {
-    const m = new Map<string, { unit_price: number; sourced_at: string }>()
-    for (const p of prices) if (!m.has(p.stock_item_id)) m.set(p.stock_item_id, p)
-    return m
-  }, [prices])
+  const latest = useMemo(() => new Map(prices.map(p => [p.stock_item_id, { unit_price: p.display_price, sourced_at: p.display_price_sourced_at, freshness: p.freshness }])), [prices])
   const stockOptions = useMemo(() => stock.map(s => ({ id: s.id, label: s.item_name, sub: [s.item_code, s.unit].filter(Boolean).join(' · ') })), [stock])
 
   function refresh() {
@@ -270,7 +268,7 @@ function Recipe({ productId, costing, canEdit, onUseSuggested }: {
                     {canEdit ? (
                       <SearchableSelect value={p.stock_item_id} onChange={id => patch(p.id, { stock_item_id: id })} options={stockOptions} placeholder="Link a stock item for its market price…" className="flex-1" />
                     ) : <span className="text-[11px] text-slate-400">Stock item linked</span>}
-                    {mp && <span className="shrink-0 text-[10px] text-slate-400">market {formatCurrency(Number(mp.unit_price))} · {formatDate(mp.sourced_at)}</span>}
+                    {mp && <span className={`shrink-0 text-[10px] ${mp.freshness === 'stale' || mp.freshness === 'outdated' ? 'text-amber-600' : 'text-slate-400'}`} title={`Market price is ${mp.freshness}`}>market {formatCurrency(Number(mp.unit_price))} · {formatDate(mp.sourced_at)}</span>}
                   </div>
                 ) : null}
               </div>

@@ -6,6 +6,8 @@ import { ClipboardList, X } from 'lucide-react'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { ActionDialog } from '@/components/shared/ActionDialog'
+import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckModal'
 
 // Requester's view of their own price-check requests. Shows delivered price
 // on fulfilled rows so the user sees what came back.
@@ -15,6 +17,9 @@ export default function MyPriceCheckRequestsPage() {
   const { data: rows = [], isLoading } = useCheckRequests('all')
   const cancel = useCancelPriceCheck()
   const [tab, setTab] = useState<'open' | 'fulfilled' | 'cancelled'>('open')
+  const [cancelling, setCancelling] = useState<string | null>(null)
+  const [reason, setReason] = useState('')
+  const [asking, setAsking] = useState(false)
 
   const mine = useMemo(() => {
     if (!me?.id) return []
@@ -37,22 +42,27 @@ export default function MyPriceCheckRequestsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const priceById = new Map((fulfilledPrices as any[]).map(p => [p.id, p]))
 
-  async function handleCancel(id: string) {
-    const reason = window.prompt('Cancel reason (optional):') ?? ''
-    if (reason === null) return
-    try { await cancel.mutateAsync({ request_id: id, reason }); toast('Cancelled', 'success') }
-    catch (e) { toast((e as Error).message, 'error') }
+  async function handleCancel() {
+    if (!cancelling) return
+    try {
+      await cancel.mutateAsync({ request_id: cancelling, reason: reason.trim() || undefined })
+      toast('Cancelled', 'success')
+      setCancelling(null); setReason('')
+    } catch (e) { toast((e as Error).message, 'error') }
   }
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <ClipboardList className="h-6 w-6 text-brand" /> My Price Check Requests
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Track the checks you've asked Procurement for. Fulfilled requests show the delivered price.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <ClipboardList className="h-6 w-6 text-brand" /> My Price Check Requests
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Prices you've asked procurement to check. Answered ones show the price that came back, and it's in Market Trends and the proforma price guide too.
+          </p>
+        </div>
+        <button onClick={() => setAsking(true)} className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90">Ask for a price</button>
       </div>
 
       <div className="flex border-b dark:border-slate-700">
@@ -112,7 +122,7 @@ export default function MyPriceCheckRequestsPage() {
                     )}
                     {tab === 'open' && (
                       <td className="px-2 py-2 text-right">
-                        <button onClick={() => handleCancel(r.id)} className="text-xs text-slate-500 hover:text-red-600 inline-flex items-center gap-1">
+                        <button onClick={() => setCancelling(r.id)} className="text-xs text-slate-500 hover:text-red-600 inline-flex items-center gap-1">
                           <X className="h-3 w-3" /> Cancel
                         </button>
                       </td>
@@ -124,6 +134,15 @@ export default function MyPriceCheckRequestsPage() {
           </table>
         </div>
       )}
+
+      {cancelling && (
+        <ActionDialog title="Cancel this request" confirmLabel="Cancel request" danger busy={cancel.isPending}
+          onClose={() => { setCancelling(null); setReason('') }} onConfirm={handleCancel}>
+          <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why (optional)" autoFocus
+            className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+        </ActionDialog>
+      )}
+      {asking && <RequestPriceCheckModal onClose={() => setAsking(false)} />}
     </div>
   )
 }

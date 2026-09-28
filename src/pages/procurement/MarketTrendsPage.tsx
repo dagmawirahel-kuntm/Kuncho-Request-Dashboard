@@ -1,327 +1,426 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { useLatestPrices, useVendorHistory, usePriceHistory, useSubCategoryLatestPrices, FRESHNESS_CLASS, FRESHNESS_LABEL, type LatestPriceRow, type Freshness, type Volatility } from '@/hooks/useMarketPrices'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { useLatestPrices, useFreeTextPrices, sourceLabel, FRESHNESS_CLASS, FRESHNESS_LABEL, type LatestPriceRow, type FreeTextPriceRow, type Freshness, type Volatility } from '@/hooks/useMarketPrices'
+import { formatCurrency } from '@/lib/utils'
 import { LogVerifiedPriceModal } from '@/components/shared/LogVerifiedPriceModal'
 import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckModal'
-import { TrendingUp, TrendingDown, Search, Download, X, Package, AlertTriangle, Clock } from 'lucide-react'
+import { RecordTabs, Stat } from '@/components/record/Record'
+import { ChangeBadge, FreshnessPill, PriceRange } from '@/components/market/MarketBits'
+import { PriceDetailDrawer, type PriceTarget } from '@/components/market/PriceDetailDrawer'
+import { TrendingUp, TrendingDown, Search, Download, Copy, ArrowRight, Info } from 'lucide-react'
 
 const PROCUREMENT_ROLES = ['admin', 'executive', 'procurement_officer']
+/** Who can open stock pages (the stock route guard). */
+const STOCK_ROLES = ['admin', 'executive', 'stock_manager', 'procurement_officer']
 
-// Market Trends — Procurement's single-pane view of every tracked item's
-// latest price, freshness, and 90-day movement. Row-click opens a slide-out
-// with the price chart and per-vendor quote history.
+type Tab = 'stock' | 'free'
+type Coverage = 'priced' | 'unpriced' | 'all'
+type Sort = 'days_desc' | 'recent' | 'name' | 'price_desc' | 'rise' | 'drop' | 'bought'
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+/**
+ * Market Trends: what Kuncho pays for materials. Every approved purchase
+ * order adds its prices (migration 367), procurement adds verified quotes,
+ * and the proforma's price guide and the catalog's costs read from here.
+ */
 export default function MarketTrendsPage() {
   const { role } = useAuth()
   const isProcurement = PROCUREMENT_ROLES.includes(role ?? '')
+  const canOpenStock = STOCK_ROLES.includes(role ?? '')
   const { data: prices = [], isLoading } = useLatestPrices()
+  const { data: freeRows = [], isLoading: freeLoading } = useFreeTextPrices()
 
+  const [tab, setTab] = useState<Tab>('stock')
   const [q, setQ] = useState('')
+  const [coverage, setCoverage] = useState<Coverage>('priced')
+  const [category, setCategory] = useState('')
   const [freshFilter, setFreshFilter] = useState<Set<Freshness>>(new Set())
-  const [volFilter, setVolFilter]     = useState<Set<Volatility>>(new Set())
+  const [volFilter, setVolFilter] = useState<Set<Volatility>>(new Set())
   const [openReqOnly, setOpenReqOnly] = useState(false)
-  const [sort, setSort] = useState<'name' | 'days_desc' | 'trend_desc' | 'trend_asc' | 'price_desc'>('days_desc')
-  const [selected, setSelected] = useState<LatestPriceRow | null>(null)
-  const [logOpen, setLogOpen] = useState(false)
-  const [reqOpen, setReqOpen] = useState(false)
+  const [sort, setSort] = useState<Sort>('recent')
+  const [target, setTarget] = useState<PriceTarget | null>(null)
+  const [logFor, setLogFor] = useState<null | { id: string; item_name: string; unit: string } | 'any'>(null)
+  const [reqFor, setReqFor] = useState<null | { id: string; item_name: string } | 'any'>(null)
+  const [now] = useState(() => Date.now())
 
-  // Open-request set — one query used by both the header count and the row filter.
   const { data: openRequests = [] } = useQuery({
     queryKey: ['market-check-requests-open-item-ids'],
     staleTime: 30_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('market_price_check_requests')
-        .select('stock_item_id')
-        .eq('status', 'open')
+      const { data, error } = await supabase.from('market_price_check_requests').select('stock_item_id').eq('status', 'open')
       if (error) throw error
-      return (data ?? []).map(r => r.stock_item_id as string)
+      return (data ?? []).map(r => r.stock_item_id as string | null).filter(Boolean) as string[]
     },
   })
   const openItemIds = useMemo(() => new Set(openRequests), [openRequests])
 
+  const categories = useMemo(() => [...new Set(prices.map(p => p.main_category).filter(Boolean) as string[])].sort(), [prices])
+
+  const stats = useMemo(() => {
+    const priced = prices.filter(p => p.display_price != null)
+    const count = (f: Freshness) => priced.filter(p => p.freshness === f).length
+    const monthAgo = now - 30 * 86_400_000
+    // The same thing kept as several stock items splits its price history.
+    const groups = new Map<string, number>()
+    for (const p of prices) { const k = norm(p.item_name); if (k) groups.set(k, (groups.get(k) ?? 0) + 1) }
+    const dupItems = [...groups.values()].filter(n => n > 1).reduce((s, n) => s + n, 0)
+    const movers = priced.filter(p => moveOf(p) != null)
+    return {
+      total: prices.length, priced: priced.length,
+      fresh: count('fresh'), aging: count('aging') + count('stale'), outdated: count('outdated'),
+      unpriced: prices.length - priced.length,
+      boughtMonth: priced.filter(p => p.last_bought_at && new Date(p.last_bought_at).getTime() >= monthAgo).length,
+      dupItems,
+      rises: movers.filter(p => moveOf(p)! > 0).sort((a, b) => moveOf(b)! - moveOf(a)!).slice(0, 5),
+      drops: movers.filter(p => moveOf(p)! < 0).sort((a, b) => moveOf(a)! - moveOf(b)!).slice(0, 5),
+    }
+  }, [prices, now])
+
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase()
     const arr = prices.filter(p => {
-      if (freshFilter.size > 0 && !freshFilter.has(p.freshness)) return false
+      if (coverage === 'priced' && p.display_price == null) return false
+      if (coverage === 'unpriced' && p.display_price != null) return false
+      if (category && p.main_category !== category) return false
+      if (freshFilter.size > 0 && !(p.display_price != null && freshFilter.has(p.freshness))) return false
       if (volFilter.size > 0 && !volFilter.has(p.volatility)) return false
       if (openReqOnly && !openItemIds.has(p.stock_item_id)) return false
-      if (ql) {
-        const hay = `${p.item_name} ${p.amharic_name ?? ''} ${p.item_code}`.toLowerCase()
-        if (!hay.includes(ql)) return false
-      }
+      if (ql && !`${p.item_name} ${p.amharic_name ?? ''} ${p.item_code} ${p.sub_category_name ?? ''} ${p.display_vendor_name ?? ''}`.toLowerCase().includes(ql)) return false
       return true
     })
+    const t = (s: string | null) => (s ? new Date(s).getTime() : 0)
     arr.sort((a, b) => {
-      if (sort === 'name')       return a.item_name.localeCompare(b.item_name)
-      if (sort === 'trend_desc') return (b.price_trend_90d_pct ?? -Infinity) - (a.price_trend_90d_pct ?? -Infinity)
-      if (sort === 'trend_asc')  return (a.price_trend_90d_pct ??  Infinity) - (b.price_trend_90d_pct ??  Infinity)
-      if (sort === 'price_desc') return (b.display_price ?? 0) - (a.display_price ?? 0)
-      // days_desc default
-      return (b.days_since_display_price ?? -1) - (a.days_since_display_price ?? -1)
+      switch (sort) {
+        case 'name': return a.item_name.localeCompare(b.item_name)
+        case 'recent': return t(b.display_price_sourced_at) - t(a.display_price_sourced_at)
+        case 'price_desc': return (b.display_price ?? 0) - (a.display_price ?? 0)
+        case 'rise': return (moveOf(b) ?? -Infinity) - (moveOf(a) ?? -Infinity)
+        case 'drop': return (moveOf(a) ?? Infinity) - (moveOf(b) ?? Infinity)
+        case 'bought': return b.buys_180d - a.buys_180d
+        default: return (b.days_since_display_price ?? -1) - (a.days_since_display_price ?? -1)
+      }
     })
     return arr
-  }, [prices, freshFilter, volFilter, openReqOnly, q, sort, openItemIds])
+  }, [prices, coverage, category, freshFilter, volFilter, openReqOnly, q, sort, openItemIds])
 
-  // Dashboard stats
-  const stats = useMemo(() => {
-    const withPrice = prices.filter(p => p.display_price != null)
-    const outdated  = prices.filter(p => p.freshness === 'outdated').length
-    const openReqs  = openItemIds.size
-    const movers    = withPrice
-      .filter(p => p.price_trend_90d_pct != null)
-      .map(p => ({ ...p, absPct: Math.abs(Number(p.price_trend_90d_pct)) }))
-    const gainers = [...withPrice].filter(p => (p.price_trend_90d_pct ?? 0) > 0)
-      .sort((a, b) => Number(b.price_trend_90d_pct) - Number(a.price_trend_90d_pct)).slice(0, 5)
-    const losers = [...withPrice].filter(p => (p.price_trend_90d_pct ?? 0) < 0)
-      .sort((a, b) => Number(a.price_trend_90d_pct) - Number(b.price_trend_90d_pct)).slice(0, 5)
-    return { tracked: withPrice.length, outdated, openReqs, moversCount: movers.length, gainers, losers }
-  }, [prices, openItemIds])
+  const freeFiltered = useMemo(() => {
+    const ql = q.trim().toLowerCase()
+    return freeRows.filter(r =>
+      (freshFilter.size === 0 || freshFilter.has(r.freshness))
+      && (!ql || `${r.name} ${r.sub_category_name ?? ''} ${r.vendor_name ?? ''} ${r.brand ?? ''}`.toLowerCase().includes(ql)))
+  }, [freeRows, q, freshFilter])
 
   function exportCsv() {
-    const rows = [['Item', 'Unit', 'Latest Price', 'Sourced At', 'Days Old', 'Freshness', 'Volatility', 'Trend 90d %', 'Source']]
-    for (const p of filtered) {
-      rows.push([
-        p.item_name, p.unit,
-        String(p.display_price ?? ''), p.display_price_sourced_at ?? '',
-        String(p.days_since_display_price ?? ''), p.freshness, p.volatility,
-        p.price_trend_90d_pct != null ? String(p.price_trend_90d_pct) : '',
-        p.display_price_source ?? '',
-      ])
-    }
+    const rows: string[][] = tab === 'stock'
+      ? [['Item', 'Code', 'Category', 'Unit', 'Latest price', 'Date', 'Days old', 'Freshness', 'Source', 'Vendor', 'Previous price', 'Change %', 'Low 6mo', 'High 6mo', 'Times bought 6mo'],
+        ...filtered.map(p => [p.item_name, p.item_code, p.main_category ?? '', p.unit, String(p.display_price ?? ''), p.display_price_sourced_at?.slice(0, 10) ?? '',
+          String(p.days_since_display_price ?? ''), p.display_price != null ? p.freshness : 'no price', sourceLabel(p.display_price_source), p.display_vendor_name ?? '',
+          String(p.previous_price ?? ''), String(p.change_vs_previous_pct ?? ''), String(p.min_180d ?? ''), String(p.max_180d ?? ''), String(p.buys_180d)])]
+      : [['Name', 'Kind', 'Unit', 'Latest price', 'Date', 'Days old', 'Vendor', 'Low', 'High', 'Times bought'],
+        ...freeFiltered.map(r => [r.name, r.is_sub_category_survey ? 'Category survey' : 'Not in stock list', r.unit, String(r.latest_price), r.sourced_at.slice(0, 10),
+          String(r.days_old), r.vendor_name ?? '', String(r.min_price), String(r.max_price), String(r.buys)])]
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a')
-    a.href = url; a.download = `market-trends-${new Date().toISOString().slice(0, 10)}.csv`
+    a.href = url; a.download = `market-prices-${tab}-${new Date().toISOString().slice(0, 10)}.csv`
     a.click(); URL.revokeObjectURL(url)
   }
 
+  const openStock = (p: LatestPriceRow) => setTarget({
+    kind: 'stock', stockItemId: p.stock_item_id, name: p.item_name, unit: p.unit,
+    sub: [p.item_code, p.sub_category_name].filter(Boolean).join(' · '),
+    freshness: p.display_price != null ? p.freshness : undefined, volatility: p.volatility,
+  })
+  const openFree = (r: FreeTextPriceRow) => setTarget({
+    kind: 'free', anchorKey: r.anchor_key, name: r.name, unit: r.unit,
+    sub: [r.is_sub_category_survey ? 'category survey' : r.sub_category_name, r.brand, r.specification].filter(Boolean).join(' · '), freshness: r.freshness,
+  })
+  const selectedStock = target?.kind === 'stock' ? prices.find(p => p.stock_item_id === target.stockItemId) : undefined
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <TrendingUp className="h-6 w-6 text-brand" /> Market Trends
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Every stock item's latest verified price, freshness signal, and 90-day movement. Verified quotes beat PO-derived prices while they're still fresh.
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-slate-100">
+            <TrendingUp className="h-6 w-6 text-brand" /> Market Trends
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+            What we pay for materials. Every approved purchase order adds its prices, and procurement adds verified quotes. Proformas and catalog costs are priced from here.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {isProcurement && (
+            <button onClick={() => setLogFor('any')} className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90">Log a price</button>
+          )}
+          <button onClick={() => setReqFor('any')} className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Ask for a price check</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <StatButton onClick={() => { setTab('stock'); setCoverage('priced'); setFreshFilter(new Set()) }}>
+          <Stat label="Stock items priced" value={`${stats.priced} of ${stats.total}`} sub={`${Math.round((stats.priced / Math.max(stats.total, 1)) * 100)}% have a price`} />
+        </StatButton>
+        <StatButton onClick={() => { setTab('stock'); setCoverage('priced'); setFreshFilter(new Set(['fresh'])) }}>
+          <Stat label="Fresh" value={stats.fresh} tone="green" sub="safe to quote from" />
+        </StatButton>
+        <StatButton onClick={() => { setTab('stock'); setCoverage('priced'); setFreshFilter(new Set(['aging', 'stale', 'outdated'])) }}>
+          <Stat label="Getting old" value={stats.aging + stats.outdated} tone={stats.aging + stats.outdated ? 'amber' : undefined}
+            sub={stats.outdated ? `${stats.outdated} outdated · check first` : 'check before quoting'} />
+        </StatButton>
+        <StatButton onClick={() => { setTab('stock'); setCoverage('unpriced'); setFreshFilter(new Set()) }}>
+          <Stat label="No price yet" value={stats.unpriced} tone={stats.unpriced ? 'red' : undefined} sub="never bought or quoted" />
+        </StatButton>
+        <StatButton onClick={() => { setTab('free'); setFreshFilter(new Set()) }}>
+          <Stat label="Not in the stock list" value={freeRows.length} sub="bought under a typed name" />
+        </StatButton>
+      </div>
+
+      {stats.dupItems > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/15 dark:text-amber-200 sm:flex-row sm:items-center">
+          <p className="min-w-0 flex-1">
+            <Copy className="mr-1.5 inline h-4 w-4 align-[-3px]" />
+            <b>{stats.dupItems} stock items</b> share a name with another one, so each purchase starts a new price history instead of adding to one. Merging them turns single prices into trends.
+          </p>
+          {canOpenStock && (
+            <Link to="/stock/duplicates" className="inline-flex shrink-0 items-center justify-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+              Merge duplicates <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+        </div>
+      )}
+
+      {(stats.rises.length > 0 || stats.drops.length > 0) ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <MoversCard title="Went up" icon={<TrendingUp className="h-4 w-4 text-red-500" />} rows={stats.rises} onOpen={openStock} />
+          <MoversCard title="Came down" icon={<TrendingDown className="h-4 w-4 text-emerald-500" />} rows={stats.drops} onOpen={openStock} />
+        </div>
+      ) : stats.priced > 0 && (
+        <p className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <Info className="h-3.5 w-3.5 shrink-0" /> No price changes to show yet: each item has one price so far. Rises and drops appear here once an item is bought or quoted again.
         </p>
-      </div>
+      )}
 
-      {/* Header stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Tracked (with price)" value={stats.tracked} icon={<Package className="h-4 w-4" />} />
-        <StatCard label="Outdated" value={stats.outdated} tone="red" icon={<AlertTriangle className="h-4 w-4" />} onClick={() => setFreshFilter(new Set(['outdated']))} />
-        <StatCard label="Open check requests" value={stats.openReqs} tone="amber" icon={<Clock className="h-4 w-4" />} onClick={() => setOpenReqOnly(true)} />
-        <StatCard label="Items with 90d trend" value={stats.moversCount} icon={<TrendingUp className="h-4 w-4" />} />
-      </div>
+      <div className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
+        <div className="border-b px-4 dark:border-slate-700">
+          <RecordTabs<Tab> active={tab} onChange={setTab} tabs={[
+            { id: 'stock', label: 'Stock items', count: filtered.length },
+            { id: 'free', label: 'Not in the stock list', count: freeFiltered.length },
+          ]} />
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <MoversCard title="Biggest gainers (90d)" icon={<TrendingUp className="h-4 w-4 text-red-500" />} rows={stats.gainers} onOpen={setSelected} />
-        <MoversCard title="Biggest drops (90d)"    icon={<TrendingDown className="h-4 w-4 text-emerald-500" />} rows={stats.losers}  onOpen={setSelected} />
-      </div>
-
-      {/* Filter strip */}
-      <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search item name, amharic name, or code…"
-              className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 focus:ring-2 focus:ring-brand outline-none" />
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[12rem] max-w-md flex-1">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder={tab === 'stock' ? 'Item, code, category or vendor…' : 'Name, category or vendor…'}
+                className="w-full rounded-md border py-1.5 pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+            </div>
+            {tab === 'stock' && (
+              <>
+                <div className="inline-flex rounded-md border p-0.5 text-xs dark:border-slate-600" role="group" aria-label="Which items">
+                  {([['priced', 'Priced'], ['unpriced', 'No price yet'], ['all', 'All']] as [Coverage, string][]).map(([c, label]) => (
+                    <button key={c} onClick={() => setCoverage(c)} aria-pressed={coverage === c}
+                      className={`rounded px-2.5 py-1 font-medium ${coverage === c ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>{label}</button>
+                  ))}
+                </div>
+                {categories.length > 1 && (
+                  <select value={category} onChange={e => setCategory(e.target.value)} aria-label="Category"
+                    className="rounded-md border px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    <option value="">All categories</option>
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+                <select value={sort} onChange={e => setSort(e.target.value as Sort)} aria-label="Sort"
+                  className="rounded-md border px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                  <option value="recent">Newest price first</option>
+                  <option value="days_desc">Oldest price first</option>
+                  <option value="bought">Bought most often</option>
+                  <option value="rise">Biggest rise</option>
+                  <option value="drop">Biggest drop</option>
+                  <option value="price_desc">Highest price</option>
+                  <option value="name">Name</option>
+                </select>
+              </>
+            )}
+            <button onClick={exportCsv} className="ml-auto flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
           </div>
-          <select value={sort} onChange={e => setSort(e.target.value as typeof sort)} className="text-sm rounded-md border dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 px-2 py-1.5">
-            <option value="days_desc">Oldest price first</option>
-            <option value="name">Name</option>
-            <option value="trend_desc">Biggest gainers</option>
-            <option value="trend_asc">Biggest drops</option>
-            <option value="price_desc">Highest price</option>
-          </select>
-          <button onClick={exportCsv} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Download className="h-3.5 w-3.5" /> Export CSV
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {(['fresh', 'aging', 'stale', 'outdated'] as Freshness[]).map(f => (
-            <Chip key={f} label={FRESHNESS_LABEL[f]} active={freshFilter.has(f)} onClick={() => setFreshFilter(toggleSet(freshFilter, f))} tone={f} />
-          ))}
-          <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
-          {(['volatile', 'moderate', 'stable'] as Volatility[]).map(v => (
-            <Chip key={v} label={v} active={volFilter.has(v)} onClick={() => setVolFilter(toggleSet(volFilter, v))} />
-          ))}
-          <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
-          <Chip label="With open check request" active={openReqOnly} onClick={() => setOpenReqOnly(v => !v)} />
-        </div>
-      </div>
-
-      {/* Main table */}
-      <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
-        {isLoading ? (
-          <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">No items match your filters.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-900/40 border-b dark:border-slate-700">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium text-slate-500">Item</th>
-                  <th className="text-left px-2 py-2 font-medium text-slate-500">Unit</th>
-                  <th className="text-right px-2 py-2 font-medium text-slate-500">Latest Price</th>
-                  <th className="text-left px-2 py-2 font-medium text-slate-500">Days Old</th>
-                  <th className="text-left px-2 py-2 font-medium text-slate-500">Freshness</th>
-                  <th className="text-left px-2 py-2 font-medium text-slate-500">90d Trend</th>
-                  <th className="text-left px-2 py-2 font-medium text-slate-500">Source</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y dark:divide-slate-700">
-                {filtered.map(p => (
-                  <tr key={p.stock_item_id} onClick={() => setSelected(p)} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 cursor-pointer">
-                    <td className="px-4 py-2">
-                      <div className="text-slate-700 dark:text-slate-200 font-medium truncate max-w-[280px]">{p.item_name}</div>
-                      {p.amharic_name && <div className="text-[10px] text-slate-400">{p.amharic_name}</div>}
-                    </td>
-                    <td className="px-2 py-2 text-xs text-slate-500">{p.unit}</td>
-                    <td className="px-2 py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">
-                      {p.display_price != null ? formatCurrency(p.display_price) : <span className="text-slate-300">—</span>}
-                    </td>
-                    <td className="px-2 py-2 text-xs text-slate-500">
-                      {p.days_since_display_price != null ? `${p.days_since_display_price}d` : '—'}
-                      {openItemIds.has(p.stock_item_id) && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500" title="Open check request" />}
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className={`inline-block text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${FRESHNESS_CLASS[p.freshness]}`}>
-                        {FRESHNESS_LABEL[p.freshness]}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-xs tabular-nums">
-                      {p.price_trend_90d_pct == null ? <span className="text-slate-300">—</span> :
-                        <span className={Number(p.price_trend_90d_pct) > 0 ? 'text-red-600' : 'text-emerald-600'}>
-                          {Number(p.price_trend_90d_pct) > 0 ? '↑' : '↓'} {Math.abs(Number(p.price_trend_90d_pct)).toFixed(1)}%
-                        </span>}
-                    </td>
-                    <td className="px-2 py-2 text-[11px] text-slate-500 capitalize">{(p.display_price_source ?? '—').replace(/_/g, ' ')}</td>
-                  </tr>
+          <div className="flex flex-wrap gap-1.5">
+            {(['fresh', 'aging', 'stale', 'outdated'] as Freshness[]).map(f => (
+              <Chip key={f} label={FRESHNESS_LABEL[f]} active={freshFilter.has(f)} onClick={() => setFreshFilter(toggleSet(freshFilter, f))} tone={f} />
+            ))}
+            {tab === 'stock' && (
+              <>
+                <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />
+                {(['volatile', 'moderate', 'stable'] as Volatility[]).map(v => (
+                  <Chip key={v} label={v} active={volFilter.has(v)} onClick={() => setVolFilter(toggleSet(volFilter, v))} />
                 ))}
-              </tbody>
-            </table>
+                <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />
+                <Chip label={`Check requested${openItemIds.size ? ` (${openItemIds.size})` : ''}`} active={openReqOnly} onClick={() => setOpenReqOnly(v => !v)} />
+              </>
+            )}
           </div>
+        </div>
+
+        {tab === 'stock' ? (
+          isLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading…</p>
+            : filtered.length === 0 ? <p className="py-12 text-center text-sm text-slate-400">No items match.</p>
+            : (
+              <div className="overflow-x-auto border-t dark:border-slate-700">
+                <table className="w-full min-w-[860px] text-sm">
+                  <thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium">Item</th>
+                      <th className="px-2 py-2 text-right font-medium">Latest price</th>
+                      <th className="px-2 py-2 text-left font-medium">Change</th>
+                      <th className="px-2 py-2 text-left font-medium">6-month range</th>
+                      <th className="px-2 py-2 text-right font-medium" title="Purchase orders in the last 6 months">Bought</th>
+                      <th className="px-2 py-2 text-left font-medium">From</th>
+                      <th className="px-2 py-2 text-left font-medium">Age</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y dark:divide-slate-700">
+                    {filtered.map(p => (
+                      <tr key={p.stock_item_id} onClick={() => openStock(p)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                        <td className="px-4 py-2">
+                          <div className="max-w-[280px] truncate font-medium text-slate-700 dark:text-slate-200">
+                            {p.item_name}
+                            {openItemIds.has(p.stock_item_id) && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" title="Price check requested" />}
+                          </div>
+                          <div className="max-w-[280px] truncate text-[11px] text-slate-400">{[p.item_code, p.sub_category_name ?? p.main_category].filter(Boolean).join(' · ')}</div>
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right">
+                          {p.display_price != null ? (
+                            <>
+                              <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(p.display_price)}</span>
+                              <span className="block text-[10px] text-slate-400">per {p.unit}</span>
+                            </>
+                          ) : <span className="text-xs text-slate-300 dark:text-slate-600">no price</span>}
+                        </td>
+                        <td className="px-2 py-2"><ChangeBadge pct={moveOf(p)} title={p.previous_price != null ? `Previous ${formatCurrency(p.previous_price)}` : undefined} /></td>
+                        <td className="px-2 py-2"><PriceRange min={p.min_180d} max={p.max_180d} latest={p.display_price} /></td>
+                        <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">{p.buys_180d || '—'}</td>
+                        <td className="px-2 py-2">
+                          <div className="max-w-[180px] truncate text-xs text-slate-600 dark:text-slate-300">{p.display_vendor_name ?? '—'}</div>
+                          <div className="text-[10px] text-slate-400">{p.display_price != null ? sourceLabel(p.display_price_source) : ''}</div>
+                        </td>
+                        <td className="px-2 py-2">{p.display_price != null ? <FreshnessPill freshness={p.freshness} days={p.days_since_display_price} /> : null}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+        ) : (
+          freeLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading…</p>
+            : freeFiltered.length === 0 ? <p className="py-12 text-center text-sm text-slate-400">Nothing here.</p>
+            : (
+              <>
+                <p className="border-t px-4 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  Bought or quoted under a typed name rather than a stock item. They still count in the proforma's price guide{canOpenStock ? <> — <Link to="/stock/pending-setup" className="text-brand hover:underline">set the regular ones up as stock items</Link> to track them properly</> : ''}.
+                </p>
+                <div className="overflow-x-auto border-t dark:border-slate-700">
+                  <table className="w-full min-w-[760px] text-sm">
+                    <thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/40">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium">Name</th>
+                        <th className="px-2 py-2 text-right font-medium">Latest price</th>
+                        <th className="px-2 py-2 text-left font-medium">Change</th>
+                        <th className="px-2 py-2 text-left font-medium">Range</th>
+                        <th className="px-2 py-2 text-right font-medium">Prices</th>
+                        <th className="px-2 py-2 text-left font-medium">From</th>
+                        <th className="px-2 py-2 text-left font-medium">Age</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-slate-700">
+                      {freeFiltered.map(r => (
+                        <tr key={`${r.anchor_key}|${r.unit}`} onClick={() => openFree(r)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                          <td className="px-4 py-2">
+                            <div className="max-w-[280px] truncate font-medium text-slate-700 dark:text-slate-200">{r.name}</div>
+                            <div className="max-w-[280px] truncate text-[11px] text-slate-400">
+                              {[r.is_sub_category_survey ? 'category survey' : r.sub_category_name, r.brand, r.specification].filter(Boolean).join(' · ') || 'typed name'}
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-2 text-right">
+                            <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.latest_price, r.currency || 'ETB')}</span>
+                            <span className="block text-[10px] text-slate-400">per {r.unit}</span>
+                          </td>
+                          <td className="px-2 py-2"><ChangeBadge pct={r.change_vs_previous_pct} /></td>
+                          <td className="px-2 py-2"><PriceRange min={r.min_price} max={r.max_price} latest={r.latest_price} /></td>
+                          <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">{r.prices}</td>
+                          <td className="px-2 py-2">
+                            <div className="max-w-[180px] truncate text-xs text-slate-600 dark:text-slate-300">{r.vendor_name ?? '—'}</div>
+                            <div className="text-[10px] text-slate-400">{sourceLabel(r.source)}</div>
+                          </td>
+                          <td className="px-2 py-2"><FreshnessPill freshness={r.freshness} days={r.days_old} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )
         )}
       </div>
 
-      {/* Slide-out detail panel */}
-      {selected && (
-        <ItemDetailPanel
-          item={selected}
-          onClose={() => setSelected(null)}
-          isProcurement={isProcurement}
-          onLogVerified={() => setLogOpen(true)}
-          onRequestCheck={() => setReqOpen(true)}
-        />
+      {target && (
+        <PriceDetailDrawer target={target} onClose={() => setTarget(null)} canOpenStock={canOpenStock}
+          actions={target.kind === 'stock' ? (
+            <>
+              {isProcurement && (
+                <button onClick={() => setLogFor({ id: target.stockItemId, item_name: target.name, unit: target.unit })}
+                  className="flex-1 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90">Log a verified price</button>
+              )}
+              <button onClick={() => setReqFor({ id: target.stockItemId, item_name: target.name })}
+                disabled={openItemIds.has(target.stockItemId)}
+                className="flex-1 rounded-md border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+                {openItemIds.has(target.stockItemId) ? 'Check already requested' : 'Ask for a price check'}
+              </button>
+            </>
+          ) : undefined}
+          footer={selectedStock && selectedStock.display_price == null ? (
+            <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+              This item has never been on an approved purchase order or quoted. Ask procurement for a price check before you quote with it.
+            </p>
+          ) : undefined} />
       )}
 
-      {logOpen && selected && (
-        <LogVerifiedPriceModal stockItem={{ id: selected.stock_item_id, item_name: selected.item_name, unit: selected.unit }} onClose={() => setLogOpen(false)} />
-      )}
-      {reqOpen && selected && (
-        <RequestPriceCheckModal stockItem={{ id: selected.stock_item_id, item_name: selected.item_name }} onClose={() => setReqOpen(false)} />
-      )}
-
-      <SubCategorySurveys isProcurement={isProcurement} />
+      {logFor && <LogVerifiedPriceModal stockItem={logFor === 'any' ? undefined : logFor} onClose={() => setLogFor(null)} />}
+      {reqFor && <RequestPriceCheckModal stockItem={reqFor === 'any' ? undefined : reqFor} onClose={() => setReqFor(null)} />}
     </div>
   )
 }
 
-// Category-level and free-text quotes (rows without a stock_item_id). Shows
-// the latest quote per (sub_category, item_description) pair so a repeated
-// survey of the same category updates in place instead of stacking.
-function SubCategorySurveys({ isProcurement }: { isProcurement: boolean }) {
-  const { data: rows = [], isLoading } = useSubCategoryLatestPrices()
-  const [logOpen, setLogOpen] = useState(false)
-  const [reqOpen, setReqOpen] = useState(false)
-
-  return (
-    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
-      <div className="px-4 py-3 border-b dark:border-slate-700 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Sub-category surveys & new-item quotes</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">Category-level prices and free-text quotes for items not in the stock catalog.</p>
-        </div>
-        <div className="flex gap-2">
-          {isProcurement && <button onClick={() => setLogOpen(true)} className="text-xs rounded-md bg-brand text-white px-2.5 py-1 hover:bg-brand/90">Log category price</button>}
-          <button onClick={() => setReqOpen(true)} className="text-xs rounded-md border dark:border-slate-600 text-slate-600 dark:text-slate-300 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-700">Request survey</button>
-        </div>
-      </div>
-      {isLoading ? (
-        <div className="py-8 text-center text-sm text-slate-400">Loading…</div>
-      ) : rows.length === 0 ? (
-        <div className="py-8 text-center text-sm text-slate-400">No sub-category surveys yet.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900/40 border-b dark:border-slate-700">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium text-slate-500">Anchor</th>
-                <th className="text-left px-2 py-2 font-medium text-slate-500">Unit</th>
-                <th className="text-right px-2 py-2 font-medium text-slate-500">Latest Price</th>
-                <th className="text-left px-2 py-2 font-medium text-slate-500">Vendor</th>
-                <th className="text-left px-2 py-2 font-medium text-slate-500">When</th>
-                <th className="text-left px-2 py-2 font-medium text-slate-500">Source</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y dark:divide-slate-700">
-              {rows.map(r => (
-                <tr key={r.id}>
-                  <td className="px-4 py-2 text-slate-700 dark:text-slate-200">
-                    {r.item_description
-                      ? <><span className="font-medium">{r.item_description}</span><span className="block text-[10px] text-slate-400">new item · {r.sub_category_name}</span></>
-                      : <><span className="font-medium">{r.sub_category_name}</span><span className="block text-[10px] text-slate-400">sub-category survey</span></>
-                    }
-                    {(r.brand || r.specification) && (
-                      <span className="block text-[10px] text-brand mt-0.5">{[r.brand, r.specification].filter(Boolean).join(' · ')}</span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-500">{r.unit}</td>
-                  <td className="px-2 py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">
-                    {r.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {r.currency}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-slate-500">{r.vendor_name ?? '—'}</td>
-                  <td className="px-2 py-2 text-xs text-slate-500">{r.days_since_sourced}d ago</td>
-                  <td className="px-2 py-2 text-[11px] text-slate-500 capitalize">{(r.source ?? '—').replace(/_/g, ' ')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {logOpen && <LogVerifiedPriceModal onClose={() => setLogOpen(false)} />}
-      {reqOpen && <RequestPriceCheckModal onClose={() => setReqOpen(false)} />}
-    </div>
-  )
+/** Change since the previous price; the 90-day change when that's all there is. */
+function moveOf(p: LatestPriceRow): number | null {
+  const v = p.change_vs_previous_pct ?? p.price_trend_90d_pct
+  return v == null ? null : Number(v)
 }
 
-function StatCard({ label, value, tone, icon, onClick }: { label: string; value: number; tone?: 'red' | 'amber'; icon: React.ReactNode; onClick?: () => void }) {
-  const cls = tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : 'text-slate-700 dark:text-slate-200'
-  return (
-    <button onClick={onClick} disabled={!onClick} className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4 text-left disabled:cursor-default hover:shadow-sm transition-shadow">
-      <div className="flex items-center gap-2 text-slate-400 text-[11px] uppercase tracking-wide font-medium">{icon} {label}</div>
-      <div className={`text-2xl font-bold mt-1 tabular-nums ${cls}`}>{value}</div>
-    </button>
-  )
+function StatButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return <button onClick={onClick} className="rounded-xl text-left transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">{children}</button>
 }
 
 function MoversCard({ title, icon, rows, onOpen }: { title: string; icon: React.ReactNode; rows: LatestPriceRow[]; onOpen: (r: LatestPriceRow) => void }) {
   return (
-    <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4">
-      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">{icon}{title}</h3>
-      {rows.length === 0 ? <p className="text-xs text-slate-400 py-2">No movement data yet.</p> : (
+    <div className="rounded-xl border bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{icon}{title}</h3>
+      {rows.length === 0 ? <p className="py-2 text-xs text-slate-400">Nothing yet.</p> : (
         <ul className="divide-y dark:divide-slate-700">
           {rows.map(r => (
-            <li key={r.stock_item_id} className="py-1.5 flex items-center justify-between text-sm">
-              <button onClick={() => onOpen(r)} className="text-slate-700 dark:text-slate-200 hover:text-brand truncate max-w-[220px] text-left">{r.item_name}</button>
-              <span className={`tabular-nums text-xs ${Number(r.price_trend_90d_pct) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                {Number(r.price_trend_90d_pct) > 0 ? '↑' : '↓'} {Math.abs(Number(r.price_trend_90d_pct)).toFixed(1)}%
-              </span>
+            <li key={r.stock_item_id}>
+              <button onClick={() => onOpen(r)} className="flex w-full items-center justify-between gap-3 py-1.5 text-left text-sm hover:text-brand">
+                <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">{r.item_name}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs tabular-nums text-slate-500">{formatCurrency(r.previous_price)} → {formatCurrency(r.display_price)}</span>
+                  <ChangeBadge pct={moveOf(r)} />
+                </span>
+              </button>
             </li>
           ))}
         </ul>
@@ -331,146 +430,14 @@ function MoversCard({ title, icon, rows, onOpen }: { title: string; icon: React.
 }
 
 function Chip({ label, active, onClick, tone }: { label: string; active: boolean; onClick: () => void; tone?: Freshness }) {
-  const activeCls = tone && FRESHNESS_CLASS[tone]
-    ? FRESHNESS_CLASS[tone]
-    : 'bg-brand text-white border-brand'
+  const activeCls = tone ? FRESHNESS_CLASS[tone] : 'bg-brand text-white border-brand'
   return (
-    <button onClick={onClick} className={`text-xs px-2.5 py-1 rounded-full border transition-colors capitalize ${
-      active ? activeCls : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
+    <button onClick={onClick} aria-pressed={active} className={`rounded-full border px-2.5 py-1 text-xs capitalize transition-colors ${
+      active ? activeCls : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
     }`}>{label}</button>
   )
 }
 
 function toggleSet<T>(s: Set<T>, v: T): Set<T> {
   const out = new Set(s); if (out.has(v)) out.delete(v); else out.add(v); return out
-}
-
-function ItemDetailPanel({ item, onClose, isProcurement, onLogVerified, onRequestCheck }: {
-  item: LatestPriceRow; onClose: () => void; isProcurement: boolean;
-  onLogVerified: () => void; onRequestCheck: () => void;
-}) {
-  const { data: history = [] } = usePriceHistory(item.stock_item_id)
-  const { data: vendors = [] } = useVendorHistory(item.stock_item_id)
-
-  // Cheap sparkline — last 12 points, no external library. SVG polyline.
-  const chartPoints = useMemo(() => {
-    const pts = [...history].reverse().slice(-24)
-    if (pts.length < 2) return null
-    const min = Math.min(...pts.map(p => p.unit_price))
-    const max = Math.max(...pts.map(p => p.unit_price))
-    const range = max - min || 1
-    const w = 320, h = 80, pad = 4
-    const step = (w - pad * 2) / Math.max(1, pts.length - 1)
-    return pts.map((p, i) => `${pad + i * step},${pad + (h - pad * 2) * (1 - (p.unit_price - min) / range)}`).join(' ')
-  }, [history])
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <div className="w-full max-w-xl h-full overflow-y-auto bg-white dark:bg-slate-800 shadow-2xl border-l dark:border-slate-700" onClick={e => e.stopPropagation()}>
-        <div className="p-5 border-b dark:border-slate-700 flex items-start justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">{item.item_name}</h3>
-            {item.amharic_name && <p className="text-xs text-slate-500 mt-0.5">{item.amharic_name}</p>}
-            <p className="text-[11px] text-slate-400 mt-1">{item.item_code} · {item.unit} · volatility: <span className="capitalize">{item.volatility}</span></p>
-          </div>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <div className="rounded-xl border dark:border-slate-700 p-4">
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">Current display price</p>
-            <div className="flex items-baseline gap-3 mt-1 flex-wrap">
-              <span className="text-3xl font-bold text-slate-800 dark:text-slate-100 tabular-nums">
-                {item.display_price != null ? formatCurrency(item.display_price) : '—'}
-              </span>
-              <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${FRESHNESS_CLASS[item.freshness]}`}>{FRESHNESS_LABEL[item.freshness]}</span>
-              {item.days_since_display_price != null && <span className="text-xs text-slate-500">{item.days_since_display_price} days old</span>}
-              {item.price_trend_90d_pct != null && (
-                <span className={`text-xs tabular-nums ${Number(item.price_trend_90d_pct) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                  {Number(item.price_trend_90d_pct) > 0 ? '↑' : '↓'} {Math.abs(Number(item.price_trend_90d_pct)).toFixed(1)}% vs 90d
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1 capitalize">Source: {(item.display_price_source ?? '—').replace(/_/g, ' ')}</p>
-          </div>
-
-          {chartPoints && (
-            <div className="rounded-xl border dark:border-slate-700 p-4">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2">Last 24 data points</p>
-              <svg viewBox="0 0 320 80" className="w-full h-20">
-                <polyline fill="none" stroke="currentColor" strokeWidth="2" points={chartPoints} className="text-brand" />
-              </svg>
-            </div>
-          )}
-
-          <div className="rounded-xl border dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 text-xs font-semibold text-slate-700 dark:text-slate-200 border-b dark:border-slate-700">
-              Vendors ({vendors.length})
-            </div>
-            {vendors.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">No vendor history yet.</p>
-            ) : (
-              <table className="w-full text-xs">
-                <thead className="bg-white dark:bg-slate-800 border-b dark:border-slate-700">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium text-slate-500">Vendor</th>
-                    <th className="text-right px-3 py-2 font-medium text-slate-500">Latest</th>
-                    <th className="text-right px-3 py-2 font-medium text-slate-500">Avg</th>
-                    <th className="text-right px-3 py-2 font-medium text-slate-500">Quotes</th>
-                    <th className="text-right px-3 py-2 font-medium text-slate-500">Last</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y dark:divide-slate-700">
-                  {vendors.map(v => (
-                    <tr key={v.vendor_id}>
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{v.vendor_name ?? '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v.latest_price)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-500">{formatCurrency(v.average_price)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{v.quotes_count}</td>
-                      <td className="px-3 py-2 text-right text-slate-500">{formatDate(v.last_sourced_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div className="rounded-xl border dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 text-xs font-semibold text-slate-700 dark:text-slate-200 border-b dark:border-slate-700">
-              History ({history.length})
-            </div>
-            {history.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">No prices logged yet.</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <tbody className="divide-y dark:divide-slate-700">
-                    {history.map(h => (
-                      <tr key={h.id}>
-                        <td className="px-3 py-2 text-slate-500">{formatDate(h.sourced_at)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">{formatCurrency(h.unit_price)}</td>
-                        <td className="px-3 py-2 text-[10px] capitalize text-slate-500">{h.source.replace(/_/g, ' ')}</td>
-                        <td className="px-3 py-2 text-slate-500 truncate max-w-[160px]">{h.vendor_name ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            {isProcurement && (
-              <button onClick={onLogVerified} className="flex-1 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90">
-                Log verified price
-              </button>
-            )}
-            <button onClick={onRequestCheck} className="flex-1 rounded-md border dark:border-slate-600 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-              Request check
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }

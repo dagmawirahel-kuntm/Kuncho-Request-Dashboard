@@ -24,7 +24,33 @@ export interface LatestPriceRow {
   days_since_display_price: number | null
   freshness: Freshness
   price_trend_90d_pct: number | null
+  // Migration 367
+  main_category: string | null
+  sub_category_name: string | null
+  display_price_id: string | null
+  display_vendor_name: string | null
+  previous_price: number | null
+  previous_sourced_at: string | null
+  change_vs_previous_pct: number | null
+  prices_180d: number
+  buys_180d: number
+  min_180d: number | null
+  max_180d: number | null
+  avg_180d: number | null
+  vendors_180d: number
+  last_bought_at: string | null
 }
+
+export type PriceSource = 'purchase' | 'po_entry' | 'verified_quote' | 'check_request_response'
+
+/** How each kind of price reads to a person. */
+export const SOURCE_LABEL: Record<string, string> = {
+  purchase: 'Purchase order',
+  po_entry: 'Request estimate',
+  verified_quote: 'Verified quote',
+  check_request_response: 'Price check',
+}
+export const sourceLabel = (s: string | null | undefined) => (s ? SOURCE_LABEL[s] ?? s.replace(/_/g, ' ') : '—')
 
 // Latest price + freshness view — the primary UI surface for Market Trends
 // and the order-form price suggestion. Everything computed on read (spec §31).
@@ -62,7 +88,7 @@ export interface HistoryRow {
   unit_price: number
   currency: string
   unit: string
-  source: 'po_entry' | 'verified_quote' | 'check_request_response'
+  source: PriceSource
   vendor_id: string | null
   vendor_name: string | null
   source_reference: string | null
@@ -70,6 +96,105 @@ export interface HistoryRow {
   sourced_by_staff_id: string | null
   sourced_by_name: string | null
   notes: string | null
+  /** The purchase order the price came from (367). */
+  bundle_id: string | null
+  /** Priced in a different unit from the stock item, so left out of its latest price. */
+  other_unit: boolean
+}
+
+/** Every price of something bought or quoted without a stock item. */
+export function useFreeTextHistory(anchorKey: string | undefined) {
+  return useQuery({
+    enabled: !!anchorKey,
+    queryKey: ['market-free-text-history', anchorKey],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('market_price_history_free_text', { p_anchor_key: anchorKey! })
+      if (error) throw error
+      return (data ?? []) as HistoryRow[]
+    },
+  })
+}
+
+export interface FreeTextPriceRow {
+  latest_id: string
+  anchor_key: string
+  name: string
+  is_sub_category_survey: boolean
+  sub_category_id: string | null
+  sub_category_name: string | null
+  brand: string | null
+  specification: string | null
+  unit: string
+  latest_price: number
+  currency: string
+  sourced_at: string
+  source: string
+  vendor_id: string | null
+  vendor_name: string | null
+  source_reference: string | null
+  prices: number
+  buys: number
+  min_price: number
+  max_price: number
+  avg_price: number
+  vendors: number
+  first_at: string
+  previous_price: number | null
+  change_vs_previous_pct: number | null
+  days_old: number
+  freshness: Freshness
+}
+
+/** Prices with no stock item: bought under a typed name, or a category survey (367). */
+export function useFreeTextPrices() {
+  return useQuery({
+    queryKey: ['market-free-text-prices'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_market_free_text_prices').select('*').order('sourced_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as FreeTextPriceRow[]
+    },
+  })
+}
+
+export interface MarketSearchRow {
+  kind: 'stock' | 'free'
+  stock_item_id: string | null
+  anchor_key: string | null
+  price_id: string | null
+  name: string
+  detail: string | null
+  unit: string
+  latest_price: number
+  sourced_at: string
+  source: string
+  vendor_name: string | null
+  source_reference: string | null
+  freshness: Freshness
+  days_old: number
+  prices: number
+  min_price: number | null
+  max_price: number | null
+  change_pct: number | null
+  score: number
+}
+
+/** One search over every price we know, stock items and typed names alike. */
+export function useMarketSearch(q: string, limit = 12) {
+  const term = q.trim()
+  return useQuery({
+    enabled: term.length >= 2,
+    queryKey: ['market-search', term.toLowerCase(), limit],
+    staleTime: 60_000,
+    placeholderData: prev => prev,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('market_price_search', { p_q: term, p_limit: limit })
+      if (error) throw error
+      return (data ?? []) as MarketSearchRow[]
+    },
+  })
 }
 
 export function usePriceHistory(stockItemId: string | undefined, fromDate?: string, toDate?: string) {
@@ -152,6 +277,8 @@ export function useLogVerifiedPrice() {
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['market-latest-prices'] })
+      qc.invalidateQueries({ queryKey: ['market-free-text-prices'] })
+      qc.invalidateQueries({ queryKey: ['market-search'] })
       if (vars.stock_item_id) {
         qc.invalidateQueries({ queryKey: ['market-latest-price', vars.stock_item_id] })
         qc.invalidateQueries({ queryKey: ['market-price-history', vars.stock_item_id] })
@@ -313,6 +440,9 @@ export function useFulfillPriceCheck() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['market-check-requests'] })
       qc.invalidateQueries({ queryKey: ['market-latest-prices'] })
+      qc.invalidateQueries({ queryKey: ['market-latest-price'] })
+      qc.invalidateQueries({ queryKey: ['market-free-text-prices'] })
+      qc.invalidateQueries({ queryKey: ['market-search'] })
       qc.invalidateQueries({ queryKey: ['sub-category-latest-price'] })
     },
   })
