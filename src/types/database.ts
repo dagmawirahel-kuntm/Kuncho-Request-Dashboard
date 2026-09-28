@@ -26,7 +26,7 @@ export type CashAdvanceApprovalStatus = 'pending' | 'manager_approved' | 'financ
 export type PayrollApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleApprovalStatus = 'pending' | 'manager_approved' | 'finance_approved' | 'rejected'
 export type SaleLifecycleStatus = 'Draft' | 'Invoiced' | 'Paid' | 'Cancelled' | 'Refunded'
-export type ProformaStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'expired'
+export type ProformaStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'converted' | 'expired' | 'superseded'
 export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered'
 
 export interface Database {
@@ -837,8 +837,21 @@ export interface Proforma {
   created_by: string | null
   created_at: string
   updated_at: string
+  // Migration 368
+  opportunity_id?: string | null
+  scope?: string | null
+  exclusions?: string | null
+  version?: number
+  parent_proforma_id?: string | null
+  root_proforma_id?: string | null
+  sent_at?: string | null
+  sent_to?: string | null
+  accepted_at?: string | null
+  declined_at?: string | null
+  decline_reason?: string | null
+  valid_until?: string | null
 }
-export type ProformaInsert = Omit<Proforma, 'id' | 'created_at' | 'updated_at'>
+export type ProformaInsert = Omit<Proforma, 'id' | 'created_at' | 'updated_at' | 'valid_until'>
 
 // Migration 340: what the client is billed for is a share of a proforma (or
 // contract), asked for in a payment request; the invoice is raised from the

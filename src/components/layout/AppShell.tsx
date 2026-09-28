@@ -1,4 +1,5 @@
 import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
+import { useCompanyProfile } from '@/lib/companyProfile'
 import { useEffect, useMemo, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { GlobalSearch } from './GlobalSearch'
@@ -81,6 +82,8 @@ const THEME_ORDER: Theme[] = ['light', 'dark', 'gold']
 
 export function AppShell() {
   const { profile, role, signOut } = useAuth()
+  // The company's identity for every printed document (migration 368).
+  useCompanyProfile()
   const location = useLocation()
   const segments = location.pathname.split('/').filter(Boolean)
 

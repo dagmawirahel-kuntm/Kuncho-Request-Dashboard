@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Printer, Save, ReceiptText, Ban, CheckCircle2 } from 'lucide-react'
@@ -7,7 +7,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { RequestStatus } from '@/components/shared/ClientPaymentRequests'
-import { documentBaseCss, renderLetterhead, COMPANY_NAME, COMPANY_ADDRESS, BRAND_NAVY } from '@/lib/documentTheme'
+import { documentBaseCss, renderLetterhead, renderFooter, renderBankAccounts, renderSignoff, companyName, esc, escLines, docDate, BRAND_NAVY, type CompanySignoff, type VerifyInfo } from '@/lib/documentTheme'
+import { amountInWords } from '@/lib/amountInWords'
+import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
+import { printHtml } from '@/lib/documents/issue'
+import { DocumentActions } from '@/components/documents/DocumentActions'
 import type { Client, ClientPaymentRequest, PaymentMilestoneKind } from '@/types/database'
 
 const inputCls =
@@ -51,23 +55,28 @@ function buildHtml(p: {
   accountNumber: string
   accountName: string
   notes: string
+  signoff?: CompanySignoff | null
+  verify?: VerifyInfo | null
+  preview?: boolean
+  draft?: boolean
 }): string {
   const isAdvance = p.kind === 'advance'
   const share = p.title || KIND_LABEL[p.kind]
 
   const detailRows = [
-    `<tr><td class="l">Project</td><td>${p.projectName || '—'}</td></tr>`,
-    p.contractNumber ? `<tr><td class="l">Contract Number</td><td>${p.contractNumber}</td></tr>` : '',
-    `<tr><td class="l">${p.basisLabel}</td><td>${fmt(p.basisAmount)}</td></tr>`,
-    `<tr><td class="l">${share}${p.percent ? ` (${pctText(p.percent)})` : ''}</td><td>${fmt(p.amount)}</td></tr>`,
+    `<tr><td class="l">Project</td><td>${esc(p.projectName || '—')}</td></tr>`,
+    p.contractNumber ? `<tr><td class="l">Contract Number</td><td>${esc(p.contractNumber)}</td></tr>` : '',
+    `<tr><td class="l">${esc(p.basisLabel)}</td><td>${fmt(p.basisAmount)}</td></tr>`,
+    `<tr><td class="l">${esc(share)}${p.percent ? ` (${pctText(p.percent)})` : ''}</td><td>${fmt(p.amount)}</td></tr>`,
     p.previouslyPaid > 0 ? `<tr><td class="l">Previously Paid</td><td>${fmt(p.previouslyPaid)}</td></tr>` : '',
     `<tr class="g"><td class="l">Amount Requested</td><td>${fmt(p.amount)}</td></tr>`,
+    amountInWords(p.amount) ? `<tr><td class="l">In words</td><td><i>${esc(amountInWords(p.amount))}</i></td></tr>` : '',
   ].filter(Boolean).join('')
 
   const bankRows = (p.bankName || p.accountNumber) ? [
-    p.bankName ? `<tr><td class="l">Bank Name</td><td>${p.bankName}</td></tr>` : '',
-    `<tr><td class="l">Account Name</td><td>${p.accountName}</td></tr>`,
-    p.accountNumber ? `<tr><td class="l">Account Number</td><td>${p.accountNumber}</td></tr>` : '',
+    p.bankName ? `<tr><td class="l">Bank Name</td><td>${esc(p.bankName)}</td></tr>` : '',
+    `<tr><td class="l">Account Name</td><td>${esc(p.accountName)}</td></tr>`,
+    p.accountNumber ? `<tr><td class="l">Account Number</td><td>${esc(p.accountNumber)}</td></tr>` : '',
   ].filter(Boolean).join('') : ''
 
   const subject = `Payment Request — ${share}${p.projectName ? ` for ${p.projectName}` : ''}${p.contractNumber ? ` (${p.contractNumber})` : ''}`
@@ -82,10 +91,12 @@ function buildHtml(p: {
 <html>
 <head>
 <meta charset="UTF-8">
+<title>${esc(p.refNum || 'Payment request')} - ${esc(companyName())}</title>
 <style>
 ${documentBaseCss}
-html{zoom:0.58}
-body{padding:40px 52px;color:#111;font-size:11pt;line-height:1.55;min-height:1123px}
+${p.preview ? 'html{zoom:0.58}' : ''}
+@page{margin:14mm 12mm 16mm}
+body{padding:${p.preview ? '40px 52px' : '0'};color:#111;font-size:11pt;line-height:1.55}
 .sl{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
 .to-name{font-size:11.5pt;font-weight:700}
 .to-sub{font-size:9.5pt;color:#555;line-height:1.6}
@@ -101,35 +112,33 @@ tr.g td{background:${BRAND_NAVY};color:#fff;font-weight:700;font-size:10pt}
 .sn{font-weight:700}
 .so{color:#666}
 .footer{position:fixed;bottom:28px;left:52px;right:52px;font-size:7.5pt;color:#bbb;border-top:1px solid #e0e0e0;padding-top:5px}
-@media print{html{zoom:1}body{padding:32px 40px}.footer{position:static;margin-top:32px}}
+@media print{html{zoom:1}body{padding:0}}
 </style>
 </head>
 <body>
+${p.draft ? '<div class="doc-watermark">DRAFT</div>' : ''}
 ${renderLetterhead({
   docTitle: 'PAYMENT REQUEST',
   docCode: p.refNum ? `Ref: ${p.refNum}` : undefined,
-  metaLines: [p.date],
+  metaLines: [esc(docDate(p.date))],
   gradient: 'paymentRequestLetter',
 })}
 <div style="margin-bottom:14px">
   <div class="sl">To:</div>
-  <div class="to-name">${p.client?.client_name ?? '—'}</div>
-  <div class="to-sub">${[p.client?.address, p.client?.email, p.client?.phone_number].filter(Boolean).join('<br>')}</div>
+  <div class="to-name">${esc(p.client?.client_name ?? '—')}</div>
+  <div class="to-sub">${[p.client?.address, p.client?.email, p.client?.phone_number, p.client?.tin ? `TIN: ${p.client.tin}` : null].filter(Boolean).map(esc).join('<br>')}</div>
 </div>
-<div class="subj">Subject: ${subject}</div>
+<div class="subj">Subject: ${esc(subject)}</div>
 <p>Dear Sir / Madam,</p>
 <p>${opening}</p>
 <p>The details of the requested payment are as follows:</p>
 <table>${detailRows}</table>
-${bankRows ? `<p>We kindly request that the payment be made to our bank account as detailed below:</p><table>${bankRows}</table>` : ''}
-${p.notes ? `<p style="font-style:italic;color:#555">${p.notes}</p>` : ''}
+${bankRows ? `<p>We kindly request that the payment be made to our bank account as detailed below:</p><table>${bankRows}</table>` : renderBankAccounts('Please pay to')}
+${p.notes ? `<p style="font-style:italic;color:#555">${escLines(p.notes)}</p>` : ''}
 <p>We trust that the above request will receive your favourable consideration and look forward to your prompt response.</p>
 <p>Thank you for your continued partnership.</p>
-<div class="sig">
-  <div><div class="sp">Prepared by:</div><div class="sl2"><div class="sn">Authorised Signatory</div><div class="so">${COMPANY_NAME}</div></div></div>
-  <div><div class="sp">Received by:</div><div class="sl2"><div class="sn">Representative</div><div class="so">${p.client?.client_name ?? ''}</div></div></div>
-</div>
-<div class="footer">${COMPANY_NAME} &middot; ${COMPANY_ADDRESS}${p.refNum ? ` &middot; Ref: ${p.refNum}` : ''} &middot; ${p.date}</div>
+${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
+${renderFooter(p.refNum || undefined)}
 </body>
 </html>`
 }
@@ -201,6 +210,8 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
   const { role } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const previewRef = useRef<HTMLIFrameElement>(null)
+  const { data: company } = useCompanyProfile()
+  const { data: signoff } = useCompanySignoff()
   const { client, proformas, contracts, milestones, asked, saved } = lookups
   const canInvoice = role === 'admin' || role === 'finance'
 
@@ -250,7 +261,7 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
   const [previouslyPaid, setPreviouslyPaid] = useState<number>(Number(saved?.previously_paid ?? 0))
   const [bankName, setBankName]           = useState(saved?.bank_name ?? '')
   const [accountNumber, setAccountNumber] = useState(saved?.account_number ?? '')
-  const [accountName, setAccountName]     = useState(saved?.account_name ?? COMPANY_NAME)
+  const [accountName, setAccountName]     = useState(saved?.account_name ?? companyName())
   const [notes, setNotes]                 = useState(saved?.notes ?? '')
   const [busy, setBusy]                   = useState(false)
 
@@ -299,11 +310,16 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
     if (basisAmount > 0 && n > 0) setPercent(String(Number((n / basisAmount * 100).toFixed(4))))
   }
 
-  const previewDoc = buildHtml({
+  const docInput = {
     client, kind, refNum: saved?.request_number ?? '', date, projectName, basisLabel,
     contractNumber: contract?.contract_no ?? '', basisAmount, percent: isNaN(pctNum) ? 0 : pctNum,
     title: title.trim(), previouslyPaid, amount, bankName, accountNumber, accountName, notes,
-  })
+    signoff: signoff ?? null, draft: !saved,
+  }
+  const docKey = JSON.stringify(docInput)
+  // company: rebuild when the letterhead loads
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const previewDoc = useMemo(() => buildHtml({ ...docInput, preview: true }), [docKey, company])
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ['client-payment-request'] })
@@ -365,7 +381,7 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
     if (error) { toast(error.message, 'error'); return }
     invalidate()
     toast('Invoice raised', 'success')
-    navigate(`/sales/${saleId as string}`)
+    navigate(`/invoices/${saleId as string}`)
   }
 
   async function handleCancel() {
@@ -394,10 +410,16 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">{heading}</h1>
           {saved && <RequestStatus status={saved.status} />}
-          <button onClick={() => previewRef.current?.contentWindow?.print()}
-            className="inline-flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Printer className="w-4 h-4" /> Print / Save PDF
-          </button>
+          {saved ? (
+            <DocumentActions type="client_payment_request" sourceId={saved.id} number={saved.request_number} title="Payment request"
+              party={client?.client_name ?? null} partyEmail={client?.email} partyPhone={client?.phone_number} total={Number(saved.amount)}
+              build={verify => buildHtml({ ...docInput, verify, draft: false })} disabled={saved.status === 'cancelled'} />
+          ) : (
+            <button onClick={() => printHtml(buildHtml(docInput), `Payment request draft - ${client?.client_name ?? ''}`)}
+              className="inline-flex items-center gap-1.5 rounded-lg border dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+              <Printer className="w-4 h-4" /> Print draft
+            </button>
+          )}
           {!saved && (
             <button onClick={handleSave} disabled={busy}
               className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">

@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
-import {
+import { Printer,
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle,
   DollarSign, FileText, Users, FolderKanban, CreditCard, Hash, CalendarClock, CalendarCheck,
 } from 'lucide-react'
@@ -140,6 +140,12 @@ export default function SaleDetailPage() {
               Resubmit
             </button>
           )}
+          <Link
+            to={`/invoices/${id}`}
+            className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+          >
+            <Printer className="h-3.5 w-3.5" /> Invoice
+          </Link>
           {canEdit && (
             <Link
               to={`/sales/${id}/edit`}

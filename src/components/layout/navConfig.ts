@@ -247,6 +247,7 @@ export const navGroups: NavGroup[] = [
     title: 'Admin',
     items: [
       { label: 'Users & Roles', to: '/users', icon: Shield, roles: ['admin'] },
+      { label: 'Company & Documents', to: '/settings/company', icon: Building2, roles: ['admin', 'executive', 'finance'] },
     ],
   },
 ]

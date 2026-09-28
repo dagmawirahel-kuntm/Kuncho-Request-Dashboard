@@ -1,10 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Proforma, ProformaStatus } from '@/types/database'
 import { FileText, FilePlus, Plus } from 'lucide-react'
+import { effectiveStatus } from '@/lib/documents/proformaDocument'
 
 type ProformaRow = Proforma & { clients: { client_name: string } | null }
 
@@ -14,9 +15,12 @@ const STATUS_CLS: Record<ProformaStatus, string> = {
   accepted:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
   converted: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
   expired:   'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  declined:  'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  superseded:'bg-slate-100 text-slate-400 line-through dark:bg-slate-700 dark:text-slate-500',
 }
 
 export default function ProformasPage() {
+  const [showOld, setShowOld] = useState(false)
   const { data: proformas = [], isLoading } = useQuery({
     queryKey: ['proformas'],
     queryFn: async () => {
@@ -54,10 +58,13 @@ export default function ProformasPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Proforma Invoices</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Quotes sent to clients. Invoices are raised from payment requests — a share of a proforma at a time.</p>
         </div>
+        <label className="flex items-center gap-1.5 text-xs text-slate-500">
+          <input type="checkbox" checked={showOld} onChange={e => setShowOld(e.target.checked)} /> Show replaced versions
+        </label>
         <Link to="/clients" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
           <Plus className="h-4 w-4" /> New Proforma
         </Link>
@@ -83,14 +90,14 @@ export default function ProformasPage() {
             <span>Status</span>
             <span />
           </div>
-          {proformas.map((p, i) => (
+          {proformas.filter(p => showOld || p.status !== 'superseded').map((p, i, list) => (
             <div key={p.id}
-              className={`sm:grid sm:grid-cols-[6rem_1fr_1fr_7rem_8rem_6rem_6rem_7rem] sm:gap-3 flex flex-col gap-1 px-4 py-3.5 ${i < proformas.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
-              <span className="font-mono text-xs font-bold text-brand">{p.proforma_number ?? '—'}</span>
+              className={`sm:grid sm:grid-cols-[6rem_1fr_1fr_7rem_8rem_6rem_6rem_7rem] sm:gap-3 flex flex-col gap-1 px-4 py-3.5 ${i < list.length - 1 ? 'border-b dark:border-slate-700' : ''}`}>
+              <Link to={`/proformas/${p.id}`} className="font-mono text-xs font-bold text-brand hover:underline">{p.proforma_number ?? '—'}</Link>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
+                <Link to={`/proformas/${p.id}`} className="block text-sm font-medium text-slate-800 hover:text-brand dark:text-slate-100 truncate">
                   {p.clients?.client_name ?? '—'}
-                </p>
+                </Link>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                 {p.payment_terms ?? p.notes ?? '—'}
@@ -100,8 +107,8 @@ export default function ProformasPage() {
               </p>
               <Taken total={Number(p.total ?? 0)} t={taken.get(p.id)} />
               <p className="text-xs text-slate-400">{formatDate(p.date)}</p>
-              <span className={`inline-block self-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${STATUS_CLS[p.status]}`}>
-                {p.status}
+              <span className={`inline-block self-center justify-self-start rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${STATUS_CLS[effectiveStatus(p)]}`}>
+                {effectiveStatus(p) === 'superseded' ? 'replaced' : effectiveStatus(p)}
               </span>
               {p.client_id && (taken.get(p.id)?.requested ?? 0) < Number(p.total ?? 0) - 1 ? (
                 <Link to={`/clients/${p.client_id}/payment-request?proforma_id=${p.id}`}

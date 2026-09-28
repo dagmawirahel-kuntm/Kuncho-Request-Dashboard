@@ -14,6 +14,34 @@ export interface DraftLine {
   unitPrice: number
   /** What one unit of the line costs us, built in the price guide (367). */
   cost?: LineCost
+  /** A section heading row ("Ceilings", "Painting") — its description names the section (368). */
+  isHeading?: boolean
+  /** The section a line came in under, e.g. from a BOQ; turned into heading rows on the page. */
+  section?: string | null
+}
+
+/** Put heading rows in wherever the lines' section changes. */
+export function withHeadings(lines: DraftLine[]): DraftLine[] {
+  const out: DraftLine[] = []
+  let current: string | null = null
+  for (const l of lines) {
+    const s = l.section?.trim() || null
+    if (s && s !== current) out.push({ id: crypto.randomUUID(), productId: null, description: s, qty: 0, unit: '', unitPrice: 0, isHeading: true })
+    current = s
+    out.push({ ...l, section: undefined })
+  }
+  return out
+}
+
+/** The section each line sits under, from the heading rows above it. */
+export function sectionOf(items: DraftLine[]): Map<string, string | null> {
+  const m = new Map<string, string | null>()
+  let current: string | null = null
+  for (const i of items) {
+    if (i.isHeading) { current = i.description.trim() || null; continue }
+    m.set(i.id, current)
+  }
+  return m
 }
 
 /** One material in a line's cost: so much of it per unit of the line, at a market price. */

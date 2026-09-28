@@ -1,7 +1,7 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx'
 import type { Contract, Client } from '@/types/database'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { COMPANY_NAME, COMPANY_ADDRESS, BRAND_NAVY, DOCUMENT_GRADIENTS, documentBaseCss, renderCenteredLetterhead } from '@/lib/documentTheme'
+import { companyName, companyAddress, BRAND_NAVY, DOCUMENT_GRADIENTS, documentBaseCss, renderCenteredLetterhead } from '@/lib/documentTheme'
 
 const BRAND_NAVY_DOCX = BRAND_NAVY.replace('#', '')
 // Word has no gradient fill for paragraph shading — use the darker end
@@ -50,7 +50,7 @@ function buildClauseSections(contract: Contract, client: Client): ClauseSection[
     {
       heading: 'Parties',
       paragraphs: [
-        `This Service Contract ("Agreement") is entered into ${contract.signed_date ? `on ${formatDate(contract.signed_date)}` : 'as of the date of signing'} by and between ${COMPANY_NAME} ("Contractor") and ${client.client_name} ("Client"), together the "Parties".`,
+        `This Service Contract ("Agreement") is entered into ${contract.signed_date ? `on ${formatDate(contract.signed_date)}` : 'as of the date of signing'} by and between ${companyName()} ("Contractor") and ${client.client_name} ("Client"), together the "Parties".`,
       ],
     },
     {
@@ -153,13 +153,13 @@ export async function buildContractDocx(contract: Contract, client: Client): Pro
           alignment: AlignmentType.CENTER,
           shading: { fill: BD_CONTRACT_SHADING_DOCX },
           spacing: { before: 100, after: 40 },
-          children: [new TextRun({ text: COMPANY_NAME, bold: true, size: 32, font: 'Arial', color: 'FFFFFF' })],
+          children: [new TextRun({ text: companyName(), bold: true, size: 32, font: 'Arial', color: 'FFFFFF' })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
           shading: { fill: BD_CONTRACT_SHADING_DOCX },
           spacing: { after: 300 },
-          children: [new TextRun({ text: COMPANY_ADDRESS, size: 16, font: 'Arial', color: 'FFFFFF' })],
+          children: [new TextRun({ text: companyAddress(), size: 16, font: 'Arial', color: 'FFFFFF' })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -202,7 +202,7 @@ export async function buildContractDocx(contract: Contract, client: Client): Pro
           spacing: { before: 600, after: 100 },
           children: [new TextRun({ text: 'Signatures', bold: true })],
         }),
-        new Paragraph({ spacing: { before: 400 }, text: `For ${COMPANY_NAME}: ___________________________     Date: _______________` }),
+        new Paragraph({ spacing: { before: 400 }, text: `For ${companyName()}: ___________________________     Date: _______________` }),
         new Paragraph({ spacing: { before: 400 }, text: `For ${client.client_name}: ___________________________     Date: _______________` }),
       ],
     }],
@@ -265,7 +265,7 @@ export function printContract(contract: Contract, client: Client) {
       </table>
       ${clauseHtml}
       <h3>Signatures</h3>
-      <p class="sig">For ${esc(COMPANY_NAME)}: ___________________________&nbsp;&nbsp;&nbsp;&nbsp;Date: _______________</p>
+      <p class="sig">For ${esc(companyName())}: ___________________________&nbsp;&nbsp;&nbsp;&nbsp;Date: _______________</p>
       <p class="sig">For ${esc(client.client_name)}: ___________________________&nbsp;&nbsp;&nbsp;&nbsp;Date: _______________</p>
     </body></html>`
   w.document.open()

@@ -86,6 +86,10 @@ import ClientsPage from '@/pages/clients/ClientsPage'
 import ClientDetailPage from '@/pages/clients/ClientDetailPage'
 import ClientFormPage from '@/pages/clients/ClientFormPage'
 import ProformaInvoicePage from '@/pages/clients/ProformaInvoicePage'
+import ProformaDetailPage from '@/pages/sales/ProformaDetailPage'
+import InvoiceDocumentPage from '@/pages/invoices/InvoiceDocumentPage'
+import CompanyProfilePage from '@/pages/settings/CompanyProfilePage'
+import VerifyDocumentPage from '@/pages/public/VerifyDocumentPage'
 import PaymentRequestPage from '@/pages/clients/PaymentRequestPage'
 import InvoicesPage from '@/pages/invoices/InvoicesPage'
 import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
@@ -197,6 +201,9 @@ export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/update-password', element: <UpdatePasswordPage /> },
+  // The page behind a document's QR code and share link — open to anyone
+  // holding the link, no sign-in (verify_document, migration 368).
+  { path: '/verify/:token', element: <VerifyDocumentPage /> },
   {
     element: <ProtectedRoute />,
     children: [
@@ -356,6 +363,8 @@ export const router = createBrowserRouter([
               // manager's RLS grant is read-only.
               { path: 'sales/:id/edit', element: <SaleFormPage /> },
               { path: 'proformas', element: <ProformasPage /> },
+              { path: 'proformas/:id', element: <ProformaDetailPage /> },
+              { path: 'settings/company', element: <CompanyProfilePage /> },
               { path: 'clients', element: <ClientsPage /> },
               { path: 'clients/:id', element: <ClientDetailPage /> },
               { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
@@ -368,6 +377,7 @@ export const router = createBrowserRouter([
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'batch-payments/:id', element: <BatchPaymentDetailPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
+              { path: 'invoices/:id', element: <InvoiceDocumentPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
               { path: 'reports/archive', element: <HistoricalArchivePage /> },
