@@ -153,6 +153,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Month-end', to: '/month-end', icon: ClipboardCheck, roles: ['admin', 'finance'] },
       { label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Proformas', to: '/proformas', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },

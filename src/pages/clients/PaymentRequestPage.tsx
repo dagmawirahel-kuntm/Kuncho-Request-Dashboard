@@ -7,7 +7,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { RequestStatus } from '@/components/shared/ClientPaymentRequests'
-import { documentBaseCss, renderLetterhead, renderFooter, renderBankAccounts, renderSignoff, companyName, esc, escLines, docDate, BRAND_NAVY, type CompanySignoff, type VerifyInfo } from '@/lib/documentTheme'
+import { documentBaseCss, renderLetterhead, renderFooter, renderBankAccounts, renderSignoff, renderParty, companyName, esc, escLines, docDate,
+  DOC_SERIF, DOC_FONT, GOLD, DOCUMENT_GRADIENTS, type CompanySignoff, type VerifyInfo } from '@/lib/documentTheme'
 import { amountInWords } from '@/lib/amountInWords'
 import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
 import { printHtml } from '@/lib/documents/issue'
@@ -95,23 +96,16 @@ function buildHtml(p: {
 <style>
 ${documentBaseCss}
 ${p.preview ? 'html{zoom:0.58}' : ''}
-@page{margin:14mm 12mm 16mm}
-body{padding:${p.preview ? '40px 52px' : '0'};color:#111;font-size:11pt;line-height:1.55}
-.sl{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
-.to-name{font-size:11.5pt;font-weight:700}
-.to-sub{font-size:9.5pt;color:#555;line-height:1.6}
-.subj{font-size:10.5pt;font-weight:700;text-decoration:underline;text-transform:uppercase;letter-spacing:.02em;margin:14px 0 12px}
-p{margin-bottom:10px;font-size:10.5pt;color:#222}
-table{width:100%;border-collapse:collapse;font-size:9.5pt;margin:10px 0}
-td{border:1px solid #ccc;padding:6px 10px;vertical-align:top}
-td.l{background:#f7f7f7;font-weight:700;width:220px;color:#333}
-tr.g td{background:${BRAND_NAVY};color:#fff;font-weight:700;font-size:10pt}
-.sig{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:32px;font-size:9.5pt}
-.sp{color:#777;margin-bottom:32px}
-.sl2{border-top:1px solid #aaa;padding-top:4px}
-.sn{font-weight:700}
-.so{color:#666}
-.footer{position:fixed;bottom:28px;left:52px;right:52px;font-size:7.5pt;color:#bbb;border-top:1px solid #e0e0e0;padding-top:5px}
+@page{margin:12mm 12mm 15mm}
+body{padding:${p.preview ? '34px 46px' : '0'};font-size:10.5pt;line-height:1.6;position:relative}
+.subj{font-family:${DOC_SERIF};font-size:13pt;font-weight:700;letter-spacing:.04em;color:var(--acc);margin:6px 0 12px;padding-bottom:6px;border-bottom:1px solid #dccfa9}
+.subj .am{display:inline;margin-left:8px;font-size:.8em;color:${GOLD}}
+p{margin-bottom:10px;color:#2b281f}
+table.facts{width:100%;border-collapse:collapse;font-size:9.6pt;margin:8px 0 12px}
+table.facts td{border-bottom:1px solid #e9e3d3;padding:6px 10px;vertical-align:top}
+table.facts td.l{width:230px;color:#6b6453;font-size:8.6pt;text-transform:uppercase;letter-spacing:.06em}
+table.facts tr.g td{background:var(--acc);color:#fff;font-family:${DOC_SERIF};font-weight:700;font-size:13pt;border-top:2px solid ${GOLD};text-transform:none;letter-spacing:0}
+table.facts tr.g td.l{color:#f3e7c8;font-family:${DOC_FONT};font-size:8.6pt;text-transform:uppercase;letter-spacing:.06em}
 @media print{html{zoom:1}body{padding:0}}
 </style>
 </head>
@@ -119,26 +113,22 @@ tr.g td{background:${BRAND_NAVY};color:#fff;font-weight:700;font-size:10pt}
 ${p.draft ? '<div class="doc-watermark">DRAFT</div>' : ''}
 ${renderLetterhead({
   docTitle: 'PAYMENT REQUEST',
-  docCode: p.refNum ? `Ref: ${p.refNum}` : undefined,
-  metaLines: [esc(docDate(p.date))],
+  docCode: p.refNum || undefined,
+  meta: [['Date', esc(docDate(p.date))]],
   gradient: 'paymentRequestLetter',
 })}
-<div style="margin-bottom:14px">
-  <div class="sl">To:</div>
-  <div class="to-name">${esc(p.client?.client_name ?? '—')}</div>
-  <div class="to-sub">${[p.client?.address, p.client?.email, p.client?.phone_number, p.client?.tin ? `TIN: ${p.client.tin}` : null].filter(Boolean).map(esc).join('<br>')}</div>
-</div>
-<div class="subj">Subject: ${esc(subject)}</div>
+${renderParty({ label: 'To', name: p.client?.client_name ?? '—', tin: p.client?.tin, lines: [p.client?.address, p.client?.email, p.client?.phone_number] })}
+<div class="subj">${esc(subject)}</div>
 <p>Dear Sir / Madam,</p>
 <p>${opening}</p>
 <p>The details of the requested payment are as follows:</p>
-<table>${detailRows}</table>
-${bankRows ? `<p>We kindly request that the payment be made to our bank account as detailed below:</p><table>${bankRows}</table>` : renderBankAccounts('Please pay to')}
+<table class="facts">${detailRows}</table>
+${bankRows ? `<p>We kindly request that the payment be made to our bank account as detailed below:</p><table class="facts">${bankRows}</table>` : renderBankAccounts('Please pay to')}
 ${p.notes ? `<p style="font-style:italic;color:#555">${escLines(p.notes)}</p>` : ''}
 <p>We trust that the above request will receive your favourable consideration and look forward to your prompt response.</p>
 <p>Thank you for your continued partnership.</p>
 ${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
-${renderFooter(p.refNum || undefined)}
+${renderFooter(p.refNum || undefined, DOCUMENT_GRADIENTS.paymentRequestLetter.from)}
 </body>
 </html>`
 }
