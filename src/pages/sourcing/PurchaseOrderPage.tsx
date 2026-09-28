@@ -8,7 +8,8 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
-import { documentBaseCss, renderLetterhead, renderFooter, renderSignoff, esc, escLines, docDate, companyName, type CompanySignoff, type VerifyInfo } from '@/lib/documentTheme'
+import { documentBaseCss, renderLetterhead, renderFooter, renderSignoff, renderParty, renderHeading, renderWords, bi, amOf, esc, escLines, docDate, docMoney, docProfile, companyName,
+  DOCUMENT_GRADIENTS, type CompanySignoff, type VerifyInfo } from '@/lib/documentTheme'
 import { amountInWords } from '@/lib/amountInWords'
 import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
 import { printHtml } from '@/lib/documents/issue'
@@ -95,9 +96,6 @@ const STATUS_STEPS: { status: SourcingBundleStatus; label: string; icon: React.R
 const STATUS_ORDER: SourcingBundleStatus[] = ['drafting', 'submitted', 'approved', 'ordered', 'fulfilled', 'cancelled']
 
 
-function fmt(n: number): string {
-  return `ETB ${n.toLocaleString('en-ET', { minimumFractionDigits: 2 })}`
-}
 
 function buildPoHtml(p: {
   bundle: BundleDetail
@@ -118,6 +116,8 @@ function buildPoHtml(p: {
   draft?: boolean
 }): string {
   const { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable } = p
+  const prof = docProfile()
+  const lbl = (en: string) => `${en}${amOf(en) ? `<span class="am">${amOf(en)}</span>` : ''}`
 
   const rows = sortedItems.map((item, i) => {
     const oi = item.order_items
@@ -126,16 +126,27 @@ function buildPoHtml(p: {
     <tr>
       <td class="c">${i + 1}</td>
       <td>
-        <div class="item-name">${esc(oi?.item_name ?? '—')}</div>
-        ${oi?.specifications ? `<div class="item-spec">${escLines(oi.specifications)}</div>` : ''}
+        <div style="font-weight:600">${esc(oi?.item_name ?? '—')}</div>
+        ${oi?.specifications ? `<div style="font-size:8.4pt;color:#6b6453;margin-top:2px">${escLines(oi.specifications)}</div>` : ''}
       </td>
-      <td>${esc(oi?.orders?.request_code ?? '—')}</td>
+      <td style="font-size:8.6pt;color:#6b6453">${esc(oi?.orders?.request_code ?? '—')}</td>
       <td class="r">${esc(item.quantity_actual ?? oi?.quantity ?? '—')}</td>
-      <td>${esc(oi?.unit ?? '—')}</td>
-      <td class="r">${item.unit_price_actual != null ? fmt(item.unit_price_actual) : '—'}</td>
-      <td class="r">${lineTotal > 0 ? fmt(lineTotal) : '—'}</td>
+      <td class="c">${esc(oi?.unit ?? '—')}</td>
+      <td class="r">${item.unit_price_actual != null ? docMoney(item.unit_price_actual, '') : '—'}</td>
+      <td class="r">${lineTotal > 0 ? docMoney(lineTotal, '') : '—'}</td>
     </tr>`
   }).join('')
+
+  const people = `<div class="lbl">${lbl('Procurement officer')}</div><div style="font-weight:600">${esc(bundle.procurement_officer?.full_name ?? '—')}</div>
+    ${bundle.approver ? `<div class="lbl" style="margin-top:8px">${lbl('Approved by')}</div><div style="font-weight:600">${esc(bundle.approver.full_name)}</div>` : ''}`
+
+  const terms = [
+    `Please quote <b>${esc(bundle.bundle_code)}</b> on your delivery note and on your invoice.`,
+    bundle.expected_delivery_date ? `Deliver by <b>${esc(docDate(bundle.expected_delivery_date))}</b>, or tell us straight away if that date can't be met.` : null,
+    'Goods are counted and checked on arrival; anything short, damaged or not to specification may be returned.',
+    `Invoice ${esc(companyName())}${prof.tin ? `, TIN ${esc(prof.tin)}` : ''}, for the amounts on this order.`,
+    whtEligible ? 'Withholding tax is deducted from payment as the law requires; we send you the withholding receipt.' : null,
+  ].filter(Boolean)
 
   return `<!DOCTYPE html>
 <html>
@@ -144,32 +155,11 @@ function buildPoHtml(p: {
 <title>${esc(bundle.bundle_code)} - ${esc(companyName())}</title>
 <style>
 ${documentBaseCss}
-@page{margin:14mm 12mm 16mm}
-body{padding:0;color:#111;font-size:11pt;line-height:1.5}
-.words{margin:4px 0 10px;font-size:9.5pt;font-style:italic;color:#333;text-align:right}
-.parties{display:flex;justify-content:space-between;gap:24px;margin-bottom:20px}
-.party{font-size:10pt}
-.party .label{color:#888;font-size:9pt;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-.party b{font-size:11pt}
-table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10pt}
-thead tr{background:#1B3A5C;color:#fff}
-th{padding:8px 10px;text-align:left;font-weight:600;font-size:9pt;letter-spacing:.4px}
-th.r,td.r{text-align:right}
-th.c,td.c{text-align:center}
-tbody tr:nth-child(even){background:#f7f9fb}
-td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
-.item-name{font-weight:600}
-.item-spec{font-size:8.5pt;color:#888;margin-top:2px}
-.totals{width:320px;margin-left:auto;font-size:10pt}
-.totals tr td{border-bottom:none;padding:4px 0}
-.totals .lbl{color:#555}
-.totals .val{text-align:right}
-.totals .net td{border-top:2px solid #1B3A5C;padding-top:8px;font-weight:700;font-size:12pt;color:#1B3A5C}
-.totals .gross td{border-top:1px solid #d4d4d4;padding-top:6px;font-weight:600}
-.wht{color:#b45309}
-.disc{color:#047857}
-.disc .lbl{color:#047857}
-.notes{font-size:9.5pt;color:#555;margin-top:16px}
+@page{margin:12mm 12mm 15mm}
+body{padding:0;font-size:10pt;line-height:1.5;position:relative}
+.doc-totals tr.disc td{color:#1f6a4d}
+.doc-totals tr.wht td{color:#8a5a12}
+.doc-totals tr.gross td{border-top:1px solid #dccfa9;font-weight:600}
 </style>
 </head>
 <body>
@@ -177,52 +167,42 @@ ${p.draft ? '<div class="doc-watermark">DRAFT</div>' : ''}
 ${renderLetterhead({
   docTitle: 'PURCHASE ORDER',
   docCode: bundle.bundle_code,
-  metaLines: [
-    esc(docDate(bundle.approved_at ?? bundle.created_at)),
-    ...(bundle.expected_delivery_date ? [`Expected delivery: ${esc(docDate(bundle.expected_delivery_date))}`] : []),
+  meta: [
+    ['Date', esc(docDate(bundle.approved_at ?? bundle.created_at))],
+    ...(bundle.expected_delivery_date ? [['Expected delivery', esc(docDate(bundle.expected_delivery_date))] as [string, string]] : []),
   ],
   gradient: 'purchaseOrder',
 })}
-<div class="parties">
-  <div class="party">
-    <div class="label">Vendor / Supplier</div>
-    <b>${esc(vendorDisplay)}</b>
-    ${p.vendorTin ? `<div>TIN: ${esc(p.vendorTin)}</div>` : ''}
-    ${p.vendorPhone ? `<div>${esc(p.vendorPhone)}</div>` : ''}
-  </div>
-  <div class="party">
-    <div class="label">Procurement Officer</div>
-    <b>${esc(bundle.procurement_officer?.full_name ?? '—')}</b>
-    ${bundle.approver ? `<div class="label" style="margin-top:8px">Approved By</div><b>${esc(bundle.approver.full_name)}</b>` : ''}
-  </div>
-</div>
-<table>
+${renderParty({ label: 'Vendor', name: vendorDisplay, tin: p.vendorTin, lines: [p.vendorPhone], right: people })}
+<table class="doc-table">
   <thead>
     <tr>
-      <th class="c" style="width:30px">#</th>
-      <th>Item Description</th>
-      <th style="width:90px">Source PR</th>
-      <th class="r" style="width:50px">Qty</th>
-      <th style="width:50px">Unit</th>
-      <th class="r" style="width:100px">Unit Price</th>
-      <th class="r" style="width:110px">Total</th>
+      <th class="c" style="width:40px">${bi('#')}</th>
+      <th>${bi('Description')}</th>
+      <th style="width:92px">${bi('Reference')}</th>
+      <th class="r" style="width:58px">${bi('Qty')}</th>
+      <th class="c" style="width:58px">${bi('Unit')}</th>
+      <th class="r" style="width:104px">${bi('Unit price')} <span style="font-weight:400;opacity:.8">(ETB)</span></th>
+      <th class="r" style="width:116px">${bi('Amount')} <span style="font-weight:400;opacity:.8">(ETB)</span></th>
     </tr>
   </thead>
   <tbody>${rows}</tbody>
 </table>
-<table class="totals">
-  ${discountEtb > 0 ? `<tr><td class="lbl">Subtotal before discount</td><td class="val">${fmt(itemsSubtotal)}</td></tr>
-  <tr class="disc"><td class="lbl">Vendor discount${bundle.discount_kind === 'percent' ? ` (${Number(bundle.discount_value)}%)` : ''}${bundle.discount_reason ? ` — ${esc(bundle.discount_reason)}` : ''}</td><td class="val">−${fmt(discountEtb)}</td></tr>` : ''}
-  <tr><td class="lbl">Subtotal</td><td class="val">${fmt(grandTotal)}</td></tr>
-  <tr><td class="lbl">VAT (15%, added)</td><td class="val">${fmt(vatAmount)}</td></tr>
-  ${whtEligible ? `<tr class="gross"><td class="lbl">Gross Total (before WHT)</td><td class="val">${fmt(grossTotal)}</td></tr>
-  <tr class="wht"><td class="lbl">WHT (3%, withheld)</td><td class="val">−${fmt(whtAmount)}</td></tr>` : ''}
-  <tr class="net"><td>Net Payable to Vendor</td><td class="val">${fmt(netPayable)}</td></tr>
+<table class="doc-totals">
+  ${discountEtb > 0 ? `<tr><td>Subtotal before discount</td><td style="text-align:right">${docMoney(itemsSubtotal)}</td></tr>
+  <tr class="disc"><td>Vendor discount${bundle.discount_kind === 'percent' ? ` (${Number(bundle.discount_value)}%)` : ''}${bundle.discount_reason ? ` · ${esc(bundle.discount_reason)}` : ''}</td><td style="text-align:right">−${docMoney(discountEtb)}</td></tr>` : ''}
+  <tr><td>${lbl('Subtotal')}</td><td style="text-align:right">${docMoney(grandTotal)}</td></tr>
+  <tr><td>VAT (15%)${amOf('VAT') ? `<span class="am">${amOf('VAT')}</span>` : ''}</td><td style="text-align:right">${docMoney(vatAmount)}</td></tr>
+  ${whtEligible ? `<tr class="gross"><td>Gross total (before WHT)</td><td style="text-align:right">${docMoney(grossTotal)}</td></tr>
+  <tr class="wht"><td>Withholding tax (3%)</td><td style="text-align:right">−${docMoney(whtAmount)}</td></tr>` : ''}
+  <tr class="grand"><td>${lbl('Net payable')}</td><td style="text-align:right">${docMoney(netPayable)}</td></tr>
 </table>
-${amountInWords(netPayable) ? `<div class="words">${esc(amountInWords(netPayable))}</div>` : ''}
-${bundle.notes ? `<div class="notes"><b>Notes:</b> ${escLines(bundle.notes)}</div>` : ''}
+${renderWords(amountInWords(netPayable))}
+${bundle.notes ? `${renderHeading('Notes')}<div style="font-size:9.3pt">${escLines(bundle.notes)}</div>` : ''}
+${renderHeading('Terms')}
+<ol class="doc-terms">${terms.map(t => `<li>${t}</li>`).join('')}</ol>
 ${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
-${renderFooter(bundle.bundle_code)}
+${renderFooter(bundle.bundle_code, DOCUMENT_GRADIENTS.purchaseOrder.from)}
 </body>
 </html>`
 }

@@ -83,9 +83,12 @@ export function printHtml(html: string, fileName: string) {
   const titled = /<title>/i.test(html) ? html.replace(/<title>[^<]*<\/title>/i, `<title>${fileName.replace(/[<>&]/g, '')}</title>`)
     : html.replace(/<head>/i, `<head><title>${fileName.replace(/[<>&]/g, '')}</title>`)
   frame.srcdoc = titled
-  frame.onload = () => {
+  frame.onload = async () => {
     const w = frame.contentWindow
     if (!w) return
+    // The heritage type (serif, Ge'ez) comes from web fonts: wait for them,
+    // but never more than a couple of seconds if the network is slow.
+    try { await Promise.race([w.document.fonts.ready, new Promise(r => setTimeout(r, 2500))]) } catch { /* print anyway */ }
     // Chrome names the PDF after the top document's title, not the frame's.
     const before = document.title
     document.title = fileName

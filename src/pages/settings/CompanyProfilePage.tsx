@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { fieldCls } from '@/lib/formStyles'
 import { useCompanyProfile, useCompanySignoff, imageToDataUrl } from '@/lib/companyProfile'
-import { documentBaseCss, renderLetterhead, renderBankAccounts, renderSignoff, renderFooter, setDocumentProfile, docDate, docProfile,
+import { documentBaseCss, renderLetterhead, renderBankAccounts, renderSignoff, renderFooter, renderParty, renderWords, bi, setDocumentProfile, docDate, docProfile, DOCUMENT_GRADIENTS,
   DEFAULT_PROFILE, type CompanyProfile, type CompanySignoff, type BankAccountLine } from '@/lib/documentTheme'
 import { Panel } from '@/components/record/Record'
 
@@ -35,15 +35,17 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
     const before = docProfile()
     setDocumentProfile(p)
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${documentBaseCss}
-      html{zoom:.62}body{padding:28px 34px;color:#111;font-size:10.5pt}
-      table.l{width:100%;border-collapse:collapse;margin:14px 0;font-size:9.5pt}table.l th{background:#1B3A5C;color:#fff;text-align:left;padding:6px 8px}table.l td{padding:6px 8px;border-bottom:1px solid #ddd}
+      html{zoom:.6}body{padding:26px 32px;font-size:10pt;line-height:1.5}
     </style></head><body>
-      ${renderLetterhead({ docTitle: 'PROFORMA INVOICE', docCode: 'PI-2026-012', metaLines: [docDate(new Date())], gradient: 'proforma' })}
-      <table class="l"><thead><tr><th>#</th><th>Description</th><th style="text-align:right">Total</th></tr></thead>
-      <tbody><tr><td>1</td><td>Gypsum board ceiling, 120 m²</td><td style="text-align:right">ETB 183,330.00</td></tr></tbody></table>
+      ${renderLetterhead({ docTitle: 'PROFORMA INVOICE', docCode: 'PI-2026-012', meta: [['Date', docDate(new Date())]], gradient: 'proforma' })}
+      ${renderParty({ label: 'Prepared for', name: 'Blue Nile Hotel PLC', tin: '0098765432', lines: ['Kazanchis, Addis Ababa'] })}
+      <table class="doc-table"><thead><tr><th class="c">${bi('#')}</th><th>${bi('Description')}</th><th class="r">${bi('Amount')}</th></tr></thead>
+      <tbody><tr class="sec"><td class="c">A</td><td colspan="2">Ceilings</td></tr><tr><td class="c">A.1</td><td>Gypsum board ceiling, 120 m²</td><td class="r">222,000.00</td></tr></tbody></table>
+      <table class="doc-totals"><tr class="grand"><td>Grand total</td><td style="text-align:right">ETB 255,300.00</td></tr></table>
+      ${renderWords('Two Hundred Fifty-Five Thousand Three Hundred Birr')}
       ${renderBankAccounts()}
       ${renderSignoff({ signoff: s })}
-      ${renderFooter('PI-2026-012')}
+      ${renderFooter('PI-2026-012', DOCUMENT_GRADIENTS.proforma.from)}
     </body></html>`
     setDocumentProfile(before)
     return html
@@ -62,6 +64,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
       legal_name: p.legal_name.trim(), legal_name_am: clean(p.legal_name_am), address: clean(p.address), po_box: clean(p.po_box),
       phone: clean(p.phone), email: clean(p.email), website: clean(p.website), tin: clean(p.tin), vat_reg_no: clean(p.vat_reg_no),
       vat_reg_date: p.vat_reg_date || null, logo_data_url: p.logo_data_url, print_style: p.print_style,
+      tagline: clean(p.tagline ?? null), bilingual_labels: p.bilingual_labels !== false,
       show_ethiopian_dates: p.show_ethiopian_dates, footer_note: clean(p.footer_note), proforma_terms: clean(p.proforma_terms),
       bank_accounts: p.bank_accounts.filter(b => b.bank.trim() && b.account_number.trim()),
     }).eq('id', true)
@@ -102,6 +105,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
             <div className="grid gap-3 sm:grid-cols-2">
               <F label="Legal name *"><input className={fieldCls} value={p.legal_name} onChange={e => set('legal_name', e.target.value)} /></F>
               <F label="Name in Amharic"><input className={fieldCls} value={p.legal_name_am ?? ''} onChange={e => set('legal_name_am', e.target.value)} placeholder="ኩንቾ ትሬዲንግ ኃ.የተ.የግ.ማ." /></F>
+              <F label="Tagline — what we do, under the name" wide><input className={fieldCls} value={p.tagline ?? ''} onChange={e => set('tagline', e.target.value)} placeholder="Interiors · Events · Leather craft" /></F>
               <F label="TIN"><input className={fieldCls} value={p.tin ?? ''} onChange={e => set('tin', e.target.value)} inputMode="numeric" /></F>
               <F label="VAT registration no."><input className={fieldCls} value={p.vat_reg_no ?? ''} onChange={e => set('vat_reg_no', e.target.value)} /></F>
               <F label="Address" wide><input className={fieldCls} value={p.address ?? ''} onChange={e => set('address', e.target.value)} placeholder="Sub-city, woreda, house no., Addis Ababa" /></F>
@@ -129,7 +133,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
                 )}
               </div>
               <fieldset className="flex flex-wrap gap-2 text-sm">
-                {([['color', 'Colour band', 'The coloured header'], ['plain', 'Plain', 'White header with a coloured rule — saves toner, looks formal']] as const).map(([v, label, sub]) => (
+                {([['color', 'Heritage colour', 'Tibeb band and headings in each document’s colour with gold'], ['plain', 'Heritage monochrome', 'The same design in black and grey — saves colour toner']] as const).map(([v, label, sub]) => (
                   <label key={v} className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 ${p.print_style === v ? 'border-brand bg-brand/5' : 'dark:border-slate-600'}`}>
                     <input type="radio" name="style" checked={p.print_style === v} onChange={() => set('print_style', v)} className="mt-1" />
                     <span><span className="font-medium text-slate-700 dark:text-slate-200">{label}</span><span className="block text-xs text-slate-500">{sub}</span></span>
@@ -139,6 +143,10 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input type="checkbox" checked={p.show_ethiopian_dates} onChange={e => set('show_ethiopian_dates', e.target.checked)} className="h-4 w-4 rounded" />
                 Show Ethiopian calendar dates next to Gregorian ones
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input type="checkbox" checked={p.bilingual_labels !== false} onChange={e => set('bilingual_labels', e.target.checked)} className="h-4 w-4 rounded" />
+                Amharic under the English — titles, column headings, totals, and dates in Ge'ez script
               </label>
               <F label="Footer note" wide><input className={fieldCls} value={p.footer_note ?? ''} onChange={e => set('footer_note', e.target.value)} placeholder="e.g. Thank you for your business" /></F>
               <F label="Standard proforma terms" wide>
