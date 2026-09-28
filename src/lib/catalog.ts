@@ -12,6 +12,39 @@ export interface DraftLine {
   qty: number
   unit: string
   unitPrice: number
+  /** What one unit of the line costs us, built in the price guide (367). */
+  cost?: LineCost
+}
+
+/** One material in a line's cost: so much of it per unit of the line, at a market price. */
+export interface CostPart {
+  key: string
+  label: string
+  /** The unit the material is bought in (pcs, bag, m…). */
+  unit: string
+  price: number
+  /** How much of it one unit of the line uses, e.g. 1.1 sheets per m². */
+  qtyPer: number
+  marketPriceId: string | null
+  stockItemId: string | null
+  pricedAt: string | null
+  freshness: 'fresh' | 'aging' | 'stale' | 'outdated' | null
+}
+
+export interface LineCost {
+  parts: CostPart[]
+  /** Labour and anything else, per unit of the line. */
+  extra: number
+  perUnit: number
+}
+
+export function lineCostPerUnit(parts: CostPart[], extra: number) {
+  return Math.round((parts.reduce((s, p) => s + p.price * p.qtyPer, 0) + (extra || 0)) * 100) / 100
+}
+
+/** A cost built on a price that is stale or outdated should be checked before quoting. */
+export function costIsOld(c: LineCost | undefined) {
+  return !!c?.parts.some(p => p.freshness === 'stale' || p.freshness === 'outdated')
 }
 
 /** Roles that see what the catalog costs to deliver (RLS on the recipes, migration 337). */

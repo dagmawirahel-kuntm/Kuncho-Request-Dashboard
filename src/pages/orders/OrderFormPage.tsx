@@ -255,6 +255,7 @@ function MarketPriceHint({ item, onChange }: { item: LineItem; onChange: (patch:
       <span className="text-slate-500 dark:text-slate-400">
         Latest: <span className="font-medium tabular-nums text-slate-700 dark:text-slate-200">{fmtCurrency(perf.display_price)}</span>
         {perf.days_since_display_price != null && <span className="text-slate-400"> · {perf.days_since_display_price}d old</span>}
+        {perf.display_vendor_name && <span className="text-slate-400"> · {perf.display_vendor_name}</span>}
       </span>
       {priceEmpty && (
         <button type="button" onClick={() => onChange({ unit_price_est: String(perf.display_price) })}
