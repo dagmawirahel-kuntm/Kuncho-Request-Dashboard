@@ -1,20 +1,24 @@
-import { useRef, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
-import { documentBaseCss, renderLetterhead, renderFooter } from '@/lib/documentTheme'
+import { documentBaseCss, renderLetterhead, renderFooter, renderSignoff, esc, escLines, docDate, companyName, type CompanySignoff, type VerifyInfo } from '@/lib/documentTheme'
+import { amountInWords } from '@/lib/amountInWords'
+import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
+import { printHtml } from '@/lib/documents/issue'
+import { DocumentActions } from '@/components/documents/DocumentActions'
 import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, StatusSteps, type Tone } from '@/components/record/Record'
 import {
   Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Save, Plus, ClipboardCheck, Undo2
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2
 } from 'lucide-react'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 
@@ -107,6 +111,11 @@ function buildPoHtml(p: {
   whtAmount: number
   whtEligible: boolean
   netPayable: number
+  vendorTin?: string | null
+  vendorPhone?: string | null
+  signoff?: CompanySignoff | null
+  verify?: VerifyInfo | null
+  draft?: boolean
 }): string {
   const { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable } = p
 
@@ -117,12 +126,12 @@ function buildPoHtml(p: {
     <tr>
       <td class="c">${i + 1}</td>
       <td>
-        <div class="item-name">${oi?.item_name ?? '—'}</div>
-        ${oi?.specifications ? `<div class="item-spec">${oi.specifications}</div>` : ''}
+        <div class="item-name">${esc(oi?.item_name ?? '—')}</div>
+        ${oi?.specifications ? `<div class="item-spec">${escLines(oi.specifications)}</div>` : ''}
       </td>
-      <td>${oi?.orders?.request_code ?? '—'}</td>
-      <td class="r">${item.quantity_actual ?? oi?.quantity ?? '—'}</td>
-      <td>${oi?.unit ?? '—'}</td>
+      <td>${esc(oi?.orders?.request_code ?? '—')}</td>
+      <td class="r">${esc(item.quantity_actual ?? oi?.quantity ?? '—')}</td>
+      <td>${esc(oi?.unit ?? '—')}</td>
       <td class="r">${item.unit_price_actual != null ? fmt(item.unit_price_actual) : '—'}</td>
       <td class="r">${lineTotal > 0 ? fmt(lineTotal) : '—'}</td>
     </tr>`
@@ -132,9 +141,12 @@ function buildPoHtml(p: {
 <html>
 <head>
 <meta charset="UTF-8">
+<title>${esc(bundle.bundle_code)} - ${esc(companyName())}</title>
 <style>
 ${documentBaseCss}
-body{padding:40px 52px;color:#111;font-size:11pt;line-height:1.5}
+@page{margin:14mm 12mm 16mm}
+body{padding:0;color:#111;font-size:11pt;line-height:1.5}
+.words{margin:4px 0 10px;font-size:9.5pt;font-style:italic;color:#333;text-align:right}
 .parties{display:flex;justify-content:space-between;gap:24px;margin-bottom:20px}
 .party{font-size:10pt}
 .party .label{color:#888;font-size:9pt;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
@@ -161,24 +173,27 @@ td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
 </style>
 </head>
 <body>
+${p.draft ? '<div class="doc-watermark">DRAFT</div>' : ''}
 ${renderLetterhead({
   docTitle: 'PURCHASE ORDER',
   docCode: bundle.bundle_code,
   metaLines: [
-    formatDateGC(bundle.created_at),
-    ...(bundle.expected_delivery_date ? [`Expected delivery: ${formatDateGC(bundle.expected_delivery_date)}`] : []),
+    esc(docDate(bundle.approved_at ?? bundle.created_at)),
+    ...(bundle.expected_delivery_date ? [`Expected delivery: ${esc(docDate(bundle.expected_delivery_date))}`] : []),
   ],
   gradient: 'purchaseOrder',
 })}
 <div class="parties">
   <div class="party">
     <div class="label">Vendor / Supplier</div>
-    <b>${vendorDisplay}</b>
+    <b>${esc(vendorDisplay)}</b>
+    ${p.vendorTin ? `<div>TIN: ${esc(p.vendorTin)}</div>` : ''}
+    ${p.vendorPhone ? `<div>${esc(p.vendorPhone)}</div>` : ''}
   </div>
   <div class="party">
     <div class="label">Procurement Officer</div>
-    <b>${bundle.procurement_officer?.full_name ?? '—'}</b>
-    ${bundle.approver ? `<div class="label" style="margin-top:8px">Approved By</div><b>${bundle.approver.full_name}</b>` : ''}
+    <b>${esc(bundle.procurement_officer?.full_name ?? '—')}</b>
+    ${bundle.approver ? `<div class="label" style="margin-top:8px">Approved By</div><b>${esc(bundle.approver.full_name)}</b>` : ''}
   </div>
 </div>
 <table>
@@ -197,14 +212,16 @@ ${renderLetterhead({
 </table>
 <table class="totals">
   ${discountEtb > 0 ? `<tr><td class="lbl">Subtotal before discount</td><td class="val">${fmt(itemsSubtotal)}</td></tr>
-  <tr class="disc"><td class="lbl">Vendor discount${bundle.discount_kind === 'percent' ? ` (${Number(bundle.discount_value)}%)` : ''}${bundle.discount_reason ? ` — ${bundle.discount_reason}` : ''}</td><td class="val">−${fmt(discountEtb)}</td></tr>` : ''}
+  <tr class="disc"><td class="lbl">Vendor discount${bundle.discount_kind === 'percent' ? ` (${Number(bundle.discount_value)}%)` : ''}${bundle.discount_reason ? ` — ${esc(bundle.discount_reason)}` : ''}</td><td class="val">−${fmt(discountEtb)}</td></tr>` : ''}
   <tr><td class="lbl">Subtotal</td><td class="val">${fmt(grandTotal)}</td></tr>
   <tr><td class="lbl">VAT (15%, added)</td><td class="val">${fmt(vatAmount)}</td></tr>
   ${whtEligible ? `<tr class="gross"><td class="lbl">Gross Total (before WHT)</td><td class="val">${fmt(grossTotal)}</td></tr>
   <tr class="wht"><td class="lbl">WHT (3%, withheld)</td><td class="val">−${fmt(whtAmount)}</td></tr>` : ''}
   <tr class="net"><td>Net Payable to Vendor</td><td class="val">${fmt(netPayable)}</td></tr>
 </table>
-${bundle.notes ? `<div class="notes"><b>Notes:</b> ${bundle.notes}</div>` : ''}
+${amountInWords(netPayable) ? `<div class="words">${esc(amountInWords(netPayable))}</div>` : ''}
+${bundle.notes ? `<div class="notes"><b>Notes:</b> ${escLines(bundle.notes)}</div>` : ''}
+${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
 ${renderFooter(bundle.bundle_code)}
 </body>
 </html>`
@@ -221,7 +238,8 @@ export default function PurchaseOrderPage() {
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [closingAdvance, setClosingAdvance] = useState(false)
-  const printRef = useRef<HTMLIFrameElement>(null)
+  const { data: signoff } = useCompanySignoff()
+  useCompanyProfile()
 
   // Queue-pickup panel (C3) — raising the transport job right at PO
   // placement instead of only offering a click-through to a separate form.
@@ -280,7 +298,7 @@ export default function PurchaseOrderPage() {
         .from('sourcing_bundles')
         .select(`
           *,
-          vendors(vendor_name, wth_eligible),
+          vendors(vendor_name, wth_eligible, tin, phone_contact),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
           expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state),
@@ -445,23 +463,12 @@ export default function PurchaseOrderPage() {
   const whtAmount = whtEligible ? grandTotal * WHT_RATE : 0
   const netPayable = grossTotal - whtAmount
 
-  const poHtml = buildPoHtml({ bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable })
-
-  function handlePrint() {
-    printRef.current?.contentWindow?.print()
-  }
-
+  const vendorRow = (bundle as unknown as { vendors: { tin?: string | null; phone_contact?: string | null } | null }).vendors
+  const poInput = { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable,
+    vendorTin: vendorRow?.tin ?? null, vendorPhone: vendorRow?.phone_contact ?? null, signoff: signoff ?? null }
+  // An approved order is what goes to the vendor; before that it's a draft.
+  const poIssuable = ['approved', 'ordered', 'fulfilled'].includes(status)
   const bundleCode = bundle.bundle_code
-
-  function handleSaveFile() {
-    const blob = new Blob([poHtml], { type: 'text/html' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${bundleCode}.html`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 
   // Group by project for cost allocation. A discount is negotiated on the
   // order as a whole, so each project carries it in proportion to what it
@@ -628,7 +635,6 @@ export default function PurchaseOrderPage() {
 
   return (
     <div className="pb-20 sm:pb-0">
-      <iframe ref={printRef} srcDoc={poHtml} title="Purchase Order Print" style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }} />
 
       <RecordHeader
         back={{ to: '/sourcing', label: 'Purchase orders' }}
@@ -652,14 +658,19 @@ export default function PurchaseOrderPage() {
           { label: 'Request changes', icon: Undo2, onClick: () => setShowRejectPanel(true), hidden: !canReject || showRejectPanel },
           { label: 'Edit', icon: Pencil, to: `/sourcing/${id}/edit`, hidden: !canEdit },
           { label: 'Queue pickup', icon: TruckIcon, onClick: () => setShowQueuePanel(true), hidden: !canRequestTransport || showQueuePanel },
-          { label: 'Print', icon: Printer, onClick: handlePrint },
-          { label: 'Save as file', icon: Save, onClick: handleSaveFile },
+          { label: 'Print draft', icon: Printer, onClick: () => printHtml(buildPoHtml({ ...poInput, draft: true }), `${bundle.bundle_code} draft`), hidden: poIssuable },
           { label: 'Cancel purchase order', icon: XCircle, onClick: () => { if (window.confirm('Cancel this purchase order? Its items go back to their requests to be sourced again.')) transition('cancelled') }, danger: true, disabled: transitioning, hidden: !canCancel },
           { label: 'Delete', icon: Trash2, onClick: handleDelete, danger: true, hidden: !((isAdmin || isManager) && status === 'drafting') },
         ]}
       />
 
       <div className="space-y-4">
+        {poIssuable && (
+          <div className="flex flex-wrap items-center gap-2">
+            <DocumentActions type="purchase_order" sourceId={bundle.id} number={bundle.bundle_code} title="Purchase order" party={vendorDisplay}
+              partyPhone={vendorRow?.phone_contact} total={netPayable} build={verify => buildPoHtml({ ...poInput, verify })} />
+          </div>
+        )}
         <TrainerHintBanner entityType="purchase_order" entityId={bundle.id} hint={bundleHint} />
 
         <Panel>

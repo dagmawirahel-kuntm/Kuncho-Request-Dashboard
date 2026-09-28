@@ -3,7 +3,8 @@ import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
-import { documentBaseCss, renderCenteredLetterhead, COMPANY_NAME } from '@/lib/documentTheme'
+import { documentBaseCss, renderCenteredLetterhead, companyName, esc } from '@/lib/documentTheme'
+import { useCompanyProfile } from '@/lib/companyProfile'
 import type { Vendor, SourcingBundle, SourcingBundleItem, Expense } from '@/types/database'
 import { ArrowLeft, Printer, FileText } from 'lucide-react'
 
@@ -36,13 +37,17 @@ function etbInWords(amount: number) {
   return words
 }
 
-function buildHtml(f: {
+type ContractFields = {
   contractRef: string; contractDate: string; kunchoRep: string; kunchoTitle: string
   vendorName: string; vendorTin: string; vendorAddress: string; vendorPhone: string; contactPerson: string
   scope: string; contractValue: string; paymentTerms: string; startDate: string; endDate: string
   specialConditions: string; bundleCode: string; linkedExpenses?: string
-}) {
-  const val = parseFloat(f.contractValue) || 0
+}
+
+function buildHtml(raw: ContractFields) {
+  // Every field is typed by someone: escape the lot before it meets the markup.
+  const f = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, typeof v === 'string' ? esc(v) : v])) as ContractFields
+  const val = parseFloat(raw.contractValue) || 0
   const valWords = val > 0 ? etbInWords(val) : '—'
   const isHighValue = val >= 100_000
 
@@ -96,7 +101,7 @@ ${isHighValue ? '<div style="text-align:center;margin-bottom:4mm"><span class="h
 <div class="parties">
   <div class="party">
     <div class="role">Party A — Client</div>
-    <strong>${COMPANY_NAME}</strong><br/>
+    <strong>${esc(companyName())}</strong><br/>
     Addis Ababa, Ethiopia<br/>
     TIN: ______________________<br/>
     Represented by: ${f.kunchoRep || '______________________'}<br/>
@@ -128,7 +133,7 @@ ${val > 0 ? `<br/><em>(${valWords} only)</em>` : ''}</p>
 
 <h2>5. General Terms &amp; Conditions</h2>
 <ol>
-  <li>The Vendor/Contractor shall complete the agreed scope of work within the specified timeline and to the quality standards of ${COMPANY_NAME}.</li>
+  <li>The Vendor/Contractor shall complete the agreed scope of work within the specified timeline and to the quality standards of ${esc(companyName())}.</li>
   <li>Payment will be released upon satisfactory completion of each milestone, submission of a valid VAT invoice, and provision of all required receipts.</li>
   <li>The Vendor/Contractor shall comply with all applicable Ethiopian tax obligations, including Withholding Tax (WHT) where applicable.</li>
   <li>Any changes to the scope, timeline, or contract value must be documented via a written variation order signed by both parties.</li>
@@ -146,7 +151,7 @@ ${f.specialConditions ? `<h2>6. Special Conditions</h2><p style="white-space:pre
 <div class="signatures">
   <div>
     <div class="sig-area">
-      <strong>For ${COMPANY_NAME}</strong><br/>
+      <strong>For ${esc(companyName())}</strong><br/>
       Name: ${f.kunchoRep || '______________________'}<br/>
       Title: ${f.kunchoTitle || '______________________'}<br/>
       Signature: ______________________<br/>
@@ -209,6 +214,7 @@ function genRef() {
 
 export default function VendorContractPage() {
   const { id } = useParams<{ id: string }>()
+  const { data: company } = useCompanyProfile()
   const [searchParams] = useSearchParams()
   const bundleId = searchParams.get('bundle_id')
   const expenseIdsParam = searchParams.get('expense_ids')
@@ -344,7 +350,9 @@ export default function VendorContractPage() {
     specialConditions: form.specialConditions,
     bundleCode: bundle?.bundle_code ?? '',
     linkedExpenses: linkedExpensesStr,
-  }), [form, vendor, bundle, contractRef, linkedExpensesStr])
+    // company: rebuild when the letterhead loads
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [form, vendor, bundle, contractRef, linkedExpensesStr, company])
 
   function handlePrint() {
     previewRef.current?.contentWindow?.print()

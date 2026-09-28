@@ -238,6 +238,12 @@ export default function InvoicesPage() {
                                 </button>
                               )}
                               <Link
+                                to={`/invoices/${inv.id}`}
+                                className="rounded-md px-2.5 py-1 text-[10px] font-semibold text-brand hover:bg-brand/10 transition-colors"
+                              >
+                                Invoice
+                              </Link>
+                              <Link
                                 to={`/sales/${inv.id}`}
                                 className="rounded-md px-2.5 py-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                               >

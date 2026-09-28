@@ -119,9 +119,22 @@ function BoqPicker({ clientId, onClose, onPick }: { clientId: string; onClose: (
         : { productId: null, description: i.name, qty: 1, unit: 'lump sum', unitPrice: Number(i.total_etb ?? 0) })
         .filter(l => l.unitPrice > 0)
     }
-    return boqItems.filter(i => i.node_type !== 'section' && !i.is_priced_elsewhere).map(i => i.node_type === 'line_item'
-      ? { productId: null, description: i.name, qty: Number(i.quantity ?? 1), unit: i.unit ?? 'pcs', unitPrice: Number(i.unit_rate_etb ?? 0) }
-      : { productId: null, description: i.name, qty: 1, unit: 'lump sum', unitPrice: Number(i.total_etb ?? 0) })
+    // Every line, under the BOQ's top-level section it sits in.
+    const byId = new Map(boqItems.map(i => [i.id, i]))
+    const topSection = (i: BoqItemRow) => {
+      let cur = i
+      while (cur.parent_item_id && byId.has(cur.parent_item_id)) cur = byId.get(cur.parent_item_id)!
+      return cur.node_type === 'section' && cur.id !== i.id ? cur.name : null
+    }
+    // In tree order, so each section's lines stay together.
+    const kids = new Map<string | null, BoqItemRow[]>()
+    for (const i of boqItems) kids.set(i.parent_item_id, [...(kids.get(i.parent_item_id) ?? []), i])
+    const ordered: BoqItemRow[] = []
+    const walk = (parent: string | null) => { for (const c of (kids.get(parent) ?? []).sort((a, b) => a.display_order - b.display_order)) { ordered.push(c); walk(c.id) } }
+    walk(null)
+    return ordered.filter(i => i.node_type !== 'section' && !i.is_priced_elsewhere).map(i => i.node_type === 'line_item'
+      ? { productId: null, description: i.name, qty: Number(i.quantity ?? 1), unit: i.unit ?? 'pcs', unitPrice: Number(i.unit_rate_etb ?? 0), section: topSection(i) }
+      : { productId: null, description: i.name, qty: 1, unit: 'lump sum', unitPrice: Number(i.total_etb ?? 0), section: topSection(i) })
   }, [boqItems, mode])
   const total = lines.reduce((s, l) => s + l.qty * l.unitPrice, 0)
 
