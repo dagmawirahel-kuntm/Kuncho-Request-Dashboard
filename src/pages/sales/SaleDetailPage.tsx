@@ -221,6 +221,12 @@ export default function SaleDetailPage() {
                   {sale.sales_status}
                 </span>
               )}
+              {sale.carried_forward && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}
+                  title="Invoiced last year; its payment settles Accounts Receivable, not new income">
+                  Owed from last year
+                </span>
+              )}
               {sale.date && (
                 <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)' }}>
                   {formatDate(sale.date)}

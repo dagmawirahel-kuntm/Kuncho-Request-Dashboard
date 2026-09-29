@@ -814,6 +814,8 @@ export interface Sale {
   withheld_by_client?: number | null
   contract_id: string | null
   is_final_payment: boolean
+  /** Invoiced before this fiscal year and still owed at its start (migration 370). */
+  carried_forward?: boolean
   created_at: string
   updated_at: string
 }

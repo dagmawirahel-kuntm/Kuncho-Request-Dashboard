@@ -92,6 +92,7 @@ import CompanyProfilePage from '@/pages/settings/CompanyProfilePage'
 import VerifyDocumentPage from '@/pages/public/VerifyDocumentPage'
 import PaymentRequestPage from '@/pages/clients/PaymentRequestPage'
 import InvoicesPage from '@/pages/invoices/InvoicesPage'
+import CarriedForwardPage from '@/pages/invoices/CarriedForwardPage'
 import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
 import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
 import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
@@ -377,6 +378,7 @@ export const router = createBrowserRouter([
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'batch-payments/:id', element: <BatchPaymentDetailPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
+              { path: 'invoices/carried-forward', element: <CarriedForwardPage /> },
               { path: 'invoices/:id', element: <InvoiceDocumentPage /> },
               { path: 'reports/pl', element: <PLReportPage /> },
               { path: 'reports/balance-sheet', element: <BalanceSheetPage /> },
