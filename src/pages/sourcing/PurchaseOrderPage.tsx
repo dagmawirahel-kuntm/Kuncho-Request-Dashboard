@@ -21,8 +21,9 @@ import { useStaff } from '@/hooks/useLookups'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, StatusSteps, type Tone } from '@/components/record/Record'
 import {
   Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2, HardHat, Scissors
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2, HardHat, Scissors, TrendingUp
 } from 'lucide-react'
+import { PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
@@ -412,7 +413,7 @@ export default function PurchaseOrderPage() {
       </div>
     )
   }
-  if (!bundle) return <div className="py-16 text-center text-sm text-slate-400">Bundle not found.</div>
+  if (!bundle) return <div className="py-16 text-center text-sm text-slate-400">Purchase order not found.</div>
 
   const status = bundle.status
   const statusIdx = STATUS_ORDER.indexOf(status)
@@ -477,6 +478,12 @@ export default function PurchaseOrderPage() {
   const canCloseAdvance = (isFinance || isAdmin) && !!grn && bundle.expenses?.payment_state === 'advance'
 
   const sortedItems = [...(bundle.sourcing_bundle_items ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+  // Lines priced well above the request's own estimate (the price check).
+  const overByItem = new Map<string, number>()
+  for (const it of sortedItems) {
+    const pct = priceOverEstimate(it.order_items?.unit_price_est, it.unit_price_actual)
+    if (pct != null) overByItem.set(it.id, pct)
+  }
   const variantLabel = (item: BundleDetail['sourcing_bundle_items'][number]) =>
     item.variant_id ? variantsByItem?.get(item.order_items?.stock_item_id ?? '')?.find(v => v.id === item.variant_id)?.label ?? null : null
   // The buyer confirms which product was bought (372): a line whose stock
@@ -631,7 +638,7 @@ export default function PurchaseOrderPage() {
   }
 
   async function handleDelete() {
-    if (!window.confirm('Delete this sourcing bundle? This cannot be undone.')) return
+    if (!window.confirm('Delete this purchase order? This cannot be undone.')) return
     const { error } = await supabase.from('sourcing_bundles').delete().eq('id', id!)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
@@ -764,9 +771,19 @@ export default function PurchaseOrderPage() {
           </div>
         )}
 
+        {overByItem.size > 0 && (status === 'drafting' || status === 'submitted') && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10">
+            <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              <b>{overByItem.size} line{overByItem.size === 1 ? ' is' : 's are'} priced {PRICE_CHECK_PERCENT}% or more above what the request estimated.</b>{' '}
+              Check the line notes before approving.
+            </p>
+          </div>
+        )}
+
         <RecordLayout
           main={<>
-            <Panel title="Items" icon={Package} count={sortedItems.length} padded={false}>
+            <Panel title="Lines" icon={Package} count={sortedItems.length} padded={false}>
               {/* Wide screens: a table */}
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
@@ -793,6 +810,7 @@ export default function PurchaseOrderPage() {
                             {variantLabel(item) && <p className="mt-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">{variantLabel(item)}</p>}
                             {oi?.specifications && <p className="mt-0.5 text-xs text-slate-400">{oi.specifications}</p>}
                             {item.notes && <p className="mt-0.5 text-xs italic text-slate-400">{item.notes}</p>}
+                            {oi?.order_id && <Link to={`/purchase-requests/${oi.order_id}`} className="mt-0.5 block font-mono text-[11px] text-brand hover:underline lg:hidden">{oi.orders?.request_code ?? 'Request'}</Link>}
                           </td>
                           <td className="hidden px-4 py-3 lg:table-cell">
                             {oi?.order_id ? <Link to={`/purchase-requests/${oi.order_id}`} className="font-mono text-xs text-brand hover:underline">{oi.orders?.request_code ?? '—'}</Link> : '—'}
@@ -802,7 +820,14 @@ export default function PurchaseOrderPage() {
                             {item.quantity_actual ?? oi?.quantity ?? '—'} <span className="text-xs text-slate-400">{oi?.unit ?? ''}</span>
                           </td>
                           {receivedAny && <ReceivedCell r={receiptByItem.get(item.id)} />}
-                          <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">{item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                            {item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}
+                            {overByItem.has(item.id) && (
+                              <p className="mt-0.5 flex items-center justify-end gap-0.5 whitespace-nowrap text-[11px] font-medium text-amber-600 dark:text-amber-400" title={`The request estimated ${formatCurrency(oi?.unit_price_est ?? 0)} each`}>
+                                <TrendingUp className="h-3 w-3" />{overByItem.get(item.id)}% over estimate
+                              </p>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{lineTotal > 0 ? formatCurrency(lineTotal) : '—'}</td>
                         </tr>
                       )
@@ -824,6 +849,7 @@ export default function PurchaseOrderPage() {
                       </div>
                       <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                         {qty ?? '—'} {oi?.unit ?? ''} × {item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}
+                        {overByItem.has(item.id) && <span className="font-medium text-amber-600 dark:text-amber-400"> · {overByItem.get(item.id)}% over estimate</span>}
                         {receivedAny && receiptByItem.get(item.id) && (
                           <span className={Number(receiptByItem.get(item.id)!.outstanding) > 0 ? ' text-amber-600 dark:text-amber-400' : ' text-emerald-600 dark:text-emerald-400'}>
                             {' · '}{Number(receiptByItem.get(item.id)!.received)} received{Number(receiptByItem.get(item.id)!.outstanding) > 0 ? `, ${Number(receiptByItem.get(item.id)!.outstanding)} to come` : ''}

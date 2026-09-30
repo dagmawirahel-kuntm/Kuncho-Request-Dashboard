@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { resolveHint } from '@/lib/trainerHints'
-import type { Order, OrderItem, OrderItemStatus } from '@/types/database'
+import type { Order, OrderItem, OrderItemStatus, SourcingBundleStatus } from '@/types/database'
+import { PO_STATUS, priceOverEstimate } from '@/lib/purchasing'
 import { useProjects, useStaff, useUserProfiles } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -17,7 +18,7 @@ import { buildPurchaseRequestHtml } from '@/lib/documents/purchaseRequestDocumen
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
-  ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList, Printer,
+  ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList, Printer, Truck, TrendingUp,
 } from 'lucide-react'
 
 const ITEM_S: Record<OrderItemStatus, { label: string; bg: string; border: string }> = {
@@ -39,6 +40,16 @@ const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-
 // (migrations 149/163). Mirrors the same read used on the list page.
 const FULFILLED_ITEM_STATUSES = new Set<OrderItemStatus>(['sourced', 'stock_fulfilled'])
 const PARTIAL_ITEM_STATUSES   = new Set<OrderItemStatus>(['partially_sourced', 'stock_pending_dispatch'])
+
+type PoLine = {
+  order_item_id: string
+  quantity_actual: number | null
+  unit_price_actual: number | null
+  sourcing_bundles: {
+    id: string; bundle_code: string; status: SourcingBundleStatus; vendor_name: string | null
+    expected_delivery_date: string | null; vendors: { vendor_name: string } | null
+  } | null
+}
 
 type Fulfillment = { total: number; fulfilled: number; partial: number; blocked: number }
 
@@ -134,18 +145,34 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
     }
   }, [items])
 
-  // Trainer hint: has any of this order's items already been bundled into a
-  // sourcing bundle (this codebase's PO).
-  const { data: hasBundle } = useQuery({
-    queryKey: ['order-has-bundle', order.id],
+  // The purchase orders this request's lines went onto — for each line's
+  // "on PO-…" and the list in the side rail. Also answers the trainer hint's
+  // "has any of it been put on a PO yet".
+  const { data: poLines } = useQuery({
+    queryKey: ['order-po-lines', order.id, itemIds],
     queryFn: async () => {
-      if (itemIds.length === 0) return false
-      const { count, error } = await supabase.from('sourcing_bundle_items').select('id', { count: 'exact', head: true }).in('order_item_id', itemIds)
+      if (itemIds.length === 0) return [] as PoLine[]
+      const { data, error } = await supabase.from('sourcing_bundle_items')
+        .select('order_item_id, quantity_actual, unit_price_actual, sourcing_bundles(id, bundle_code, status, vendor_name, expected_delivery_date, vendors(vendor_name))')
+        .in('order_item_id', itemIds)
       if (error) throw error
-      return (count ?? 0) > 0
+      return (data ?? []) as unknown as PoLine[]
     },
     enabled: itemIds.length > 0,
   })
+  const hasBundle = poLines === undefined ? undefined : poLines.length > 0
+  const poByItem = useMemo(() => new Map((poLines ?? []).filter(l => l.sourcing_bundles).map(l => [l.order_item_id, l])), [poLines])
+  const purchaseOrders = useMemo(() => {
+    const m = new Map<string, { po: NonNullable<PoLine['sourcing_bundles']>; lines: number; value: number }>()
+    for (const l of poLines ?? []) {
+      if (!l.sourcing_bundles) continue
+      const e = m.get(l.sourcing_bundles.id) ?? { po: l.sourcing_bundles, lines: 0, value: 0 }
+      e.lines++
+      e.value += Number(l.quantity_actual ?? 0) * Number(l.unit_price_actual ?? 0)
+      m.set(l.sourcing_bundles.id, e)
+    }
+    return [...m.values()]
+  }, [poLines])
   const orderHint = useMemo(() => {
     if (hasBundle === undefined) return null
     const unsourced = items.some(i => i.status === 'pending' || i.status === 'partially_sourced')
@@ -221,7 +248,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
       neededBy: order.required_by_date, priority: order.priority, submitted: order.created_at,
       notes: order.notes, vendorNotes: order.vendor_recommendation,
       rejected: approvalStatus === 'rejected' ? { reason: order.rejection_reason ?? null } : null,
-      lines: items.map(i => ({ name: i.item_name, specifications: i.specifications, quantity: i.quantity, unit: i.unit, estUnitPrice: i.unit_price_est, status: (ITEM_S[i.status] ?? ITEM_S.pending).label })),
+      lines: items.map(i => ({ name: i.item_name, specifications: i.specifications, quantity: i.quantity, unit: i.unit, estUnitPrice: i.unit_price_est, status: `${(ITEM_S[i.status] ?? ITEM_S.pending).label}${poByItem.get(i.id)?.sourcing_bundles ? ` · ${poByItem.get(i.id)!.sourcing_bundles!.bundle_code}` : ''}` })),
     }), `${order.request_code ?? 'Purchase request'} - ${order.order_name ?? ''}`.trim())
   }
 
@@ -314,6 +341,18 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                               <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
                                 <span className="sm:hidden">{item.quantity ? `${item.quantity} ${item.unit ?? ''}` : 'no qty'}{item.unit_price_est ? ` · ${Number(item.unit_price_est).toLocaleString()} ETB each` : ''}</span>
                                 {(item as { needs_market_check?: boolean }).needs_market_check && <span className="inline-flex items-center gap-0.5 text-amber-600"><Zap className="h-3 w-3" />Check price</span>}
+                                {(() => {
+                                  const pl = poByItem.get(item.id)
+                                  if (!pl?.sourcing_bundles) return null
+                                  const over = priceOverEstimate(item.unit_price_est, pl.unit_price_actual)
+                                  return <>
+                                    <Link to={`/sourcing/${pl.sourcing_bundles.id}`} className="inline-flex items-center gap-0.5 font-medium text-brand hover:underline"
+                                      title={`${PO_STATUS[pl.sourcing_bundles.status]?.label ?? pl.sourcing_bundles.status}${pl.unit_price_actual ? ` · ${Number(pl.unit_price_actual).toLocaleString()} ETB each` : ''}`}>
+                                      <Truck className="h-3 w-3" />On {pl.sourcing_bundles.bundle_code}
+                                    </Link>
+                                    {over != null && <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400" title="Ordered price against this line's estimate"><TrendingUp className="h-3 w-3" />{over}% over estimate</span>}
+                                  </>
+                                })()}
                                 {item.specifications && (
                                   <button onClick={() => toggleExpand(item.id)} className="inline-flex items-center gap-0.5 hover:text-brand">
                                     {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Specs
@@ -405,6 +444,29 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                   {order.manager_approved_by && <>Approved by {profileName(order.manager_approved_by) ?? '—'}{order.manager_approved_at ? ` on ${formatDate(order.manager_approved_at)}` : ''} under the previous approval process.{order.finance_approved_by ? ' ' : ''}</>}
                   {order.finance_approved_by && <>Finance-approved by {profileName(order.finance_approved_by) ?? '—'}{order.finance_approved_at ? ` on ${formatDate(order.finance_approved_at)}` : ''}.</>}
                 </p>
+              )}
+            </Panel>
+            <Panel title="Purchase orders" icon={Truck} count={purchaseOrders.length}>
+              {purchaseOrders.length === 0 ? (
+                <p className="text-sm text-slate-400">{approvalStatus === 'rejected' ? 'None — rejected.' : 'None yet — procurement puts the lines on a purchase order.'}</p>
+              ) : (
+                <ul className="-my-1 divide-y text-sm dark:divide-slate-700">
+                  {purchaseOrders.map(({ po, lines, value }) => {
+                    const st = PO_STATUS[po.status]
+                    return (
+                      <li key={po.id} className="py-2">
+                        <Link to={`/sourcing/${po.id}`} className="group flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-mono text-xs font-semibold text-brand group-hover:underline">{po.bundle_code}</p>
+                            <p className="truncate text-xs text-slate-600 dark:text-slate-300">{po.vendors?.vendor_name ?? po.vendor_name ?? 'No vendor yet'}</p>
+                            <p className="text-[11px] text-slate-400">{lines} line{lines === 1 ? '' : 's'} from this request{value > 0 ? ` · ${Math.round(value).toLocaleString()} ETB` : ''}</p>
+                          </div>
+                          {st && <Pill tone={st.tone}>{st.label}</Pill>}
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
               )}
             </Panel>
             <Panel title="Details" icon={ClipboardList}>

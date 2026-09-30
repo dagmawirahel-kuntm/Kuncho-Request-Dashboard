@@ -1,16 +1,23 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
-import type { SourcingBundleInsert, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
+import type { SourcingBundleInsert, SourcingBundlePaymentPattern, SourcingBundleDiscountKind, SourcingBundleStatus } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import { BundleLineStock } from '@/components/stock/BundleLineStock'
 import { useVariantsForItems } from '@/hooks/useItemVariants'
-import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers, Tag } from 'lucide-react'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { Segmented } from '@/components/shared/Segmented'
+import { Panel, RecordHeader, RecordLayout } from '@/components/record/Record'
+import { PO_STATUS, PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
+import {
+  Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers, Tag,
+  Save, Store, Truck, Banknote, ClipboardList, Receipt, TrendingUp,
+} from 'lucide-react'
 
 type OrderRow = {
   id: string
@@ -464,7 +471,7 @@ export default function SourcingBundleFormPage() {
   const flaggedChecks = Object.values(budgetChecks).filter(r => r.outcome === 'warn' || r.outcome === 'block')
 
   async function handleSave() {
-    if (bundleItems.length === 0) { toast('Add at least one item to the bundle', 'error'); return }
+    if (bundleItems.length === 0) { toast('Add at least one line to the purchase order', 'error'); return }
     setSaving(true)
     try {
       let bundleId = id
@@ -573,7 +580,7 @@ export default function SourcingBundleFormPage() {
       qc.invalidateQueries({ queryKey: ['bundled-order-item-ids'] })
       qc.invalidateQueries({ queryKey: ['order-item-counts'] })
       qc.invalidateQueries({ queryKey: ['order-items-for-sourcing'] })
-      toast(isEdit ? 'Bundle updated' : 'Bundle created', 'success')
+      toast(isEdit ? 'Purchase order saved' : 'Purchase order created', 'success')
       navigate(`/sourcing/${bundleId}`)
     } catch (err: any) {
       toast(err.message, 'error')
@@ -582,20 +589,35 @@ export default function SourcingBundleFormPage() {
     }
   }
 
+  const vendorOptions = useMemo(() => vendors.map(v => ({ id: v.id, label: v.vendor_name, sub: v.wth_eligible ? 'Withholds 3%' : undefined })), [vendors])
+
+  // Lines priced well above what the request estimated — shown on the line
+  // and counted in the totals, so it's seen before finance is asked.
+  const overEstimate = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const item of bundleItems) {
+      const pct = priceOverEstimate(orderItemMap[item.order_item_id]?.unit_price_est, parseFloat(item.unit_price_actual))
+      if (pct != null) m[item.order_item_id] = pct
+    }
+    return m
+  }, [bundleItems, orderItemMap])
+  const overCount = Object.keys(overEstimate).length
+
+  const fieldCls = 'w-full rounded-lg border bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+  const labelCls = 'mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400'
+  const lineInputCls = 'w-full rounded-md border bg-white px-2 py-1.5 text-sm tabular-nums text-slate-800 outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+
   if (isEdit && existingBundle && existingBundle.status !== 'drafting') {
     return (
       <div className="space-y-4">
-        <Link to={`/sourcing/${id}`} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 w-fit">
-          <ChevronLeft className="h-4 w-4" /> Back to bundle
-        </Link>
-        <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10 p-5 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+        <RecordHeader back={{ to: `/sourcing/${id}`, label: 'Back to the purchase order' }} code={existingBundle.bundle_code} title="Edit purchase order" />
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-800/40 dark:bg-amber-900/10">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
           <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">This bundle can no longer be edited</p>
-            <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
-              It has moved past drafting (currently <strong>{existingBundle.status}</strong>). Only bundles still in
-              drafting can have their vendor, items, or amounts changed — this keeps the purchase order that finance
-              approved and the vendor received from changing after the fact.
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">This purchase order can no longer be edited</p>
+            <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+              It has moved past drafting (it's <strong>{PO_STATUS[existingBundle.status as SourcingBundleStatus]?.label.toLowerCase() ?? existingBundle.status}</strong>).
+              Only a draft can have its vendor, lines or prices changed — so the order finance approved and the vendor received stays the same.
             </p>
           </div>
         </div>
@@ -603,332 +625,113 @@ export default function SourcingBundleFormPage() {
     )
   }
 
+  const saveLabel = saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create purchase order'
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Link to="/sourcing" className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500">
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-              {isEdit ? 'Edit Sourcing Bundle' : 'New Sourcing Bundle'}
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Consolidate approved PR line items into a vendor purchase order
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
-          {saving ? 'Saving…' : isEdit ? 'Update Bundle' : 'Create Bundle'}
-        </button>
-      </div>
+    <div className="pb-20 sm:pb-0">
+      <RecordHeader
+        back={{ to: isEdit ? `/sourcing/${id}` : '/sourcing', label: isEdit ? 'Back to the purchase order' : 'Purchase orders' }}
+        code={existingBundle?.bundle_code ?? null}
+        title={isEdit ? 'Edit purchase order' : 'New purchase order'}
+        subtitle="Pick lines from purchase requests, price them with the vendor, and send to finance"
+        actions={[{ label: saveLabel, icon: Save, primary: true, onClick: handleSave, disabled: saving }]}
+      />
 
-      {/* Bundle details */}
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-4">
-        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Bundle Details</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Vendor</label>
-            <select
-              value={vendorId}
-              onChange={e => { setVendorId(e.target.value); if (e.target.value) setVendorName('') }}
-              className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40">
-              <option value="">— Select vendor or type below —</option>
-              {vendors.map(v => <option key={v.id} value={v.id}>{v.vendor_name}</option>)}
-            </select>
-            {vendorId && (
-              <p className="text-[11px] text-slate-400">
-                {whtEligible ? 'WHT-eligible vendor — 3% will be withheld from payment' : 'Not registered for withholding tax'}
-              </p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              {vendorId ? 'Free-text vendor (optional override)' : 'Free-text vendor name'}
-            </label>
-            <input
-              type="text"
-              value={vendorName}
-              onChange={e => setVendorName(e.target.value)}
-              disabled={!!vendorId}
-              placeholder={vendorId ? 'Vendor selected above' : 'e.g. Local market supplier'}
-              className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40 disabled:opacity-50" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected Delivery Date</label>
-            <input
-              type="date"
-              value={deliveryDate}
-              onChange={e => setDeliveryDate(e.target.value)}
-              className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Payment Pattern</label>
-            <select
-              value={paymentPattern}
-              onChange={e => setPaymentPattern(e.target.value as SourcingBundlePaymentPattern)}
-              className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40">
-              <option value="pay_on_delivery">Pay on Delivery (goods first)</option>
-              <option value="pay_in_advance">Pay in Advance (vendor demands payment first)</option>
-            </select>
-            {paymentPattern === 'pay_in_advance' && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                Once ordered, this lets Finance record and send the advance before a GRN exists. Closing it to a real expense still requires a GRN.
-              </p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Notes for Finance</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Optional notes…"
-              className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40 resize-none" />
-          </div>
-        </div>
-
-        {/* Vendor discount — on the order as a whole, not per line. Shading
-        the unit prices instead would lose the fact a discount was given and
-        would feed the wrong rates into the market price history. */}
-        <div className="rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 p-3 space-y-3">
-          <div className="flex items-center gap-2">
-            <Tag className="h-3.5 w-3.5 text-slate-400" />
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Vendor Discount</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Type</label>
-              <select
-                value={discountKind}
-                onChange={e => {
-                  const next = e.target.value as SourcingBundleDiscountKind
-                  setDiscountKind(next)
-                  if (next === 'none') { setDiscountValue(''); setDiscountReason('') }
-                }}
-                className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/40">
-                <option value="none">No discount</option>
-                <option value="percent">Percentage off</option>
-                <option value="amount">Fixed amount off (ETB)</option>
-              </select>
-            </div>
-            {discountKind !== 'none' && (
-              <>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {discountKind === 'percent' ? 'Percent (0–100)' : 'Amount (ETB)'}
-                  </label>
-                  <input
-                    type="number"
-                    value={discountValue}
-                    onChange={e => setDiscountValue(e.target.value)}
-                    min={0}
-                    max={discountKind === 'percent' ? 100 : undefined}
-                    step="any"
-                    placeholder={discountKind === 'percent' ? 'e.g. 5' : 'e.g. 2500'}
-                    className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Reason (optional)</label>
-                  <input
-                    type="text"
-                    value={discountReason}
-                    onChange={e => setDiscountReason(e.target.value)}
-                    placeholder="e.g. bulk order, early settlement"
-                    className="w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40" />
-                </div>
-              </>
-            )}
-          </div>
-          {discountKind !== 'none' && (
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {discountAmount > 0 ? (
-                <>
-                  {formatCurrency(discountAmount)} off {formatCurrency(runningTotal)} — this PO commits{' '}
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(netSubtotal)}</span>
-                  {' '}before VAT, and that is the figure the approval threshold is checked against.
-                  {discountKind === 'amount' && (parseFloat(discountValue) || 0) > runningTotal &&
-                    ' The amount entered is larger than the order, so it is capped at the full subtotal.'}
-                </>
-              ) : (
-                'Enter a discount above. It applies to the whole order, and is frozen once this PO leaves drafting.'
-              )}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Phase 2 budget check — preview only, never blocks (see src/lib/budgetCheck.ts) */}
-      {flaggedChecks.length > 0 && (
-        <div className="space-y-1.5">
-          {flaggedChecks.map((r, i) => (
-            <div key={i} className={`flex items-start gap-2 rounded-lg p-3 border ${
-              r.outcome === 'block'
-                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
-                : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40'
-            }`}>
-              <ShieldAlert className={`h-4 w-4 flex-shrink-0 mt-0.5 ${r.outcome === 'block' ? 'text-red-600' : 'text-amber-600'}`} />
-              <p className={`text-xs ${r.outcome === 'block' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
-                {r.message}
-                {r.outcome === 'block' && <span className="font-medium"> — preview only, not blocked (budget checks: preview only)</span>}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Item picker + selected items */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Available PR items */}
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b dark:border-slate-700 space-y-2 shrink-0">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Available PR Line Items</h2>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={itemSearch}
-                onChange={e => setItemSearch(e.target.value)}
-                placeholder="Search items, PR codes, projects…"
-                className="w-full rounded-md border dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 pl-8 pr-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40" />
-            </div>
-          </div>
-          <div className="overflow-y-auto" style={{ maxHeight: 480 }}>
-            {groupedAvailable.length === 0 ? (
-              <div className="py-12 text-center">
-                <Package className="mx-auto h-7 w-7 text-slate-300 dark:text-slate-600 mb-2" />
-                <p className="text-sm text-slate-400">
-                  {availableItems.length === 0
-                    ? 'No PR line items available to source'
-                    : 'No items match your search'}
-                </p>
+      <RecordLayout
+        main={<>
+          <Panel title="Vendor and delivery" icon={Store}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Vendor</label>
+                <SearchableSelect value={vendorId || null} options={vendorOptions} placeholder="Search vendors…"
+                  onChange={v => { setVendorId(v ?? ''); if (v) setVendorName('') }} />
+                {vendorId ? (
+                  <p className="mt-1 text-[11px] text-slate-400">{whtEligible ? 'Withholding vendor — 3% is withheld from the payment' : 'Not registered for withholding'}</p>
+                ) : (
+                  <input type="text" value={vendorName} onChange={e => setVendorName(e.target.value)}
+                    placeholder="Not in the list? Type the vendor's name" className={`${fieldCls} mt-2`} />
+                )}
               </div>
-            ) : groupedAvailable.map(({ order, items }) => (
-              <div key={order.id} className="border-b dark:border-slate-700 last:border-0">
-                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-700/30">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs font-bold text-brand shrink-0">{order.request_code ?? '—'}</span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1 min-w-[6rem]">{order.order_name ?? 'Untitled request'}</span>
-                    {priorityBadge(order.priority)}
-                    {requiredByBadge(order.required_by_date)}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 flex-wrap">
-                    {order.projects && (
-                      <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 rounded px-1.5 py-0.5 whitespace-nowrap">
-                        {order.projects.project_name}
-                      </span>
-                    )}
-                    {order.is_new_item && (
-                      <span className="flex items-center gap-0.5 text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded px-1.5 py-0.5 whitespace-nowrap">
-                        <Zap className="h-2.5 w-2.5" />Market search
-                      </span>
-                    )}
-                    <span className="flex items-center gap-0.5 text-[10px] text-slate-400 whitespace-nowrap">
-                      <Layers className="h-2.5 w-2.5" />{items.length} item{items.length !== 1 ? 's' : ''}
-                    </span>
-                    <button onClick={() => addAllInGroup(items)}
-                      title="Add every line from this request to the bundle"
-                      className="ml-auto text-[11px] font-medium text-brand hover:underline shrink-0">
-                      Add all
-                    </button>
-                  </div>
-                </div>
-                {items.map(item => (
-                  <div key={item.id}
-                    className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/20">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{item.item_name}</p>
-                      <p className="text-[11px] text-slate-400">
-                        Qty {item.quantity} {item.unit ?? ''}
-                        {item.unit_price_est != null && ` · Est. ${formatCurrency(item.unit_price_est)}`}
-                      </p>
-                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                        {stockBadge(item)}
-                      </div>
-                    </div>
-                    <button onClick={() => addItem(item)}
-                      title="Add to bundle"
-                      className="shrink-0 rounded p-1 text-brand hover:bg-brand/10 transition-colors">
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+              <div>
+                <label className={labelCls}>Expected delivery</label>
+                <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className={fieldCls} />
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Payment</label>
+                <Segmented value={paymentPattern} onChange={setPaymentPattern} ariaLabel="Payment"
+                  options={[
+                    { value: 'pay_on_delivery', label: 'Pay on delivery', icon: Truck },
+                    { value: 'pay_in_advance', label: 'Pay in advance', icon: Banknote, tone: 'amber' },
+                  ]} />
+                {paymentPattern === 'pay_in_advance' && (
+                  <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                    Once ordered, finance can send the advance before the goods arrive. Closing it to an expense still needs a goods received note.
+                  </p>
+                )}
+              </div>
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Notes for finance</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Why this vendor, lead time, anything finance should know…"
+                  className={`${fieldCls} resize-none`} />
+              </div>
+            </div>
+          </Panel>
 
-        {/* Selected bundle items */}
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b dark:border-slate-700 flex items-center justify-between shrink-0">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Bundle Items <span className="ml-1 text-slate-400 font-normal">({bundleItems.length})</span>
-            </h2>
-            {bundleItems.length > 0 && (
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
-                {formatCurrency(runningTotal)}
-              </span>
-            )}
-          </div>
-          <div className="overflow-y-auto flex-1" style={{ maxHeight: 480 }}>
+          <Panel title="Lines on this order" icon={ClipboardList} count={bundleItems.length} padded={false}
+            action={bundleItems.length > 0 && <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(runningTotal)}</span>}>
             {bundleItems.length === 0 ? (
-              <div className="py-12 text-center">
-                <AlertCircle className="mx-auto h-7 w-7 text-slate-300 dark:text-slate-600 mb-2" />
-                <p className="text-sm text-slate-400">Add items from the left panel</p>
+              <div className="py-10 text-center">
+                <Package className="mx-auto mb-2 h-7 w-7 text-slate-300 dark:text-slate-600" />
+                <p className="text-sm text-slate-500">No lines yet — add them from the purchase requests below.</p>
               </div>
             ) : (
               <div className="divide-y dark:divide-slate-700">
                 {bundleItems.map(item => {
                   const lineTotal = (parseFloat(item.quantity_actual) || 0) * (parseFloat(item.unit_price_actual) || 0)
+                  const oi = orderItemMap[item.order_item_id]
+                  const est = oi?.unit_price_est
+                  const over = overEstimate[item.order_item_id]
+                  const badge = stockBadge(oi)
                   return (
-                    <div key={item._key} className="px-4 py-3 space-y-2">
+                    <div key={item._key} className={`space-y-2.5 px-4 py-3 ${over != null ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{item.item_name}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{item.item_name}</p>
                           <p className="text-[11px] text-slate-400">
-                            {item.source_pr_code}
+                            <span className="font-mono font-semibold text-brand">{item.source_pr_code}</span>
                             {item.project_name && ` · ${item.project_name}`}
-                            {' · Req: '}{item.quantity_requested} {item.unit ?? ''}
+                            {` · asked for ${item.quantity_requested} ${item.unit ?? ''}`}
+                            {est != null && est > 0 && ` · estimate ${formatCurrency(est)}`}
                           </p>
-                          {stockBadge(orderItemMap[item.order_item_id]) && (
-                            <div className="mt-1">{stockBadge(orderItemMap[item.order_item_id])}</div>
-                          )}
+                          {badge && <div className="mt-1">{badge}</div>}
                         </div>
-                        <button onClick={() => removeItem(item.order_item_id)}
-                          className="shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition-colors">
+                        <button onClick={() => removeItem(item.order_item_id)} title="Take off this order"
+                          className="shrink-0 rounded p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <div className="space-y-0.5">
-                          <label className="text-[10px] text-slate-400">Qty Actual</label>
-                          <input
-                            type="number"
-                            value={item.quantity_actual}
-                            onChange={e => updateItem(item.order_item_id, { quantity_actual: e.target.value })}
-                            min={0} step="any"
-                            className="w-full rounded border dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand/40" />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] uppercase tracking-wide text-slate-400">Qty{item.unit ? ` (${item.unit})` : ''}</label>
+                          <input type="number" inputMode="decimal" value={item.quantity_actual} min={0} step="any"
+                            onChange={e => updateItem(item.order_item_id, { quantity_actual: e.target.value })} className={lineInputCls} />
                         </div>
-                        <div className="space-y-0.5">
-                          <label className="text-[10px] text-slate-400">Unit Price</label>
-                          <input
-                            type="number"
-                            value={item.unit_price_actual}
+                        <div>
+                          <label className="text-[10px] uppercase tracking-wide text-slate-400">Unit price</label>
+                          <input type="number" inputMode="decimal" value={item.unit_price_actual} min={0} step="any"
                             onChange={e => updateItem(item.order_item_id, { unit_price_actual: e.target.value })}
-                            min={0} step="any"
-                            className="w-full rounded border dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand/40" />
+                            className={`${lineInputCls} ${over != null ? 'border-amber-400! dark:border-amber-600!' : ''}`} />
                         </div>
-                        <div className="space-y-0.5">
-                          <label className="text-[10px] text-slate-400">Line Total</label>
-                          <p className="px-2 py-1 text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
-                            {lineTotal > 0 ? formatCurrency(lineTotal) : '—'}
-                          </p>
+                        <div className="text-right">
+                          <label className="text-[10px] uppercase tracking-wide text-slate-400">Line total</label>
+                          <p className="py-1.5 text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{lineTotal > 0 ? formatCurrency(lineTotal) : '—'}</p>
                         </div>
                       </div>
+                      {over != null && (
+                        <p className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                          <TrendingUp className="h-3.5 w-3.5" /> {over}% above the request's estimate of {formatCurrency(est ?? 0)} — say why in the line note
+                        </p>
+                      )}
                       <BundleLineStock
                         itemName={item.item_name}
                         unit={item.unit}
@@ -939,67 +742,163 @@ export default function SourcingBundleFormPage() {
                       />
                       {(variantsByItem?.get(item.stock_item_id ?? '')?.length ?? 0) > 0 && (
                         <div className="flex items-center gap-2">
-                          <label className="shrink-0 text-[10px] text-slate-400">Which one?</label>
+                          <label className="shrink-0 text-[11px] text-slate-400">Which one?</label>
                           <select value={item.variant_id ?? ''} onChange={e => updateItem(item.order_item_id, { variant_id: e.target.value || null })}
-                            className={`w-full rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand/40 dark:bg-slate-700/50 dark:text-slate-200 ${item.variant_id ? 'bg-slate-50 dark:border-slate-600' : 'border-amber-300 bg-amber-50 dark:border-amber-700'}`}>
+                            className={`w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:text-slate-200 ${item.variant_id ? 'bg-white dark:border-slate-600' : 'border-amber-300! bg-amber-50 dark:border-amber-700!'}`}>
                             <option value="">— Pick the variant bought —</option>
                             {variantsByItem!.get(item.stock_item_id!)!.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
                           </select>
                         </div>
                       )}
-                      <input
-                        type="text"
-                        value={item.notes}
-                        onChange={e => updateItem(item.order_item_id, { notes: e.target.value })}
-                        placeholder="Item notes (optional)"
-                        className="w-full rounded border dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 text-xs text-slate-600 dark:text-slate-300 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand/40" />
+                      <input type="text" value={item.notes} onChange={e => updateItem(item.order_item_id, { notes: e.target.value })}
+                        placeholder="Line note (optional)"
+                        className="w-full rounded-md border bg-white px-2 py-1.5 text-xs text-slate-600 placeholder-slate-400 outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" />
                     </div>
                   )
                 })}
               </div>
             )}
-          </div>
-          {bundleItems.length > 0 && (
-            <div className="px-4 py-3 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                <span>{bundleItems.length} item{bundleItems.length !== 1 ? 's' : ''} · Subtotal</span>
+          </Panel>
+
+          <Panel title="Add from purchase requests" icon={Layers} count={availableItems.length} padded={false}>
+            <div className="border-b px-4 py-3 dark:border-slate-700">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input type="text" value={itemSearch} onChange={e => setItemSearch(e.target.value)}
+                  placeholder="Search items, request codes, projects…" className={`${fieldCls} pl-9`} />
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-400">Most urgent requests first — late and due-soon at the top.</p>
+            </div>
+            <div className="max-h-[520px] overflow-y-auto">
+              {groupedAvailable.length === 0 ? (
+                <div className="py-10 text-center">
+                  <Package className="mx-auto mb-2 h-7 w-7 text-slate-300 dark:text-slate-600" />
+                  <p className="text-sm text-slate-400">{availableItems.length === 0 ? 'Every open request line is already on a purchase order' : 'Nothing matches the search'}</p>
+                </div>
+              ) : groupedAvailable.map(({ order, items }) => (
+                <div key={order.id} className="border-b last:border-0 dark:border-slate-700">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-slate-50 px-4 py-2 dark:bg-slate-700/30">
+                    <span className="shrink-0 font-mono text-xs font-bold text-brand">{order.request_code ?? '—'}</span>
+                    <span className="min-w-[6rem] flex-1 truncate text-xs font-medium text-slate-600 dark:text-slate-300">{order.order_name ?? 'Untitled request'}</span>
+                    {priorityBadge(order.priority)}
+                    {requiredByBadge(order.required_by_date)}
+                    {order.projects && <span className="whitespace-nowrap text-[10px] text-slate-400">{order.projects.project_name}</span>}
+                    {order.is_new_item && (
+                      <span className="flex items-center gap-0.5 whitespace-nowrap rounded bg-purple-50 px-1.5 py-0.5 text-[10px] text-purple-600 dark:bg-purple-900/20 dark:text-purple-400">
+                        <Zap className="h-2.5 w-2.5" />Market search
+                      </span>
+                    )}
+                    <button onClick={() => addAllInGroup(items)} title="Add every line from this request"
+                      className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border bg-white px-2 py-0.5 text-[11px] font-medium text-brand hover:border-brand dark:border-slate-600 dark:bg-slate-800">
+                      <Plus className="h-3 w-3" /> All {items.length}
+                    </button>
+                  </div>
+                  {items.map(item => (
+                    <button key={item.id} onClick={() => addItem(item)}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-brand/5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-slate-700 dark:text-slate-200">{item.item_name}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {item.quantity} {item.unit ?? ''}
+                          {item.unit_price_est != null && ` · estimate ${formatCurrency(item.unit_price_est)}`}
+                        </p>
+                        {stockBadge(item) && <div className="mt-1">{stockBadge(item)}</div>}
+                      </div>
+                      <span className="shrink-0 rounded-md p-1 text-brand"><Plus className="h-4 w-4" /></span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </>}
+        rail={<div className="space-y-4 lg:sticky lg:top-28">
+          <Panel title="Totals" icon={Receipt}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-300">
+                <span>{bundleItems.length} line{bundleItems.length === 1 ? '' : 's'}</span>
                 <span className="tabular-nums">{formatCurrency(runningTotal)}</span>
               </div>
-              {discountAmount > 0 && (
-                <>
-                  <div className="flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400">
-                    <span>
-                      Vendor discount
-                      {discountKind === 'percent' && ` (${parseFloat(discountValue) || 0}%)`}
-                    </span>
-                    <span className="tabular-nums">−{formatCurrency(discountAmount)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-                    <span>Discounted subtotal</span>
-                    <span className="tabular-nums">{formatCurrency(netSubtotal)}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                <span>VAT (15%, added)</span>
-                <span className="tabular-nums">+{formatCurrency(vatAmount)}</span>
-              </div>
-              {whtEligible && (
-                <div className="flex items-center justify-between text-xs text-amber-600 dark:text-amber-400">
-                  <span>WHT (3%, withheld)</span>
-                  <span className="tabular-nums">−{formatCurrency(whtAmount)}</span>
+
+              {/* The vendor's discount is on the order as a whole, not shaded
+              into the unit prices — that would hide that a discount was given
+              and feed the wrong rates into the market price history. */}
+              <div className="space-y-2 rounded-lg border border-dashed p-3 dark:border-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300"><Tag className="h-3.5 w-3.5 text-emerald-500" /> Vendor discount</span>
+                  <Segmented size="sm" value={discountKind} ariaLabel="Vendor discount"
+                    onChange={k => { setDiscountKind(k); if (k === 'none') { setDiscountValue(''); setDiscountReason('') } }}
+                    options={[{ value: 'none', label: 'None' }, { value: 'percent', label: '%' }, { value: 'amount', label: 'ETB' }]} />
                 </div>
-              )}
-              <div className="flex items-center justify-between border-t dark:border-slate-600 pt-1.5">
-                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Net Payable to Vendor</span>
-                <span className="text-lg font-bold text-slate-800 dark:text-slate-100 tabular-nums">
-                  {formatCurrency(netPayable)}
-                </span>
+                {discountKind !== 'none' && (
+                  <>
+                    <div className="flex gap-2">
+                      <input type="number" inputMode="decimal" value={discountValue} onChange={e => setDiscountValue(e.target.value)}
+                        min={0} max={discountKind === 'percent' ? 100 : undefined} step="any"
+                        placeholder={discountKind === 'percent' ? 'e.g. 5' : 'e.g. 2500'}
+                        className="w-24 shrink-0 rounded-md border bg-white px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                      <input type="text" value={discountReason} onChange={e => setDiscountReason(e.target.value)} placeholder="Why — bulk, early payment…"
+                        className="min-w-0 flex-1 rounded-md border bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                    </div>
+                    {discountKind === 'amount' && (parseFloat(discountValue) || 0) > runningTotal && runningTotal > 0 && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">More than the order — it's capped at the lines' total.</p>
+                    )}
+                  </>
+                )}
               </div>
+
+              <dl className="space-y-1.5 text-sm">
+                {discountAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                      <dt>Discount{discountKind === 'percent' ? ` (${parseFloat(discountValue) || 0}%)` : ''}</dt>
+                      <dd className="tabular-nums">−{formatCurrency(discountAmount)}</dd>
+                    </div>
+                    <div className="flex justify-between font-medium text-slate-700 dark:text-slate-200">
+                      <dt>After discount</dt><dd className="tabular-nums">{formatCurrency(netSubtotal)}</dd>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                  <dt>VAT (15%)</dt><dd className="tabular-nums">+{formatCurrency(vatAmount)}</dd>
+                </div>
+                {whtEligible && (
+                  <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                    <dt>Withholding (3%)</dt><dd className="tabular-nums">−{formatCurrency(whtAmount)}</dd>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between border-t pt-2 dark:border-slate-700">
+                  <dt className="font-semibold text-slate-700 dark:text-slate-200">Pay the vendor</dt>
+                  <dd className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-50">{formatCurrency(netPayable)}</dd>
+                </div>
+              </dl>
+              <p className="text-[11px] text-slate-400">Finance's approval limits are checked against {formatCurrency(netSubtotal)}, before VAT.</p>
+            </div>
+          </Panel>
+
+          {overCount > 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/40 dark:bg-amber-900/10">
+              <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                <b>{overCount} line{overCount === 1 ? ' is' : 's are'} priced {PRICE_CHECK_PERCENT}% or more above the request's estimate.</b> Finance sees this flag when approving — a line note saying why helps.
+              </p>
             </div>
           )}
-        </div>
-      </div>
+
+          {/* Budget check — a preview only, never blocks (see src/lib/budgetCheck.ts). */}
+          {flaggedChecks.map((r, i) => (
+            <div key={i} className={`flex items-start gap-2 rounded-xl border p-3 ${r.outcome === 'block'
+              ? 'border-red-200 bg-red-50 dark:border-red-700/40 dark:bg-red-900/20'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-700/40 dark:bg-amber-900/20'}`}>
+              <ShieldAlert className={`mt-0.5 h-4 w-4 shrink-0 ${r.outcome === 'block' ? 'text-red-600' : 'text-amber-600'}`} />
+              <p className={`text-xs ${r.outcome === 'block' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                {r.message}
+                {r.outcome === 'block' && <span className="font-medium"> — a preview, not blocked</span>}
+              </p>
+            </div>
+          ))}
+        </div>}
+      />
     </div>
   )
 }

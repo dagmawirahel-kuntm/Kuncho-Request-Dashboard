@@ -133,7 +133,7 @@ records; history (payroll, advances) hangs off them.
 | I want to… | Do this |
 |---|---|
 | See purchase requests to source | **Requests → Purchase Requests** (you can view, not create) |
-| Bundle items for a vendor order | **Supply Chain → Sourcing Bundles → New** → pick items → submit for approval |
+| Put request lines on a vendor order | **Supply → Purchase Orders → New purchase order** → add lines from purchase requests → price them → create, then submit for approval (lines 15%+ over the request's estimate are flagged) |
 | Maintain vendors | **Supply Chain → Vendors** — profiles, documents, contracts, receipts |
 | Manage stock intake | **Supply Chain → Stock Catalog** |
 

@@ -747,10 +747,10 @@ export default function ExpensesPage() {
       items.push({
         id: b.id,
         kind: 'bundle',
-        badge: 'Sourcing PO',
+        badge: 'Purchase order',
         badgeCls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
         code: b.bundle_code ?? '—',
-        title: b.vendors?.vendor_name ?? b.vendor_name ?? 'Sourcing bundle',
+        title: b.vendors?.vendor_name ?? b.vendor_name ?? 'Purchase order',
         meta: 'Submitted for finance approval',
         amount: Number(b.total_value ?? 0),
         since: b.submitted_at,
@@ -1060,12 +1060,12 @@ export default function ExpensesPage() {
                 <Section
                   icon={<Package className="h-4 w-4 text-blue-600" />}
                   title="Purchase Orders"
-                  subtitle={role === 'procurement_officer' ? 'Your sourcing bundles submitted for finance approval' : 'Sourcing bundles across all procurement officers'}
+                  subtitle={role === 'procurement_officer' ? 'Your purchase orders submitted for finance approval' : 'Purchase orders across all procurement officers'}
                   pipeline={<PipelineStrip stages={bundlePipeline} />}
                   viewAll={{ label: 'View all bundles', to: '/sourcing' }}
                 >
                   {bundles.length === 0
-                    ? <EmptyState message="No sourcing bundles yet." />
+                    ? <EmptyState message="No purchase orders yet." />
                     : bundles.slice(0, 5).map(b => <BundleRow key={b.id} b={b} navigate={navigate} />)
                   }
                 </Section>
