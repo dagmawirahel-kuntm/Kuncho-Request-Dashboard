@@ -3174,6 +3174,8 @@ export interface WorkOrder {
   project_id: string
   work_type: WorkOrderType
   scope_of_work: string
+  /** Short name for lists (386). */
+  title?: string | null
   requested_by: string | null
   assigned_lead_staff_id: string | null
   status: WorkOrderStatus

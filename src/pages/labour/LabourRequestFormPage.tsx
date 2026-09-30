@@ -126,6 +126,8 @@ export default function LabourRequestFormPage() {
         fixed_price_amount: basis === 'fixed_price' ? parseFloat(price) : null,
         is_casual_or_new: people.length > 0 || parseInt(extra) > 0,
         requested_by: profile?.id, status: 'pending',
+        // Asked for from a work order: its labour counts against it.
+        work_order_id: params.get('work_order') || null,
       }).select('id').single()
       if (error) throw error
       for (const w of roster) {
