@@ -16,7 +16,7 @@ interface SaleRow {
   client_id: string | null; proforma_id: string | null; contract_id: string | null; amount_received: number | null
   clients: { client_name: string; tin: string | null; address: string | null; phone_number: string | null; email: string | null } | null
   projects: { project_name: string } | null
-  proformas: { proforma_number: string | null; total: number | null } | null
+  proformas: { proforma_number: string | null; total: number | null; discount_amount: number | null } | null
   contracts: { contract_no: string | null } | null
 }
 
@@ -35,7 +35,7 @@ export default function InvoiceDocumentPage() {
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await supabase.from('sales')
-        .select('id, invoice_number, date, due_date, amount, sales_description, sales_status, is_vat_exempt, notes, client_id, proforma_id, contract_id, amount_received, clients(client_name, tin, address, phone_number, email), projects(project_name), proformas:proforma_id(proforma_number, total), contracts:contract_id(contract_no)')
+        .select('id, invoice_number, date, due_date, amount, sales_description, sales_status, is_vat_exempt, notes, client_id, proforma_id, contract_id, amount_received, clients(client_name, tin, address, phone_number, email), projects(project_name), proformas:proforma_id(proforma_number, total, discount_amount), contracts:contract_id(contract_no)')
         .eq('id', id!).single()
       if (error) throw error
       return data as unknown as SaleRow
@@ -73,7 +73,7 @@ export default function InvoiceDocumentPage() {
       vatRate: vatRate ?? 0.15, vatExempt: !!sale.is_vat_exempt,
       reference: { proforma: sale.proformas?.proforma_number, contract: sale.contracts?.contract_no, request: request?.request_number, projectName: sale.projects?.project_name },
       basis: basisTotal ? {
-        label: sale.proformas?.proforma_number ? `proforma ${sale.proformas.proforma_number}` : sale.contracts?.contract_no ? `contract ${sale.contracts.contract_no}` : 'the agreed total',
+        label: sale.proformas?.proforma_number ? `proforma ${sale.proformas.proforma_number}${Number(sale.proformas.discount_amount ?? 0) > 0 ? ', after its discount' : ''}` : sale.contracts?.contract_no ? `contract ${sale.contracts.contract_no}` : 'the agreed total',
         total: Number(basisTotal), percent: request?.percent ?? null, previouslyInvoiced: before,
       } : null,
       signoff: signoff ?? null,

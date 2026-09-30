@@ -50,6 +50,8 @@ export interface CompanyProfile {
   /** Migration 369 */
   tagline?: string | null
   bilingual_labels?: boolean
+  /** Migration 383: discounts above this percentage need a second person's approval. */
+  discount_approval_percent?: number | null
 }
 
 export interface CompanySignoff {
