@@ -10,6 +10,8 @@ import type {
 } from '@/types/database'
 import { BASIS_LABEL, BASIS_COUNT_KEYS } from '@/hooks/useTaxFilingComputed'
 import { EmployeeScheduleSection } from './EmployeeScheduleSection'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { useAccounts } from '@/hooks/useLookups'
 import { X, Upload, FileText, Trash2, ExternalLink, AlertTriangle, Info } from 'lucide-react'
 
 const DOC_TYPES: { value: TaxFilingDocType; label: string }[] = [
@@ -54,6 +56,36 @@ export function TaxFilingDetailModal({
   const [dragOver, setDragOver] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // How the payment was made (385): from a bank account, or by an expense
+  // already entered (a "Government Expense"). Either way the ledger moves
+  // it off cost and against what is owed to the authority. The picks stay
+  // undefined until changed, so the stored values show through.
+  const { data: paidVia } = useQuery({
+    queryKey: ['tax-filing-paid-via', filing.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tax_filings').select('paid_from_account_id, paid_by_expense_id').eq('id', filing.id).single()
+      if (error) throw error
+      return data as { paid_from_account_id: string | null; paid_by_expense_id: string | null }
+    },
+  })
+  const [pickedAccount, setPickedAccount] = useState<string | null | undefined>(undefined)
+  const [pickedExpense, setPickedExpense] = useState<string | null | undefined>(undefined)
+  const paidAccount = pickedAccount !== undefined ? pickedAccount : paidVia?.paid_from_account_id ?? null
+  const paidExpense = pickedExpense !== undefined ? pickedExpense : paidVia?.paid_by_expense_id ?? null
+  const { data: accounts = [] } = useAccounts()
+  const { data: paidExpenses = [] } = useQuery({
+    queryKey: ['tax-paying-expenses'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('expenses')
+        .select('id, expense_code, item_service_description, amount_etb, date')
+        .in('payment_state', ['paid', 'sent', 'approved_to_pay']).eq('is_archived', false)
+        .order('date', { ascending: false }).limit(400)
+      if (error) throw error
+      return (data ?? []) as { id: string; expense_code: string | null; item_service_description: string | null; amount_etb: number; date: string }[]
+    },
+  })
+
   // The rate in force for THIS period, not simply the latest one on file —
   // a filing being corrected two years late must show the rate that applied
   // then, otherwise the helper text quietly misinforms.
@@ -97,6 +129,8 @@ export function TaxFilingDetailModal({
       declared_amount: declared.trim() === '' ? null : Number(declared),
       paid_amount: paid.trim() === '' ? null : Number(paid),
       payment_date: paymentDate || null,
+      paid_from_account_id: paidExpense ? null : paidAccount,
+      paid_by_expense_id: paidExpense,
       government_reference_no: govRef.trim() || null,
       notes: notes.trim() || null,
     }
@@ -294,6 +328,27 @@ export function TaxFilingDetailModal({
                   className={inputCls} placeholder="Receipt / declaration number" />
               </Field>
             </div>
+
+            {paid.trim() !== '' && Number(paid) > 0 && (
+              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                <p className="mb-2 text-xs font-medium text-slate-600 dark:text-slate-300">How was it paid?</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="From a bank account">
+                    <SearchableSelect value={paidExpense ? null : paidAccount} onChange={v => { setPickedAccount(v); if (v) setPickedExpense(null) }}
+                      options={(accounts as { id: string; account_name: string; account_number: string | null }[]).map(a => ({ id: a.id, label: a.account_name, sub: a.account_number ?? undefined }))}
+                      placeholder="Pick the account…" />
+                  </Field>
+                  <Field label="…or by an expense already entered">
+                    <SearchableSelect value={paidExpense} onChange={v => { setPickedExpense(v); if (v) setPickedAccount(null) }}
+                      options={paidExpenses.map(e => ({ id: e.id, label: `${e.expense_code ?? ''} · ${formatCurrency(e.amount_etb)}`, sub: e.item_service_description ?? undefined }))}
+                      placeholder="Pick the expense…" />
+                  </Field>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-400">
+                  The ledger takes it off what is owed to the authority{filing.schedule_code === 'SCH_C' ? ' (profit tax: to the tax expense)' : ''}. If an expense recorded the payment, its cost moves there instead — one expense can pay several filings.
+                </p>
+              </div>
+            )}
 
             <Field label="Notes">
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} />
