@@ -566,7 +566,7 @@ export default function ProformaInvoicePage() {
                 <div className="flex items-center gap-2">
                   <Percent className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
                   <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Discount</span>
-                  <div className="ml-auto flex overflow-hidden rounded-md border text-xs font-semibold dark:border-slate-600" role="group" aria-label="Discount as">
+                  <div className="ml-auto flex shrink-0 overflow-hidden rounded-md border text-xs font-semibold dark:border-slate-600" role="group" aria-label="Discount as">
                     {(['percent', 'amount'] as const).map(k => (
                       <button key={k} type="button" onClick={() => setDiscountKind(k)} aria-pressed={discountKind === k}
                         className={`px-2.5 py-1 ${discountKind === k ? 'bg-slate-900 text-white dark:bg-brand dark:text-brand-foreground' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
@@ -576,7 +576,7 @@ export default function ProformaInvoicePage() {
                   </div>
                   <input type="number" min={0} max={discountKind === 'percent' ? 100 : undefined} step="any" value={discountValue || ''} placeholder="0"
                     onChange={e => setDiscountValue(Math.max(0, Number(e.target.value) || 0))} aria-label={discountKind === 'percent' ? 'Discount percent' : 'Discount in ETB'}
-                    className={`${numCls} w-24 text-right`} />
+                    className="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
                 </div>
                 {discountValue > 0 && (
                   <>
