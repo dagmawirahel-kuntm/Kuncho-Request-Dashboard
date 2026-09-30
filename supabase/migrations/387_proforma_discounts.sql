@@ -1,4 +1,4 @@
--- 383 — Discounts on proformas, with a second pair of eyes above a limit
+-- 387 — Discounts on proformas, with a second pair of eyes above a limit
 --
 -- A proforma can carry one discount on the whole job: a percentage or a
 -- fixed amount in ETB, with a reason. VAT is charged on the price after the

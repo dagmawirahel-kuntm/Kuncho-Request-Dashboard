@@ -168,7 +168,7 @@ export default function ProformaDetailPage() {
   if (isLoading || !pf) return <p className="py-16 text-center text-sm text-slate-400">Loading…</p>
 
   const status = effectiveStatus(pf)
-  // Discount over the company's limit (migration 383): a second person approves it before anything goes out.
+  // Discount over the company's limit (migration 387): a second person approves it before anything goes out.
   const discountPct = discountPercent(Number(pf.lines_total ?? 0), discountAmt)
   const discountLimit = Number(company?.discount_approval_percent ?? DEFAULT_DISCOUNT_LIMIT)
   const overLimit = discountAmt > 0 && discountPct > discountLimit

@@ -1,4 +1,4 @@
-// Discounts on proformas (migration 383). One discount on the whole job, a
+// Discounts on proformas (migration 387). One discount on the whole job, a
 // percentage or a fixed amount in ETB, taken off before VAT. The database
 // checks the same arithmetic, so round the same way it does: to the cent.
 
@@ -34,7 +34,7 @@ export function discountLabel(d: Discount): string {
     : `ETB ${Number(d.value).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 }
 
-/** The approval limit when the company profile doesn't say (migration 383). */
+/** The approval limit when the company profile doesn't say (migration 387). */
 export const DEFAULT_DISCOUNT_LIMIT = 10
 
 /** Totals with the discount taken off before VAT. */
