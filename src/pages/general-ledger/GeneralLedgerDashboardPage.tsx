@@ -5,10 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, cn } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Search, BookOpen } from 'lucide-react'
-import type { Category, SubCategory } from '@/types/database'
+import type { Category, ChartOfAccounts, SubCategory } from '@/types/database'
 
-const NATURE_ORDER = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'] as const
 const UNCLASSIFIED = 'Unclassified'
+type CoaRow = Pick<ChartOfAccounts, 'id' | 'account_code' | 'account_name' | 'nature' | 'parent_account_id' | 'category_id' | 'is_postable'>
 
 const NATURE_STYLES: Record<string, string> = {
   Asset: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-900/50',
@@ -26,7 +26,8 @@ export default function GeneralLedgerDashboardPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
-  const [expandedNatures, setExpandedNatures] = useState<Set<string>>(new Set<string>([...NATURE_ORDER, UNCLASSIFIED]))
+  // Groups are the chart's headings (380): 5100 Materials, 6200 Premises and office…
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   // Ledgers are expanded by default so sub ledgers are visible immediately;
   // this set tracks ledgers the user has explicitly collapsed.
   const [collapsedLedgers, setCollapsedLedgers] = useState<Set<string>>(new Set())
@@ -34,12 +35,14 @@ export default function GeneralLedgerDashboardPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['general-ledger'],
     queryFn: async () => {
-      const [categories, subCategories, expenses, allocations] = await Promise.all([
+      const [categories, subCategories, expenses, allocations, coa] = await Promise.all([
         supabase.from('categories').select('*').order('category_name'),
         supabase.from('sub_categories').select('*').order('item_name'),
         supabase.from('expenses').select('id, category_id, sub_category_id, amount_etb'),
         supabase.from('purchase_allocation').select('parent_purchase_id, sub_category_id, quantity, unit_price'),
+        supabase.from('chart_of_accounts').select('id, account_code, account_name, nature, parent_account_id, category_id, is_postable'),
       ])
+      if (coa.error) throw coa.error
       if (categories.error) throw categories.error
       if (subCategories.error) throw subCategories.error
       if (expenses.error) throw expenses.error
@@ -49,6 +52,7 @@ export default function GeneralLedgerDashboardPage() {
         subCategories: (subCategories.data ?? []) as SubCategory[],
         expenses: (expenses.data ?? []) as ExpenseCostRow[],
         allocations: (allocations.data ?? []) as AllocationCostRow[],
+        coa: (coa.data ?? []) as CoaRow[],
       }
     },
   })
@@ -57,6 +61,7 @@ export default function GeneralLedgerDashboardPage() {
   const subCategories = data?.subCategories ?? []
   const expenses = data?.expenses ?? []
   const allocations = data?.allocations ?? []
+  const coa = data?.coa ?? []
 
   const tree = useMemo(() => {
     // Bulk purchases get broken down into Purchase Allocation line items, each tied to
@@ -95,35 +100,43 @@ export default function GeneralLedgerDashboardPage() {
     const matchesLedger = (c: Category) => !q || c.category_name.toLowerCase().includes(q)
     const matchesSub = (s: SubCategory) => !q || s.item_name.toLowerCase().includes(q)
 
-    const byNature = new Map<string, Category[]>()
+    const coaById = new Map(coa.map(a => [a.id, a]))
+    const accountOf = new Map(coa.filter(a => a.category_id).map(a => [a.category_id!, a]))
+    const byGroup = new Map<string, Category[]>()
     for (const c of categories) {
       const subs = subsByParent.get(c.id) ?? []
       const ledgerMatches = matchesLedger(c) || subs.some(matchesSub)
       if (!ledgerMatches) continue
-      const key = c.nature && NATURE_ORDER.includes(c.nature as typeof NATURE_ORDER[number]) ? c.nature : UNCLASSIFIED
-      if (!byNature.has(key)) byNature.set(key, [])
-      byNature.get(key)!.push(c)
+      const key = accountOf.get(c.id)?.parent_account_id ?? UNCLASSIFIED
+      if (!byGroup.has(key)) byGroup.set(key, [])
+      byGroup.get(key)!.push(c)
     }
 
-    const natureGroups = [...NATURE_ORDER, UNCLASSIFIED]
-      .filter(n => byNature.has(n))
-      .map(nature => {
-        const ledgers = byNature.get(nature)!.map(c => {
+    const natureGroups = [...byGroup.keys()]
+      .map(key => {
+        const heading = coaById.get(key)
+        const top = heading?.parent_account_id ? coaById.get(heading.parent_account_id) : undefined
+        const ledgers = byGroup.get(key)!.map(c => {
           const subs = (subsByParent.get(c.id) ?? []).filter(s => !q || matchesLedger(c) || matchesSub(s))
           const ledgerCost = costByCategory.get(c.id) ?? 0
-          return { category: c, subs, ledgerCost }
-        })
+          return { category: c, subs, ledgerCost, account: accountOf.get(c.id) }
+        }).sort((a, b) => (a.account?.account_code ?? '').localeCompare(b.account?.account_code ?? ''))
         const natureTotal = ledgers.reduce((sum, l) => sum + l.ledgerCost, 0)
-        return { nature, ledgers, natureTotal }
+        return {
+          nature: key, code: heading?.account_code ?? '9999',
+          label: heading ? `${heading.account_code} ${heading.account_name}` : UNCLASSIFIED,
+          sub: top?.account_name ?? '', style: heading?.nature ?? UNCLASSIFIED, ledgers, natureTotal,
+        }
       })
+      .sort((a, b) => a.code.localeCompare(b.code))
 
     return { natureGroups, costBySubCategory }
-  }, [categories, subCategories, expenses, allocations, search])
+  }, [categories, subCategories, expenses, allocations, coa, search])
 
   function toggleNature(nature: string) {
-    setExpandedNatures(prev => {
+    setCollapsedGroups(prev => {
       const next = new Set(prev)
-      next.has(nature) ? next.delete(nature) : next.add(nature)
+      if (next.has(nature)) next.delete(nature); else next.add(nature)
       return next
     })
   }
@@ -131,7 +144,7 @@ export default function GeneralLedgerDashboardPage() {
   function toggleLedger(id: string) {
     setCollapsedLedgers(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id); else next.add(id)
       return next
     })
   }
@@ -161,7 +174,7 @@ export default function GeneralLedgerDashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800">General Ledger</h1>
-          <p className="text-sm text-slate-500">Chart of accounts &mdash; ledgers and sub ledgers classified by nature (Assets = Liabilities + Owner&rsquo;s Equity)</p>
+          <p className="text-sm text-slate-500">What people pick on an expense, grouped the way the chart of accounts groups them. Each ledger posts to its account; sub ledgers are the items under it.</p>
         </div>
         <Link to="/general-ledger/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
           <Plus className="h-4 w-4" /> New Ledger
@@ -191,26 +204,27 @@ export default function GeneralLedgerDashboardPage() {
         <div className="rounded-xl border bg-white py-12 text-center text-sm text-slate-400">No general ledgers found.</div>
       ) : (
         <div className="space-y-3">
-          {tree.natureGroups.map(({ nature, ledgers, natureTotal }) => {
-            const open = expandedNatures.has(nature)
+          {tree.natureGroups.map(({ nature, label, sub, style, ledgers, natureTotal }) => {
+            const open = !collapsedGroups.has(nature)
             return (
               <div key={nature} className="overflow-hidden rounded-xl border bg-white">
                 <button
                   type="button"
                   onClick={() => toggleNature(nature)}
-                  className={cn('flex w-full items-center justify-between border-b px-4 py-3 text-left', NATURE_STYLES[nature])}
+                  className={cn('flex w-full items-center justify-between border-b px-4 py-3 text-left', NATURE_STYLES[style])}
                 >
                   <span className="flex items-center gap-2 font-semibold">
                     {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     <BookOpen className="h-4 w-4" />
-                    {nature}
+                    {label}
+                    {sub && <span className="text-xs font-normal opacity-70">{sub}</span>}
                     <span className="rounded-full bg-white/60 dark:bg-black/20 px-2 py-0.5 text-xs font-medium">{ledgers.length} ledger{ledgers.length === 1 ? '' : 's'}</span>
                   </span>
                   <span className="font-semibold">{formatCurrency(natureTotal)}</span>
                 </button>
                 {open && (
                   <div className="divide-y">
-                    {ledgers.map(({ category, subs, ledgerCost }) => {
+                    {ledgers.map(({ category, subs, ledgerCost, account }) => {
                       const ledgerOpen = !collapsedLedgers.has(category.id)
                       return (
                         <div key={category.id}>
@@ -221,6 +235,7 @@ export default function GeneralLedgerDashboardPage() {
                               className="flex flex-1 items-center gap-2 text-left min-w-0"
                             >
                               {ledgerOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+                              {account && <span className="shrink-0 font-mono text-xs text-slate-400">{account.account_code}</span>}
                               <span className="truncate text-sm font-medium text-slate-800">{category.category_name}</span>
                               {category.parent_type && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{category.parent_type}</span>}
                               <span className="shrink-0 text-xs text-slate-400">{subs.length} sub ledger{subs.length === 1 ? '' : 's'}</span>

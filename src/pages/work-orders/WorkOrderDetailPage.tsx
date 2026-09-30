@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StarRating } from '@/components/shared/StarRating'
 import { FileUpload } from '@/components/shared/FileUpload'
@@ -17,7 +16,10 @@ import {
   useWorkOrderTeam, useWorkOrderRatings, useUpsertWorkOrderRating, useDeleteWorkOrderRating,
   type WorkOrderRatingRow,
 } from '@/hooks/useWorkOrderRatings'
-import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, WoProgressUpdate, SiteMaterialReceipt } from '@/types/database'
+import { Pill } from '@/components/record/Record'
+import { WO_STATUS, type WorkOrderBoardRow } from '@/lib/workOrders'
+import { ItemsCard, LabourCard, StatusActions, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
+import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, SiteMaterialReceipt } from '@/types/database'
 import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus, UserPlus2, Send } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
@@ -30,6 +32,7 @@ export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
   const canWrite = !!role && WRITE_ROLES.includes(role)
+  const [updating, setUpdating] = useState(false)
 
   const { data: wo, isLoading, error } = useQuery({
     queryKey: ['work-order-detail', id],
@@ -49,8 +52,8 @@ export default function WorkOrderDetailPage() {
   // project_manager (this page's core write roles) have no RLS read
   // access to `staff` at all.
   const { data: staffDirectory = [] } = useStaffDirectory()
-  const staffNameById = useMemo(() => new Map(staffDirectory.map((s: any) => [s.id, s.employee_name])), [staffDirectory])
-  const staffDirectoryById = useMemo(() => new Map(staffDirectory.map((s: any) => [s.id, s])), [staffDirectory])
+  const staffNameById = useMemo(() => new Map((staffDirectory as { id: string; employee_name: string }[]).map(s => [s.id, s.employee_name])), [staffDirectory])
+  const staffDirectoryById = useMemo(() => new Map((staffDirectory as { id: string }[]).map(s => [s.id, s])), [staffDirectory])
 
   const { data: cost } = useQuery({
     queryKey: ['work-order-cost', id],
@@ -58,6 +61,18 @@ export default function WorkOrderDetailPage() {
       const { data, error } = await supabase.from('v_work_order_cost').select('*').eq('work_order_id', id!).maybeSingle()
       if (error) throw error
       return data as WorkOrderCostRow | null
+    },
+    enabled: !!id,
+  })
+
+  // The site's foreman updates progress too; the database has the last word.
+  const canUpdate = useCanWriteWoOps(wo?.project_id ?? '', canWrite)
+  const { data: board } = useQuery({
+    queryKey: ['work-order-board', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_work_order_board').select('*').eq('work_order_id', id!).maybeSingle()
+      if (error) throw error
+      return data as WorkOrderBoardRow | null
     },
     enabled: !!id,
   })
@@ -79,87 +94,70 @@ export default function WorkOrderDetailPage() {
     )
   }
 
+  const pct = Math.round(Number(wo.current_progress_pct ?? 0))
+  const st = WO_STATUS[wo.status] ?? WO_STATUS.requested
   return (
-    <div className="animate-fade-in-up space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Link to="/work-orders" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand transition-colors flex-shrink-0">
-            <ArrowLeft className="h-4 w-4" />Back
-          </Link>
-          <span className="text-slate-300 dark:text-slate-600 flex-shrink-0">/</span>
-          <h1 className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">{wo.scope_of_work}</h1>
+    <div className="animate-fade-in-up mx-auto max-w-4xl space-y-4">
+      <Link to="/work-orders" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Work orders</Link>
+
+      <div className="rounded-xl border bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Pill tone={st.tone}>{st.label}</Pill>
+              <span className="text-xs text-slate-500">{wo.work_type === 'workshop' ? 'In the workshop' : 'On site'}</span>
+            </div>
+            <h1 className="mt-1 text-xl font-bold text-slate-800 dark:text-slate-100">{wo.title || wo.scope_of_work}</h1>
+            <p className="text-sm text-slate-500">{wo.projects?.project_name ?? '—'}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canUpdate && wo.status !== 'completed' && wo.status !== 'cancelled' && (
+              <button onClick={() => setUpdating(true)} className="inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white"><TrendingUp className="h-4 w-4" /> Update progress</button>
+            )}
+            {canWrite && (
+              <Link to={`/work-orders/${wo.id}/edit`} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm text-slate-600 dark:border-slate-600 dark:text-slate-300"><Pencil className="h-3.5 w-3.5" /> Edit</Link>
+            )}
+          </div>
         </div>
-        {canWrite && (
-          <Link to={`/work-orders/${wo.id}/edit`} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex-shrink-0">
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Link>
-        )}
+
+        <div className="mt-4 flex items-center gap-3">
+          <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+            <div className={`h-full rounded-full ${wo.status === 'completed' ? 'bg-emerald-500' : 'bg-brand'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+          </div>
+          <span className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{pct}%</span>
+        </div>
+
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div><dt className="text-xs text-slate-400">Lead</dt><dd className="text-slate-700 dark:text-slate-200">{(wo.assigned_lead_staff_id && staffNameById.get(wo.assigned_lead_staff_id)) ?? '—'}</dd></div>
+          <div><dt className="text-xs text-slate-400">Due</dt><dd className="text-slate-700 dark:text-slate-200">{formatDate(wo.target_completion_date)} <span className="text-xs text-slate-400">{daysRemainingLabel(wo.target_completion_date, wo.status)}</span></dd></div>
+          <div><dt className="text-xs text-slate-400">Labour</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(Number(board?.labour_cost ?? 0) + Number(cost?.labor_cost ?? 0))}</dd></div>
+          <div><dt className="text-xs text-slate-400">Materials</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(cost?.materials_cost ?? 0)}</dd></div>
+        </dl>
+        {wo.scope_of_work && wo.scope_of_work !== wo.title && <p className="mt-3 whitespace-pre-line border-t pt-3 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">{wo.scope_of_work}</p>}
+        <div className="mt-4 border-t pt-3 dark:border-slate-700"><StatusActions wo={wo} canUpdate={canUpdate} /></div>
       </div>
 
-      <div className="rounded-xl border bg-white p-6 dark:bg-slate-800 dark:border-slate-700 space-y-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Project</p>
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{wo.projects?.project_name ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Type</p>
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 capitalize">{wo.work_type}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Lead</p>
-              <p className="text-sm text-slate-700 dark:text-slate-300">{(wo.assigned_lead_staff_id && staffNameById.get(wo.assigned_lead_staff_id)) ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Target Completion</p>
-              <p className="text-sm text-slate-700 dark:text-slate-300">{formatDate(wo.target_completion_date)} {daysRemainingLabel(wo.target_completion_date, wo.status)}</p>
-            </div>
-          </div>
-          <StatusBadge status={wo.status} />
-        </div>
-
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="font-medium text-slate-600 dark:text-slate-300">Progress</span>
-            <span className="text-slate-400">{wo.current_progress_pct}%</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
-            <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${Math.min(100, wo.current_progress_pct)}%` }} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t dark:border-slate-700">
-          <div>
-            <p className="text-xs text-slate-400">Labor Cost</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatCurrency(cost?.labor_cost ?? 0)}</p>
-            <p className="text-[11px] text-slate-400">Est. {formatCurrency(cost?.labor_cost_estimated ?? 0)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-400">Materials Cost</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatCurrency(cost?.materials_cost ?? 0)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-400">Total Cost (Actual)</p>
-            <p className="text-lg font-bold text-brand">{formatCurrency(cost?.total_cost ?? 0)}</p>
-            <p className="text-[11px] text-slate-400">Est. {formatCurrency(cost?.total_cost_estimated ?? 0)}</p>
-          </div>
-        </div>
-        <p className="text-[11px] text-slate-400">Actual = real work logged in attendance below. Estimated = budget from the linked labor requisition(s). Materials derived entirely from linked stock issues — never entered directly.</p>
-      </div>
-
-      <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
-      <TodayActivitySection workOrderId={wo.id} staffNameById={staffNameById} />
-      <ProgressSection workOrderId={wo.id} canWrite={canWrite} />
-      <MaterialReceiptsSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
+      <ItemsCard wo={wo} canUpdate={canUpdate} onUpdate={() => setUpdating(true)} />
+      <LabourCard wo={wo} canUpdate={canUpdate} />
       <BlockersPanel projectId={wo.project_id} />
+      <UpdatesTimeline workOrderId={wo.id} />
+      <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
+      <MaterialReceiptsSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
       <PhotosGrid workOrderId={wo.id} />
-
-      <LinkedLabor workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} staffNameById={staffNameById} />
-      <LinkedMaterials workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
       {lower(wo.status) === 'completed' && (
         <TeamRatings workOrderId={wo.id} leadStaffId={wo.assigned_lead_staff_id ?? null} />
       )}
+
+      <details className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">Older records — attendance, linked allocations and stock issues</summary>
+        <div className="space-y-4 p-4 pt-0">
+          <TodayActivitySection workOrderId={wo.id} staffNameById={staffNameById} />
+          <LinkedLabor workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} staffNameById={staffNameById} />
+          <LinkedMaterials workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
+        </div>
+      </details>
+
+      {updating && <UpdateProgressSheet wo={wo} onClose={() => setUpdating(false)} />}
     </div>
   )
 }
@@ -952,111 +950,6 @@ function TodayActivitySection({ workOrderId, staffNameById }: { workOrderId: str
 }
 
 // ── Progress: current %, update modal, history ───────────────────────
-function ProgressSection({ workOrderId, canWrite }: { workOrderId: string; canWrite: boolean }) {
-  const qc = useQueryClient()
-  const [modalOpen, setModalOpen] = useState(false)
-  const { data: history = [], isLoading } = useQuery({
-    queryKey: ['wo-progress-updates', workOrderId],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('wo_progress_updates').select('*, staff:updated_by_staff_id(employee_name)').eq('work_order_id', workOrderId).order('created_at', { ascending: false })
-      if (error) throw error
-      return data as unknown as (WoProgressUpdate & { staff: { employee_name: string } | null })[]
-    },
-  })
-
-  return (
-    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><TrendingUp className="h-4 w-4" /> Progress History</h2>
-        {canWrite && (
-          <button onClick={() => setModalOpen(true)} className="flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
-            <Plus className="h-3.5 w-3.5" /> Update Progress
-          </button>
-        )}
-      </div>
-      {isLoading ? (
-        <div className="py-4 text-center text-sm text-slate-400">Loading…</div>
-      ) : history.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-400">No progress updates yet.</p>
-      ) : (
-        <div className="divide-y dark:divide-slate-700">
-          {history.map(h => (
-            <div key={h.id} className="py-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-brand">{h.progress_pct}%</span>
-                <span className="text-xs text-slate-400">{formatDate(h.created_at)} · {h.staff?.employee_name ?? '—'}</span>
-              </div>
-              {h.note && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{h.note}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-      {modalOpen && (
-        <ProgressUpdateModal
-          workOrderId={workOrderId}
-          onClose={() => setModalOpen(false)}
-          onSaved={() => {
-            qc.invalidateQueries({ queryKey: ['wo-progress-updates', workOrderId] })
-            qc.invalidateQueries({ queryKey: ['work-order-detail'] })
-            setModalOpen(false)
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function ProgressUpdateModal({ workOrderId, onClose, onSaved }: { workOrderId: string; onClose: () => void; onSaved: () => void }) {
-  const { toast } = useToast()
-  const { data: mySelf } = useMyStaffId()
-  const [pct, setPct] = useState(50)
-  const [note, setNote] = useState('')
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
-  const [photoName, setPhotoName] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-
-  async function handleSave() {
-    if (!mySelf?.id) return
-    setSaving(true)
-    const { error } = await supabase.from('wo_progress_updates').insert([{
-      work_order_id: workOrderId, progress_pct: pct, note: note.trim() || null, updated_by_staff_id: mySelf.id,
-      photos: photoUrl ? [photoUrl] : null,
-    }])
-    setSaving(false)
-    if (error) { toast(error.message, 'error'); return }
-    toast('Progress updated', 'success')
-    onSaved()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 p-5 space-y-4" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Update Progress</h3>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
-        </div>
-        <div>
-          <div className="mb-1 flex items-center justify-between text-sm">
-            <span className="text-slate-600 dark:text-slate-300">Progress</span>
-            <span className="font-semibold text-brand">{pct}%</span>
-          </div>
-          <input type="range" min={0} max={100} step={5} value={pct} onChange={e => setPct(Number(e.target.value))} className="w-full accent-brand" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Note (optional)</label>
-          <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" placeholder="What changed?" />
-        </div>
-        <FileUpload bucket="documents" folder="wo-progress-photos" fileUrl={photoUrl} fileName={photoName} onUpload={(url, name) => { setPhotoUrl(url); setPhotoName(name) }} onClear={() => { setPhotoUrl(null); setPhotoName(null) }} accept="image/*" label="Photo (optional)" />
-        <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} disabled={saving} className="rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Direct-to-site material receipts ─────────────────────────────────
 function MaterialReceiptsSection({ workOrderId, projectId, canWrite }: { workOrderId: string; projectId: string; canWrite: boolean }) {
   const qc = useQueryClient()
   const canManage = useCanWriteWoOps(projectId, canWrite)

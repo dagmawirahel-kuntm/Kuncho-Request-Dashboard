@@ -373,6 +373,8 @@ export interface Category {
   parent_type: string | null
   asset_class: AssetClass | null
   cost_group_id: string | null
+  /** The chart heading its account sits under (380). */
+  ledger_group_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -2816,6 +2818,12 @@ export interface ChartOfAccounts {
   is_postable: boolean
   active: boolean
   created_at: string
+  /** Stable name the database finds the account by (380). */
+  system_key?: string | null
+  /** Set on a control account: whom its lines are for — its sub-ledger (380). */
+  party_kinds?: ('vendor' | 'client' | 'staff')[] | null
+  description?: string | null
+  cash_flow_section?: string | null
 }
 
 export type JournalEntryType = 'operational' | 'opening_balance' | 'closing' | 'adjusting'
@@ -2850,6 +2858,10 @@ export interface OpeningBalance {
   entered_by: string | null
   entered_at: string
   notes: string | null
+  party_type?: 'vendor' | 'client' | 'staff' | null
+  party_id?: string | null
+  /** Filled by suggest_opening_balances (383), not typed by finance. */
+  suggested?: boolean
 }
 export type OpeningBalanceInsert = Omit<OpeningBalance, 'id' | 'entered_by' | 'entered_at'>
 
@@ -3162,6 +3174,8 @@ export interface WorkOrder {
   project_id: string
   work_type: WorkOrderType
   scope_of_work: string
+  /** Short name for lists (386). */
+  title?: string | null
   requested_by: string | null
   assigned_lead_staff_id: string | null
   status: WorkOrderStatus

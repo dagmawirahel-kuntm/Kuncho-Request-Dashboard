@@ -1,0 +1,77 @@
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import type { Tone } from '@/components/record/Record'
+
+// Work orders (386): a job broken into items; progress follows the items.
+
+export interface WorkOrderItem {
+  id: string
+  work_order_id: string
+  description: string
+  unit: string | null
+  /** null: a step to tick, done when done_quantity > 0 */
+  quantity: number | null
+  done_quantity: number
+  sort_order: number
+}
+
+export interface WorkOrderBoardRow {
+  work_order_id: string
+  items_total: number
+  items_done: number
+  last_update_at: string | null
+  open_labour_requests: number
+  labour_cost: number
+}
+
+export interface WorkOrderLabourRow {
+  work_order_id: string
+  labor_requisition_id: string
+  role_needed: string
+  headcount: number
+  status: 'pending' | 'approved' | 'rejected'
+  payment_basis: string
+  start_date: string | null
+  end_date: string | null
+  closed_at: string | null
+  confirmed_cost: number
+  recorded_cost: number
+  days_recorded: number
+  last_recorded: string | null
+}
+
+export const WO_STATUS: Record<string, { label: string; tone: Tone }> = {
+  requested: { label: 'Not started', tone: 'amber' },
+  in_progress: { label: 'In progress', tone: 'blue' },
+  completed: { label: 'Done', tone: 'green' },
+  cancelled: { label: 'Cancelled', tone: 'slate' },
+}
+
+export const itemShare = (i: Pick<WorkOrderItem, 'quantity' | 'done_quantity'>) =>
+  i.quantity == null ? (i.done_quantity > 0 ? 1 : 0) : Math.min(Number(i.done_quantity) / Number(i.quantity), 1)
+
+export const itemDone = (i: Pick<WorkOrderItem, 'quantity' | 'done_quantity'>) => itemShare(i) >= 1
+
+/** Same arithmetic as work_order_items_progress() in the database. */
+export const itemsProgress = (items: Pick<WorkOrderItem, 'quantity' | 'done_quantity'>[]) =>
+  items.length ? Math.round(1000 * items.reduce((s, i) => s + itemShare(i), 0) / items.length) / 10 : null
+
+export const daysSince = (ts: string | null | undefined) =>
+  ts ? Math.floor((Date.now() - new Date(ts).getTime()) / 86_400_000) : null
+
+/** An open order nobody has updated for this many days needs a look. */
+export const STALE_DAYS = 4
+
+export const UNITS = ['m²', 'm', 'm³', 'pcs', 'sets', 'rooms', 'points', 'kg']
+
+export function useWorkOrderItems(workOrderId: string) {
+  return useQuery({
+    queryKey: ['work-order-items', workOrderId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('work_order_items').select('*').eq('work_order_id', workOrderId).order('sort_order')
+      if (error) throw error
+      return (data ?? []) as WorkOrderItem[]
+    },
+  })
+}
+

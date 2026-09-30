@@ -13,12 +13,16 @@ import type {
   CashReconciliationCheckRow, SubLedgerBalanceRow, CashFlowStatementRow, CashFlowMovementRow, CashFlowSection,
 } from '@/types/database'
 import {
-  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight, Layers, Waves,
+  BookOpen, ScrollText, FileSpreadsheet, Scale, AlertTriangle, PieChart, Lock, ChevronDown, ChevronRight, Layers, Waves, ListTree, Boxes, Sparkles,
 } from 'lucide-react'
+import SubLedgersPanel from './ledger/SubLedgersPanel'
+import ChartOfAccountsPanel from './ledger/ChartOfAccountsPanel'
 
 const TABS = [
   { key: 'trial-balance', label: 'Trial Balance', icon: Scale },
+  { key: 'chart', label: 'Chart of Accounts', icon: ListTree },
   { key: 'sub-ledgers', label: 'Sub Ledgers', icon: Layers },
+  { key: 'multiple', label: 'Mixed POs', icon: Boxes },
   { key: 'journal', label: 'Journal Entries', icon: ScrollText },
   { key: 'opening-balances', label: 'Opening Balances', icon: FileSpreadsheet },
   { key: 'reconciliation', label: 'Reconciliation', icon: BookOpen },
@@ -57,8 +61,8 @@ export default function GeneralLedgerPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Ledger &amp; Journal</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Double-entry ledger, current fiscal year forward.{' '}
-          <span className="text-amber-600 dark:text-amber-400">Preview alongside the existing P&amp;L / Balance Sheet reports — not yet the source of truth.</span>
+          Double-entry, on accrual from 1 Hamle 2018: a bill is booked when finance approves it and cleared when paid; a sale when it is
+          invoiced and cleared when collected. Payables, receivables, advances and floats are kept per vendor, client and staff member under Sub Ledgers.
         </p>
       </div>
 
@@ -83,7 +87,9 @@ export default function GeneralLedgerPage() {
       </div>
 
       {tab === 'trial-balance' && <TrialBalanceTab />}
-      {tab === 'sub-ledgers' && <SubLedgersTab />}
+      {tab === 'chart' && <ChartOfAccountsPanel />}
+      {tab === 'sub-ledgers' && <SubLedgersPanel />}
+      {tab === 'multiple' && <SubLedgersTab />}
       {tab === 'journal' && <JournalEntriesTab />}
       {tab === 'opening-balances' && <OpeningBalancesTab canManage={canManage} />}
       {tab === 'reconciliation' && <ReconciliationTab />}
@@ -223,8 +229,8 @@ function SubLedgersTab() {
 
   return (
     <Section
-      title="Sub Ledgers"
-      sub="The subsidiary ledger behind the “Multiple” GL control account — true per-category spend, sourced from what the receiver tagged each item as on the GRN. Read-only; reconciles to the posted ledger."
+      title="Mixed purchase orders"
+      sub="The detail behind the “Multiple” GL control account — true per-category spend, sourced from what the receiver tagged each item as on the GRN. Read-only; reconciles to the posted ledger."
     >
       {isLoading ? (
         <Empty>Loading…</Empty>
@@ -384,6 +390,30 @@ function OpeningBalancesTab({ canManage }: { canManage: boolean }) {
   const [saving, setSaving] = useState(false)
   const [converting, setConverting] = useState(false)
 
+  // Fill the list from what the app knows (383): bank balances from the
+  // statements, fixed assets, optionally last year's unpaid requests, and
+  // the difference to opening equity. Nothing posts until Convert.
+  const [withLastYear, setWithLastYear] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
+  async function handleSuggest() {
+    setSuggesting(true)
+    const { data, error } = await supabase.rpc('suggest_opening_balances', { p_last_year_unpaid: withLastYear })
+    setSuggesting(false)
+    if (error) { toast(error.message, 'error'); return }
+    const r = data as { rows: number; last_year_unpaid?: { requests: number; amount: number } }
+    toast(`${r.rows} rows ready to check`, 'success')
+    qc.invalidateQueries({ queryKey: ['opening-balances'] })
+  }
+  const { data: lastYear } = useQuery({
+    queryKey: ['opening-last-year-unpaid'],
+    enabled: canManage,
+    queryFn: async () => {
+      const { count, error } = await supabase.from('expenses_fy2025_26_frozen').select('id', { count: 'exact', head: true }).eq('payment_status', false)
+      if (error) return null
+      return count
+    },
+  })
+
   const totalDebit = rows.filter(r => r.side === 'debit').reduce((s, r) => s + r.amount, 0)
   const totalCredit = rows.filter(r => r.side === 'credit').reduce((s, r) => s + r.amount, 0)
   const balanced = rows.length > 0 && Math.abs(totalDebit - totalCredit) < 0.01
@@ -423,7 +453,19 @@ function OpeningBalancesTab({ canManage }: { canManage: boolean }) {
   }
 
   return (
-    <Section title="Opening Balances" sub="ERCA-sourced figures — a human judgment call, mapped by hand, not inferred">
+    <Section title="Opening Balances" sub="What the company held and owed on 7 Jul 2026, posted once as the year's first entry. Suggest fills it from the app's own records; check each line, change or add what you know better (the audited accounts), then convert.">
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-3 border-b bg-brand/5 px-4 py-3 dark:border-slate-700">
+          <button onClick={handleSuggest} disabled={suggesting} className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+            <Sparkles className="h-4 w-4" /> {suggesting ? 'Working it out…' : 'Suggest from the app\u2019s data'}
+          </button>
+          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <input type="checkbox" checked={withLastYear} onChange={e => setWithLastYear(e.target.checked)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+            Include last year’s requests never marked paid{lastYear ? ` (${lastYear})` : ''} as money owed — only if they really are
+          </label>
+          <span className="text-xs text-slate-400">Your own rows are kept; suggested ones are replaced each time.</span>
+        </div>
+      )}
       {canManage && (
         <div className="flex flex-wrap items-end gap-3 border-b dark:border-slate-700 px-4 py-3">
           <div className="w-64">
@@ -454,7 +496,7 @@ function OpeningBalancesTab({ canManage }: { canManage: boolean }) {
       {isLoading ? (
         <Empty>Loading…</Empty>
       ) : rows.length === 0 ? (
-        <Empty>Nothing entered yet — structure ready, figures pending from the ERCA filing.</Empty>
+        <Empty>Nothing entered yet — press Suggest to start from the app’s own records.</Empty>
       ) : (
         <>
           <div className="overflow-x-auto">
@@ -474,7 +516,10 @@ function OpeningBalancesTab({ canManage }: { canManage: boolean }) {
                     <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{r.chart_of_accounts ? `${r.chart_of_accounts.account_code} — ${r.chart_of_accounts.account_name}` : r.chart_of_accounts_id}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(r.amount)}</td>
                     <td className="px-4 py-2 capitalize text-slate-500 dark:text-slate-400">{r.side}</td>
-                    <td className="px-4 py-2 text-xs text-slate-400 dark:text-slate-500 max-w-[280px] truncate" title={r.source}>{r.source}</td>
+                    <td className="px-4 py-2 text-xs text-slate-400 dark:text-slate-500 max-w-[280px] truncate" title={r.source}>
+                      {r.suggested && <span className="mr-1.5 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-medium text-brand">Suggested</span>}
+                      {r.source}
+                    </td>
                     {canManage && (
                       <td className="px-4 py-2">
                         <button onClick={() => handleDelete(r.id)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
