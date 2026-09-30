@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-
-const inputCls = 'w-full rounded-xl border border-white/12 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/22 outline-none transition focus:border-white/30 focus:bg-white/8'
+import { AuthFrame, AuthMessage, PasswordInput, authLabel, authPrimaryButton } from './AuthLayout'
 
 export default function UpdatePasswordPage() {
   const navigate = useNavigate()
@@ -41,46 +40,41 @@ export default function UpdatePasswordPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-black overflow-y-auto">
-      <div className="relative z-10 mx-auto w-full max-w-sm px-6 py-20">
-        <div className="mb-8 text-center">
-          <span className="text-5xl font-black text-white select-none">ቁ</span>
-          <h1 className="mt-4 text-white text-xl font-bold">Set a new password</h1>
-        </div>
+    <AuthFrame>
+      <h1 className="text-2xl font-bold text-white">Set a new password</h1>
+      <p className="mt-1 text-sm text-white/50">Choose a password you'll use to sign in from now on.</p>
 
+      <div className="mt-8">
         {hasSession === null && (
-          <p className="text-center text-sm text-white/40">Checking your link…</p>
+          <p className="text-sm text-white/50">Checking your link…</p>
         )}
 
         {hasSession === false && (
-          <div className="space-y-4 text-center">
-            <p className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3 text-sm text-red-400">
+          <div className="space-y-4">
+            <AuthMessage tone="error">
               This password link is invalid or has expired. Request a new one from the sign-in page.
-            </p>
-            <Link to="/login" className="block text-[11px] text-white/25 hover:text-white/50 uppercase tracking-widest">← Back to sign in</Link>
+            </AuthMessage>
+            <Link to="/login" className="block text-center text-sm font-medium text-white/70 hover:text-white">Back to sign in</Link>
           </div>
         )}
 
         {hasSession && (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-white/40">New Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required autoFocus className={inputCls} placeholder="min 6 characters" />
+              <label htmlFor="up-password" className={authLabel}>New password</label>
+              <PasswordInput id="up-password" value={password} onChange={setPassword} autoComplete="new-password" autoFocus placeholder="At least 6 characters" />
             </div>
             <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-white/40">Confirm Password</label>
-              <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required className={inputCls} placeholder="repeat password" />
+              <label htmlFor="up-confirm" className={authLabel}>Type it again</label>
+              <PasswordInput id="up-confirm" value={confirm} onChange={setConfirm} autoComplete="new-password" placeholder="Repeat the password" />
             </div>
-            {error && (
-              <p className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-2.5 text-sm text-red-400">{error}</p>
-            )}
-            <button type="submit" disabled={loading}
-              className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-50">
-              {loading ? 'Saving…' : 'Save Password & Continue'}
+            {error && <AuthMessage tone="error">{error}</AuthMessage>}
+            <button type="submit" disabled={loading} className={`mt-2 ${authPrimaryButton}`}>
+              {loading ? 'Saving…' : 'Save password & continue'}
             </button>
           </form>
         )}
       </div>
-    </div>
+    </AuthFrame>
   )
 }
