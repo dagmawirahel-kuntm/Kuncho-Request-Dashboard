@@ -134,7 +134,7 @@ export const dayLabel = (iso: string) =>
 
 /** Where finance is with a confirmed pay sheet's payable. */
 export const financeStatus = (e: { approval_status: string; payment_state: string } | null | undefined) =>
-  !e ? 'With finance' : e.payment_state === 'paid' ? 'Paid' : e.approval_status === 'approved' ? 'Approved, not paid yet'
+  !e ? 'With finance' : e.payment_state === 'paid' ? 'Paid' : e.approval_status === 'finance_approved' ? 'Approved, not paid yet'
     : e.approval_status === 'rejected' ? 'Sent back by finance' : 'Waiting for finance'
 export const financeTone = (s: string): Tone =>
   s === 'Paid' ? 'green' : s.startsWith('Sent back') ? 'red' : s.startsWith('Approved') ? 'blue' : 'amber'
