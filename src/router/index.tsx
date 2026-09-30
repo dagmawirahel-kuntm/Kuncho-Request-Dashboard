@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import DailySiteReportPage from '@/pages/site-foreman/DailySiteReportPage'
 import SiteDailyReportsViewerPage from '@/pages/site-foreman/SiteDailyReportsViewerPage'
-import LogAttendancePage from '@/pages/site-foreman/LogAttendancePage'
 import LogMaterialReceiptPage from '@/pages/site-foreman/LogMaterialReceiptPage'
 import SiteFloatRequestPage from '@/pages/site-foreman/SiteFloatRequestPage'
 import { FinanceSitePettyCashQueuePage, PMSitePettyCashQueuePage } from '@/pages/site-foreman/SitePettyCashQueue'
@@ -162,8 +161,6 @@ import HseIncidentsPage from '@/pages/hse-incidents/HseIncidentsPage'
 import HseIncidentFormPage from '@/pages/hse-incidents/HseIncidentFormPage'
 import HseInductionsPage from '@/pages/hse-inductions/HseInductionsPage'
 import HseInductionFormPage from '@/pages/hse-inductions/HseInductionFormPage'
-import LaborRequisitionsPage from '@/pages/labor-requisitions/LaborRequisitionsPage'
-import LaborRequisitionDetailPage from '@/pages/labor-requisitions/LaborRequisitionDetailPage'
 import Tier2CandidatesPage from '@/pages/hr/Tier2CandidatesPage'
 import PettyCashPage from '@/pages/petty-cash/PettyCashPage'
 import PettyCashFloatFormPage from '@/pages/petty-cash/PettyCashFloatFormPage'
@@ -173,7 +170,12 @@ import VehicleMaintenanceFormPage from '@/pages/fleet/VehicleMaintenanceFormPage
 import VehiclePenaltiesPage from '@/pages/fleet/VehiclePenaltiesPage'
 import VehiclePenaltyFormPage from '@/pages/fleet/VehiclePenaltyFormPage'
 import ReceiptPickupQueuePage from '@/pages/logistics/ReceiptPickupQueuePage'
-import LaborRequisitionFormPage from '@/pages/labor-requisitions/LaborRequisitionFormPage'
+import LabourHomePage from '@/pages/labour/LabourHomePage'
+import LabourRequestFormPage from '@/pages/labour/LabourRequestFormPage'
+import LabourRequestPage from '@/pages/labour/LabourRequestPage'
+import LabourRecordPage from '@/pages/labour/LabourRecordPage'
+import LabourPayPage from '@/pages/labour/LabourPayPage'
+import LabourRedirect from '@/pages/labour/LabourRedirect'
 import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
 import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
@@ -480,9 +482,9 @@ export const router = createBrowserRouter([
               // separate Tier 2-only weekly grid (`timesheet_attendance`)
               // are both folded into WO-owned attendance — old links keep
               // working via redirect rather than 404ing.
-              { path: 'site-foreman/timesheet', element: <Navigate to="/site-foreman/log-attendance" replace /> },
-              { path: 'site-foreman/attendance', element: <Navigate to="/site-foreman/log-attendance" replace /> },
-              { path: 'site-foreman/log-attendance', element: <LogAttendancePage /> },
+              { path: 'site-foreman/timesheet', element: <Navigate to="/labour/record" replace /> },
+              { path: 'site-foreman/attendance', element: <Navigate to="/labour/record" replace /> },
+              { path: 'site-foreman/log-attendance', element: <Navigate to="/labour/record" replace /> },
               { path: 'site-foreman/log-material-receipt', element: <LogMaterialReceiptPage /> },
               { path: 'site-foreman/float-request', element: <SiteFloatRequestPage /> },
               { path: 'site-foreman/materials', element: <MaterialsRequestedPage /> },
@@ -709,19 +711,18 @@ export const router = createBrowserRouter([
               { path: 'hse-inductions/:id/edit', element: <HseInductionFormPage /> },
             ],
           },
-          // ── Labor Tier 2 (requisitions): read for everyone; request gated
-          // to admin/manager/project_manager/operations_manager/hr_officer;
-          // approve/reject/delete happen from the list itself (RLS-gated
-          // separately to operations_manager/hr_officer/admin, see 094).
-          { path: 'labor-requisitions', element: <LaborRequisitionsPage /> },
-          { path: 'labor-requisitions/:id', element: <LaborRequisitionDetailPage /> },
-          {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'operations_manager', 'hr_officer']} />,
-            children: [
-              { path: 'labor-requisitions/new', element: <LaborRequisitionFormPage /> },
-              { path: 'labor-requisitions/:id/edit', element: <LaborRequisitionFormPage /> },
-            ],
-          },
+          // ── Labour: ask → record → pay (375). Pages are open to anyone
+          // signed in; what each person can see and do is decided in the
+          // database (can_run_labour_site, approver roles, manages_project).
+          { path: 'labour', element: <LabourHomePage /> },
+          { path: 'labour/new', element: <LabourRequestFormPage /> },
+          { path: 'labour/record', element: <LabourRecordPage /> },
+          { path: 'labour/pay', element: <LabourPayPage /> },
+          { path: 'labour/:id', element: <LabourRequestPage /> },
+          { path: 'labor-requisitions', element: <Navigate to="/labour" replace /> },
+          { path: 'labor-requisitions/new', element: <Navigate to="/labour/new" replace /> },
+          { path: 'labor-requisitions/:id', element: <LabourRedirect /> },
+          { path: 'labor-requisitions/:id/edit', element: <LabourRedirect /> },
           {
             // Petty cash: floats/spend/replenishment management, matching
             // petty_cash_* RLS (admin/manager/finance/project_manager) —

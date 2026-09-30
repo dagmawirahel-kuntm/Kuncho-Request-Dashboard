@@ -80,7 +80,7 @@ export const navGroups: NavGroup[] = [
     title: 'Site Ops',
     items: [
       { label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, roles: [], showIfSiteForeman: true },
-      { label: 'Log Attendance', to: '/site-foreman/log-attendance', icon: Clock, roles: [], showIfSiteForeman: true },
+      { label: 'Record Labour', to: '/labour/record', icon: Clock, roles: [], showIfSiteForeman: true },
       { label: 'Log Material Receipt', to: '/site-foreman/log-material-receipt', icon: Package, roles: [], showIfSiteForeman: true },
       { label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, roles: [], showIfSiteForeman: true },
       { label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, roles: [], showIfSiteForeman: true },
@@ -206,7 +206,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { label: 'Onboarding', to: '/onboarding-tasks', icon: UserCheck },
-      { label: 'Labor Requisitions', to: '/labor-requisitions', icon: HardHat },
+      { label: 'Labour', to: '/labour', icon: HardHat },
       { label: 'Leave Requests', to: '/leave-requests', icon: CalendarClock, roles: ['admin', 'hr_officer'] },
       { label: 'Performance Reviews', to: '/performance-reviews', icon: ClipboardCheck, roles: ['admin', 'hr_officer'] },
       { label: 'Disciplinary Records', to: '/disciplinary-records', icon: AlertTriangle, roles: ['admin', 'hr_officer'] },

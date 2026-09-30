@@ -7,10 +7,11 @@ import { useToast } from '@/contexts/ToastContext'
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { formatDate } from '@/lib/utils'
 import { printHtml } from '@/lib/documents/issue'
+import { shareHtmlFile } from '@/lib/documents/shareFile'
 import { buildGrnHtml } from '@/lib/documents/delivery'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/components/record/Record'
 import type { GrnQualityStatus, GrnRegisterRow } from '@/types/database'
-import { ClipboardCheck, Printer, Undo2, FileText, Image as ImageIcon, Package } from 'lucide-react'
+import { ClipboardCheck, Printer, Smartphone, Undo2, FileText, Image as ImageIcon, Package } from 'lucide-react'
 
 type GrnDetail = {
   id: string
@@ -74,7 +75,7 @@ export default function GrnDetailPage() {
   const canReturn = ['admin', 'executive', 'procurement_officer', 'stock_manager', 'logistics_officer'].includes(role ?? '') || !!profile?.is_logistics_officer
   const photos = grn.photos?.length ? grn.photos : grn.photo_url ? [{ url: grn.photo_url }] : []
 
-  const print = () => printHtml(buildGrnHtml({
+  const print = (asFile = false) => (asFile ? shareHtmlFile : printHtml)(buildGrnHtml({
     ...head, grn_code: head.grn_code ?? 'GRN', driver_name: grn.driver_name, vehicle_plate: grn.vehicle_plate,
     items: items.map(i => ({
       item_name: i.sourcing_bundle_items?.order_items?.item_name ?? null, unit: i.sourcing_bundle_items?.order_items?.unit ?? null,
@@ -110,7 +111,7 @@ export default function GrnDetailPage() {
           {toReturn.length > 0 && <Pill tone="red">To return</Pill>}
         </>}
         meta={[{ icon: ClipboardCheck, value: `Received ${formatDate(head.received_at)}${head.received_by_name ? ` by ${head.received_by_name}` : ''}` }]}
-        actions={[{ label: 'Print GRN', icon: Printer, onClick: print, primary: true }]}
+        actions={[{ label: 'Print GRN', icon: Printer, onClick: () => print(), primary: true }, { label: 'Send file', icon: Smartphone, onClick: () => print(true) }]}
       />
       <RecordLayout
         main={<>

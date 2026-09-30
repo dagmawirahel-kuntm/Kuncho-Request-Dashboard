@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, FileClock, Mail, MessageCircle, Printer, Share2, ShieldCheck } from 'lucide-react'
+import { Check, Copy, FileClock, Mail, MessageCircle, Printer, Share2, ShieldCheck, Smartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -9,6 +9,7 @@ import { ActionDialog } from '@/components/shared/ActionDialog'
 import { Pill } from '@/components/record/Record'
 import type { VerifyInfo } from '@/lib/documentTheme'
 import { canIssue, issueDocument, printHtml, verifyUrl, type IssuedDocType, type IssuedDocument } from '@/lib/documents/issue'
+import { shareHtmlFile } from '@/lib/documents/shareFile'
 
 const btn = 'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
 const field = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -36,7 +37,7 @@ export function DocumentActions({ type, sourceId, number, title, party, partyEma
   const { toast } = useToast()
   const qc = useQueryClient()
   const allowed = canIssue(type, role)
-  const [busy, setBusy] = useState<null | 'print' | 'share'>(null)
+  const [busy, setBusy] = useState<null | 'print' | 'share' | 'file'>(null)
   const [shared, setShared] = useState<{ doc: IssuedDocument; url: string } | null>(null)
   const [copiesOpen, setCopiesOpen] = useState(false)
   const fileName = [number, title, party].filter(Boolean).join(' - ')
@@ -68,6 +69,16 @@ export function DocumentActions({ type, sourceId, number, title, party, partyEma
       printHtml(r.html, fileName)
     } catch (e) { toast((e as Error).message, 'error') } finally { setBusy(null) }
   }
+  // The document itself as an .html file — opens on any phone without a
+  // PDF viewer and reads at phone width. Filed like a print or a link.
+  async function sendFile() {
+    setBusy('file')
+    try {
+      const html = allowed ? (await issue()).html : build(null)
+      const r = await shareHtmlFile(html, fileName, `${title}${number ? ` ${number}` : ''}${party ? ` — ${party}` : ''}`)
+      if (r === 'downloaded') toast('Saved as a file — attach it to WhatsApp, Telegram or email', 'info')
+    } catch (e) { toast((e as Error).message, 'error') } finally { setBusy(null) }
+  }
   async function share() {
     setBusy('share')
     try { const r = await issue(); setShared({ doc: r.doc, url: r.url }) } catch (e) { toast((e as Error).message, 'error') } finally { setBusy(null) }
@@ -78,9 +89,12 @@ export function DocumentActions({ type, sourceId, number, title, party, partyEma
       <button onClick={print} disabled={disabled || !!busy} className={btn} title="Print, or choose Save as PDF in the print dialog">
         <Printer className="h-4 w-4" /> {busy === 'print' ? 'Preparing…' : compact ? 'Print' : 'Print / PDF'}
       </button>
+      <button onClick={sendFile} disabled={disabled || !!busy} className={btn} title="Send the document itself as a file that opens on any phone">
+        <Smartphone className="h-4 w-4" /> {busy === 'file' ? 'Preparing…' : compact ? 'File' : 'Send file'}
+      </button>
       {allowed && (
-        <button onClick={share} disabled={disabled || !!busy} className={btn}>
-          <Share2 className="h-4 w-4" /> {busy === 'share' ? 'Preparing…' : 'Share'}
+        <button onClick={share} disabled={disabled || !!busy} className={btn} title="Send a link to the filed copy">
+          <Share2 className="h-4 w-4" /> {busy === 'share' ? 'Preparing…' : 'Share link'}
         </button>
       )}
       {allowed && copies.length > 0 && (

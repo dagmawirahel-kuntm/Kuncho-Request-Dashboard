@@ -279,6 +279,8 @@ body{font-family:${DOC_FONT};color:${INK};font-variant-numeric:tabular-nums}
 .doc-accept .row span{flex:1;border-top:1px solid #9a927c;padding-top:2px;font-size:7.8pt;color:#7a735f}
 .doc-verify{display:flex;align-items:center;gap:10px;font-size:7.8pt;color:#6b6453;max-width:260px;break-inside:avoid}
 .doc-verify img{width:72px;height:72px;flex-shrink:0;border:1px solid #e9e3d3;padding:3px;background:#fff}
+.doc-verify-internal{display:block;margin-bottom:2px;font-size:7.4pt;letter-spacing:.1em;text-transform:uppercase;color:#8a2d1a}
+.doc-verify-internal .am{letter-spacing:0;text-transform:none}
 .doc-footer{margin-top:26px;font-size:7.8pt;color:#7a735f;break-inside:avoid}
 .doc-footer .row{display:flex;justify-content:space-between;gap:12px;padding-top:6px}
 .doc-footer .thanks{font-family:${DOC_SERIF};font-style:italic;font-size:10pt;color:var(--acc)}
@@ -290,6 +292,22 @@ thead{display:table-header-group}
 tfoot{display:table-footer-group}
 tr,td,th{break-inside:avoid;page-break-inside:avoid}
 @page{size:A4;@bottom-right{content:"Page " counter(page) " of " counter(pages);font:7.5pt Inter,Arial,sans-serif;color:#9a927c}}
+/* Opened as a file or a link on a screen: a page-width sheet with margins,
+   and on a phone the blocks stack and wide tables scroll sideways. */
+@media screen{html{background:#efece4}body{max-width:210mm;margin:0 auto;padding:14mm 12mm !important;background:#fff;min-height:100vh}}
+@media screen and (max-width:720px){
+  body{padding:16px 12px !important;font-size:10pt}
+  .doc-head-row,.doc-party,.doc-signoff,.doc-identity,.doc-footer .row{flex-direction:column;align-items:stretch;gap:10px}
+  .doc-titleblock{text-align:left;min-width:0}.doc-metatable{margin-left:0}.doc-metatable td.k,.doc-metatable td.v{text-align:left}
+  .doc-party > div[style]{text-align:left !important}
+  .doc-company{font-size:17pt}.doc-title{font-size:15pt}
+  .doc-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .doc-table td{white-space:normal;min-width:64px}
+  .doc-totals{width:100%}.doc-words{max-width:none}
+  .doc-blocks{grid-template-columns:1fr}
+  .doc-sign .stamp-img{left:auto;right:0}
+  .doc-verify{max-width:none}
+}
 `
 
 function logoHtml(accent: string): string {
@@ -458,6 +476,6 @@ export function renderVerify(v: VerifyInfo): string {
   return `
 <div class="doc-verify">
   <img src="${v.qrDataUrl}" alt="QR"/>
-  <div>Scan to check this document is genuine${v.version && v.version > 1 ? ` (version ${v.version})` : ''}.<br/><span style="word-break:break-all;color:#9a927c">${esc(v.url)}</span></div>
+  <div><b class="doc-verify-internal">QR code for internal use only${bilingual() ? '<span class="am">ለውስጥ አገልግሎት ብቻ</span>' : ''}</b>Scan to check this document is genuine${v.version && v.version > 1 ? ` (version ${v.version})` : ''}.<br/><span style="word-break:break-all;color:#9a927c">${esc(v.url)}</span></div>
 </div>`
 }

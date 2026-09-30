@@ -9,7 +9,8 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Printer, Download, Ban, Layers, Receipt, ExternalLink } from 'lucide-react'
+import { shareHtmlFile } from '@/lib/documents/shareFile'
+import { ArrowLeft, Printer, Smartphone, Ban, Layers, Receipt, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -104,13 +105,7 @@ export default function PaymentRequestDetailPage() {
 
   function downloadDoc() {
     if (!pr) return
-    const blob = new Blob([pr.document_html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = window.document.createElement('a')
-    a.href = url
-    a.download = `${pr.request_code ?? 'payment-request'}.html`
-    a.click()
-    URL.revokeObjectURL(url)
+    shareHtmlFile(pr.document_html, pr.request_code ?? 'payment-request')
   }
 
   if (isLoading) {
@@ -146,7 +141,7 @@ export default function PaymentRequestDetailPage() {
             <Printer className="h-3.5 w-3.5" /> Print
           </button>
           <button onClick={downloadDoc} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Download className="h-3.5 w-3.5" /> Download
+            <Smartphone className="h-3.5 w-3.5" /> Send file
           </button>
           {canVoid && pr.status !== 'void' && !voiding && (
             <button onClick={() => setVoiding(true)} className="flex items-center gap-1.5 rounded-md border border-red-200 dark:border-red-800 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
