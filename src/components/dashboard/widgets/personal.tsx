@@ -5,49 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { navGroups, useNavItemVisible, type NavItem } from '@/components/layout/navConfig'
 import type { WidgetProps } from '@/lib/dashboard/types'
-import { TONE_CLASSES, useWaitingOn } from '@/lib/dashboard/waiting'
 import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
 import { defaultPins } from '@/lib/dashboard/defaults'
-import { ListSkeleton, QueryListWidget, WidgetCard, type ListRow } from '../WidgetCard'
-import { ArrowRight, BellRing, CheckCheck, ClipboardList, FolderKanban, Hammer, CalendarDays, Wallet, Wrench } from 'lucide-react'
-
-// ── Needs you now ─────────────────────────────────────────────────────────
-// Everything that needs this person's decision or action, from every
-// module they work in: one row per queue, with its count and a way in.
-export function WaitingOnYou({ ctx }: WidgetProps) {
-  const { items, total, isLoading } = useWaitingOn(ctx)
-  return (
-    <WidgetCard title="Needs you now" icon={BellRing} count={total}>
-      {isLoading ? <ListSkeleton rows={3} />
-        : items.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-            <span className="rounded-full bg-emerald-50 p-2.5 text-emerald-500 dark:bg-emerald-900/25"><CheckCheck className="h-5 w-5" /></span>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">You're all caught up</p>
-            <p className="text-xs text-slate-400">Nothing is waiting on you right now.</p>
-          </div>
-        ) : (
-          <ul className="space-y-2 px-3 pb-3">
-            {items.map(i => {
-              const tone = TONE_CLASSES[i.tone]
-              return (
-                <li key={i.id}>
-                  <Link to={i.to} className="group flex items-center gap-3 rounded-xl border px-3 py-2.5 transition hover:border-slate-300 hover:shadow-sm dark:border-slate-700 dark:hover:border-slate-500">
-                    <span className={`h-8 w-1 shrink-0 rounded-full ${tone.bar}`} />
-                    <span className={`rounded-lg p-1.5 ${tone.chip}`}><i.icon className="h-4 w-4" /></span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">{i.title}</span>
-                    <span className="shrink-0 text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{i.n}</span>
-                    <span className="flex shrink-0 items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white transition group-hover:bg-slate-700 dark:bg-brand dark:text-brand-foreground">
-                      Open <ArrowRight className="h-3.5 w-3.5" />
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-    </WidgetCard>
-  )
-}
+import { QueryListWidget, WidgetCard, type ListRow } from '../WidgetCard'
+import { ClipboardList, FolderKanban, Hammer, CalendarDays, Wallet, Wrench } from 'lucide-react'
 
 // ── My requests ───────────────────────────────────────────────────────────
 const APPROVAL_TONE: Record<string, 'amber' | 'green' | 'red' | 'slate'> = { pending: 'amber', manager_approved: 'amber', finance_approved: 'green', rejected: 'red' }

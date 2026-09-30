@@ -1,11 +1,13 @@
 import {
   BellRing, Briefcase, CalendarCheck, CalendarDays, ClipboardCheck, ClipboardList, Clock, FileText, FolderKanban,
-  GitPullRequestArrow, Hammer, Handshake, HardHat, Landmark, Package, PackageCheck, PenTool, Pin, Send, ShoppingCart,
+  GitPullRequestArrow, Sparkles, Hammer, Handshake, HardHat, Landmark, Package, PackageCheck, PenTool, Pin, Send, ShoppingCart,
   Truck, Users, UserX, UserCog, Wallet, Wrench, Banknote, AlertTriangle, Copy, ShieldAlert, Activity,
 } from 'lucide-react'
 import {
-  WaitingOnYou, MyRequests, MyProjects, MyWorkOrders, MyLeave, MyPay, MyTools, PinnedPages,
+  MyRequests, MyProjects, MyWorkOrders, MyLeave, MyPay, MyTools, PinnedPages,
 } from '@/components/dashboard/widgets/personal'
+import { WaitingOnYou } from '@/components/dashboard/widgets/needsYou'
+import { TeamPulse } from '@/components/dashboard/widgets/pulse'
 import {
   PaymentsToSend, FinanceApprovals, AwaitingBank, CashPosition, BankAlerts, MonthEndStatus,
 } from '@/components/dashboard/widgets/finance'
@@ -23,7 +25,8 @@ const role = (...roles: string[]) => (c: WidgetContext) => c.role === 'admin' ||
 // offers a person; row-level security still decides what data they see.
 export const WIDGETS: WidgetDef[] = [
   // For you
-  { key: 'waiting_on_you', title: 'Waiting on you', description: 'Approvals and queues that need your action, from every module you work in.', icon: BellRing, group: 'For you', defaultSize: 'half', available: everyone, component: WaitingOnYou },
+  { key: 'waiting_on_you', title: 'Needs you now', description: 'Approvals and queues that need your action, from every module you work in — approve finance expenses and leave right here.', icon: BellRing, group: 'For you', defaultSize: 'half', available: everyone, component: WaitingOnYou },
+  { key: 'team_pulse', title: 'Team pulse', description: 'Announcements, thanks between colleagues, and work anniversaries — and a way to thank someone.', icon: Sparkles, group: 'For you', defaultSize: 'half', available: everyone, component: TeamPulse },
   { key: 'pinned_pages', title: 'Pinned pages', description: 'Shortcuts to the pages you open most.', icon: Pin, group: 'For you', defaultSize: 'half', available: everyone, component: PinnedPages },
   { key: 'my_requests', title: 'My requests', description: 'Your purchase and transport requests still in progress.', icon: ClipboardList, group: 'For you', defaultSize: 'half', available: everyone, component: MyRequests },
   { key: 'my_projects', title: 'My projects', description: 'Projects you manage or are assigned to, with budget warnings.', icon: FolderKanban, group: 'For you', defaultSize: 'half', available: hasStaff, component: MyProjects },

@@ -47,6 +47,8 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
   if (ctx.isLogisticsOfficer) add(W('transport_jobs'))
   // Assignments, whatever the login role.
   if (ctx.managesProjects || ctx.isSiteForeman || ctx.role === 'project_manager') add(W('my_projects'), W('my_work_orders'))
+  // What's happening with the team, for everyone.
+  add(W('team_pulse'))
   // Everyone's own records last; tools and work orders for people in the
   // field, pay for staff logins (office roles can add them).
   add(W('my_requests'))

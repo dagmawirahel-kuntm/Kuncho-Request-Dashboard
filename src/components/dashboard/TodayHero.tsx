@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, CalendarDays, CheckSquare, Clock, Megaphone, Moon, Search, Sun, Sunrise, User } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckSquare, Clock, Flame, Megaphone, Moon, Search, Sun, Sunrise, User } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getDeptColor, initials } from '@/lib/departments'
 import { formatEthiopian } from '@/lib/ethiopianCalendar'
@@ -9,6 +9,7 @@ import { openPagePalette } from '@/components/layout/navState'
 import { SeasonalEventIcon } from '@/components/seasonal/MeskelArt'
 import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
 import { useWaitingOn } from '@/lib/dashboard/waiting'
+import { useDayProgress } from '@/lib/dashboard/progress'
 import type { WidgetContext } from '@/lib/dashboard/types'
 import type { CompanyEvent, CompanyEventType } from '@/types/database'
 
@@ -44,6 +45,27 @@ function dayLabel(dateStr: string, todayStr: string): string {
   const diff = Math.round((d.getTime() - t.getTime()) / 86_400_000)
   if (diff === 1) return 'Tomorrow'
   return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })
+}
+
+// How much of today's queue is done: cleared out of cleared + still waiting.
+function ProgressRing({ cleared, waiting }: { cleared: number; waiting: number }) {
+  const total = cleared + waiting
+  const share = total === 0 ? 1 : cleared / total
+  const r = 30
+  const c = 2 * Math.PI * r
+  return (
+    <div className="relative h-20 w-20 shrink-0" role="img" aria-label={total === 0 ? 'Nothing waiting today' : `${cleared} of ${total} cleared today`}>
+      <svg viewBox="0 0 72 72" className="h-20 w-20 -rotate-90">
+        <circle cx="36" cy="36" r={r} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="7" />
+        <circle cx="36" cy="36" r={r} fill="none" stroke={GOLD} strokeWidth="7" strokeLinecap="round"
+          strokeDasharray={`${c * share} ${c}`} className="transition-[stroke-dasharray] duration-700" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-base font-bold leading-none text-white">{total === 0 ? '✓' : `${cleared}/${total}`}</span>
+        <span className="mt-0.5 text-[9px] uppercase tracking-wider text-white/50">{total === 0 ? 'clear' : 'cleared'}</span>
+      </div>
+    </div>
+  )
 }
 
 // Today and the week ahead for the person's department and the whole
@@ -125,6 +147,7 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
   const now = useNow()
   const { hello, Icon } = partOfDay(now)
   const { items, total, isLoading } = useWaitingOn(ctx)
+  const progress = useDayProgress(ctx?.userId ?? null, isLoading ? null : total)
   const dept = ctx?.department ?? null
   const deptColor = getDeptColor(dept)
 
@@ -138,6 +161,11 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
           {biggest.title.toLowerCase()}
         </Link>.
       </>
+  const streak = progress && progress.streak >= 2 ? (
+    <span className="ml-1 inline-flex items-center gap-0.5 whitespace-nowrap">
+      You're on a <Flame className="h-3.5 w-3.5" style={{ color: GOLD }} /><span className="font-semibold" style={{ color: GOLD }}>{progress.streak}-day</span> clear-queue streak.
+    </span>
+  ) : null
 
   return (
     <section className="relative overflow-hidden rounded-3xl bg-[#151a1f] p-5 text-white shadow-lg ring-1 ring-black/5 sm:p-6">
@@ -172,10 +200,12 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
                 )}
               </div>
             </div>
+            {progress && <div className="hidden sm:block"><ProgressRing cleared={progress.cleared} waiting={progress.waiting} /></div>}
           </div>
 
           <p className="mt-4 min-h-[1.5rem] text-sm text-white/70 sm:text-base">
             {summary ?? <span className="inline-block h-4 w-72 max-w-full animate-pulse rounded bg-white/10 align-middle" />}
+            {summary && streak}
           </p>
 
           {/* Phones get these in the action bar at the bottom of the screen. */}
