@@ -75,6 +75,7 @@ export default function MarketTrendsPage() {
       unpriced: prices.length - priced.length,
       boughtMonth: priced.filter(p => p.last_bought_at && new Date(p.last_bought_at).getTime() >= monthAgo).length,
       dupItems,
+      toSort: prices.reduce((n, p) => n + (p.untagged_prices_180d || 0) + (p.latest_is_outlier ? 1 : 0), 0),
       rises: movers.filter(p => moveOf(p)! > 0).sort((a, b) => moveOf(b)! - moveOf(a)!).slice(0, 5),
       drops: movers.filter(p => moveOf(p)! < 0).sort((a, b) => moveOf(a)! - moveOf(b)!).slice(0, 5),
     }
@@ -150,9 +151,15 @@ export default function MarketTrendsPage() {
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
             What we pay for materials. Every approved purchase order adds its prices, and procurement adds verified quotes. Proformas and catalog costs are priced from here.
+            A price is only compared with earlier prices of the same variant, and one far from the usual is held back until it's checked.
           </p>
         </div>
         <div className="flex gap-2">
+          {isProcurement && (
+            <Link to="/procurement/item-variants" className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+              Item variants{stats.toSort > 0 ? ` · ${stats.toSort} to sort` : ''}
+            </Link>
+          )}
           {isProcurement && (
             <button onClick={() => setLogFor('any')} className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90">Log a price</button>
           )}
@@ -293,16 +300,29 @@ export default function MarketTrendsPage() {
                             {openItemIds.has(p.stock_item_id) && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" title="Price check requested" />}
                           </div>
                           <div className="max-w-[280px] truncate text-[11px] text-slate-400">{[p.item_code, p.sub_category_name ?? p.main_category].filter(Boolean).join(' · ')}</div>
+                          {p.variant_count > 0 && (
+                            <div className="max-w-[280px] truncate text-[11px] text-violet-600 dark:text-violet-400">
+                              {p.latest_variant_label ?? 'no variant'} · {p.variant_count} variant{p.variant_count === 1 ? '' : 's'}
+                              {p.untagged_prices_180d > 0 && <span className="text-amber-600 dark:text-amber-400"> · {p.untagged_prices_180d} to sort</span>}
+                            </div>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2 text-right">
                           {p.display_price != null ? (
                             <>
                               <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(p.display_price)}</span>
                               <span className="block text-[10px] text-slate-400">per {p.unit}</span>
+                              {p.latest_price_per_base != null && p.base_unit && p.base_unit !== p.unit && (
+                                <span className="block text-[10px] text-slate-400">{formatCurrency(p.latest_price_per_base)} / {p.base_unit}</span>
+                              )}
                             </>
                           ) : <span className="text-xs text-slate-300 dark:text-slate-600">no price</span>}
                         </td>
-                        <td className="px-2 py-2"><ChangeBadge pct={moveOf(p)} title={p.previous_price != null ? `Previous ${formatCurrency(p.previous_price)}` : undefined} /></td>
+                        <td className="px-2 py-2">
+                          {p.latest_is_outlier
+                            ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600 dark:bg-red-900/20 dark:text-red-400" title="Far from this item's usual price — check it in Item Variants before trusting it">check price</span>
+                            : <ChangeBadge pct={moveOf(p)} title={p.previous_price != null ? `Previous ${formatCurrency(p.previous_price)}${p.latest_variant_label ? ` (${p.latest_variant_label})` : ''}` : undefined} />}
+                        </td>
                         <td className="px-2 py-2"><PriceRange min={p.min_180d} max={p.max_180d} latest={p.display_price} /></td>
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">{p.buys_180d || '—'}</td>
                         <td className="px-2 py-2">

@@ -14,12 +14,14 @@ import { amountInWords } from '@/lib/amountInWords'
 import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
 import { printHtml } from '@/lib/documents/issue'
 import { DocumentActions } from '@/components/documents/DocumentActions'
-import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
+import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern, SourcingBundleDiscountKind, BundleLineReceipt, SdnStatus } from '@/types/database'
+import { SDN_STATUS } from '@/lib/siteDeliveries'
+import { useVariantsForItems } from '@/hooks/useItemVariants'
 import { useStaff } from '@/hooks/useLookups'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, StatusSteps, type Tone } from '@/components/record/Record'
 import {
   Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2, HardHat, Scissors
 } from 'lucide-react'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 
@@ -54,6 +56,8 @@ type BundleDetail = {
   items_subtotal_etb: number
   payment_pattern: SourcingBundlePaymentPattern
   created_at: string
+  closed_short_at: string | null
+  closed_short_reason: string | null
   vendors: { vendor_name: string; wth_eligible: boolean | null } | null
   procurement_officer: { full_name: string } | null
   approver: { full_name: string } | null
@@ -68,8 +72,10 @@ type BundleDetail = {
     unit_price_actual: number | null
     notes: string | null
     sort_order: number
+    variant_id: string | null
     order_items: {
       id: string
+      stock_item_id: string | null
       item_name: string
       specifications: string | null
       unit: string | null
@@ -114,6 +120,7 @@ function buildPoHtml(p: {
   signoff?: CompanySignoff | null
   verify?: VerifyInfo | null
   draft?: boolean
+  variantLabels?: Record<string, string>
 }): string {
   const { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable } = p
   const prof = docProfile()
@@ -126,7 +133,7 @@ function buildPoHtml(p: {
     <tr>
       <td class="c">${i + 1}</td>
       <td>
-        <div style="font-weight:600">${esc(oi?.item_name ?? '—')}</div>
+        <div style="font-weight:600">${esc(oi?.item_name ?? '—')}${p.variantLabels?.[item.id] ? ` <span style="font-weight:400">— ${esc(p.variantLabels[item.id])}</span>` : ''}</div>
         ${oi?.specifications ? `<div style="font-size:8.4pt;color:#6b6453;margin-top:2px">${escLines(oi.specifications)}</div>` : ''}
       </td>
       <td style="font-size:8.6pt;color:#6b6453">${esc(oi?.orders?.request_code ?? '—')}</td>
@@ -207,6 +214,18 @@ ${renderFooter(bundle.bundle_code, DOCUMENT_GRADIENTS.purchaseOrder.from)}
 </html>`
 }
 
+function ReceivedCell({ r }: { r: BundleLineReceipt | undefined }) {
+  if (!r) return <td className="px-4 py-3" />
+  const out = Number(r.outstanding)
+  return (
+    <td className="px-4 py-3 text-right tabular-nums">
+      <span className={out > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>{Number(r.received)}</span>
+      {out > 0 && <span className="block text-[10px] text-slate-400">{out} to come</span>}
+      {Number(r.rejected) > 0 && <span className="block text-[10px] text-red-500">{Number(r.rejected)} refused</span>}
+    </td>
+  )
+}
+
 export default function PurchaseOrderPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -285,7 +304,7 @@ export default function PurchaseOrderPage() {
           sourcing_bundle_items(
             *,
             order_items(
-              id, item_name, specifications, unit, quantity, unit_price_est, order_id,
+              id, stock_item_id, item_name, specifications, unit, quantity, unit_price_est, order_id,
               orders(request_code, order_name, projects(project_name))
             )
           )
@@ -330,19 +349,47 @@ export default function PurchaseOrderPage() {
     enabled: !!id,
   })
 
-  const { data: grn } = useQuery({
-    queryKey: ['grn-for-bundle', id],
+  // An order can arrive in several deliveries (371), each its own GRN.
+  const { data: grns } = useQuery({
+    queryKey: ['grns-for-bundle', id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('goods_received_notes')
-        .select('id, grn_code, received_at, notes, categories(category_name)')
+        .select('id, grn_code, received_at, notes, site_delivery_note_id')
         .eq('sourcing_bundle_id', id!)
-        .maybeSingle()
+        .order('received_at', { ascending: false })
       if (error) throw error
-      return data as { id: string; grn_code: string; received_at: string; notes: string | null; categories: { category_name: string } | null } | null
+      return data as { id: string; grn_code: string; received_at: string; notes: string | null; site_delivery_note_id: string | null }[]
     },
     enabled: !!id,
   })
+  const grn = grns === undefined ? undefined : (grns[0] ?? null)
+
+  const { data: receipts = [] } = useQuery({
+    queryKey: ['bundle-line-receipts', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_bundle_line_receipts').select('*').eq('bundle_id', id!)
+      if (error) throw error
+      return data as BundleLineReceipt[]
+    },
+    enabled: !!id,
+  })
+
+  const { data: sdns = [] } = useQuery({
+    queryKey: ['sdns-for-bundle', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('site_delivery_notes')
+        .select('id, sdn_code, status, project_name, issued_at, signed_at')
+        .eq('sourcing_bundle_id', id!)
+        .order('issued_at', { ascending: false })
+      if (error) throw error
+      return data as { id: string; sdn_code: string; status: SdnStatus; project_name: string | null; issued_at: string; signed_at: string | null }[]
+    },
+    enabled: !!id,
+  })
+
+  const { data: variantsByItem } = useVariantsForItems((bundle?.sourcing_bundle_items ?? []).map(i => i.order_items?.stock_item_id))
 
   const bundleHint = useMemo(() => {
     if (!bundle || grn === undefined) return null
@@ -401,9 +448,20 @@ export default function PurchaseOrderPage() {
   // Fulfillment is no longer a self-service click — it only happens as a
   // side effect of a stock_manager/logistics_officer recording a real GRN.
   const canRequestTransport = (isProcurement || isAdmin || isManager) && status === 'ordered' && !transportJob
-  const canRecordGrn = (isStockOrLogistics || isAdmin) && status === 'ordered' && !grn
+  // Receiving stays open until every line is accounted for — a delivery
+  // can come in parts (371).
+  const canRecordGrn = (isStockOrLogistics || isAdmin) && status === 'ordered'
+  const receiptByItem = new Map(receipts.map(r => [r.bundle_item_id, r]))
+  const receivedAny = receipts.some(r => Number(r.received) > 0)
+  const outstandingLines = receipts.filter(r => Number(r.outstanding) > 0)
+  const openSdns = sdns.filter(s => s.status === 'issued' || s.status === 'exceptions')
+  const isIssuer = isProcurement || isAdmin || isManager || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const canIssueSdn = isIssuer && status === 'ordered' && outstandingLines.some(r => !!r.project_id)
+  const canCloseShort = (isProcurement || isAdmin || isManager) && status === 'ordered' && (grns?.length ?? 0) > 0 && openSdns.length === 0
   const transportClearForExpense = !transportJob || transportJob.job_status === 'in_progress' || transportJob.job_status === 'completed'
-  const canCreateExpense = !!grn && transportClearForExpense
+  // Pay on delivery: the expense is prepared when the whole order has
+  // arrived (or is closed short), not at the first delivery.
+  const canCreateExpense = !!grn && status === 'fulfilled' && transportClearForExpense
 
   // Advance payment (pattern B, migration 110): the vendor demands
   // payment before goods arrive, so the expense has to exist before a
@@ -419,6 +477,11 @@ export default function PurchaseOrderPage() {
   const canCloseAdvance = (isFinance || isAdmin) && !!grn && bundle.expenses?.payment_state === 'advance'
 
   const sortedItems = [...(bundle.sourcing_bundle_items ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+  const variantLabel = (item: BundleDetail['sourcing_bundle_items'][number]) =>
+    item.variant_id ? variantsByItem?.get(item.order_items?.stock_item_id ?? '')?.find(v => v.id === item.variant_id)?.label ?? null : null
+  // The buyer confirms which product was bought (372): a line whose stock
+  // item has variants can't go for approval without one.
+  const linesMissingVariant = sortedItems.filter(i => !i.variant_id && (variantsByItem?.get(i.order_items?.stock_item_id ?? '')?.length ?? 0) > 0)
 
   const itemsSubtotal = sortedItems.reduce((sum, item) =>
     sum + (item.quantity_actual ?? 0) * (item.unit_price_actual ?? 0), 0)
@@ -445,7 +508,8 @@ export default function PurchaseOrderPage() {
 
   const vendorRow = (bundle as unknown as { vendors: { tin?: string | null; phone_contact?: string | null } | null }).vendors
   const poInput = { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable,
-    vendorTin: vendorRow?.tin ?? null, vendorPhone: vendorRow?.phone_contact ?? null, signoff: signoff ?? null }
+    vendorTin: vendorRow?.tin ?? null, vendorPhone: vendorRow?.phone_contact ?? null, signoff: signoff ?? null,
+    variantLabels: Object.fromEntries(sortedItems.map(i => [i.id, variantLabel(i)]).filter((e): e is [string, string] => !!e[1])) }
   // An approved order is what goes to the vendor; before that it's a draft.
   const poIssuable = ['approved', 'ordered', 'fulfilled'].includes(status)
   const bundleCode = bundle.bundle_code
@@ -575,15 +639,32 @@ export default function PurchaseOrderPage() {
     toast('Bundle deleted', 'success')
   }
 
-  async function handleUndoFulfillment() {
-    if (!grn) return
-    if (!window.confirm(`Undo fulfillment for ${bundleCode}? This deletes GRN ${grn.grn_code} and reverts the PO to "Ordered". The PO itself, its items, and its history are not affected. This cannot be undone.`)) return
-    const { error } = await supabase.rpc('undo_grn_fulfillment', { p_grn_id: grn.id })
-    if (error) { toast(error.message, 'error'); return }
+  function refreshReceipts() {
     qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
-    qc.invalidateQueries({ queryKey: ['grn-for-bundle', id] })
+    qc.invalidateQueries({ queryKey: ['grns-for-bundle', id] })
+    qc.invalidateQueries({ queryKey: ['bundle-line-receipts', id] })
+    qc.invalidateQueries({ queryKey: ['sdns-for-bundle', id] })
     qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
-    toast('Fulfillment undone — PO reverted to Ordered', 'success')
+    qc.invalidateQueries({ queryKey: ['grn-register'] })
+  }
+
+  async function handleUndoGrn(g: { id: string; grn_code: string; site_delivery_note_id: string | null }) {
+    if (!window.confirm(`Delete GRN ${g.grn_code}? What it received goes back to outstanding, and the PO returns to "Ordered" if anything is then still to come.${g.site_delivery_note_id ? ' It was signed on site, so its delivery note goes back to procurement to confirm.' : ''} This cannot be undone.`)) return
+    const { error } = await supabase.rpc('undo_grn_fulfillment', { p_grn_id: g.id })
+    if (error) { toast(error.message, 'error'); return }
+    refreshReceipts()
+    toast(`GRN ${g.grn_code} deleted`, 'success')
+  }
+
+  async function handleCloseShort() {
+    const missing = outstandingLines.map(r => `${Number(r.outstanding)} ${r.unit ?? ''} ${r.item_name}`.trim()).join(', ')
+    const reason = window.prompt(`Close ${bundleCode} without the rest?\n\nStill to come: ${missing}\n\nWhat never arrives isn't billed${isPayInAdvance ? ' — this order was paid in advance, so ask the vendor for a credit' : ''}. Say why:`)
+    if (reason === null) return
+    const { error } = await supabase.rpc('close_po_short', { p_bundle_id: id, p_reason: reason })
+    if (error) { toast(error.message, 'error'); return }
+    refreshReceipts()
+    qc.invalidateQueries({ queryKey: ['expenses'] })
+    toast('Order closed short — fulfilled with what arrived', 'success')
   }
 
   async function handleRevertLegacyFulfillment() {
@@ -591,7 +672,7 @@ export default function PurchaseOrderPage() {
     const { error } = await supabase.rpc('revert_legacy_fulfillment', { p_bundle_id: id! })
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] })
-    qc.invalidateQueries({ queryKey: ['grn-for-bundle', id] })
+    qc.invalidateQueries({ queryKey: ['grns-for-bundle', id] })
     qc.invalidateQueries({ queryKey: ['sourcing-bundles'] })
     toast('Reverted to Ordered — you can now record a GRN', 'success')
   }
@@ -609,8 +690,15 @@ export default function PurchaseOrderPage() {
     : status === 'submitted' ? (canApprove ? 'Review it and approve, or send it back with what to change.'
       : `Waiting for approval — up to ${formatCurrency(PROCUREMENT_APPROVAL_CAP)} procurement, up to ${formatCurrency(OPS_MANAGER_APPROVAL_CAP)} operations manager, above that the CEO.`)
     : status === 'approved' ? (canMarkOrdered ? 'Place the order with the vendor, then mark it ordered.' : 'Approved — waiting for procurement to place the order.')
-    : status === 'ordered' ? (grn ? 'Goods received.' : lateDelivery ? `Delivery was expected ${formatDate(bundle.expected_delivery_date)} — follow up with the vendor.` : 'Waiting for the goods. Record a GRN when they arrive.')
-    : status === 'fulfilled' ? `Received${bundle.fulfilled_at ? ` on ${formatDate(bundle.fulfilled_at)}` : ''}.`
+    : status === 'ordered' ? (
+        openSdns.some(s => s.status === 'exceptions') ? 'A site signed for less than was sent — procurement needs to confirm the delivery note.'
+        : openSdns.length ? 'On its way to site — the project manager signs for it on arrival.'
+        : receivedAny ? `Part received — ${outstandingLines.length} line${outstandingLines.length === 1 ? '' : 's'} still to come.${lateDelivery ? ' Delivery is late — follow up with the vendor, or close the order short.' : ''}`
+        : lateDelivery ? `Delivery was expected ${formatDate(bundle.expected_delivery_date)} — follow up with the vendor.`
+        : 'Waiting for the goods. Send site lines on a delivery note for the project manager to sign; record a GRN for what arrives at the store.')
+    : status === 'fulfilled' ? (bundle.closed_short_at
+        ? `Closed short on ${formatDate(bundle.closed_short_at)}${bundle.closed_short_reason ? ` — ${bundle.closed_short_reason}` : ''}.`
+        : `Received${bundle.fulfilled_at ? ` on ${formatDate(bundle.fulfilled_at)}` : ''}.`)
     : 'This purchase order was cancelled.'
 
   return (
@@ -624,6 +712,8 @@ export default function PurchaseOrderPage() {
           <Pill tone={STATUS_TONE[status]}>{status === 'cancelled' ? 'Cancelled' : statusLabel}</Pill>
           {isPayInAdvance && <Pill tone="amber">Pay in advance</Pill>}
           {lateDelivery && <Pill tone="red" icon={AlertCircle}>Delivery late</Pill>}
+          {status === 'ordered' && receivedAny && <Pill tone="amber">Part received</Pill>}
+          {bundle.closed_short_at && <Pill tone="amber" icon={Scissors}>Closed short</Pill>}
         </>}
         meta={[
           { icon: Receipt, value: <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(netPayable)}</span>, label: 'Net' },
@@ -631,10 +721,15 @@ export default function PurchaseOrderPage() {
           ...(projectNames.length ? [{ icon: Building2, value: projectNames.length === 1 ? projectNames[0] : `${projectNames.length} projects` }] : []),
         ]}
         actions={[
-          { label: 'Submit for approval', icon: Send, onClick: () => transition('submitted'), primary: true, disabled: transitioning, hidden: !canSubmit },
+          { label: 'Submit for approval', icon: Send, primary: true, disabled: transitioning, hidden: !canSubmit,
+            onClick: () => linesMissingVariant.length
+              ? toast(`Pick which variant was bought for: ${linesMissingVariant.map(i => i.order_items?.item_name ?? 'line').join(', ')} — edit the order`, 'error')
+              : transition('submitted') },
           { label: 'Approve', icon: Check, onClick: () => transition('approved', { finance_notes: financeNotes || null }), primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
           { label: 'Mark as ordered', icon: TruckIcon, onClick: () => transition('ordered'), primary: true, disabled: transitioning, hidden: !canMarkOrdered },
+          { label: 'Send to site', icon: HardHat, to: `/sourcing/${id}/sdn/new`, primary: !canRecordGrn, hidden: !canIssueSdn },
           { label: 'Record goods received', icon: ClipboardCheck, to: `/sourcing/${id}/grn/new`, primary: true, hidden: !canRecordGrn },
+          { label: 'Close short', icon: Scissors, onClick: handleCloseShort, hidden: !canCloseShort },
           { label: 'Request changes', icon: Undo2, onClick: () => setShowRejectPanel(true), hidden: !canReject || showRejectPanel },
           { label: 'Edit', icon: Pencil, to: `/sourcing/${id}/edit`, hidden: !canEdit },
           { label: 'Queue pickup', icon: TruckIcon, onClick: () => setShowQueuePanel(true), hidden: !canRequestTransport || showQueuePanel },
@@ -681,6 +776,7 @@ export default function PurchaseOrderPage() {
                       <th className="px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400">Item</th>
                       <th className="hidden px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 lg:table-cell">Request · project</th>
                       <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Qty</th>
+                      {receivedAny && <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Received</th>}
                       <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Unit price</th>
                       <th className="px-4 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total</th>
                     </tr>
@@ -694,6 +790,7 @@ export default function PurchaseOrderPage() {
                           <td className="px-4 py-3 text-xs text-slate-400">{i + 1}</td>
                           <td className="px-4 py-3">
                             <p className="font-medium text-slate-800 dark:text-slate-100">{oi?.item_name ?? '—'}</p>
+                            {variantLabel(item) && <p className="mt-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">{variantLabel(item)}</p>}
                             {oi?.specifications && <p className="mt-0.5 text-xs text-slate-400">{oi.specifications}</p>}
                             {item.notes && <p className="mt-0.5 text-xs italic text-slate-400">{item.notes}</p>}
                           </td>
@@ -704,6 +801,7 @@ export default function PurchaseOrderPage() {
                           <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
                             {item.quantity_actual ?? oi?.quantity ?? '—'} <span className="text-xs text-slate-400">{oi?.unit ?? ''}</span>
                           </td>
+                          {receivedAny && <ReceivedCell r={receiptByItem.get(item.id)} />}
                           <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">{item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}</td>
                           <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{lineTotal > 0 ? formatCurrency(lineTotal) : '—'}</td>
                         </tr>
@@ -721,11 +819,16 @@ export default function PurchaseOrderPage() {
                   return (
                     <li key={item.id} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
-                        <p className="min-w-0 text-sm font-medium text-slate-800 dark:text-slate-100"><span className="mr-1 text-xs text-slate-400">{i + 1}.</span>{oi?.item_name ?? '—'}</p>
+                        <p className="min-w-0 text-sm font-medium text-slate-800 dark:text-slate-100"><span className="mr-1 text-xs text-slate-400">{i + 1}.</span>{oi?.item_name ?? '—'}{variantLabel(item) && <span className="ml-1 text-xs font-normal text-violet-600 dark:text-violet-400">· {variantLabel(item)}</span>}</p>
                         <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{lineTotal > 0 ? formatCurrency(lineTotal) : '—'}</p>
                       </div>
                       <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                         {qty ?? '—'} {oi?.unit ?? ''} × {item.unit_price_actual != null ? formatCurrency(item.unit_price_actual) : '—'}
+                        {receivedAny && receiptByItem.get(item.id) && (
+                          <span className={Number(receiptByItem.get(item.id)!.outstanding) > 0 ? ' text-amber-600 dark:text-amber-400' : ' text-emerald-600 dark:text-emerald-400'}>
+                            {' · '}{Number(receiptByItem.get(item.id)!.received)} received{Number(receiptByItem.get(item.id)!.outstanding) > 0 ? `, ${Number(receiptByItem.get(item.id)!.outstanding)} to come` : ''}
+                          </span>
+                        )}
                       </p>
                       {oi?.specifications && <p className="mt-0.5 text-xs text-slate-400">{oi.specifications}</p>}
                       <p className="mt-0.5 text-[11px] text-slate-400">
@@ -882,19 +985,33 @@ export default function PurchaseOrderPage() {
                     </div>
                   )}
 
-                  {grn ? (
-                    <div className="space-y-2 border-t pt-3 dark:border-slate-700">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <ClipboardCheck className="h-4 w-4 text-emerald-600" />
-                        <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300">{grn.grn_code}</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">received {formatDate(grn.received_at)}</span>
-                        {grn.categories?.category_name && <Pill>{grn.categories.category_name}</Pill>}
-                      </div>
-                      {(isAdmin || isStockOrLogistics) && (
-                        <button onClick={handleUndoFulfillment} className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-800/40 dark:text-amber-400 dark:hover:bg-amber-900/20">
-                          <Undo2 className="h-3.5 w-3.5" /> Undo fulfillment
-                        </button>
-                      )}
+                  {sdns.length > 0 && (
+                    <div className="space-y-1.5 border-t pt-3 dark:border-slate-700">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sent to site</p>
+                      {sdns.map(s => (
+                        <Link key={s.id} to={`/site-deliveries/${s.id}`} className="flex items-center justify-between gap-2 rounded-md px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                          <span className="min-w-0 truncate text-xs"><span className="font-mono font-semibold text-violet-700 dark:text-violet-300">{s.sdn_code}</span> <span className="text-slate-500">{s.project_name}</span></span>
+                          <Pill tone={SDN_STATUS[s.status].tone}>{SDN_STATUS[s.status].label}</Pill>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+
+                  {grns && grns.length > 0 ? (
+                    <div className="space-y-1.5 border-t pt-3 dark:border-slate-700">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Goods received</p>
+                      {grns.map(g => (
+                        <div key={g.id} className="flex flex-wrap items-center gap-2">
+                          <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+                          <Link to={`/goods-received/${g.id}`} className="font-mono text-xs font-semibold text-emerald-700 hover:underline dark:text-emerald-300">{g.grn_code}</Link>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">{formatDate(g.received_at)}{g.site_delivery_note_id ? ' · signed on site' : ''}</span>
+                          {(isAdmin || isStockOrLogistics) && (
+                            <button onClick={() => handleUndoGrn(g)} title="Delete this GRN" className="ml-auto text-slate-400 hover:text-amber-600">
+                              <Undo2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   ) : status === 'fulfilled' ? (
                     <div className="border-t pt-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
@@ -905,11 +1022,27 @@ export default function PurchaseOrderPage() {
                         </button>
                       )}
                     </div>
-                  ) : canRecordGrn ? (
-                    <Link to={`/sourcing/${id}/grn/new`} className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
-                      <ClipboardCheck className="h-3.5 w-3.5" /> Record goods received
-                    </Link>
                   ) : null}
+
+                  {(canIssueSdn || canRecordGrn || canCloseShort) && (
+                    <div className="flex flex-wrap gap-2 border-t pt-3 dark:border-slate-700">
+                      {canIssueSdn && (
+                        <Link to={`/sourcing/${id}/sdn/new`} className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700">
+                          <HardHat className="h-3.5 w-3.5" /> Send to site
+                        </Link>
+                      )}
+                      {canRecordGrn && (
+                        <Link to={`/sourcing/${id}/grn/new`} className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                          <ClipboardCheck className="h-3.5 w-3.5" /> {receivedAny ? 'Record another delivery' : 'Record goods received'}
+                        </Link>
+                      )}
+                      {canCloseShort && (
+                        <button onClick={handleCloseShort} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+                          <Scissors className="h-3.5 w-3.5" /> Close short
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Panel>
             )}
@@ -959,7 +1092,9 @@ export default function PurchaseOrderPage() {
                 ) : (
                   <p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    {!grn ? "Payment can't be created until a GRN confirms the goods arrived." : 'The transport job needs to start before payment can be created.'}
+                    {!grn ? "Payment can't be created until a GRN confirms the goods arrived."
+                      : status !== 'fulfilled' ? 'Payment is prepared once everything on the order has arrived, or the order is closed short.'
+                      : 'The transport job needs to start before payment can be created.'}
                   </p>
                 )}
               </Panel>

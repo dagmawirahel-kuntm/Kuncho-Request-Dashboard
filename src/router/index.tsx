@@ -132,6 +132,11 @@ import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
 import GoodsReceivedNoteFormPage from '@/pages/sourcing/GoodsReceivedNoteFormPage'
 import GrnRegisterPage from '@/pages/sourcing/GrnRegisterPage'
+import GrnDetailPage from '@/pages/sourcing/GrnDetailPage'
+import ItemVariantsPage from '@/pages/procurement/ItemVariantsPage'
+import SiteDeliveryNoteFormPage from '@/pages/sourcing/SiteDeliveryNoteFormPage'
+import SiteDeliveriesPage from '@/pages/sourcing/SiteDeliveriesPage'
+import SiteDeliveryNotePage from '@/pages/sourcing/SiteDeliveryNotePage'
 import DepartmentsPage from '@/pages/departments/DepartmentsPage'
 import DepartmentOrgChartPage from '@/pages/departments/DepartmentOrgChartPage'
 import DesignPackagesPage from '@/pages/design/DesignPackagesPage'
@@ -310,6 +315,7 @@ export const router = createBrowserRouter([
               { path: 'procurement/price-check-requests', element: <PriceCheckRequestsPage /> },
               { path: 'procurement/volatility', element: <VolatilitySettingsPage /> },
               { path: 'procurement/item-brands', element: <ItemBrandsPage /> },
+              { path: 'procurement/item-variants', element: <ItemVariantsPage /> },
             ],
           },
           // My requests is visible to any authenticated user (each sees their own)
@@ -324,12 +330,26 @@ export const router = createBrowserRouter([
             children: [
               { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
               { path: 'sourcing/:id/grn/new', element: <GoodsReceivedNoteFormPage /> },
-              // The GRN register — read-only. Route reach is this block's
-              // (slightly wider) list; grn_read (063) is what actually
-              // decides which rows come back, same split as everywhere else.
-              { path: 'goods-received', element: <GrnRegisterPage /> },
+              // Sending goods to a site (371): procurement or logistics.
+              // issue_site_delivery_note() is what enforces who may.
+              { path: 'sourcing/:id/sdn/new', element: <SiteDeliveryNoteFormPage /> },
             ],
           },
+          {
+            // The GRN register — read-only. Project managers see their own
+            // projects' deliveries (grn_read_project_manager, 371); grn_read
+            // (063) decides the rest, same split as everywhere else.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer', 'operations_manager', 'project_manager']} allowAssignedProjectManager allowLogisticsOfficer />,
+            children: [
+              { path: 'goods-received', element: <GrnRegisterPage /> },
+              { path: 'goods-received/:id', element: <GrnDetailPage /> },
+            ],
+          },
+          // Site deliveries (371): the project manager's inbox to sign, and
+          // procurement's queue to confirm. Anyone signed in reaches it;
+          // sdn_read decides which notes they see.
+          { path: 'site-deliveries', element: <SiteDeliveriesPage /> },
+          { path: 'site-deliveries/:id', element: <SiteDeliveryNotePage /> },
           {
             // Tax filings sit in their own block rather than the finance one
             // below, because the tax officer is a badge and not a role: the

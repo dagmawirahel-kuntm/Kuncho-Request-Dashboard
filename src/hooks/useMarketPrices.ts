@@ -39,6 +39,15 @@ export interface LatestPriceRow {
   avg_180d: number | null
   vendors_180d: number
   last_bought_at: string | null
+  // Migration 372: like-for-like. The change and range above only compare
+  // prices of the latest price's own variant, and leave flagged ones out.
+  latest_variant_id: string | null
+  latest_variant_label: string | null
+  latest_price_per_base: number | null
+  base_unit: string | null
+  latest_is_outlier: boolean
+  variant_count: number
+  untagged_prices_180d: number
 }
 
 export type PriceSource = 'purchase' | 'po_entry' | 'verified_quote' | 'check_request_response'

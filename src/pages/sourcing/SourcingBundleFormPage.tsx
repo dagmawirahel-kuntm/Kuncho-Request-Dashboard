@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import type { SourcingBundleInsert, SourcingBundlePaymentPattern, SourcingBundleDiscountKind } from '@/types/database'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import { BundleLineStock } from '@/components/stock/BundleLineStock'
+import { useVariantsForItems } from '@/hooks/useItemVariants'
 import { ChevronLeft, Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers, Tag } from 'lucide-react'
 
 type OrderRow = {
@@ -60,6 +61,9 @@ type BundleLineItem = {
   sort_order: number
   stock_item_id: string | null
   orig_stock_item_id: string | null  // as saved on the request line; changed ones are written back
+  // Which product of the stock item was bought (372) — 6 mm or 16 mm,
+  // the 3 L or the 15 L — so its price joins the right trend.
+  variant_id: string | null
 }
 
 export default function SourcingBundleFormPage() {
@@ -285,12 +289,14 @@ export default function SourcingBundleFormPage() {
         sort_order: sbi.sort_order ?? 0,
         stock_item_id: oi?.stock_item_id ?? null,
         orig_stock_item_id: oi?.stock_item_id ?? null,
+        variant_id: sbi.variant_id ?? null,
       }
     })
     setBundleItems(items)
   }, [existingBundle, allOrderItems, orderItemMap, orderMap, existingLoaded, bundleItems.length])
 
   const selectedIds = useMemo(() => new Set(bundleItems.map(i => i.order_item_id)), [bundleItems])
+  const { data: variantsByItem } = useVariantsForItems(bundleItems.map(i => i.stock_item_id))
 
   const availableItems = useMemo(() =>
     allOrderItems.filter(item => !bundledItemIds.has(item.id) && !selectedIds.has(item.id)),
@@ -359,6 +365,7 @@ export default function SourcingBundleFormPage() {
       sort_order: sortOrder,
       stock_item_id: item.stock_item_id,
       orig_stock_item_id: item.stock_item_id,
+      variant_id: null,
     }
   }
 
@@ -501,6 +508,14 @@ export default function SourcingBundleFormPage() {
         bundleCode = data.bundle_code
       }
 
+      // A stock link changed here goes onto the request line first: a line's
+      // variant is checked against the line's stock item.
+      const relinks = await Promise.all(bundleItems
+        .filter(item => item.stock_item_id !== item.orig_stock_item_id)
+        .map(item => supabase.from('order_items').update({ stock_item_id: item.stock_item_id }).eq('id', item.order_item_id)))
+      const relinkError = relinks.find(r => r.error)?.error
+      if (relinkError) throw relinkError
+
       const { error: itemError } = await supabase.from('sourcing_bundle_items').insert(
         bundleItems.map((item, idx) => ({
           bundle_id: bundleId!,
@@ -509,6 +524,7 @@ export default function SourcingBundleFormPage() {
           unit_price_actual: parseFloat(item.unit_price_actual) || null,
           notes: item.notes || null,
           sort_order: idx,
+          variant_id: item.variant_id && variantsByItem?.get(item.stock_item_id ?? '')?.some(v => v.id === item.variant_id) ? item.variant_id : null,
         }))
       )
       if (itemError) throw itemError
@@ -919,8 +935,18 @@ export default function SourcingBundleFormPage() {
                         stockItemId={item.stock_item_id}
                         qty={parseFloat(item.quantity_actual) || 0}
                         unitPrice={parseFloat(item.unit_price_actual) || 0}
-                        onLink={sid => updateItem(item.order_item_id, { stock_item_id: sid })}
+                        onLink={sid => updateItem(item.order_item_id, { stock_item_id: sid, variant_id: null })}
                       />
+                      {(variantsByItem?.get(item.stock_item_id ?? '')?.length ?? 0) > 0 && (
+                        <div className="flex items-center gap-2">
+                          <label className="shrink-0 text-[10px] text-slate-400">Which one?</label>
+                          <select value={item.variant_id ?? ''} onChange={e => updateItem(item.order_item_id, { variant_id: e.target.value || null })}
+                            className={`w-full rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand/40 dark:bg-slate-700/50 dark:text-slate-200 ${item.variant_id ? 'bg-slate-50 dark:border-slate-600' : 'border-amber-300 bg-amber-50 dark:border-amber-700'}`}>
+                            <option value="">— Pick the variant bought —</option>
+                            {variantsByItem!.get(item.stock_item_id!)!.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                          </select>
+                        </div>
+                      )}
                       <input
                         type="text"
                         value={item.notes}
