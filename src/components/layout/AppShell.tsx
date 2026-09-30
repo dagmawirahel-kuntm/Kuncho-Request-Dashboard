@@ -1,7 +1,10 @@
 import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
 import { useCompanyProfile } from '@/lib/companyProfile'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from './Sidebar'
+import { TopNav } from './TopNav'
+import { PagePalette } from './PagePalette'
+import { NAV_LAYOUTS, useNavData, useNavLayout, type NavLayout } from './navState'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
@@ -12,7 +15,7 @@ import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { AtmosphereContext } from '@/components/clientWorld/atmosphereSlot'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings } from 'lucide-react'
+import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings, PanelLeft, PanelLeftDashed, PanelTop, Check } from 'lucide-react'
 
 function FiscalYearControl() {
   const { periods, current, value, setValue, canToggle } = useFiscalYear()
@@ -31,6 +34,55 @@ function FiscalYearControl() {
   }
 
   return <FiscalYearFilter periods={periods} value={value} onChange={setValue} />
+}
+
+const LAYOUT_ICONS: Record<NavLayout, React.ElementType> = { sidebar: PanelLeft, rail: PanelLeftDashed, top: PanelTop }
+
+// Where the navigation sits: sidebar, icon rail or top bar. Per person, on
+// this browser; phones keep the drawer whichever is picked.
+function NavLayoutPicker({ layout, onChange }: { layout: NavLayout; onChange: (next: NavLayout) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+  const Icon = LAYOUT_ICONS[layout]
+  return (
+    <div ref={ref} className="relative hidden lg:block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="Navigation layout"
+        aria-expanded={open}
+        className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      >
+        <Icon className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="animate-fade-in absolute right-0 z-50 mt-1 w-44 rounded-md border bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+          <p className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Navigation</p>
+          {NAV_LAYOUTS.map(({ value, label }) => {
+            const ItemIcon = LAYOUT_ICONS[value]
+            return (
+              <button
+                key={value}
+                onClick={() => { onChange(value); setOpen(false) }}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                <ItemIcon className="h-4 w-4 text-slate-400" />
+                <span className="flex-1 text-left">{label}</span>
+                {layout === value && <Check className="h-3.5 w-3.5 text-slate-500" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const breadcrumbLabels: Record<string, string> = {
@@ -87,6 +139,8 @@ export function AppShell() {
   const location = useLocation()
   const segments = location.pathname.split('/').filter(Boolean)
 
+  const nav = useNavData()
+  const [layout, setLayout] = useNavLayout()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [theme, setTheme] = useState<Theme>(() => {
@@ -138,6 +192,8 @@ export function AppShell() {
     <AnimatedBackground />
     <div className="relative z-10 flex h-screen overflow-hidden bg-transparent print:block print:h-auto print:overflow-visible">
       <Sidebar
+        nav={nav}
+        layout={layout}
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(c => !c)}
         mobileOpen={mobileOpen}
@@ -147,6 +203,7 @@ export function AppShell() {
         festive={festive}
       />
       <div className="relative flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
+        {layout === 'top' && <TopNav nav={nav} theme={theme} festive={festive} onToggleTheme={cycleTheme} />}
         {/* Header */}
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6 dark:bg-slate-800 dark:border-slate-700 print:hidden">
           <button
@@ -176,6 +233,7 @@ export function AppShell() {
           {/* User info */}
           <div className="flex items-center gap-2 sm:gap-3">
             <FiscalYearControl />
+            <NavLayoutPicker layout={layout} onChange={setLayout} />
             <button
               onClick={cycleTheme}
               title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to gold theme' : 'Switch to light mode'}
@@ -207,7 +265,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <div ref={setLayer} className="pointer-events-none absolute inset-x-0 bottom-0 top-14 overflow-hidden print:hidden" aria-hidden />
+        <div ref={setLayer} className={`pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden print:hidden ${layout === 'top' ? 'top-14 lg:top-28' : 'top-14'}`} aria-hidden />
 
         {/* Main content */}
         <main ref={setScroller} className="relative flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
@@ -222,6 +280,7 @@ export function AppShell() {
         </main>
       </div>
     </div>
+    <PagePalette nav={nav} />
     </>
   )
 }

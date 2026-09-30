@@ -1,278 +1,290 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { ArrowRight, Mail, Sun, Moon, Sunrise } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { formatEthiopian } from '@/lib/ethiopianCalendar'
+import {
+  AuthFrame, AuthMessage, PasswordInput, GOLD,
+  authInput, authLabel, authPrimaryButton, authSecondaryButton,
+} from './AuthLayout'
 
 // Target matches the sidebar logo slot: h-14 header, px-4 padding, font-size 2rem
 const LOGO_TOP  = 10   // (56px header - ~36px letter) / 2
 const LOGO_LEFT = 16   // px-4 = 16px
 
+// Someone who has signed in on this browser before goes straight to the
+// form; the splash is a welcome, not a gate to pass every morning.
+const RETURNING_KEY = 'kuncho-returning'
+function isReturning(): boolean {
+  try { return localStorage.getItem(RETURNING_KEY) === '1' } catch { return false }
+}
+function markReturning() {
+  try { localStorage.setItem(RETURNING_KEY, '1') } catch { /* private window: splash again next time */ }
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
+function greeting(now: Date) {
+  const h = now.getHours()
+  if (h < 12) return { text: 'Good morning', Icon: Sunrise }
+  if (h < 17) return { text: 'Good afternoon', Icon: Sun }
+  return { text: 'Good evening', Icon: Moon }
+}
+
+// Supabase's messages are written for developers; these are for staff.
+function friendlyError(message: string): string {
+  const m = message.toLowerCase()
+  if (m.includes('invalid login credentials')) return "That email and password don't match. Check for typos, or use \"Forgot?\" to set a new password."
+  if (m.includes('email not confirmed')) return 'Your email isn\'t confirmed yet. Open the confirmation link we emailed you, then sign in.'
+  if (m.includes('signups not allowed') || m.includes('user not found')) return 'There\'s no Kuncho account for that email yet. Check the address, or set up your account below.'
+  if (m.includes('rate limit') || m.includes('too many')) return 'Too many tries in a short time. Wait a minute, then try again.'
+  if (m.includes('failed to fetch') || m.includes('network')) return 'Can\'t reach Kuncho right now. Check your internet connection and try again.'
+  return message
+}
+
 export default function LoginPage() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: Location })?.from?.pathname ?? '/home'
+  const redirectedFrom = (location.state as { from?: Location })?.from?.pathname
+  const from = redirectedFrom ?? '/home'
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [info, setInfo]         = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [showForm, setShowForm] = useState(false)
+  const [loading, setLoading]   = useState<'password' | 'link' | null>(null)
+  // Straight to the form for returning people, and for anyone sent here from
+  // a page they were trying to open.
+  const [showForm, setShowForm] = useState(() => isReturning() || !!redirectedFrom)
+  const [reduceMotion] = useState(prefersReducedMotion)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const [now] = useState(() => new Date())
+  const { text: hello, Icon: HelloIcon } = greeting(now)
+
+  // Enter, Space or any typed character opens the form from the splash.
+  useEffect(() => {
+    if (showForm) return
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'Enter' || e.key === ' ' || e.key.length === 1) {
+        e.preventDefault()
+        setShowForm(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showForm])
+
+  // Focus the email field once the form has arrived.
+  useEffect(() => {
+    if (!showForm) return
+    const t = window.setTimeout(() => emailRef.current?.focus(), reduceMotion ? 0 : 450)
+    return () => window.clearTimeout(t)
+  }, [showForm, reduceMotion])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(''); setInfo('')
-    setLoading(true)
-    const { error } = await signIn(email, password)
-    setLoading(false)
-    if (error) { setError(error.message) } else { navigate(from, { replace: true }) }
+    setLoading('password')
+    const { error } = await signIn(email.trim(), password)
+    setLoading(null)
+    if (error) { setError(friendlyError(error.message)); return }
+    markReturning()
+    navigate(from, { replace: true })
   }
 
   async function handleForgotPassword() {
     setError(''); setInfo('')
-    if (!email.trim()) { setError('Type your email above first, then tap "Forgot password?"'); return }
+    if (!email.trim()) {
+      setError('Type your work email first, then press "Forgot?" again.')
+      emailRef.current?.focus()
+      return
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/update-password`,
     })
-    if (error) { setError(error.message); return }
-    setInfo('Password reset link sent — check your email inbox (and spam folder).')
+    if (error) { setError(friendlyError(error.message)); return }
+    setInfo('Password reset link sent — check your inbox (and the spam folder).')
   }
 
-  return (
-    <div className="fixed inset-0 bg-black overflow-hidden">
+  // A one-time sign-in link by email, for people who can't remember their
+  // password. Only for existing accounts: new people still go through
+  // sign-up and the admin's approval.
+  async function handleEmailLink() {
+    setError(''); setInfo('')
+    if (!email.trim()) {
+      setError('Type your work email first, then ask for a sign-in link.')
+      emailRef.current?.focus()
+      return
+    }
+    setLoading('link')
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}${from}` },
+    })
+    setLoading(null)
+    if (error) { setError(friendlyError(error.message)); return }
+    markReturning()
+    setInfo(`Sign-in link sent to ${email.trim()}. Open it on this device to come straight in.`)
+  }
 
-      {/* ── Keyframes ─────────────────────────────────────────────── */}
+  const flyTransition = reduceMotion
+    ? 'none'
+    : 'top 0.85s cubic-bezier(0.34,1.56,0.64,1), left 0.85s cubic-bezier(0.34,1.56,0.64,1), font-size 0.85s cubic-bezier(0.34,1.56,0.64,1), filter 0.85s ease'
+
+  return (
+    <>
       <style>{`
         @keyframes ku-breathe {
-          0%,100% { text-shadow: 0 0 60px rgba(255,255,255,0.08); }
-          50%      { text-shadow: 0 0 120px rgba(255,255,255,0.20); }
+          0%,100% { filter: drop-shadow(0 0 40px rgba(212,175,55,0.25)); }
+          50%      { filter: drop-shadow(0 0 80px rgba(212,175,55,0.45)); }
         }
-        @keyframes hint-blink {
-          0%,100% { opacity: 0.10; }
-          50%      { opacity: 0.28; }
+        @keyframes ku-ring {
+          0%   { transform: scale(0.85); opacity: 0.5; }
+          100% { transform: scale(1.35); opacity: 0; }
         }
-        .ku-breathe { animation: ku-breathe 4s ease-in-out infinite; }
-        .hint-blink  { animation: hint-blink 2.8s ease-in-out infinite; }
+        @media (prefers-reduced-motion: no-preference) {
+          .ku-breathe { animation: ku-breathe 4s ease-in-out infinite; }
+          .ku-ring    { animation: ku-ring 2.8s ease-out infinite; }
+        }
       `}</style>
 
-      {/* ── Construction SVG ──────────────────────────────────────── */}
-      <svg
-        className="pointer-events-none absolute inset-0 h-full w-full"
-        viewBox="0 0 700 900"
-        preserveAspectRatio="xMidYMid slice"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden
-      >
-        <defs>
-          <pattern id="minorGrid" width="28" height="28" patternUnits="userSpaceOnUse">
-            <path d="M 28 0 L 0 0 0 28" fill="none" stroke="white" strokeWidth="0.3" opacity="0.18" />
-          </pattern>
-          <pattern id="majorGrid" width="112" height="112" patternUnits="userSpaceOnUse">
-            <rect width="112" height="112" fill="url(#minorGrid)" />
-            <path d="M 112 0 L 0 0 0 112" fill="none" stroke="white" strokeWidth="0.7" opacity="0.28" />
-          </pattern>
-        </defs>
-        <rect width="700" height="900" fill="url(#majorGrid)" opacity="0.5" />
-        <g stroke="white" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="70"  y1="240" x2="70"  y2="900" strokeWidth="2.2" opacity="0.12" />
-          <line x1="195" y1="185" x2="195" y2="900" strokeWidth="2.2" opacity="0.12" />
-          <line x1="360" y1="210" x2="360" y2="900" strokeWidth="2.2" opacity="0.12" />
-          <line x1="490" y1="235" x2="490" y2="900" strokeWidth="2.2" opacity="0.12" />
-          <line x1="610" y1="330" x2="610" y2="900" strokeWidth="2.2" opacity="0.09" />
-          <line x1="50"  y1="650" x2="640" y2="650" strokeWidth="2.4" opacity="0.12" />
-          <line x1="50"  y1="490" x2="640" y2="490" strokeWidth="2.4" opacity="0.12" />
-          <line x1="50"  y1="360" x2="640" y2="360" strokeWidth="2.2" opacity="0.11" />
-          <line x1="70"  y1="240" x2="490" y2="240" strokeWidth="2"   opacity="0.10" />
-          <line x1="70"  y1="360" x2="195" y2="490" strokeWidth="1.4" opacity="0.09" />
-          <line x1="195" y1="360" x2="70"  y2="490" strokeWidth="1.4" opacity="0.09" />
-          <line x1="360" y1="490" x2="490" y2="650" strokeWidth="1.4" opacity="0.09" />
-          <line x1="490" y1="490" x2="360" y2="650" strokeWidth="1.4" opacity="0.09" />
-          <line x1="195" y1="650" x2="360" y2="800" strokeWidth="1.2" opacity="0.07" />
-          <line x1="360" y1="650" x2="195" y2="800" strokeWidth="1.2" opacity="0.07" />
-          {[
-            [65,235],[190,180],[355,205],[485,230],
-            [65,355],[190,355],[355,355],[485,355],
-            [65,485],[190,485],[355,485],[485,485],
-            [65,645],[355,645],[485,645],[605,645],
-          ].map(([x,y],i) => (
-            <rect key={i} x={x} y={y} width="10" height="10" fill="white" stroke="none"
-                  opacity={y < 300 ? 0.16 : y < 500 ? 0.12 : 0.09} />
-          ))}
-        </g>
-        <g stroke="white" fill="none" opacity="0.15" strokeLinecap="round">
-          <line x1="550" y1="0"   x2="550" y2="240" strokeWidth="3" />
-          <line x1="542" y1="0"   x2="558" y2="52"  strokeWidth="1.2" />
-          <line x1="558" y1="0"   x2="542" y2="52"  strokeWidth="1.2" />
-          <line x1="542" y1="52"  x2="558" y2="104" strokeWidth="1.2" />
-          <line x1="558" y1="52"  x2="542" y2="104" strokeWidth="1.2" />
-          <line x1="542" y1="104" x2="558" y2="156" strokeWidth="1.2" />
-          <line x1="558" y1="104" x2="542" y2="156" strokeWidth="1.2" />
-          <rect x="540" y="155" width="20" height="16" strokeWidth="1.6" />
-          <line x1="310" y1="42"  x2="660" y2="42"  strokeWidth="3" />
-          <line x1="310" y1="42"  x2="430" y2="12"  strokeWidth="1.4" />
-          <line x1="430" y1="12"  x2="550" y2="8"   strokeWidth="1.4" />
-          <line x1="550" y1="8"   x2="660" y2="42"  strokeWidth="1.4" />
-          <rect x="298" y="38"  width="20" height="10" fill="white" opacity="0.5" stroke="none" />
-          <rect x="476" y="38"  width="12" height="8" strokeWidth="1.2" />
-          <line x1="482" y1="46"  x2="482" y2="155" strokeWidth="1.4" />
-          <rect x="476" y="155" width="12" height="8" strokeWidth="1.4" />
-          <path d="M 478 163 Q 482 173 486 163" strokeWidth="1.4" />
-        </g>
-        <g stroke="white" strokeWidth="0.8" opacity="0.06">
-          <line x1="650" y1="360" x2="650" y2="490" />
-          <line x1="644" y1="360" x2="656" y2="360" />
-          <line x1="644" y1="490" x2="656" y2="490" />
-          <line x1="70"  y1="860" x2="490" y2="860" />
-          <line x1="70"  y1="854" x2="70"  y2="866" />
-          <line x1="490" y1="854" x2="490" y2="866" />
-        </g>
-      </svg>
-
-      {/* Radial glow */}
-      <div className="pointer-events-none absolute inset-0"
-           style={{ background: 'radial-gradient(ellipse 55% 40% at 50% 50%, rgba(255,255,255,0.035) 0%, transparent 70%)' }} />
-
-      {/* ── ቁ — flies from center to sidebar-logo corner ──────────── */}
+      {/* ── The form, beside the brand panel ────────────────────────── */}
       <div
+        aria-hidden={!showForm}
+        style={{
+          opacity: showForm ? 1 : 0,
+          transition: reduceMotion ? 'none' : 'opacity 0.5s ease 0.35s',
+          pointerEvents: showForm ? 'auto' : 'none',
+        }}
+      >
+        <AuthFrame showLogo={false}>
+          <div
+            style={{
+              transform: showForm || reduceMotion ? 'translateY(0)' : 'translateY(18px)',
+              transition: reduceMotion ? 'none' : 'transform 0.55s ease 0.4s',
+            }}
+          >
+            <h1 className="text-2xl font-bold text-white">Welcome back</h1>
+            <p className="mt-1 text-sm text-white/50">Sign in with your Kuncho work email.</p>
+
+            <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+              <div>
+                <label htmlFor="login-email" className={authLabel}>Work email</label>
+                <input
+                  id="login-email"
+                  ref={emailRef}
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="username"
+                  inputMode="email"
+                  tabIndex={showForm ? 0 : -1}
+                  className={authInput}
+                  placeholder="you@kuncho.com"
+                />
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label htmlFor="login-password" className="text-xs font-medium text-white/60">Password</label>
+                  <button type="button" onClick={handleForgotPassword} className="text-xs font-medium hover:underline" style={{ color: GOLD }}>
+                    Forgot?
+                  </button>
+                </div>
+                <PasswordInput id="login-password" value={password} onChange={setPassword} autoComplete="current-password" placeholder="Your password" />
+              </div>
+
+              {error && <AuthMessage tone="error">{error}</AuthMessage>}
+              {info && <AuthMessage tone="info">{info}</AuthMessage>}
+
+              <button type="submit" disabled={loading !== null} className={`mt-2 ${authPrimaryButton}`}>
+                {loading === 'password' ? 'Signing in…' : <>Sign in <ArrowRight className="h-4 w-4" /></>}
+              </button>
+              <button type="button" onClick={handleEmailLink} disabled={loading !== null} className={authSecondaryButton}>
+                <Mail className="h-4 w-4" />
+                {loading === 'link' ? 'Sending…' : 'Email me a sign-in link instead'}
+              </button>
+            </form>
+
+            <p className="mt-8 text-center text-sm text-white/40">
+              New to Kuncho? <Link to="/signup" className="font-medium text-white/80 hover:text-white">Set up your account</Link>
+            </p>
+          </div>
+        </AuthFrame>
+      </div>
+
+      {/* ── Splash ──────────────────────────────────────────────────── */}
+      <div
+        aria-hidden={showForm}
+        className="fixed inset-0 z-10 bg-[#0c0a07]"
+        style={{
+          opacity: showForm ? 0 : 1,
+          transition: reduceMotion ? 'none' : 'opacity 0.45s ease 0.15s',
+          pointerEvents: showForm ? 'none' : 'auto',
+        }}
+      >
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#D4AF37]/12 blur-3xl" />
+        <p className="absolute inset-x-0 top-[22%] flex items-center justify-center gap-2 px-6 text-center text-sm text-white/55">
+          <HelloIcon className="h-4 w-4 shrink-0" style={{ color: GOLD }} />
+          {hello} · {formatEthiopian(now)} ዓ.ም.
+        </p>
+        <div className="absolute inset-x-0 top-[67%] flex flex-col items-center gap-4 px-6 text-center">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.35em] text-white/70">Kuncho</p>
+          <p className="text-sm text-white/60">
+            Tap <span className="font-bold" style={{ color: GOLD }}>ቁ</span> or press{' '}
+            <kbd className="rounded border border-white/25! px-1.5 py-0.5 font-sans text-xs text-white/80">Enter</kbd> to sign in
+          </p>
+        </div>
+        <p className="absolute inset-x-0 bottom-6 text-center text-xs text-white/30">ቁንጮ · Kuncho</p>
+      </div>
+
+      {/* ── ቁ — the way in; flies from center to the sidebar-logo corner ── */}
+      <button
+        type="button"
         onClick={!showForm ? () => setShowForm(true) : undefined}
-        className={`absolute font-black leading-none text-white select-none z-20 ${!showForm ? 'ku-breathe' : ''}`}
+        tabIndex={showForm ? -1 : 0}
+        aria-label="Enter Kuncho — open sign in"
+        aria-hidden={showForm}
+        className={`group fixed z-20 rounded-full font-black leading-none select-none outline-none focus-visible:ring-4 focus-visible:ring-[#D4AF37]/50 ${!showForm ? 'ku-breathe' : ''}`}
         style={showForm ? {
           top: `${LOGO_TOP}px`,
           left: `${LOGO_LEFT}px`,
           fontSize: '2rem',
           transform: 'none',
-          transition: 'top 0.85s cubic-bezier(0.34,1.56,0.64,1), left 0.85s cubic-bezier(0.34,1.56,0.64,1), font-size 0.85s cubic-bezier(0.34,1.56,0.64,1)',
+          color: GOLD,
+          transition: flyTransition,
           cursor: 'default',
         } : {
           top: '50%',
           left: '50%',
-          fontSize: 'clamp(8rem, 20vw, 15rem)',
+          fontSize: 'clamp(8rem, 20vw, 13rem)',
           transform: 'translate(-50%, -55%)',
-          transition: 'top 0.85s cubic-bezier(0.34,1.56,0.64,1), left 0.85s cubic-bezier(0.34,1.56,0.64,1), font-size 0.85s cubic-bezier(0.34,1.56,0.64,1)',
+          color: GOLD,
+          transition: flyTransition,
           cursor: 'pointer',
         }}
       >
-        ቁ
-      </div>
+        {!showForm && <span aria-hidden className="ku-ring pointer-events-none absolute inset-0 -m-4 rounded-full border border-[#D4AF37]/40!" />}
+        <span className="relative block transition-transform duration-300 group-hover:scale-105">ቁ</span>
+      </button>
 
-      {/* "KUNCHO" label fades in beside corner ቁ */}
+      {/* "KUNCHO" label fades in beside the corner ቁ */}
       <div
-        className="pointer-events-none absolute z-20 flex items-center"
+        className="pointer-events-none fixed z-20 flex items-center"
         style={{
           top: `${LOGO_TOP + 4}px`,
           left: `${LOGO_LEFT + 38}px`,
           opacity: showForm ? 1 : 0,
-          transition: 'opacity 0.4s ease 0.7s',
+          transition: reduceMotion ? 'none' : 'opacity 0.4s ease 0.7s',
         }}
       >
         <span className="text-sm font-semibold uppercase tracking-widest text-white/60">Kuncho</span>
       </div>
-
-      {/* ── Intro hint ───────────────────────────────────────────── */}
-      <div
-        className="pointer-events-none absolute inset-x-0 flex justify-center"
-        style={{
-          top: '67%',
-          opacity: showForm ? 0 : 1,
-          transition: 'opacity 0.3s ease',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="h-px w-12 bg-white/20" />
-          <p className="hint-blink text-[10px] uppercase tracking-[0.45em] text-white/40 font-medium">tap to enter</p>
-          <div className="h-px w-12 bg-white/20" />
-        </div>
-      </div>
-
-      {/* ── Login form ───────────────────────────────────────────── */}
-      <div
-        className="absolute inset-x-0 px-6 z-10"
-        style={{
-          top: '24%',
-          opacity: showForm ? 1 : 0,
-          transform: showForm ? 'translateY(0)' : 'translateY(18px)',
-          transition: 'opacity 0.55s ease 0.42s, transform 0.55s ease 0.42s',
-          pointerEvents: showForm ? 'auto' : 'none',
-        }}
-      >
-        <div className="mx-auto w-full max-w-sm">
-          <div className="mb-7">
-            <h1 className="text-white text-xl font-bold">Sign in</h1>
-            <p className="mt-0.5 text-white/35 text-sm">Enter your credentials to continue</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-white/40">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                autoFocus={showForm}
-                className="w-full rounded-xl border border-white/12 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/22 outline-none transition focus:border-white/30 focus:bg-white/8"
-                placeholder="you@example.com"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-white/40">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                className="w-full rounded-xl border border-white/12 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/22 outline-none transition focus:border-white/30 focus:bg-white/8"
-                placeholder="••••••••"
-              />
-            </div>
-
-            {error && (
-              <p className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-2.5 text-sm text-red-400">
-                {error}
-              </p>
-            )}
-            {info && (
-              <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-2.5 text-sm text-emerald-400">
-                {info}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 active:bg-white/80 disabled:opacity-50"
-            >
-              {loading ? 'Signing in…' : 'Sign in'}
-            </button>
-          </form>
-
-          <div className="mt-5 flex items-center justify-between text-[11px]">
-            <button type="button" onClick={handleForgotPassword}
-              className="text-white/30 hover:text-white/60 transition uppercase tracking-widest">
-              Forgot password?
-            </button>
-            <Link to="/signup" className="text-white/30 hover:text-white/60 transition uppercase tracking-widest">
-              First time? Sign up
-            </Link>
-          </div>
-
-          <button
-            onClick={() => setShowForm(false)}
-            className="mt-6 w-full text-center text-[11px] text-white/20 hover:text-white/40 transition uppercase tracking-widest"
-          >
-            ← back
-          </button>
-        </div>
-      </div>
-
-      {/* Corner vignette */}
-      <div className="pointer-events-none absolute inset-0"
-           style={{ background: 'radial-gradient(ellipse 100% 100% at 50% 50%, transparent 40%, rgba(0,0,0,0.65) 100%)' }} />
-    </div>
+    </>
   )
 }

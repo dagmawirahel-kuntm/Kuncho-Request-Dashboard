@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-
-const inputCls = 'w-full rounded-xl border border-white/12 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/22 outline-none transition focus:border-white/30 focus:bg-white/8'
-const labelCls = 'mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-white/40'
+import { AuthFrame, AuthMessage, PasswordInput, authInput as inputCls, authLabel as labelCls, authPrimaryButton } from './AuthLayout'
 
 export default function SignupPage() {
   const navigate = useNavigate()
@@ -50,50 +48,40 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-black overflow-y-auto">
-      <div className="pointer-events-none absolute inset-0"
-           style={{ background: 'radial-gradient(ellipse 55% 40% at 50% 40%, rgba(255,255,255,0.04) 0%, transparent 70%)' }} />
-      <div className="relative z-10 mx-auto w-full max-w-sm px-6 py-16">
-        <div className="mb-8 text-center">
-          <span className="text-5xl font-black text-white select-none">ቁ</span>
-          <h1 className="mt-4 text-white text-xl font-bold">Create your account</h1>
-          <p className="mt-1 text-white/35 text-sm">
-            Use your registered company email. An admin approves new accounts before access is granted.
-          </p>
+    <AuthFrame>
+      <h1 className="text-2xl font-bold text-white">Set up your account</h1>
+      <p className="mt-1 text-sm text-white/50">
+        Use your registered company email. An admin approves new accounts before access is granted.
+      </p>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <div>
+          <label htmlFor="su-name" className={labelCls}>Full name</label>
+          <input id="su-name" type="text" value={fullName} onChange={e => setFullName(e.target.value)} required autoComplete="name" className={inputCls} placeholder="Abebe Kebede" />
+        </div>
+        <div>
+          <label htmlFor="su-email" className={labelCls}>Company email</label>
+          <input id="su-email" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" inputMode="email" className={inputCls} placeholder="you@kuncho.com" />
+        </div>
+        <div>
+          <label htmlFor="su-password" className={labelCls}>Choose a password</label>
+          <PasswordInput id="su-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="At least 6 characters" />
+        </div>
+        <div>
+          <label htmlFor="su-confirm" className={labelCls}>Type it again</label>
+          <PasswordInput id="su-confirm" value={confirm} onChange={setConfirm} autoComplete="new-password" placeholder="Repeat the password" />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className={labelCls}>Full Name</label>
-            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} required className={inputCls} placeholder="Abebe Kebede" />
-          </div>
-          <div>
-            <label className={labelCls}>Company Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className={inputCls} placeholder="you@company.com" />
-          </div>
-          <div>
-            <label className={labelCls}>Choose a Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className={inputCls} placeholder="min 6 characters" />
-          </div>
-          <div>
-            <label className={labelCls}>Confirm Password</label>
-            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required className={inputCls} placeholder="repeat password" />
-          </div>
+        {error && <AuthMessage tone="error">{error}</AuthMessage>}
 
-          {error && (
-            <p className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-2.5 text-sm text-red-400">{error}</p>
-          )}
+        <button type="submit" disabled={loading} className={`mt-2 ${authPrimaryButton}`}>
+          {loading ? 'Creating account…' : 'Create account'}
+        </button>
+      </form>
 
-          <button type="submit" disabled={loading}
-            className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-50">
-            {loading ? 'Creating account…' : 'Create Account'}
-          </button>
-        </form>
-
-        <Link to="/login" className="mt-6 block text-center text-[11px] text-white/25 hover:text-white/50 transition uppercase tracking-widest">
-          ← I already have an account
-        </Link>
-      </div>
-    </div>
+      <p className="mt-8 text-center text-sm text-white/40">
+        Already have an account? <Link to="/login" className="font-medium text-white/80 hover:text-white">Sign in</Link>
+      </p>
+    </AuthFrame>
   )
 }

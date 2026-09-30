@@ -3,10 +3,37 @@
 One page per role. Find your role below; it covers your landing page, your
 daily tasks, and who to go to when something needs approval.
 
-**Logging in:** open the dashboard link, enter your company email and the
-password you were given. If you see "Invalid login credentials," check the
-email spelling; if you're still stuck, contact your admin — they can reset
-you from **Admin → Users & Roles**.
+**Logging in:** open the dashboard link and tap the gold **ቁ** (or press
+**Enter**) — after your first sign-in on a device you go straight to the
+form. Enter your work email and password; the eye icon shows what you typed.
+If the email and password don't match, check the spelling or press
+**Forgot?** for a reset link. **Email me a sign-in link instead** sends a
+one-time link to your inbox. Still stuck? Your admin can reset you from
+**Admin → Users & Roles**.
+
+**Your home page (My Dashboard)**
+
+- The top shows the day, how many things need you, and the week's company
+  calendar. The ring shows how much of today's queue is cleared; clear it
+  to zero on several working days in a row to build a streak.
+- The big numbers underneath are the queues waiting on you — click one to
+  work through it.
+- **Needs you now** lists every queue. Finance approvals and leave requests
+  open with **Review**: press **Approve** (or **Reject**), then **Confirm?**
+  to decide without leaving the page. Other queues have **Open**.
+- **Team pulse** shows announcements, work anniversaries and thanks between
+  colleagues. **Say thanks to a colleague** sends one — everyone can see it.
+- **Customize** lets you add or remove widgets, drag them into a new order,
+  and make each one Small, Medium or Large.
+
+**Finding your way**
+
+- Pages are grouped into sections: Home, Requests, Projects & Sites, Sales,
+  Supply Chain, Money, People & Safety and Admin.
+- Hover over any page and press the pin to keep it at the top.
+- Press **Ctrl K** (⌘K on a Mac) anywhere and type part of a page's name.
+- The layout button in the header switches between a sidebar, an icon rail
+  and a bar across the top.
 
 ---
 
@@ -24,7 +51,7 @@ and timesheets.
 | Get money spent for work reimbursed | **+ New Expense** → describe the item, amount, date → Save. It goes to your manager for approval. |
 | Request transportation | **+ Transportation Request** → fill route and reason → Save |
 | Log my attendance | **+ Timesheet Entry** → date, check-in/out times |
-| Check if my expense was approved | Open **Approvals** in the sidebar — the badge shows Pending / Manager Approved / Finance Approved / Rejected |
+| Check if my expense was approved | Open **Requests → Approvals** — the badge shows Pending / Manager Approved / Finance Approved / Rejected |
 | See my salary and payment history | **My Profile** → Payroll / Cash Advances tabs |
 
 **Good to know:** you only see your own records — other people's expenses
@@ -44,11 +71,11 @@ finance can settle them.
 
 | I want to… | Do this |
 |---|---|
-| Approve/reject an expense | Open **Approvals** → click the expense → **Approve** or **Reject** (top-right buttons). Rejections require a reason. |
-| Approve a payroll run | **HR → Payroll** → open the run → Approve. Finance gives the final approval after you. |
-| Approve a cash advance | **HR → Cash Advances** → open → Approve |
-| Approve a sale record | **Finance → Sales** → open the sale → Approve |
-| See a staff member's full record | **HR → Staff** → click the name |
+| Approve/reject an expense | Open **Requests → Approvals** → click the expense → **Approve** or **Reject** (top-right buttons). Rejections require a reason. |
+| Approve a payroll run | **People & Safety → Payroll** → open the run → Approve. Finance gives the final approval after you. |
+| Approve a cash advance | **People & Safety → Cash Advances** → open → Approve |
+| Approve a sale record | **Money → Sales** → open the sale → Approve |
+| See a staff member's full record | **People & Safety → Staff** → click the name |
 
 **Good to know:** your approval is step 1 of 2 — money only moves after
 finance's final approval. You can't approve step 2 yourself (separation of
@@ -59,20 +86,20 @@ duties).
 ## Finance
 
 **Your landing page** is the main dashboard; your workspaces are the
-**Finance** and **Reports** sections.
+**Money** section (Pay, Collect, Books & bank, Tax, Reports).
 
 **Your key responsibility: final approvals and settlement.** Nothing gets
 paid without you.
 
 | I want to… | Do this |
 |---|---|
-| Give final approval on an expense | Open it from **Approvals** → **Approve** (only available after manager approval) |
+| Give final approval on an expense | Approve it from **Needs you now** on your home page, or open it from **Requests → Approvals** → **Approve** (only available after manager approval) |
 | Pay an expense | Open the expense → set payment status to paid, pick the account, add the bank reference |
-| Record a sale / issue an invoice | **Finance → Clients** → open client → **Proforma Invoice** → build it → **Save Proforma** → **Convert to Invoice** when accepted |
-| Chase unpaid invoices | **Finance → Invoices** — grouped by client, aged, with Send Invoice / Mark Paid buttons |
-| Run payroll payment | **HR → Payroll** → open a finance-approved run → set status to **Paid**. The account balance updates automatically. |
-| Check company profit | **Reports → P&L Report** — real-time, by month, with expense categories |
-| Check account balances | **Finance → Accounts** — balances include sales in, expenses/advances/payroll out, transfers |
+| Record a sale / issue an invoice | **Money → Clients** → open client → **Proforma Invoice** → build it → **Save Proforma** → **Convert to Invoice** when accepted |
+| Chase unpaid invoices | **Money → Invoices** — grouped by client, aged, with Send Invoice / Mark Paid buttons |
+| Run payroll payment | **People & Safety → Payroll** → open a finance-approved run → set status to **Paid**. The account balance updates automatically. |
+| Check company profit | **Money → Reports → P&L Report** — real-time, by month, with expense categories |
+| Check account balances | **Money → Accounts** — balances include sales in, expenses/advances/payroll out, transfers |
 
 **Good to know:** a payroll run can't be marked Paid until you've given it
 final approval — the dropdown stays locked. Marking an invoice Paid stamps
@@ -86,12 +113,12 @@ the payment date automatically.
 
 | I want to… | Do this |
 |---|---|
-| Add a new employee | **HR → Staff → Add Staff** — fill name, department, role, salary, bank, and **email** (their email is what links their login to their profile) |
+| Add a new employee | **People & Safety → Staff → Add Staff** — fill name, department, role, salary, bank, and **email** (their email is what links their login to their profile) |
 | Give an employee app access | Ask an admin to create their login in **Admin → Users & Roles** with the same email as their staff record |
-| Run monthly payroll | **HR → Payroll → Add Payroll** → pick period → select employees → the amounts grid pre-fills each salary; adjust deductions → Save. Then it needs manager approval + finance approval before finance can pay it. |
-| Record a cash advance | **HR → Cash Advances → Add Record** — needs the same two approvals |
-| Record payroll taxes | **HR → Payroll Taxes → Add Record** |
-| View/maintain employee records | **HR → Staff** → click a name for the full profile |
+| Run monthly payroll | **People & Safety → Payroll → Add Payroll** → pick period → select employees → the amounts grid pre-fills each salary; adjust deductions → Save. Then it needs manager approval + finance approval before finance can pay it. |
+| Record a cash advance | **People & Safety → Cash Advances → Add Record** — needs the same two approvals |
+| Record payroll taxes | **People & Safety → Payroll Taxes → Add Record** |
+| View/maintain employee records | **People & Safety → Staff** → click a name for the full profile |
 
 **Good to know:** when an employee leaves, edit their staff record — set
 Status to **Terminated** and fill the termination date. Don't delete staff
@@ -106,9 +133,9 @@ records; history (payroll, advances) hangs off them.
 | I want to… | Do this |
 |---|---|
 | See purchase requests to source | **Requests → Purchase Requests** (you can view, not create) |
-| Bundle items for a vendor order | **Procurement → Sourcing Bundles → New** → pick items → submit for approval |
-| Maintain vendors | **Procurement → Vendors** — profiles, documents, contracts, receipts |
-| Manage stock intake | **Stock → Stock Catalog** |
+| Bundle items for a vendor order | **Supply Chain → Sourcing Bundles → New** → pick items → submit for approval |
+| Maintain vendors | **Supply Chain → Vendors** — profiles, documents, contracts, receipts |
+| Manage stock intake | **Supply Chain → Stock Catalog** |
 
 ---
 
@@ -118,9 +145,9 @@ records; history (payroll, advances) hangs off them.
 
 | I want to… | Do this |
 |---|---|
-| Maintain projects | **Management → Projects** |
+| Maintain projects | **Projects & Sites → Projects** |
 | Create purchase requests for a project | **Requests → Purchase Requests → New** |
-| Track products, locations, CPO bonds | **Management** section |
+| Track products, locations, CPO bonds | **Projects & Sites** section |
 
 ---
 
@@ -128,9 +155,9 @@ records; history (payroll, advances) hangs off them.
 
 | I want to… | Do this |
 |---|---|
-| Receive stock | **Stock → Stock Catalog** → item → record receipt |
-| Issue stock to a project | **Stock → Movement** |
-| Track tools | **Stock → Tools** — checkouts, condition, returns |
+| Receive stock | **Supply Chain → Stock Catalog** → item → record receipt |
+| Issue stock to a project | **Supply Chain → Movement** |
+| Track tools | **Supply Chain → Tools** — checkouts, condition, returns |
 
 ---
 

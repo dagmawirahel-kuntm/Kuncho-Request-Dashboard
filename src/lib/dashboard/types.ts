@@ -1,7 +1,8 @@
 import type { ComponentType, ElementType } from 'react'
 import type { Staff, UserRole } from '@/types/database'
 
-export type WidgetSize = 'half' | 'full'
+/** half: one column · wide: two columns · full: the whole row. */
+export type WidgetSize = 'half' | 'wide' | 'full'
 
 /** One widget on a person's dashboard, in order (dashboard_layouts.widgets). */
 export interface LayoutItem {
