@@ -22,7 +22,9 @@ export interface KindMeta { label: string; action: string; team: string }
 
 // What each kind is, and the one thing that clears it.
 export const KIND_META: Record<string, KindMeta> = {
-  po_not_received:      { label: 'Ordered, nothing received',     action: 'Record the goods received note, or chase the vendor.', team: 'procurement' },
+  po_not_received:      { label: 'Ordered, not all received',     action: 'Record what arrived, chase the vendor, or close the order short.', team: 'procurement' },
+  sdn_to_confirm:       { label: 'Site delivery to confirm',       action: 'Check the short or refused lines with the vendor and confirm the delivery note.', team: 'procurement' },
+  sdn_unsigned:         { label: 'Site delivery not signed',       action: 'Sign for the goods on site, or tell procurement they never came.', team: 'project' },
   po_not_ordered:       { label: 'Purchase order not placed',      action: 'Approve it, or mark it ordered once the vendor has it.', team: 'procurement' },
   pr_not_sourced:       { label: 'Request lines not sourced',      action: 'Add the lines to a purchase order, issue from stock, or cancel them.', team: 'procurement' },
   payment_unconfirmed:  { label: 'Sent, not on a bank statement',  action: 'Import the latest statement and match it, or check the transfer went.', team: 'finance' },

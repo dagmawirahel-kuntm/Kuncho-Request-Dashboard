@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useLogVerifiedPrice, useItemBrands } from '@/hooks/useMarketPrices'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { useVariantsForItems, useInvalidateVariantData } from '@/hooks/useItemVariants'
 
 type Mode = 'stock_item' | 'sub_category' | 'new_item'
 
@@ -33,6 +34,11 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
   const [stockItemId, setStockItemId] = useState<string | null>(stockItem?.id ?? null)
   const [brand, setBrand] = useState('')
   const [specification, setSpecification] = useState('')
+  const [variantId, setVariantId] = useState<string | null>(null)
+  const pickedItemId = mode === 'stock_item' ? (stockItem?.id ?? stockItemId) : null
+  const { data: variantsMap } = useVariantsForItems([pickedItemId])
+  const variants = variantsMap?.get(pickedItemId ?? '') ?? []
+  const invalidateVariants = useInvalidateVariantData()
 
   // Known brands for the current anchor (item or category) — populates the datalist.
   const { data: knownBrands = [] } = useItemBrands({ stock_item_id: mode === 'stock_item' ? (stockItem?.id ?? stockItemId) : null, sub_category_id: mode !== 'stock_item' ? subCategoryId : null })
@@ -85,7 +91,13 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
       if (mode === 'stock_item') {
         const id = stockItem?.id ?? stockItemId
         if (!id) { toast('Pick an item', 'error'); return }
-        await log.mutateAsync({ stock_item_id: id, unit_price: n, vendor_id: vendorId, notes, source_reference: ref, brand: brandVal, specification: specVal })
+        if (variants.length > 0 && !variantId) { toast('Pick which variant this price is for', 'error'); return }
+        const priceId = await log.mutateAsync({ stock_item_id: id, unit_price: n, vendor_id: vendorId, notes, source_reference: ref, brand: brandVal, specification: specVal })
+        if (variantId && priceId) {
+          const { error } = await supabase.rpc('review_market_prices', { p_price_ids: [priceId], p_variant_id: variantId, p_exclude: false, p_note: null })
+          if (error) throw error
+          invalidateVariants()
+        }
       } else {
         if (!subCategoryId) { toast('Pick a sub-category', 'error'); return }
         if (mode === 'new_item' && !itemDescription.trim()) { toast('Describe the item', 'error'); return }
@@ -126,7 +138,19 @@ export function LogVerifiedPriceModal({ stockItem, onClose }: Props) {
         {mode === 'stock_item' && !stockItem && (
           <div>
             <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Stock item *</label>
-            <SearchableSelect value={stockItemId} onChange={setStockItemId} options={stockItemOptions} placeholder="Search catalog…" />
+            <SearchableSelect value={stockItemId} onChange={v => { setStockItemId(v); setVariantId(null) }} options={stockItemOptions} placeholder="Search catalog…" />
+          </div>
+        )}
+
+        {mode === 'stock_item' && variants.length > 0 && (
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Variant *</label>
+            <select value={variantId ?? ''} onChange={e => setVariantId(e.target.value || null)}
+              className="w-full mt-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100">
+              <option value="">— Which product was quoted? —</option>
+              {variants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
+            <p className="mt-1 text-[10px] text-slate-400">The price is compared only with earlier prices of the same variant.</p>
           </div>
         )}
 

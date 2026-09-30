@@ -96,6 +96,8 @@ const AM: Record<string, string> = {
   'Name': 'ስም', 'Signature': 'ፊርማ', 'Stamp': 'ማህተም', 'Thank you': 'እናመሰግናለን',
   'Procurement officer': 'የግዢ ባለሙያ', 'Approved by': 'ያጸደቀው', 'Expected delivery': 'የሚረከብበት ቀን',
   'Net payable': 'የሚከፈል የተጣራ',
+  'Sent': 'የተላከ', 'Received': 'የደረሰ', 'Damaged': 'የተበላሸ', 'Refused': 'ያልተቀበልነው', 'Accepted': 'የተቀበልነው',
+  'Delivered to': 'የተረከበው ሳይት', 'Delivery': 'ርክክብ', 'Purchase order': 'የግዢ ትዕዛዝ',
 }
 /** An English label with its Amharic beneath, when bilingual labels are on. */
 export function bi(en: string, am?: string): string {
@@ -137,7 +139,7 @@ export function docMoney(n: number | null | undefined, currency = 'ETB'): string
 // is, while every document shares the same frame, type and gold.
 export type DocumentGradientKey =
   | 'purchaseOrder' | 'proforma' | 'paymentRequestLetter' | 'laborPayment'
-  | 'vendorContract' | 'bdContract' | 'payroll' | 'invoice'
+  | 'vendorContract' | 'bdContract' | 'payroll' | 'invoice' | 'delivery'
 
 export const DOCUMENT_GRADIENTS: Record<DocumentGradientKey, { from: string; to: string }> = {
   purchaseOrder:       { from: '#7A3417', to: '#A6522B' }, // terracotta: materials bought
@@ -148,6 +150,7 @@ export const DOCUMENT_GRADIENTS: Record<DocumentGradientKey, { from: string; to:
   bdContract:          { from: '#6B4210', to: '#8E5B1C' }, // coffee: sales-side legal
   payroll:             { from: '#6E1631', to: '#932346' }, // berry: salaries
   invoice:             { from: '#154734', to: '#1F6A4D' }, // forest green: the tax invoice
+  delivery:            { from: '#4A4A12', to: '#6E6C22' }, // olive: goods received and delivered
 }
 
 export function gradientCss(key: DocumentGradientKey | { from: string; to: string }, angle = 135): string {
@@ -310,6 +313,7 @@ function identityRow(): string {
 const TITLE_AM: Record<string, string> = {
   'PROFORMA INVOICE': 'የዋጋ ማቅረቢያ', 'TAX INVOICE': 'የታክስ ደረሰኝ', 'INVOICE': 'የሽያጭ ደረሰኝ',
   'PURCHASE ORDER': 'የግዢ ትዕዛዝ', 'PAYMENT REQUEST': 'የክፍያ ጥያቄ',
+  'GOODS RECEIVED NOTE': 'የንብረት መረከቢያ', 'SITE DELIVERY NOTE': 'የሳይት ርክክብ ማስታወሻ',
 }
 
 // Brand on the left, the document's title (with its Amharic) and its

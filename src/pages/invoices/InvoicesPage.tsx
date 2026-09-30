@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
-import { AlertCircle, Clock, CheckCircle2, ChevronDown, ChevronRight, Receipt, ExternalLink } from 'lucide-react'
+import { AlertCircle, Clock, CheckCircle2, ChevronDown, ChevronRight, Receipt, ExternalLink, History } from 'lucide-react'
 import type { Sale } from '@/types/database'
 
 type SaleWithClient = Sale & { clients: { client_name: string } | null }
@@ -121,9 +121,14 @@ export default function InvoicesPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Outstanding Invoices</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Track and follow up on unpaid Draft and Invoiced sales</p>
         </div>
-        <Link to="/sales" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-          <ExternalLink className="h-3.5 w-3.5" /> All Sales
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link to="/invoices/carried-forward" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <History className="h-3.5 w-3.5" /> Owed from last year
+          </Link>
+          <Link to="/sales" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <ExternalLink className="h-3.5 w-3.5" /> All Sales
+          </Link>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -207,6 +212,11 @@ export default function InvoicesPage() {
                               </div>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <StatusChip status={inv.sales_status} />
+                                {inv.carried_forward && (
+                                  <Link to="/invoices/carried-forward" className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 hover:underline dark:bg-violet-900/30 dark:text-violet-300">
+                                    From last year
+                                  </Link>
+                                )}
                                 <AgePill days={days} />
                                 {inv.date && <span className="text-[10px] text-slate-400 dark:text-slate-500">Issued {formatDate(inv.date)}</span>}
                                 {inv.due_date && <span className="text-[10px] text-slate-400 dark:text-slate-500">Due {formatDate(inv.due_date)}</span>}

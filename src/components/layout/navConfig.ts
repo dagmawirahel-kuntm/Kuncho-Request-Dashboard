@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity,
+  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -57,6 +57,8 @@ export const navGroups: NavGroup[] = [
       { label: 'General Dashboard', to: '/dashboard', icon: Layers, roles: ['admin', 'operations_manager'] },
       { label: 'Operations Health', to: '/ops-health', icon: Activity, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'hr_officer', 'operations_manager', 'logistics_officer', 'project_manager', 'stock_manager'], showIfAssignedProjectManager: true, showIfLogisticsOfficer: true },
       { label: 'My Projects', to: '/pm-view', icon: FolderKanban, roles: ['project_manager'], showIfAssignedProjectManager: true },
+      { label: 'Deliveries to Sign', to: '/site-deliveries', icon: PackageCheck, roles: ['project_manager'], showIfAssignedProjectManager: true },
+      { label: 'Goods Received on My Sites', to: '/goods-received', icon: ClipboardCheck, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Site Petty Cash Requests', to: '/pm/site-petty-cash-requests', icon: Wallet, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'BOQ Change Orders', to: '/pm/boq-change-orders', icon: FileText, roles: ['project_manager'], showIfAssignedProjectManager: true },
       { label: 'Operations', to: '/ops-manager-view', icon: Briefcase, roles: ['operations_manager'] },
@@ -130,11 +132,13 @@ export const navGroups: NavGroup[] = [
       { label: 'Vendor Review', to: '/vendors/review', icon: ShieldCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Sourcing Bundles', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Goods Received', to: '/goods-received', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer'], showIfLogisticsOfficer: true },
+      { label: 'Site Deliveries', to: '/site-deliveries', icon: Truck, roles: ['admin', 'executive', 'procurement_officer', 'logistics_officer', 'stock_manager'], showIfLogisticsOfficer: true },
       { label: 'General Ledger', to: '/general-ledger', icon: BookOpen, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Market Trends', to: '/procurement/market-trends', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { label: 'Price Check Queue', to: '/procurement/price-check-requests', icon: Clock, roles: ['admin', 'executive', 'procurement_officer'] },
       { label: 'My Price Checks', to: '/procurement/my-price-check-requests', icon: ClipboardList },
       { label: 'Volatility Settings', to: '/procurement/volatility', icon: Settings, roles: ['admin', 'procurement_officer'] },
+      { label: 'Item Variants', to: '/procurement/item-variants', icon: Layers, roles: ['admin', 'executive', 'procurement_officer'] },
       { label: 'Item Brands', to: '/procurement/item-brands', icon: Layers, roles: ['admin', 'executive', 'procurement_officer'] },
     ],
   },
@@ -155,6 +159,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
       { label: 'Proformas', to: '/proformas', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Owed from Last Year', to: '/invoices/carried-forward', icon: History, roles: ['admin', 'executive', 'finance'] },
       { label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
       { label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       { label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },

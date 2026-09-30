@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ExternalLink, Package, X } from 'lucide-react'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { usePriceHistory, useFreeTextHistory, sourceLabel, type Freshness, type HistoryRow } from '@/hooks/useMarketPrices'
+import { useVariantPrices } from '@/hooks/useItemVariants'
 import { Pill } from '@/components/record/Record'
 import { ChangeBadge, FreshnessPill, PriceChart } from './MarketBits'
 
@@ -36,6 +37,9 @@ export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = fal
   }, [onClose])
 
   const s = useMemo(() => summarise(history), [history])
+  const { data: variants = [] } = useVariantPrices(target.kind === 'stock' ? target.stockItemId : undefined)
+  const cheapestPerUnit = variants.filter(v => v.latest_price_per_base != null).sort((a, b) => Number(a.latest_price_per_base) - Number(b.latest_price_per_base))[0]
+  const mixedPacks = new Set(variants.map(v => Number(v.pack_qty))).size > 1
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
@@ -78,6 +82,39 @@ export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = fal
                   {s.latest.source_reference ? ` · ${s.latest.source_reference}` : ''}
                 </p>
               </div>
+
+              {variants.length > 0 && (
+                <div className="overflow-hidden rounded-xl border dark:border-slate-700">
+                  <div className="border-b bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200">
+                    Variants — each compared only with itself{mixedPacks ? ', and with each other per common unit' : ''}
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead className="border-b text-slate-500 dark:border-slate-700">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Variant</th>
+                        <th className="px-3 py-2 text-right font-medium">Latest</th>
+                        {mixedPacks && <th className="px-3 py-2 text-right font-medium">Per unit</th>}
+                        <th className="px-3 py-2 text-left font-medium">Change</th>
+                        <th className="px-3 py-2 text-right font-medium">Prices</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-slate-700">
+                      {variants.map(v => (
+                        <tr key={v.variant_id}>
+                          <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                            {v.label}
+                            {mixedPacks && cheapestPerUnit?.variant_id === v.variant_id && variants.length > 1 && <span className="ml-1.5"><Pill tone="green">Best per unit</Pill></span>}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">{v.latest_price != null ? formatCurrency(v.latest_price) : '—'}</td>
+                          {mixedPacks && <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.latest_price_per_base != null ? `${formatCurrency(v.latest_price_per_base)} / ${v.compare_unit ?? ''}` : '—'}</td>}
+                          <td className="px-3 py-2">{v.latest_is_outlier ? <span className="text-[10px] font-semibold text-red-600">check price</span> : <ChangeBadge pct={v.change_vs_previous_pct} />}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.prices}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <Mini label="Lowest (6 mo)" value={formatCurrency(s.min)} />

@@ -814,6 +814,8 @@ export interface Sale {
   withheld_by_client?: number | null
   contract_id: string | null
   is_final_payment: boolean
+  /** Invoiced before this fiscal year and still owed at its start (migration 370). */
+  carried_forward?: boolean
   created_at: string
   updated_at: string
 }
@@ -1513,6 +1515,12 @@ export interface GoodsReceivedNote {
   photo_url: string | null
   photo_name: string | null
   created_at: string
+  // Migration 371.
+  delivery_note_ref: string | null
+  driver_name: string | null
+  vehicle_plate: string | null
+  photos: { url: string; name?: string | null }[]
+  site_delivery_note_id: string | null
 }
 export type GoodsReceivedNoteInsert = Omit<GoodsReceivedNote, 'id' | 'grn_code' | 'created_at'>
 
@@ -1542,8 +1550,13 @@ export interface GoodsReceivedNoteItem {
   category_id: string | null
   quality_status: GrnQualityStatus
   created_at: string
+  // Migration 371: refused goods waiting to go back to the vendor.
+  return_status: 'to_return' | 'returned' | null
+  returned_at: string | null
+  returned_by: string | null
+  return_reference: string | null
 }
-export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at' | 'quantity_accepted' | 'quality_status'>
+export type GoodsReceivedNoteItemInsert = Omit<GoodsReceivedNoteItem, 'id' | 'created_at' | 'quantity_accepted' | 'quality_status' | 'return_status' | 'returned_at' | 'returned_by' | 'return_reference'>
 
 // ── Tax Summary ───────────────────────────────────────────────────
 export interface TaxSummary {
@@ -2288,6 +2301,85 @@ export interface GrnRegisterRow {
   total_quantity_accepted: number
   total_quantity_rejected: number
   total_quantity_damaged: number
+  // Migration 371.
+  vendor_id: string | null
+  delivery_note_ref: string | null
+  site_delivery_note_id: string | null
+  sdn_code: string | null
+  project_names: string | null
+  lines_to_return: number
+  photo_count: number
+}
+
+// ── Site Delivery Notes (migration 371) ──────────────────────────────
+// issued: on its way to site. exceptions: signed with something short,
+// damaged or refused — waiting for procurement. received: the GRN is
+// written. cancelled: never went.
+export type SdnStatus = 'issued' | 'exceptions' | 'received' | 'cancelled'
+export interface DeliveryPhoto { url: string; name?: string | null }
+
+export interface SiteDeliveryNote {
+  id: string
+  sdn_code: string
+  sourcing_bundle_id: string
+  project_id: string
+  transportation_request_id: string | null
+  status: SdnStatus
+  bundle_code: string | null
+  vendor_name: string | null
+  project_name: string | null
+  vendor_delivery_ref: string | null
+  driver_name: string | null
+  vehicle_plate: string | null
+  expected_on: string | null
+  notes: string | null
+  issued_by: string | null
+  issued_by_name: string | null
+  issued_at: string
+  signed_by: string | null
+  signed_by_name: string | null
+  signed_at: string | null
+  sign_notes: string | null
+  sign_lat: number | null
+  sign_lng: number | null
+  photos: DeliveryPhoto[]
+  grn_id: string | null
+  confirmed_by: string | null
+  confirmed_at: string | null
+  confirm_notes: string | null
+  cancelled_reason: string | null
+  created_at: string
+}
+
+export interface SiteDeliveryNoteItem {
+  id: string
+  sdn_id: string
+  sourcing_bundle_item_id: string
+  item_name: string | null
+  unit: string | null
+  quantity_sent: number
+  quantity_received: number | null
+  quantity_damaged: number
+  quantity_rejected: number
+  notes: string | null
+  sort_order: number
+}
+
+// v_bundle_line_receipts — where each purchase order line stands.
+export interface BundleLineReceipt {
+  bundle_id: string
+  bundle_item_id: string
+  project_id: string | null
+  item_name: string | null
+  unit: string | null
+  ordered: number
+  received: number
+  accepted: number
+  damaged: number
+  rejected: number
+  outstanding: number
+  unit_price_actual: number | null
+  sort_order: number
 }
 
 export type StockReturnRequestStatus = 'pending' | 'received' | 'rejected'

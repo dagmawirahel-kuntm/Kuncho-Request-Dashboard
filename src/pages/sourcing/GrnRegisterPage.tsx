@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import type { GrnRegisterRow, GrnQualityStatus } from '@/types/database'
-import { ClipboardCheck, AlertTriangle, Image as ImageIcon, Search } from 'lucide-react'
+import { ClipboardCheck, AlertTriangle, Image as ImageIcon, Search, Undo2 } from 'lucide-react'
 
 const QUALITY_CLS: Record<GrnQualityStatus, string> = {
   accepted: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -13,7 +13,7 @@ const QUALITY_CLS: Record<GrnQualityStatus, string> = {
   partial:  'text-orange-700 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-300',
 }
 
-type Filter = 'all' | 'flagged'
+type Filter = 'all' | 'flagged' | 'to_return'
 
 // Until now a GRN could only be reached by opening the purchase order it
 // belonged to — there was no list of them anywhere, so "what did we
@@ -22,6 +22,11 @@ type Filter = 'all' | 'flagged'
 export default function GrnRegisterPage() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const [vendor, setVendor] = useState('')
+  const [project, setProject] = useState('')
+  const [source, setSource] = useState<'' | 'site' | 'office'>('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['grn-register'],
@@ -39,11 +44,24 @@ export default function GrnRegisterPage() {
     const q = search.trim().toLowerCase()
     return rows.filter(r => {
       if (filter === 'flagged' && r.worst_quality === 'accepted') return false
+      if (filter === 'to_return' && !(r.lines_to_return > 0)) return false
+      if (vendor && r.vendor_name !== vendor) return false
+      if (project && !(r.project_names ?? '').split(', ').includes(project)) return false
+      if (source === 'site' && !r.site_delivery_note_id) return false
+      if (source === 'office' && r.site_delivery_note_id) return false
+      const day = r.received_at.slice(0, 10)
+      if (from && day < from) return false
+      if (to && day > to) return false
       if (!q) return true
-      return [r.grn_code, r.bundle_code, r.vendor_name, r.ledgers, r.received_by_name]
+      return [r.grn_code, r.bundle_code, r.vendor_name, r.ledgers, r.received_by_name, r.sdn_code, r.delivery_note_ref, r.project_names]
         .some(v => (v ?? '').toLowerCase().includes(q))
     })
-  }, [rows, search, filter])
+  }, [rows, search, filter, vendor, project, source, from, to])
+
+  const vendors = useMemo(() => [...new Set(rows.map(r => r.vendor_name).filter((v): v is string => !!v))].sort(), [rows])
+  const projects = useMemo(() => [...new Set(rows.flatMap(r => (r.project_names ?? '').split(', ')).filter(Boolean))].sort(), [rows])
+  const toReturnCount = rows.filter(r => r.lines_to_return > 0).length
+  const selectCls = 'rounded-md border px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
   const flaggedCount = rows.filter(r => r.worst_quality !== 'accepted').length
   const emptyGrns = rows.filter(r => r.line_count === 0).length
@@ -78,6 +96,39 @@ export default function GrnRegisterPage() {
           <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
           Damaged or rejected only{flaggedCount > 0 && ` (${flaggedCount})`}
         </button>
+        <button
+          onClick={() => setFilter(f => (f === 'to_return' ? 'all' : 'to_return'))}
+          className={`rounded-md border px-3 py-2 text-xs font-medium transition-colors ${
+            filter === 'to_return'
+              ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'
+              : 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+          }`}
+        >
+          <Undo2 className="mr-1 inline h-3.5 w-3.5" />
+          To return to vendor{toReturnCount > 0 && ` (${toReturnCount})`}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select className={selectCls} value={vendor} onChange={e => setVendor(e.target.value)}>
+          <option value="">All vendors</option>
+          {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <select className={selectCls} value={project} onChange={e => setProject(e.target.value)}>
+          <option value="">All projects</option>
+          {projects.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select className={selectCls} value={source} onChange={e => setSource(e.target.value as '' | 'site' | 'office')}>
+          <option value="">Signed on site or at the office</option>
+          <option value="site">Signed on site (SDN)</option>
+          <option value="office">Recorded at the office</option>
+        </select>
+        <label className="flex items-center gap-1 text-xs text-slate-500">From <input type="date" className={selectCls} value={from} onChange={e => setFrom(e.target.value)} /></label>
+        <label className="flex items-center gap-1 text-xs text-slate-500">to <input type="date" className={selectCls} value={to} onChange={e => setTo(e.target.value)} /></label>
+        {(vendor || project || source || from || to) && (
+          <button onClick={() => { setVendor(''); setProject(''); setSource(''); setFrom(''); setTo('') }} className="text-xs text-slate-500 hover:text-brand">Clear</button>
+        )}
+        <span className="ml-auto text-xs text-slate-400">{visible.length} of {rows.length}</span>
       </div>
 
       {emptyGrns > 0 && (
@@ -106,6 +157,7 @@ export default function GrnRegisterPage() {
                   <th className="px-4 py-2">Received</th>
                   <th className="px-4 py-2">Purchase Order</th>
                   <th className="px-4 py-2">Vendor</th>
+                  <th className="px-4 py-2">Project</th>
                   <th className="px-4 py-2">Ledgers</th>
                   <th className="px-4 py-2 text-right">Lines</th>
                   <th className="px-4 py-2 text-right">Qty</th>
@@ -116,9 +168,10 @@ export default function GrnRegisterPage() {
               <tbody className="divide-y dark:divide-slate-700">
                 {visible.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                    <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">
-                      {r.grn_code ?? '—'}
-                      {r.photo_url && <ImageIcon className="ml-1.5 inline h-3 w-3 text-slate-400" />}
+                    <td className="px-4 py-2 font-medium whitespace-nowrap">
+                      <Link to={`/goods-received/${r.id}`} className="text-slate-800 hover:text-brand hover:underline dark:text-slate-100">{r.grn_code ?? '—'}</Link>
+                      {(r.photo_count > 0 || r.photo_url) && <ImageIcon className="ml-1.5 inline h-3 w-3 text-slate-400" />}
+                      {r.sdn_code && <span className="ml-1.5 rounded bg-violet-100 px-1 py-0.5 text-[9px] font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" title={`Signed on site on ${r.sdn_code}`}>SITE</span>}
                     </td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(r.received_at)}</td>
                     <td className="px-4 py-2">
@@ -129,6 +182,7 @@ export default function GrnRegisterPage() {
                       ) : '—'}
                     </td>
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{r.vendor_name ?? '—'}</td>
+                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{r.project_names ?? <span className="text-slate-300 dark:text-slate-600">warehouse</span>}</td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{r.ledgers ?? <span className="text-slate-300 dark:text-slate-600">none set</span>}</td>
                     <td className={`px-4 py-2 text-right tabular-nums ${r.line_count === 0 ? 'font-semibold text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>
                       {r.line_count}
@@ -145,6 +199,7 @@ export default function GrnRegisterPage() {
                           {r.damaged_lines > 0 && `${r.damaged_lines} damaged`}
                         </span>
                       )}
+                      {r.lines_to_return > 0 && <span className="ml-1.5 text-[10px] font-semibold text-red-600 dark:text-red-400">{r.lines_to_return} to return</span>}
                     </td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{r.received_by_name ?? '—'}</td>
                   </tr>
@@ -157,8 +212,9 @@ export default function GrnRegisterPage() {
 
       <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
         <ClipboardCheck className="h-3.5 w-3.5" />
-        A GRN records a vendor delivery against its purchase order. Material moving between sites is checked in by the
-        receiving project instead — see Delivered to Site on the project manager view.
+        A GRN records a vendor delivery against its purchase order — one per delivery, so an order can have several.
+        Goods sent to a site are signed for there on a Site Delivery Note, which writes the GRN (marked SITE). Material
+        moving between sites is checked in by the receiving project instead — see Delivered to Site on the project manager view.
       </p>
     </div>
   )
