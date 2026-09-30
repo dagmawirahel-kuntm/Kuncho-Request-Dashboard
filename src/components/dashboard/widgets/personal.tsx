@@ -1,76 +1,50 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Pin, Plus, X } from 'lucide-react'
+import { Pin, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { navGroups, useNavItemVisible, type NavItem } from '@/components/layout/navConfig'
-import type { WidgetContext, WidgetProps } from '@/lib/dashboard/types'
+import type { WidgetProps } from '@/lib/dashboard/types'
+import { TONE_CLASSES, useWaitingOn } from '@/lib/dashboard/waiting'
+import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
 import { defaultPins } from '@/lib/dashboard/defaults'
-import { QueryListWidget, RowList, WidgetCard, type ListRow } from '../WidgetCard'
-import { BellRing, ClipboardList, FolderKanban, Hammer, CalendarDays, Wallet, Wrench } from 'lucide-react'
+import { ListSkeleton, QueryListWidget, WidgetCard, type ListRow } from '../WidgetCard'
+import { ArrowRight, BellRing, CheckCheck, ClipboardList, FolderKanban, Hammer, CalendarDays, Wallet, Wrench } from 'lucide-react'
 
-const is = (ctx: WidgetContext, ...roles: string[]) => ctx.role === 'admin' || (!!ctx.role && roles.includes(ctx.role))
-
-async function count(q: PromiseLike<{ count: number | null; error: { message: string } | null }>) {
-  const { count: n, error } = await q
-  if (error) return 0 // a source this person can't read counts as nothing waiting
-  return n ?? 0
-}
-
-// ── Waiting on you ────────────────────────────────────────────────────────
+// ── Needs you now ─────────────────────────────────────────────────────────
 // Everything that needs this person's decision or action, from every
-// module they work in, as one list of counts.
+// module they work in: one row per queue, with its count and a way in.
 export function WaitingOnYou({ ctx }: WidgetProps) {
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['dash', 'waiting', ctx.userId, ctx.role, ctx.staffId, ctx.managesProjects],
-    staleTime: 60_000,
-    queryFn: async () => {
-      const out: ListRow[] = []
-      const add = (id: string, n: number, title: string, to: string) => { if (n > 0) out.push({ id, title, right: String(n), to }) }
-      const head = { count: 'exact' as const, head: true }
-
-      add('leave-mine', await count(supabase.from('leave_requests').select('id', head).eq('assigned_approver_id', ctx.userId).eq('status', 'pending')),
-        'Leave requests to approve', '/leave-requests')
-      if (is(ctx, 'finance')) {
-        add('fin-approve', await count(supabase.from('v_finance_pending_approval').select('id', head)), 'Expenses awaiting finance approval', '/finance/payments')
-        add('fin-pay', await count(supabase.from('v_to_pay_queue').select('id', head)), 'Approved payments to send', '/finance/payments')
-        add('fin-bank', await count(supabase.from('v_bank_line_status').select('line_id', head).is('reconciled_as', null)), 'Bank lines to reconcile', '/bank-statement-import')
-      }
-      if (is(ctx, 'operations_manager', 'executive')) {
-        add('po-approve', await count(supabase.from('sourcing_bundles').select('id', head).eq('status', 'submitted')), 'Purchase orders to approve', '/ops-manager-view')
-      }
-      if (ctx.managesProjects && ctx.staffId) {
-        const { data: projects } = await supabase.from('projects').select('id').eq('project_manager_id', ctx.staffId)
-        const ids = (projects ?? []).map(p => p.id)
-        if (ids.length) {
-          add('pm-prs', await count(supabase.from('orders').select('id', head).in('project_id', ids).eq('approval_status', 'pending').eq('is_archived', false)),
-            'Purchase requests on your projects', '/purchase-requests')
-          add('pm-deliveries', await count(supabase.from('v_stock_delivery_confirmations').select('stock_issue_id', head).in('project_id', ids).eq('is_confirmed', false)),
-            'Deliveries to confirm on site', '/pm-view')
-        }
-      }
-      if (is(ctx, 'hr_officer')) {
-        add('hr-leave', await count(supabase.from('leave_requests').select('id', head).eq('status', 'pending')), 'Leave requests pending (all)', '/leave-requests')
-        add('hr-unassigned', await count(supabase.from('staff').select('id', head).is('department_id', null)), 'Staff with no department', '/staff')
-      }
-      if (is(ctx, 'stock_manager')) {
-        add('stock-grn', await count(supabase.from('sourcing_bundles').select('id', head).eq('status', 'ordered')), 'Orders to receive (GRN)', '/goods-received')
-        add('stock-returns', await count(supabase.from('stock_return_requests').select('id', head).eq('status', 'pending')), 'Returns to confirm', '/stock-manager-view')
-      }
-      if (is(ctx, 'logistics_officer') || ctx.isLogisticsOfficer) {
-        add('log-jobs', await count(supabase.from('transportation_requests').select('id', head).eq('job_status', 'requested')), 'Transport jobs to assign', '/logistics-view')
-      }
-      if (is(ctx, 'procurement_officer')) {
-        add('proc-draft', await count(supabase.from('sourcing_bundles').select('id', head).eq('status', 'drafting')), 'Purchase orders being drafted', '/sourcing')
-      }
-      return out
-    },
-  })
+  const { items, total, isLoading } = useWaitingOn(ctx)
   return (
-    <WidgetCard title="Waiting on you" icon={BellRing} count={rows.reduce((s, r) => s + Number(r.right ?? 0), 0)}>
-      {isLoading ? <p className="px-4 py-6 text-center text-sm text-slate-400">Loading…</p>
-        : <RowList rows={rows} empty="Nothing is waiting on you." />}
+    <WidgetCard title="Needs you now" icon={BellRing} count={total}>
+      {isLoading ? <ListSkeleton rows={3} />
+        : items.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <span className="rounded-full bg-emerald-50 p-2.5 text-emerald-500 dark:bg-emerald-900/25"><CheckCheck className="h-5 w-5" /></span>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">You're all caught up</p>
+            <p className="text-xs text-slate-400">Nothing is waiting on you right now.</p>
+          </div>
+        ) : (
+          <ul className="space-y-2 px-3 pb-3">
+            {items.map(i => {
+              const tone = TONE_CLASSES[i.tone]
+              return (
+                <li key={i.id}>
+                  <Link to={i.to} className="group flex items-center gap-3 rounded-xl border px-3 py-2.5 transition hover:border-slate-300 hover:shadow-sm dark:border-slate-700 dark:hover:border-slate-500">
+                    <span className={`h-8 w-1 shrink-0 rounded-full ${tone.bar}`} />
+                    <span className={`rounded-lg p-1.5 ${tone.chip}`}><i.icon className="h-4 w-4" /></span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">{i.title}</span>
+                    <span className="shrink-0 text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{i.n}</span>
+                    <span className="flex shrink-0 items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white transition group-hover:bg-slate-700 dark:bg-brand dark:text-brand-foreground">
+                      Open <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        )}
     </WidgetCard>
   )
 }
@@ -263,18 +237,13 @@ export function MyTools({ ctx }: WidgetProps) {
 // ── Pinned pages ──────────────────────────────────────────────────────────
 // Shortcuts the person picks from the pages they can open, plus a few
 // "new …" actions. Defaults follow the role until they change it.
-const CREATE_ACTIONS: NavItem[] = [
-  { label: 'New purchase request', to: '/purchase-requests/new', icon: Plus },
-  { label: 'Request transport', to: '/transportation/new', icon: Plus },
-  { label: 'Request leave', to: '/my-leave', icon: Plus },
-]
 
 export function PinnedPages({ ctx, item, onItemChange }: WidgetProps) {
   const isVisible = useNavItemVisible()
   const [picking, setPicking] = useState(false)
   const all = useMemo(() => {
     const m = new Map<string, NavItem & { group: string }>()
-    for (const a of CREATE_ACTIONS) m.set(a.to, { ...a, group: 'Create' })
+    for (const a of QUICK_ACTIONS) m.set(a.to, { ...a, group: 'Create' })
     for (const g of navGroups) for (const i of g.items) if (isVisible(i) && !m.has(i.to)) m.set(i.to, { ...i, group: g.title })
     return m
   }, [isVisible])
@@ -311,7 +280,7 @@ export function PinnedPages({ ctx, item, onItemChange }: WidgetProps) {
       ) : pins.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-slate-400">Pin the pages you open most — press Edit.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 px-3 pb-3">
           {pins.map(p => {
             const i = all.get(p)!
             return (

@@ -6,7 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAccountControl, type ChecklistItem, type ForecastDay } from '@/lib/cashControl'
 import { lastEndedEcMonth } from '@/lib/ecMonths'
 import { AlertsPanel } from '@/components/cash/AlertsPanel'
-import { QueryListWidget, WidgetCard } from '../WidgetCard'
+import { ListSkeleton, QueryListWidget, WidgetCard } from '../WidgetCard'
 
 export function PaymentsToSend() {
   return (
@@ -151,7 +151,7 @@ export function MonthEndStatus() {
   const open = items.filter(i => i.state !== 'ok')
   return (
     <WidgetCard title={`Month-end · ${period.label}`} icon={CalendarCheck} to="/month-end">
-      {isLoading ? <p className="px-4 py-6 text-center text-sm text-slate-400">Loading…</p> : (
+      {isLoading ? <ListSkeleton rows={3} /> : (
         <div className="space-y-2 p-4">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>{done} of {items.length} done</span>

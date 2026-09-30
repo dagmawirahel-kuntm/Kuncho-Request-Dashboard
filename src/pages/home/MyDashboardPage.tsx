@@ -1,24 +1,21 @@
 import { Component, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Check, Columns2, LayoutGrid, Plus, RotateCcw, Square, Trash2, UserCog, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, GripVertical, LayoutGrid, Plus, RotateCcw, Search, Trash2, UserCog, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
+import { TodayHero } from '@/components/dashboard/TodayHero'
+import { FocusTiles } from '@/components/dashboard/FocusTiles'
+import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
+import { openPagePalette } from '@/components/layout/navState'
+import { Link } from 'react-router-dom'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { useWidgetContext } from '@/lib/dashboard/context'
 import { useDashboardLayout, useWidgetContextFor } from '@/lib/dashboard/layout'
 import { WIDGETS, WIDGET_BY_KEY } from '@/lib/dashboard/registry'
-import type { LayoutItem, WidgetContext, WidgetGroup } from '@/lib/dashboard/types'
+import type { LayoutItem, WidgetContext, WidgetGroup, WidgetSize } from '@/lib/dashboard/types'
 import { formatDateTime } from '@/lib/utils'
-
-function greeting() {
-  const h = new Date().getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
-  return 'Good evening'
-}
 
 // One widget failing (a table it reads changed, say) must not take the
 // whole dashboard down with it.
@@ -55,24 +52,44 @@ export default function MyDashboardPage() {
   const firstName = displayName.split(' ')[0]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 pb-20 sm:pb-0">
       {forSomeoneElse ? (
         <OtherUserBanner userId={otherUserId!} onExit={() => setParams({})} />
       ) : (
-        <DepartmentBoard
-          department={myCtx?.department ?? null}
-          greeting={{
+        <TodayHero
+          ctx={myCtx}
+          person={{
             name: displayName,
-            headline: `${greeting()}, ${firstName}`,
-            subtitle: staff ? [staff.role, myCtx?.department].filter(Boolean).join(' · ') || 'Welcome back' : 'Welcome back',
+            firstName,
+            subtitle: staff?.role ?? null,
             photoUrl: staff?.photo_url,
             profileTo: staff ? `/staff/${staff.id}` : undefined,
           }}
         />
       )}
+      {ctx && <FocusTiles ctx={ctx} />}
       {ctx ? <Board key={ctx.userId} ctx={ctx} isAdmin={isAdmin} forSomeoneElse={forSomeoneElse} onPickUser={id => setParams(id ? { user: id } : {})} />
         : <p className="py-10 text-center text-sm text-slate-400">Loading your dashboard…</p>}
+      {!forSomeoneElse && <PhoneActionBar />}
     </div>
+  )
+}
+
+// Always within thumb reach on a phone: the "start something" actions and
+// the page finder. Hidden from sm up, where the header's buttons show.
+function PhoneActionBar() {
+  const short: Record<string, string> = { '/purchase-requests/new': 'Request', '/transportation/new': 'Transport', '/my-leave': 'Leave' }
+  return (
+    <nav className="fixed inset-x-3 bottom-3 z-20 flex items-center justify-around rounded-2xl bg-[#151a1f] py-2 text-white shadow-2xl ring-1 ring-white/10 sm:hidden print:hidden">
+      {QUICK_ACTIONS.map(a => (
+        <Link key={a.to} to={a.to} className="flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] text-white/70">
+          <a.icon className="h-5 w-5 text-[#D4AF37]" />{short[a.to] ?? a.label}
+        </Link>
+      ))}
+      <button type="button" onClick={openPagePalette} className="flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] text-white/70">
+        <Search className="h-5 w-5 text-white" />Find
+      </button>
+    </nav>
   )
 }
 
@@ -115,7 +132,19 @@ function Board({ ctx, isAdmin, forSomeoneElse, onPickUser }: {
     [next[i], next[j]] = [next[j], next[i]]
     commit(next)
   }
-  const resize = (i: number) => commit(items.map((it, k) => k === i ? { ...it, size: it.size === 'full' ? 'half' : 'full' } : it))
+  const resize = (i: number, size: WidgetSize) => commit(items.map((it, k) => k === i ? { ...it, size } : it))
+  // Drag to reorder while arranging; the arrow buttons stay for keyboards
+  // and phones, where dragging doesn't work.
+  const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+  const drop = (to: number) => {
+    if (dragFrom == null || dragFrom === to) { setDragFrom(null); setDragOver(null); return }
+    const next = [...items]
+    const [moved] = next.splice(dragFrom, 1)
+    next.splice(to, 0, moved)
+    setDragFrom(null); setDragOver(null)
+    commit(next)
+  }
   const remove = (i: number) => commit(items.filter((_, k) => k !== i))
   const add = (key: string) => {
     const def = WIDGET_BY_KEY.get(key)!
@@ -164,25 +193,52 @@ function Board({ ctx, isAdmin, forSomeoneElse, onPickUser }: {
           Nothing here yet. <button onClick={() => { setEditing(true); setAdding(true) }} className="font-medium text-brand hover:underline">Add a widget</button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3">
           {items.map((it, i) => {
             const def = WIDGET_BY_KEY.get(it.key)!
             const W = def.component
             return (
-              <div key={it.key} className={`relative ${it.size === 'full' ? 'lg:col-span-2' : ''} ${editing ? 'rounded-xl outline-dashed outline-2 outline-offset-2 outline-brand/40' : ''}`}>
+              <div
+                key={it.key}
+                draggable={editing}
+                onDragStart={editing ? e => { setDragFrom(i); e.dataTransfer.effectAllowed = 'move' } : undefined}
+                onDragOver={editing ? e => { e.preventDefault(); if (dragOver !== i) setDragOver(i) } : undefined}
+                onDragLeave={editing ? () => setDragOver(o => (o === i ? null : o)) : undefined}
+                onDrop={editing ? e => { e.preventDefault(); drop(i) } : undefined}
+                onDragEnd={editing ? () => { setDragFrom(null); setDragOver(null) } : undefined}
+                className={[
+                  'relative',
+                  SPAN[it.size] ?? SPAN.half,
+                  editing ? 'cursor-grab rounded-2xl outline-dashed outline-2 outline-offset-2 outline-slate-300 dark:outline-slate-600' : '',
+                  editing && dragFrom === i ? 'opacity-40' : '',
+                  editing && dragOver === i && dragFrom !== i ? 'outline-brand! outline-solid' : '',
+                ].join(' ')}
+              >
                 {editing && (
-                  <div className="absolute -top-3 right-3 z-10 flex items-center gap-0.5 rounded-full border bg-white px-1 py-0.5 shadow-sm dark:border-slate-600 dark:bg-slate-800">
-                    <IconBtn title="Move earlier" onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
-                    <IconBtn title="Move later" onClick={() => move(i, 1)} disabled={i === items.length - 1}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
-                    <IconBtn title={it.size === 'full' ? 'Half width' : 'Full width'} onClick={() => resize(i)}>
-                      {it.size === 'full' ? <Columns2 className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
-                    </IconBtn>
-                    <IconBtn title="Remove" onClick={() => remove(i)} danger><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+                  <div className="absolute -top-3.5 left-3 right-3 z-10 flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1 rounded-full border bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <GripVertical className="h-3.5 w-3.5" /> Drag
+                    </span>
+                    <div className="flex items-center gap-0.5 rounded-full border bg-white px-1 py-0.5 shadow-sm dark:border-slate-600 dark:bg-slate-800">
+                      <IconBtn title="Move earlier" onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
+                      <IconBtn title="Move later" onClick={() => move(i, 1)} disabled={i === items.length - 1}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
+                      <div className="mx-0.5 flex overflow-hidden rounded-full border text-[10px] font-bold dark:border-slate-600" role="group" aria-label="Size">
+                        {SIZES.map(sz => (
+                          <button key={sz.value} title={sz.title} aria-pressed={(it.size ?? 'half') === sz.value} onClick={() => resize(i, sz.value)}
+                            className={`px-1.5 py-0.5 ${(it.size ?? 'half') === sz.value ? 'bg-slate-900 text-white dark:bg-brand dark:text-brand-foreground' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                            {sz.label}
+                          </button>
+                        ))}
+                      </div>
+                      <IconBtn title="Remove" onClick={() => remove(i)} danger><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+                    </div>
                   </div>
                 )}
-                <WidgetBoundary title={def.title}>
-                  <W ctx={ctx} item={it} onItemChange={next => commit(items.map((x, k) => (k === i ? next : x)))} />
-                </WidgetBoundary>
+                <div className={editing ? 'pointer-events-none select-none' : ''}>
+                  <WidgetBoundary title={def.title}>
+                    <W ctx={ctx} item={it} onItemChange={next => commit(items.map((x, k) => (k === i ? next : x)))} />
+                  </WidgetBoundary>
+                </div>
               </div>
             )
           })}
@@ -191,6 +247,18 @@ function Board({ ctx, isAdmin, forSomeoneElse, onPickUser }: {
     </div>
   )
 }
+
+// Column spans for each size: one column, two, or the whole row.
+const SPAN: Record<WidgetSize, string> = {
+  half: '',
+  wide: 'lg:col-span-2',
+  full: 'lg:col-span-2 xl:col-span-3',
+}
+const SIZES: { value: WidgetSize; label: string; title: string }[] = [
+  { value: 'half', label: 'S', title: 'Small — one column' },
+  { value: 'wide', label: 'M', title: 'Medium — two columns' },
+  { value: 'full', label: 'L', title: 'Large — the whole row' },
+]
 
 function IconBtn({ title, onClick, disabled, danger, children }: { title: string; onClick: () => void; disabled?: boolean; danger?: boolean; children: ReactNode }) {
   return (
