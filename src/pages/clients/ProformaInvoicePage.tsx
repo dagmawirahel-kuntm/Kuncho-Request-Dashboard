@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Trash2, Printer, Save, Package, Scale, Heading, GitBranch, Copy } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Trash2, Printer, Save, Package, Scale, Heading, GitBranch, Copy, Percent, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -11,6 +11,7 @@ import { DEFAULT_PLAN, OPEN_STAGES } from '@/lib/salesJourney'
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { buildProformaHtml } from '@/lib/documents/proformaDocument'
 import { printHtml } from '@/lib/documents/issue'
+import { DEFAULT_DISCOUNT_LIMIT, discountLabel, discountedTotals, type DiscountKind } from '@/lib/discount'
 import type { Client } from '@/types/database'
 import { ProformaSources } from './ProformaSources'
 import { ProformaPriceGuide } from './ProformaPriceGuide'
@@ -40,6 +41,7 @@ interface SourceProforma {
   id: string; proforma_number: string | null; client_id: string; project_id: string | null; opportunity_id: string | null
   template_id: string | null; source_boq_id: string | null; validity_days: number; payment_terms: string | null; notes: string | null
   scope: string | null; exclusions: string | null
+  discount_kind: DiscountKind | null; discount_value: number | null; discount_reason: string | null
   items: { id: string; product_id: string | null; description: string; qty: number; unit: string | null; unit_price: number; section: string | null; sort_order: number }[]
   costs: { proforma_item_id: string; cost_per_unit: number; cost_source: string; parts: CostPart[] | null; extra: number | null }[]
 }
@@ -101,7 +103,7 @@ export default function ProformaInvoicePage() {
     enabled: !!fromId,
     queryFn: async () => {
       const { data: pf, error } = await supabase.from('proformas')
-        .select('id, proforma_number, client_id, project_id, opportunity_id, template_id, source_boq_id, validity_days, payment_terms, notes, scope, exclusions')
+        .select('id, proforma_number, client_id, project_id, opportunity_id, template_id, source_boq_id, validity_days, payment_terms, notes, scope, exclusions, discount_kind, discount_value, discount_reason')
         .eq('id', fromId!).single()
       if (error) throw error
       const { data: items, error: e2 } = await supabase.from('proforma_items')
@@ -128,6 +130,10 @@ export default function ProformaInvoicePage() {
   const [templateId, setTemplateId]     = useState<string | null>(null)
   const [sourceBoqId, setSourceBoqId]   = useState<string | null>(null)
   const [items, setItems]               = useState<LineItem[]>([])
+  // One discount on the whole job, taken off before VAT (migration 383).
+  const [discountKind, setDiscountKind]     = useState<DiscountKind>('percent')
+  const [discountValue, setDiscountValue]   = useState(0)
+  const [discountReason, setDiscountReason] = useState('')
   const [loadedFrom, setLoadedFrom]     = useState<string | null>(null)
 
   const [saving, setSaving]     = useState(false)
@@ -145,6 +151,9 @@ export default function ProformaInvoicePage() {
     setProjectId(source.project_id ?? '')
     setTemplateId(source.template_id)
     setSourceBoqId(source.source_boq_id)
+    setDiscountKind(source.discount_kind ?? 'percent')
+    setDiscountValue(Number(source.discount_value ?? 0))
+    setDiscountReason(source.discount_reason ?? '')
     const costFor = new Map(source.costs.map(c => [c.proforma_item_id, c]))
     setItems(withHeadings(source.items.map(i => {
       const c = costFor.get(i.id)
@@ -172,11 +181,15 @@ export default function ProformaInvoicePage() {
   }
   const costOf = (i: LineItem) => i.cost?.perUnit ?? recipeCostOf(i)
 
-  const priced   = items.filter(i => !i.isHeading)
-  const subtotal = priced.reduce((s, i) => s + i.qty * i.unitPrice, 0)
-  const rate     = vatRate ?? 0
-  const vat      = subtotal * rate
-  const total    = subtotal + vat
+  const priced     = items.filter(i => !i.isHeading)
+  const linesTotal = priced.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+  const rate       = vatRate ?? 0
+  const discount   = discountValue > 0 ? { kind: discountKind, value: discountValue, reason: discountReason.trim() || null } : null
+  // VAT is charged on the price after the discount.
+  const totals     = discountedTotals(linesTotal, discount, rate)
+  const { subtotal, vat, total } = totals
+  const discountLimit = Number(company?.discount_approval_percent ?? DEFAULT_DISCOUNT_LIMIT)
+  const needsApproval = totals.amount > 0 && totals.percent > discountLimit
 
   const costed = useMemo(() => {
     let cost = 0, revenue = 0, missing = 0, below = 0, old = 0
@@ -202,12 +215,14 @@ export default function ProformaInvoicePage() {
       projectName: projects.find(p => p.id === projectId)?.project_name ?? null,
       lines: items.filter(i => !i.isHeading).map(i => ({ description: i.description, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, section: sections.get(i.id) ?? null })),
       subtotal, vat, vatRate: rate, total, paymentTerms, notes, scope, exclusions,
+      linesTotal: totals.linesTotal,
+      discount: discount && totals.amount > 0 ? { amount: totals.amount, percent: totals.percent, label: discountLabel(discount), reason: discount.reason } : null,
       preparedBy: profile?.full_name ? { name: profile.full_name, email: profile.email ?? null } : null,
       draft: true,
     }
     // company: the letterhead reads the loaded profile
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, proformaNum, mode, source, date, validityDays, client, projects, projectId, subtotal, vat, rate, total, paymentTerms, notes, scope, exclusions, profile, company])
+  }, [items, proformaNum, mode, source, date, validityDays, client, projects, projectId, subtotal, vat, rate, total, paymentTerms, notes, scope, exclusions, profile, company, discountKind, discountValue, discountReason])
   const previewDoc = useMemo(() => buildProformaHtml({ ...docInput, preview: true }), [docInput])
 
   async function handleSave() {
@@ -216,6 +231,7 @@ export default function ProformaInvoicePage() {
     if (lines.length === 0) { toast('Add at least one line', 'error'); return }
     if (vatRate == null) { toast('No VAT rate is on record for this date — ask the tax officer to add it', 'error'); return }
     if (items.some(i => i.isHeading && !i.description.trim())) { toast('Name every section heading, or remove the empty ones', 'error'); return }
+    if (totals.amount > 0 && !discountReason.trim()) { toast('Say why the discount is given', 'error'); return }
     setSaving(true)
     const { data: pf, error: pfErr } = await supabase
       .from('proformas')
@@ -233,6 +249,11 @@ export default function ProformaInvoicePage() {
         notes,
         scope: scope.trim() || null,
         exclusions: exclusions.trim() || null,
+        lines_total: totals.linesTotal,
+        discount_kind: totals.amount > 0 ? discountKind : null,
+        discount_value: totals.amount > 0 ? discountValue : null,
+        discount_amount: totals.amount,
+        discount_reason: totals.amount > 0 ? discountReason.trim() : null,
         subtotal,
         vat_amount: vat,
         total,
@@ -295,6 +316,7 @@ export default function ProformaInvoicePage() {
     qc.invalidateQueries({ queryKey: ['proformas'] })
     qc.invalidateQueries({ queryKey: ['sales-engagements'] })
     toast(mode === 'revise' ? `Saved as ${pf.proforma_number} — the earlier version is marked superseded` : `Proforma ${pf.proforma_number} saved`, 'success')
+    if (needsApproval) toast(`The ${totals.percent}% discount is over ${discountLimit}% — someone else in admin, executive or finance has to approve it before it's sent`, 'info')
     setSaving(false)
     navigate(`/proformas/${pf.id}`)
   }
@@ -521,14 +543,63 @@ export default function ProformaInvoicePage() {
                       <span>{formatCurrency(costed.revenue - costed.cost)} over a cost of {formatCurrency(costed.cost)}</span>
                     </p>
                     {costed.below > 0 && <p className="flex items-center gap-1 text-red-600 dark:text-red-400"><AlertTriangle className="h-3.5 w-3.5" /> {costed.below} line{costed.below === 1 ? ' is' : 's are'} priced below cost</p>}
+                    {totals.amount > 0 && (() => {
+                      // The discount comes off every line alike, so the costed lines lose the same share.
+                      const net = costed.revenue * (1 - totals.percent / 100)
+                      const after = net > 0 ? Math.round(((net - costed.cost) / net) * 1000) / 10 : null
+                      return (
+                        <p className="flex items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${marginTone(after)}`}>{after ?? '—'}%</span>
+                          <span>after the {totals.percent}% discount · {formatCurrency(net - costed.cost)}</span>
+                        </p>
+                      )
+                    })()}
                   </>
                 ) : <p className="text-slate-400">Cost the lines in the price guide (<Scale className="inline h-3 w-3" />) or from catalog recipes to see the margin here.</p>}
                 {costed.old > 0 && <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" /> {costed.old} line{costed.old === 1 ? ' is' : 's are'} costed from old prices — check before sending</p>}
                 {costed.missing > 0 && <p className="text-slate-400">{costed.missing} line{costed.missing === 1 ? ' has' : 's have'} no cost yet — use the price guide (<Scale className="inline h-3 w-3" />) or <Link to="/catalog" className="text-brand hover:underline">catalog recipes</Link>.</p>}
               </div>
             ) : <div />}
-            <div className="ml-auto w-full max-w-xs space-y-2 text-sm">
-              <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
+            <div className="ml-auto w-full max-w-sm space-y-2 text-sm">
+              {/* Discount on the whole job, before VAT (migration 383). */}
+              <div className="rounded-lg border border-dashed border-slate-200 p-3 dark:border-slate-600">
+                <div className="flex items-center gap-2">
+                  <Percent className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Discount</span>
+                  <div className="ml-auto flex shrink-0 overflow-hidden rounded-md border text-xs font-semibold dark:border-slate-600" role="group" aria-label="Discount as">
+                    {(['percent', 'amount'] as const).map(k => (
+                      <button key={k} type="button" onClick={() => setDiscountKind(k)} aria-pressed={discountKind === k}
+                        className={`px-2.5 py-1 ${discountKind === k ? 'bg-slate-900 text-white dark:bg-brand dark:text-brand-foreground' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                        {k === 'percent' ? '%' : 'ETB'}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" min={0} max={discountKind === 'percent' ? 100 : undefined} step="any" value={discountValue || ''} placeholder="0"
+                    onChange={e => setDiscountValue(Math.max(0, Number(e.target.value) || 0))} aria-label={discountKind === 'percent' ? 'Discount percent' : 'Discount in ETB'}
+                    className="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                </div>
+                {discountValue > 0 && (
+                  <>
+                    <input className={`${inputCls} mt-2`} value={discountReason} onChange={e => setDiscountReason(e.target.value)}
+                      placeholder="Why? e.g. repeat client, early payment" aria-label="Reason for the discount" />
+                    {needsApproval ? (
+                      <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+                        <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0" />
+                        {totals.percent}% is over the {discountLimit}% limit: after saving, someone else in admin, executive or finance approves it before it can be sent.
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-[11px] text-slate-400">{totals.percent}% of the lines · within the {discountLimit}% you can give without approval</p>
+                    )}
+                  </>
+                )}
+              </div>
+              {totals.amount > 0 && (
+                <>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>Total of the lines</span><span>{fmt(totals.linesTotal)}</span></div>
+                  <div className="flex justify-between text-emerald-700 dark:text-emerald-400"><span>Discount{discountKind === 'percent' ? ` (${discountValue}%)` : ''}</span><span>−{fmt(totals.amount)}</span></div>
+                </>
+              )}
+              <div className="flex justify-between text-slate-600 dark:text-slate-300"><span>{totals.amount > 0 ? 'Subtotal after discount' : 'Subtotal'}</span><span>{fmt(subtotal)}</span></div>
               <div className="flex justify-between text-slate-600 dark:text-slate-300">
                 <span>VAT {vatRate != null ? `(${Math.round(vatRate * 1000) / 10}%)` : ''}</span>
                 <span>{vatRate != null ? fmt(vat) : vatLoading ? '…' : <span className="text-xs text-red-600">no rate on record</span>}</span>

@@ -28,7 +28,7 @@ const KIND_LABEL: Record<PaymentMilestoneKind, string> = {
   advance: 'Advance payment', progress: 'Progress payment', final: 'Final payment', other: 'Payment',
 }
 
-type ProformaOpt = { id: string; proforma_number: string | null; total: number | null; payment_terms: string | null; project_id: string | null; status: string }
+type ProformaOpt = { id: string; proforma_number: string | null; total: number | null; payment_terms: string | null; project_id: string | null; status: string; discount_amount: number | null }
 type ContractOpt = { id: string; contract_no: string | null; contract_value: number | null; project_id: string | null; projects: { project_name: string } | null }
 type MilestoneOpt = { id: string; contract_id: string; title: string; kind: PaymentMilestoneKind; status: string; percent_of_contract_value: number }
 type Asked = Pick<ClientPaymentRequest, 'id' | 'proforma_id' | 'contract_id' | 'amount' | 'status'>
@@ -162,7 +162,7 @@ export default function PaymentRequestPage() {
     queryFn: async () => {
       const [cl, pf, co, ms, rq, sv] = await Promise.all([
         supabase.from('clients').select('*').eq('id', id!).single(),
-        supabase.from('proformas').select('id, proforma_number, total, payment_terms, project_id, status')
+        supabase.from('proformas').select('id, proforma_number, total, payment_terms, project_id, status, discount_amount')
           .eq('client_id', id!).order('date', { ascending: false }),
         supabase.from('contracts').select('id, contract_no, contract_value, project_id, projects:project_id ( project_name )')
           .eq('client_id', id!).order('created_at', { ascending: false }),
@@ -259,7 +259,8 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
   const ctFromBasis = basis.startsWith('ct:') ? contracts.find(c => `ct:${c.id}` === basis) ?? null : null
   const contract = ctFromBasis ?? contracts.find(c => c.id === contractId) ?? null
   const basisAmount = pf ? Number(pf.total ?? 0) : ctFromBasis ? Number(ctFromBasis.contract_value ?? 0) : Number(manualBasis) || 0
-  const basisLabel = pf ? `Proforma ${pf.proforma_number ?? ''} Total`.replace('  ', ' ') : 'Total Contract Value'
+  // A discounted proforma's total is already after the discount (migration 383); say so.
+  const basisLabel = pf ? `Proforma ${pf.proforma_number ?? ''} Total${Number(pf.discount_amount ?? 0) > 0 ? ' (after discount)' : ''}`.replace('  ', ' ') : 'Total Contract Value'
   const projectName = contract?.projects?.project_name?.trim() ?? ''
 
   const pctNum = parseFloat(percent)

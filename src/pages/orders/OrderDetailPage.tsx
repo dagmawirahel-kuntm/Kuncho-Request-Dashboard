@@ -11,10 +11,13 @@ import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatDate } from '@/lib/utils'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/record/Record'
+import { useCompanyProfile } from '@/lib/companyProfile'
+import { printHtml } from '@/lib/documents/issue'
+import { buildPurchaseRequestHtml } from '@/lib/documents/purchaseRequestDocument'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
-  ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList,
+  ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList, Printer,
 } from 'lucide-react'
 
 const ITEM_S: Record<OrderItemStatus, { label: string; bg: string; border: string }> = {
@@ -108,6 +111,8 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const { data: projects = [] }     = useProjects()
   const { data: staff = [] }        = useStaff()
   const { data: userProfiles = [] } = useUserProfiles()
+  // The letterhead for the printed request.
+  useCompanyProfile()
 
   const [rejecting, setRejecting]         = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
@@ -208,6 +213,18 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const requestedByName  = profileName((order as any).requested_by_user_id)
   const unfilledCount = items.filter(i => i.status === 'unfulfilled').length
 
+  // The request as a page, in the same frame as the purchase order it becomes.
+  function printRequest() {
+    printHtml(buildPurchaseRequestHtml({
+      code: order.request_code, title: order.order_name || 'Purchase request', description: order.item_service_description,
+      projectName: order.project_id ? projectName : null, requestedBy: requestedByName, procurementOfficer: order.staff_id ? procOfficerName : null,
+      neededBy: order.required_by_date, priority: order.priority, submitted: order.created_at,
+      notes: order.notes, vendorNotes: order.vendor_recommendation,
+      rejected: approvalStatus === 'rejected' ? { reason: order.rejection_reason ?? null } : null,
+      lines: items.map(i => ({ name: i.item_name, specifications: i.specifications, quantity: i.quantity, unit: i.unit, estUnitPrice: i.unit_price_est, status: (ITEM_S[i.status] ?? ITEM_S.pending).label })),
+    }), `${order.request_code ?? 'Purchase request'} - ${order.order_name ?? ''}`.trim())
+  }
+
   const rest = fulfillment.total - fulfillment.fulfilled - fulfillment.partial - fulfillment.blocked
   const seg = (n: number) => `${Math.max((n / Math.max(fulfillment.total, 1)) * 100, n > 0 ? 4 : 0)}%`
   const dueTone: 'red' | 'amber' | undefined = reqDiff == null ? undefined : reqDiff < 0 ? 'red' : reqDiff <= 3 ? 'amber' : undefined
@@ -235,6 +252,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
         ]}
         actions={[
           { label: 'Reopen request', onClick: () => handleApproval('pending', { rejection_reason: null }), primary: true, hidden: !(approvalStatus === 'rejected' && canCancelRequest) },
+          { label: 'Print', icon: Printer, onClick: printRequest },
           { label: 'Edit', icon: Pencil, to: `/purchase-requests/${order.id}/edit`, hidden: !canCreate },
           { label: "Reject — don't source", icon: XCircle, onClick: () => setRejecting(true), danger: true, hidden: !(approvalStatus !== 'rejected' && canCancelRequest) },
         ]}

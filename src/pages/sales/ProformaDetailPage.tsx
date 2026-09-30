@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, CheckCircle2, ClipboardList, Copy, GitBranch, Layers, Receipt, ThumbsDown, Wallet } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ClipboardList, Copy, GitBranch, Layers, Percent, Receipt, ShieldAlert, ShieldCheck, ThumbsDown, Wallet } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,6 +13,7 @@ import { DocumentActions } from '@/components/documents/DocumentActions'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/components/record/Record'
 import type { ProformaStatus } from '@/types/database'
+import { DEFAULT_DISCOUNT_LIMIT, discountLabel, discountPercent, type DiscountKind } from '@/lib/discount'
 
 interface PF {
   id: string; proforma_number: string | null; client_id: string; project_id: string | null; opportunity_id: string | null
@@ -21,6 +22,8 @@ interface PF {
   version: number; root_proforma_id: string | null; parent_proforma_id: string | null; created_by: string | null; created_at: string
   sent_at: string | null; sent_to: string | null; accepted_at: string | null; declined_at: string | null; decline_reason: string | null
   source_boq_id: string | null
+  lines_total: number | null; discount_kind: DiscountKind | null; discount_value: number | null; discount_amount: number | null
+  discount_reason: string | null; discount_set_by: string | null; discount_approved_by: string | null; discount_approved_at: string | null
   clients: { client_name: string; tin: string | null; address: string | null; phone_number: string | null; email: string | null } | null
   projects: { project_name: string } | null
   opportunities: { title: string } | null
@@ -45,7 +48,7 @@ export default function ProformaDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const canSeeCost = COST_ROLES.includes(role ?? '')
   const canWrite = ['admin', 'executive', 'finance'].includes(role ?? '')
   const { data: company } = useCompanyProfile()
@@ -113,6 +116,17 @@ export default function ProformaDetailPage() {
     },
   })
 
+  const discountAmt = Number(pf?.discount_amount ?? 0)
+  const { data: discountPeople } = useQuery({
+    queryKey: ['proforma-discount-people', pf?.discount_set_by, pf?.discount_approved_by],
+    enabled: discountAmt > 0 && !!(pf?.discount_set_by || pf?.discount_approved_by),
+    queryFn: async () => {
+      const ids = [pf!.discount_set_by, pf!.discount_approved_by].filter(Boolean) as string[]
+      const { data } = await supabase.from('user_profiles').select('id, full_name').in('id', ids)
+      return new Map(((data ?? []) as { id: string; full_name: string }[]).map(u => [u.id, u.full_name]))
+    },
+  })
+
   const input: ProformaDocInput | null = useMemo(() => {
     if (!pf) return null
     return {
@@ -122,6 +136,13 @@ export default function ProformaDetailPage() {
       subtotal: Number(pf.subtotal), vat: Number(pf.vat_amount),
       vatRate: Number(pf.subtotal) > 0 ? Math.round((Number(pf.vat_amount) / Number(pf.subtotal)) * 10000) / 10000 : Number(lines[0]?.vat_rate ?? 0),
       total: Number(pf.total), paymentTerms: pf.payment_terms ?? '', notes: pf.notes ?? '', scope: pf.scope, exclusions: pf.exclusions,
+      linesTotal: Number(pf.lines_total ?? pf.subtotal),
+      discount: Number(pf.discount_amount ?? 0) > 0 ? {
+        amount: Number(pf.discount_amount),
+        percent: discountPercent(Number(pf.lines_total ?? 0), Number(pf.discount_amount)),
+        label: discountLabel({ kind: pf.discount_kind ?? 'amount', value: Number(pf.discount_value ?? pf.discount_amount) }),
+        reason: pf.discount_reason,
+      } : null,
       preparedBy: author ? { name: author.full_name, phone: author.phone_number, email: author.email } : null,
       signoff: signoff ?? null,
     }
@@ -138,12 +159,21 @@ export default function ProformaDetailPage() {
       if (c == null) { missing++; continue }
       cost += Number(l.qty) * c; revenue += Number(l.qty) * Number(l.unit_price)
     }
+    // The discount comes off every line alike, so the costed lines lose the same share of their price.
+    const share = pf && Number(pf.lines_total ?? 0) > 0 ? Number(pf.discount_amount ?? 0) / Number(pf.lines_total) : 0
+    revenue = revenue * (1 - share)
     return { cost, revenue, missing, pct: revenue > 0 ? Math.round(((revenue - cost) / revenue) * 1000) / 10 : null }
-  }, [costs, lines])
+  }, [costs, lines, pf])
 
   if (isLoading || !pf) return <p className="py-16 text-center text-sm text-slate-400">Loading…</p>
 
   const status = effectiveStatus(pf)
+  // Discount over the company's limit (migration 383): a second person approves it before anything goes out.
+  const discountPct = discountPercent(Number(pf.lines_total ?? 0), discountAmt)
+  const discountLimit = Number(company?.discount_approval_percent ?? DEFAULT_DISCOUNT_LIMIT)
+  const overLimit = discountAmt > 0 && discountPct > discountLimit
+  const needsApproval = overLimit && !pf.discount_approved_by
+  const canApproveDiscount = needsApproval && canWrite && !!user && user.id !== pf.discount_set_by
   const requested = requests.reduce((s, r) => s + Number(r.amount), 0)
   const invoiced = requests.filter(r => r.status === 'invoiced').reduce((s, r) => s + Number(r.amount), 0)
   const live = !['superseded', 'declined'].includes(pf.status)
@@ -158,6 +188,10 @@ export default function ProformaDetailPage() {
     qc.invalidateQueries({ queryKey: ['proformas'] })
     toast(msg, 'success')
     return true
+  }
+  async function approveDiscount() {
+    if (!user) return
+    await update({ discount_approved_by: user.id }, `Discount of ${discountPct}% approved — the proforma can go out`)
   }
   async function makeBoq() {
     if (!pf?.project_id) return
@@ -185,15 +219,38 @@ export default function ProformaDetailPage() {
         </>}
       />
 
+      {needsApproval && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-700/40 dark:bg-amber-900/20">
+          <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1 text-amber-900 dark:text-amber-200">
+            <p className="font-semibold">A {discountPct}% discount needs approving</p>
+            <p className="text-xs">
+              It's over the {discountLimit}% limit. Until someone other than {discountPeople?.get(pf.discount_set_by ?? '') ?? 'the person who set it'} approves it,
+              the proforma can't be printed as a numbered copy, sent, accepted or have payment requested.
+              {pf.discount_reason ? <> Reason given: “{pf.discount_reason}”.</> : null}
+            </p>
+          </div>
+          {canApproveDiscount ? (
+            <button onClick={approveDiscount} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
+              <ShieldCheck className="h-4 w-4" /> Approve discount
+            </button>
+          ) : (
+            <span className="text-xs text-amber-700 dark:text-amber-300">
+              {user?.id === pf.discount_set_by ? 'You set it, so someone else approves it.' : 'Admin, executive or finance can approve it.'}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {input && (
           <DocumentActions type="proforma" sourceId={pf.id} number={pf.proforma_number} title="Proforma" party={pf.clients?.client_name ?? null}
             partyEmail={pf.clients?.email} partyPhone={pf.clients?.phone_number} total={Number(pf.total)}
-            build={verify => buildProformaHtml({ ...input, verify })} disabled={!live} />
+            build={verify => buildProformaHtml({ ...input, verify })} disabled={!live || needsApproval} />
         )}
         {canWrite && (
           <>
-            {live && pf.status !== 'accepted' && pf.status !== 'converted' && (
+            {live && !needsApproval && pf.status !== 'accepted' && pf.status !== 'converted' && (
               <button onClick={() => update({ status: 'accepted', accepted_at: new Date().toISOString(), declined_at: null, decline_reason: null }, 'Marked accepted')} disabled={busy} className={tbtn}>
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Client accepted
               </button>
@@ -207,7 +264,7 @@ export default function ProformaDetailPage() {
               </Link>
             )}
             <Link to={`/clients/${pf.client_id}/proforma?from=${pf.id}&mode=copy`} className={tbtn} title="Start a new proforma from this one"><Copy className="h-4 w-4" /> Copy</Link>
-            {live && requested < Number(pf.total) - 1 && (
+            {live && !needsApproval && requested < Number(pf.total) - 1 && (
               <Link to={`/clients/${pf.client_id}/payment-request?proforma_id=${pf.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700">
                 <ArrowRight className="h-4 w-4" /> Request payment
               </Link>
@@ -235,7 +292,19 @@ export default function ProformaDetailPage() {
           <>
             <Panel title="Money" icon={Wallet}>
               <FactList facts={[
-                { label: 'Subtotal', value: formatCurrency(Number(pf.subtotal)) },
+                ...(discountAmt > 0 ? [
+                  { label: 'Total of the lines', value: formatCurrency(Number(pf.lines_total ?? 0)) },
+                  {
+                    label: 'Discount', tone: 'green' as const,
+                    value: <span className="inline-flex items-center gap-1"><Percent className="h-3 w-3" />−{formatCurrency(discountAmt)} · {discountPct}%</span>,
+                    hint: [
+                      pf.discount_reason,
+                      discountPeople?.get(pf.discount_set_by ?? '') ? `set by ${discountPeople.get(pf.discount_set_by ?? '')}` : null,
+                      pf.discount_approved_by ? `approved by ${discountPeople?.get(pf.discount_approved_by) ?? 'someone'} ${formatDateTime(pf.discount_approved_at)}` : overLimit ? 'not approved yet' : null,
+                    ].filter(Boolean).join(' · ') || undefined,
+                  },
+                ] : []),
+                { label: discountAmt > 0 ? 'Subtotal after discount' : 'Subtotal', value: formatCurrency(Number(pf.subtotal)) },
                 { label: 'VAT', value: formatCurrency(Number(pf.vat_amount)) },
                 { label: 'Total', value: formatCurrency(Number(pf.total)) },
                 { label: 'Asked for', value: `${formatCurrency(requested)}${Number(pf.total) > 0 ? ` · ${Math.round((requested / Number(pf.total)) * 100)}%` : ''}` },

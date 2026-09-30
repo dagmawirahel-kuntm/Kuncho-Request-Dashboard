@@ -14,10 +14,14 @@ export interface ProformaDocInput {
   client: { client_name: string; tin?: string | null; address?: string | null; phone_number?: string | null; email?: string | null } | null
   projectName?: string | null
   lines: ProformaDocLine[]
+  /** What VAT is charged on: the lines less any discount. */
   subtotal: number
   vat: number
   vatRate: number
   total: number
+  /** What the lines add up to before the discount (migration 383). */
+  linesTotal?: number
+  discount?: { amount: number; percent: number; label: string; reason?: string | null } | null
   paymentTerms: string
   notes: string
   scope?: string | null
@@ -88,7 +92,7 @@ export function buildProformaHtml(p: ProformaDocInput): string {
   const terms = [
     `This offer is valid until <b>${esc(docDate(validUntil))}</b> — prices may be revised after that date.`,
     p.paymentTerms ? `Payment: ${escLines(p.paymentTerms)}.`.replace(/\.\.$/, '.') : null,
-    `Prices are in Ethiopian Birr${p.vat > 0 ? ` and VAT at ${vatPct}% is shown separately` : ''}.`,
+    `Prices are in Ethiopian Birr${p.vat > 0 ? ` and VAT at ${vatPct}% is shown separately` : ''}${p.discount && p.discount.amount > 0 ? '; VAT is charged on the price after the discount' : ''}.`,
     ...(prof.proforma_terms ? prof.proforma_terms.split(/\r?\n/).map(t => t.trim()).filter(Boolean).map(escLines) : []),
   ].filter(Boolean)
 
@@ -103,6 +107,7 @@ ${p.preview ? 'html{zoom:0.58}' : ''}
 @media print{html{zoom:1}}
 @page{margin:12mm 12mm 15mm}
 body{padding:${p.preview ? '34px 46px' : '0'};font-size:10pt;line-height:1.5;position:relative}
+.doc-totals tr.disc td{color:#1f6a4d}
 </style>
 </head>
 <body>
@@ -130,7 +135,9 @@ ${renderHeading('Price schedule', 'የዋጋ ዝርዝር')}
   <tbody>${body || '<tr><td colspan="6" class="c" style="color:#9a927c;padding:18px">No lines yet</td></tr>'}</tbody>
 </table>
 <table class="doc-totals">
-  <tr><td>Subtotal${amOf('Subtotal') ? `<span class="am">${amOf('Subtotal')}</span>` : ''}</td><td style="text-align:right">${docMoney(p.subtotal)}</td></tr>
+  ${p.discount && p.discount.amount > 0 ? `<tr><td>Total of the lines</td><td style="text-align:right">${docMoney(p.linesTotal ?? p.subtotal + p.discount.amount)}</td></tr>
+  <tr class="disc"><td>Discount${p.discount.label.endsWith('%') ? ` (${esc(p.discount.label)})` : ''}${p.discount.reason ? ` · ${esc(p.discount.reason)}` : ''}</td><td style="text-align:right">−${docMoney(p.discount.amount)}</td></tr>` : ''}
+  <tr><td>${p.discount && p.discount.amount > 0 ? 'Subtotal after discount' : 'Subtotal'}${amOf('Subtotal') ? `<span class="am">${amOf('Subtotal')}</span>` : ''}</td><td style="text-align:right">${docMoney(p.subtotal)}</td></tr>
   <tr><td>VAT (${vatPct}%)${amOf('VAT') ? `<span class="am">${amOf('VAT')}</span>` : ''}</td><td style="text-align:right">${docMoney(p.vat)}</td></tr>
   <tr class="grand"><td>Grand total${amOf('Grand total') ? `<span class="am">${amOf('Grand total')}</span>` : ''}</td><td style="text-align:right">${docMoney(p.total)}</td></tr>
 </table>

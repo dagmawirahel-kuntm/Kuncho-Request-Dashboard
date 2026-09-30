@@ -1,8 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Building2, ImagePlus, Landmark, Plus, Save, Stamp, Trash2 } from 'lucide-react'
+import { Building2, ImagePlus, Landmark, Percent, Plus, Save, Stamp, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { fieldCls } from '@/lib/formStyles'
 import { useCompanyProfile, useCompanySignoff, imageToDataUrl } from '@/lib/companyProfile'
 import { documentBaseCss, renderLetterhead, renderBankAccounts, renderSignoff, renderFooter, renderParty, renderWords, bi, setDocumentProfile, docDate, docProfile, DOCUMENT_GRADIENTS,
@@ -27,6 +28,10 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
   const [p, setP] = useState<CompanyProfile>({ ...DEFAULT_PROFILE, ...saved, bank_accounts: saved.bank_accounts ?? [] })
   const [s, setS] = useState<CompanySignoff>(savedSignoff ?? { signatory_name: null, signatory_title: null, signature_data_url: null, stamp_data_url: null })
   const [saving, setSaving] = useState(false)
+  const { role } = useAuth()
+  // The discount approval limit (migration 383) is admin's or an executive's to set.
+  const hasDiscountLimit = saved.discount_approval_percent != null
+  const canSetDiscountLimit = role === 'admin' || role === 'executive'
   const set = <K extends keyof CompanyProfile>(k: K, v: CompanyProfile[K]) => setP(x => ({ ...x, [k]: v }))
   const setBank = (i: number, patch: Partial<BankAccountLine>) => setP(x => ({ ...x, bank_accounts: x.bank_accounts.map((b, j) => (j === i ? { ...b, ...patch } : b)) }))
 
@@ -67,6 +72,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
       tagline: clean(p.tagline ?? null), bilingual_labels: p.bilingual_labels !== false,
       show_ethiopian_dates: p.show_ethiopian_dates, footer_note: clean(p.footer_note), proforma_terms: clean(p.proforma_terms),
       bank_accounts: p.bank_accounts.filter(b => b.bank.trim() && b.account_number.trim()),
+      ...(hasDiscountLimit && canSetDiscountLimit ? { discount_approval_percent: Math.min(100, Math.max(0, Number(p.discount_approval_percent ?? 10))) } : {}),
     }).eq('id', true)
     if (error) { setSaving(false); toast(error.message, 'error'); return }
     const { error: e2 } = await supabase.from('company_signoff').update({
@@ -154,6 +160,19 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
               </F>
             </div>
           </Panel>
+
+          {hasDiscountLimit && (
+            <Panel title="Discounts on proformas" icon={Percent}>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                <span>A discount over</span>
+                <input type="number" min={0} max={100} step="any" disabled={!canSetDiscountLimit}
+                  className={`${fieldCls} w-20 text-right`} value={p.discount_approval_percent ?? 10}
+                  onChange={e => set('discount_approval_percent', Number(e.target.value))} aria-label="Discount approval limit, percent" />
+                <span>% of a proforma needs approving by a second person (admin, executive or finance) before it can be sent.</span>
+              </div>
+              {!canSetDiscountLimit && <p className="mt-2 text-xs text-slate-400">Only admin or an executive can change this.</p>}
+            </Panel>
+          )}
 
           <Panel title="Bank accounts on documents" icon={Landmark} action={
             <button onClick={() => setP(x => ({ ...x, bank_accounts: [...x.bank_accounts, { bank: '', account_number: '', account_name: x.legal_name, on_documents: true }] }))}
