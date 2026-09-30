@@ -8,12 +8,13 @@ import { useMyManagedProjects } from '@/hooks/useMyStaff'
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { formatDate } from '@/lib/utils'
 import { printHtml } from '@/lib/documents/issue'
+import { shareHtmlFile } from '@/lib/documents/shareFile'
 import { buildSdnHtml } from '@/lib/documents/delivery'
 import { PhotoUploader } from '@/components/shared/PhotoUploader'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/record/Record'
 import { SDN_STATUS } from '@/lib/siteDeliveries'
 import type { DeliveryPhoto, SiteDeliveryNote, SiteDeliveryNoteItem } from '@/types/database'
-import { Truck, Printer, XCircle, PenLine, CheckCircle2, AlertTriangle, MapPin, ClipboardCheck, Package, FileText } from 'lucide-react'
+import { Truck, Printer, Smartphone, XCircle, PenLine, CheckCircle2, AlertTriangle, MapPin, ClipboardCheck, Package, FileText } from 'lucide-react'
 
 type Sdn = SiteDeliveryNote & { site_delivery_note_items: SiteDeliveryNoteItem[] }
 type LineDraft = { received: string; damaged: string; rejected: string; notes: string }
@@ -143,6 +144,7 @@ export default function SiteDeliveryNotePage() {
           { label: busy ? 'Signing…' : 'Sign for delivery', icon: PenLine, onClick: sign, primary: true, disabled: busy, hidden: !signing },
           { label: busy ? 'Saving…' : 'Confirm and record GRN', icon: CheckCircle2, onClick: confirm, primary: true, disabled: busy, hidden: !confirming },
           { label: 'Print', icon: Printer, onClick: print },
+          { label: 'Send file', icon: Smartphone, onClick: () => shareHtmlFile(buildSdnHtml({ ...sdn, items }), sdn.sdn_code) },
           { label: 'Cancel delivery note', icon: XCircle, onClick: cancel, danger: true, hidden: !(canIssue && ['issued', 'exceptions'].includes(sdn.status)) },
         ]}
       />

@@ -14,7 +14,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, Printer, Download, Save, X, ExternalLink, History } from 'lucide-react'
+import { shareHtmlFile } from '@/lib/documents/shareFile'
+import { FileText, Printer, Smartphone, Save, X, ExternalLink, History } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -191,13 +192,7 @@ export function PaymentRequestActions({
   }
 
   function handleDownload() {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = window.document.createElement('a')
-    a.href = url
-    a.download = `${live?.request_code ?? doc.sourceCode ?? 'payment-request'}.html`
-    a.click()
-    URL.revokeObjectURL(url)
+    shareHtmlFile(html, live?.request_code ?? doc.sourceCode ?? 'payment-request')
   }
 
   return (
@@ -283,7 +278,7 @@ export function PaymentRequestActions({
                   <Printer className="h-3.5 w-3.5" /> Print
                 </button>
                 <button onClick={handleDownload} className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-                  <Download className="h-3.5 w-3.5" /> Download
+                  <Smartphone className="h-3.5 w-3.5" /> Send file
                 </button>
               </div>
 
