@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { VehicleMaintenanceRequest, VehicleMaintenanceRequestInsert } from '@/types/database'
-import { useVehicles } from '@/hooks/useLookups'
+import { useVehicles, useVendors } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -53,10 +53,12 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
   const { user, role, profile } = useAuth()
   const qc = useQueryClient()
   const { data: vehicles = [] } = useVehicles()
+  const { data: vendors = [] } = useVendors()
+  const vendorOptions = useMemo(() => (vendors as { id: string; vendor_name: string }[]).map(v => ({ id: v.id, label: v.vendor_name })), [vendors])
   const vehicleOptions = useMemo(() => vehicles.map((v: any) => ({ id: v.id, label: `${v.name}${v.plate_number ? ` (${v.plate_number})` : ''}` })), [vehicles])
   const canManage = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
 
-  const [form, setForm] = useState<Partial<VehicleMaintenanceRequestInsert> & { actual_cost?: number | null; completed_at?: string | null }>(
+  const [form, setForm] = useState<Partial<VehicleMaintenanceRequestInsert> & { actual_cost?: number | null; completed_at?: string | null; vendor_id?: string | null }>(
     record
       ? {
         vehicle_id: record.vehicle_id,
@@ -65,6 +67,7 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
         status: record.status,
         actual_cost: record.actual_cost,
         completed_at: record.completed_at,
+        vendor_id: record.vendor_id ?? null,
       }
       : { status: 'pending', requested_by: user?.id, vehicle_id: prefillVehicleId ?? undefined }
   )
@@ -85,6 +88,9 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
     }
     if (isEdit && canManage && form.status === 'approved') {
       payload.actual_cost = form.actual_cost ?? null
+      // The garage is who the repair expense pays (395).
+      payload.vendor_id = form.vendor_id ?? null
+      if (form.actual_cost != null && !form.vendor_id) { setSaving(false); setError('Which garage did the repair? It is who gets paid.'); return }
       if (form.actual_cost != null) {
         payload.status = 'completed'
         payload.completed_at = new Date().toISOString()
@@ -117,6 +123,11 @@ function VehicleMaintenanceFormPageBody({ id, record }: { id?: string; record?: 
         <Field label="Actual Cost (ETB) — set to mark completed">
           <input type="number" step="0.01" min="0" className={inputCls} value={form.actual_cost ?? ''} onChange={e => set('actual_cost', e.target.value ? parseFloat(e.target.value) : null)} />
           <p className="mt-1 text-[11px] text-slate-400">Saving with an actual cost marks this repair completed.</p>
+        </Field>
+      )}
+      {isEdit && canManage && form.status === 'approved' && (
+        <Field label="Garage (who is paid)">
+          <SearchableSelect value={form.vendor_id ?? null} onChange={id => set('vendor_id', id)} options={vendorOptions} placeholder="Which garage did the work?" />
         </Field>
       )}
       {isEdit && (form.status === 'completed' || form.status === 'rejected') && (

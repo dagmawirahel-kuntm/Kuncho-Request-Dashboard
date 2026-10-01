@@ -48,7 +48,7 @@ and timesheets.
 
 | I want to… | Do this |
 |---|---|
-| Get money spent for work reimbursed | **+ New Expense** → describe the item, amount, date → Save. It goes to your manager for approval. |
+| Get money spent for work reimbursed | **+ New Expense** → what it was for, the total, the date, who was paid, and the project (or **Company overhead**) → photo of the receipt → Save. If the receipt is a VAT invoice, tap **Yes, VAT invoice** — finance can then claim the VAT back. It goes to finance for approval. |
 | Request transportation | **+ Transportation Request** → fill route and reason → Save |
 | Drive one of our vehicles (drivers) | **Supply → My Trips** on your phone → **Start** / **I've arrived — done** on each job; **Log a trip** for runs nobody booked; **Fuel** to record a fill-up with the odometer reading |
 | Keep a vehicle's papers current | Open the vehicle under **Fleet & Logistics** → **Papers** → add or renew plate, insurance, inspection, road fund and the driver's licence. Anything expiring within 30 days shows on the Fleet page and the driver's My Trips |
@@ -95,7 +95,9 @@ paid without you.
 
 | I want to… | Do this |
 |---|---|
-| Give final approval on an expense | Approve it from **Needs you now** on your home page, or open it from **Requests → Approvals** → **Approve** (only available after manager approval) |
+| Give final approval on an expense | **Requests → Approval Queue** — oldest first, grouped by age. One with no project or no ledger can't be approved: pick it in the row, then **Approve**. Tick several ready ones to approve them together. |
+| Clean up incomplete expenses | **Requests → Fix Expense Records** — this year's expenses by what's missing (project, ledger, payee, receipt, bank reference, possible duplicates), each fixed in its row. Payees typed in by name are grouped: link them to a vendor, or add the vendor, in one click. |
+| Verify a receipt sent in on an expense | **Money → Tax → Tax Receipts** — a VAT invoice attached on an expense arrives here by itself. Finance or procurement verifies it, then the tax officer accepts it. |
 | Pay an expense | Open the expense → set payment status to paid, pick the account, add the bank reference |
 | Record a sale / issue an invoice | **Money → Clients** → open client → **Proforma Invoice** → build it → **Save Proforma** → **Convert to Invoice** when accepted |
 | Chase unpaid invoices | **Money → Invoices** — grouped by client, aged, with Send Invoice / Mark Paid buttons |

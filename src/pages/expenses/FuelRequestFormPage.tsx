@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { FileUpload } from '@/components/shared/FileUpload'
+import { ReceiptFields, type ReceiptValue } from '@/components/expenses/ExpenseFields'
 import { useVendors } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -97,8 +97,7 @@ export default function FuelRequestFormPage() {
     setVendorPrefilled(true)
   }, [lastFuelVendor, vendorPrefilled])
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
-  const [receiptName, setReceiptName] = useState<string | null>(null)
+  const [receipt, setReceipt] = useState<ReceiptValue>({ receipt_url: null, receipt_name: null, receipt_is_vat: null, receipt_no: null, receipt_vat_amount: null })
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -132,8 +131,8 @@ export default function FuelRequestFormPage() {
       date,
       vendor_id: vendorId,
       vendors_name: vendorId ? null : (vendorName || null),
-      receipt_url: receiptUrl,
-      receipt_name: receiptName,
+      ...receipt,
+      receipt_is_vat: receipt.receipt_url ? receipt.receipt_is_vat : null,
       notes: notes || null,
       purchaser_user_id: user?.id ?? null,
       approval_status: 'pending',
@@ -210,14 +209,8 @@ export default function FuelRequestFormPage() {
       )}
 
       <Field label="Receipt">
-        <FileUpload
-          bucket="documents"
-          folder="fuel-receipts"
-          fileUrl={receiptUrl}
-          fileName={receiptName}
-          onUpload={(url, name) => { setReceiptUrl(url); setReceiptName(name) }}
-          onClear={() => { setReceiptUrl(null); setReceiptName(null) }}
-        />
+        {/* Fuel stations give VAT invoices: marking it one claims the VAT back (395). */}
+        <ReceiptFields value={receipt} onChange={patch => setReceipt(r => ({ ...r, ...patch }))} total={amount ? parseFloat(amount) || null : null} folder="fuel-receipts" />
       </Field>
 
       <Field label="Notes">

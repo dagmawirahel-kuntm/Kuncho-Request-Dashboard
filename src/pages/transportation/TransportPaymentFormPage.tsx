@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { FileUpload } from '@/components/shared/FileUpload'
+import { ProjectOrOverheadSelect, ReceiptFields, type ReceiptValue } from '@/components/expenses/ExpenseFields'
+import { fromProjectChoice, OVERHEAD } from '@/lib/expenseQuality'
 import { useVendors } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -61,8 +62,9 @@ export default function TransportPaymentFormPage() {
   const [vendorId, setVendorId] = useState<string | null>(null)
   const [vendorName, setVendorName] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
-  const [receiptName, setReceiptName] = useState<string | null>(null)
+  const [receipt, setReceipt] = useState<ReceiptValue>({ receipt_url: null, receipt_name: null, receipt_is_vat: null, receipt_no: null, receipt_vat_amount: null })
+  // The job's project when it has one; otherwise asked here (395).
+  const [projectPick, setProjectPick] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -88,6 +90,8 @@ export default function TransportPaymentFormPage() {
     if (!job) return
     const amountNum = parseFloat(amount)
     if (!amount || Number.isNaN(amountNum) || amountNum <= 0) { setError('Enter the amount paid'); return }
+    if (!job.project_id && !projectPick) { setError('Which project was this trip for? Or pick company overhead.'); return }
+    if (!vendorId && !vendorName.trim()) { setError('Who was paid? Pick the vendor or type the name'); return }
 
     setError(''); setSaving(true)
     const { data, error: err } = await supabase.from('expenses').insert([{
@@ -95,11 +99,11 @@ export default function TransportPaymentFormPage() {
       item_service_description: `Transport: ${job.request_name ?? 'job'}`,
       amount_etb: amountNum,
       date,
-      project_id: job.project_id,
+      ...(job.project_id ? { project_id: job.project_id } : fromProjectChoice(projectPick)),
       vendor_id: vendorId,
       vendors_name: vendorId ? null : (vendorName || null),
-      receipt_url: receiptUrl,
-      receipt_name: receiptName,
+      ...receipt,
+      receipt_is_vat: receipt.receipt_url ? receipt.receipt_is_vat : null,
       notes: notes || null,
       purchaser_user_id: user?.id ?? null,
       approval_status: 'pending',
@@ -163,15 +167,15 @@ export default function TransportPaymentFormPage() {
         </Field>
       )}
 
+      {!job.project_id && (
+        <Field label="Project *">
+          <ProjectOrOverheadSelect value={projectPick} onChange={setProjectPick} placeholder="Which project was this trip for?" />
+          {projectPick && projectPick !== OVERHEAD && <p className="mt-1 text-[11px] text-slate-400">The job has no project yet — this sets it on the payment.</p>}
+        </Field>
+      )}
+
       <Field label="Receipt">
-        <FileUpload
-          bucket="documents"
-          folder="transport-receipts"
-          fileUrl={receiptUrl}
-          fileName={receiptName}
-          onUpload={(url, name) => { setReceiptUrl(url); setReceiptName(name) }}
-          onClear={() => { setReceiptUrl(null); setReceiptName(null) }}
-        />
+        <ReceiptFields value={receipt} onChange={patch => setReceipt(r => ({ ...r, ...patch }))} total={amount ? parseFloat(amount) || null : null} folder="transport-receipts" />
       </Field>
 
       <Field label="Notes">

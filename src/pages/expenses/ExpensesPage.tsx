@@ -881,12 +881,21 @@ export default function ExpensesPage() {
             Track the progress of your requests through finance approval
           </p>
         </div>
-        {canCreate && (
-          <Link to="/expenses/new"
-            className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            <Plus className="h-4 w-4" /> New Expense
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Finance's working views (395). */}
+          {(role === 'admin' || role === 'executive' || role === 'finance') && (
+            <>
+              <Link to="/expenses/approvals" className="rounded-md border px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Approval queue</Link>
+              <Link to="/expenses/fix" className="rounded-md border px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Fix records</Link>
+            </>
+          )}
+          {canCreate && (
+            <Link to="/expenses/new"
+              className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+              <Plus className="h-4 w-4" /> New Expense
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Tabs (Records tab only available to finance/manager/admin) */}
