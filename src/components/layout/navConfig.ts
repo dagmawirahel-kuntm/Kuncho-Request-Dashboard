@@ -229,7 +229,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Pay & time', label: 'Payroll', to: '/payroll', icon: Wallet, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { subgroup: 'Pay & time', label: 'Emergency Payroll', to: '/emergency-payroll', icon: Archive, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { subgroup: 'Pay & time', label: 'Cash Advances', to: '/cash-advances', icon: DollarSign, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
-      { subgroup: 'Pay & time', label: 'Timesheet', to: '/timesheet', icon: Clock, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
+      { subgroup: 'Pay & time', label: 'Attendance', to: '/timesheet', icon: Clock },
       { subgroup: 'Pay & time', label: 'Labour', to: '/labour', icon: HardHat },
       { subgroup: 'Skills', label: 'Competency Hub', to: '/hr/competency-hub', icon: Award, roles: ['admin', 'executive', 'hr_officer'] },
       { subgroup: 'Skills', label: 'Tier 2 Candidates', to: '/hr/tier2-candidates', icon: UserCheck, roles: ['admin', 'executive', 'hr_officer'] },
