@@ -45,7 +45,7 @@ export function useWaitingOn(ctx: WidgetContext | null) {
       add({ id: 'leave-mine', title: 'Leave requests to approve', to: '/leave-requests', icon: CalendarClock, tone: 'violet' },
         await count(supabase.from('leave_requests').select('id', head).eq('assigned_approver_id', c.userId).eq('status', 'pending')))
       if (is(c, 'finance')) {
-        add({ id: 'fin-approve', title: 'Expenses awaiting finance approval', to: '/finance/payments', icon: Clock, tone: 'amber' },
+        add({ id: 'fin-approve', title: 'Expenses awaiting finance approval', to: '/expenses/approvals', icon: Clock, tone: 'amber' },
           await count(supabase.from('v_finance_pending_approval').select('id', head)))
         add({ id: 'fin-pay', title: 'Approved payments to send', to: '/finance/payments', icon: Send, tone: 'red' },
           await count(supabase.from('v_to_pay_queue').select('id', head)))

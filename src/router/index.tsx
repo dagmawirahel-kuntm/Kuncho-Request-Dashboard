@@ -19,7 +19,7 @@ import MyRequestsDashboardPage from '@/pages/dashboard/MyRequestsDashboardPage'
 import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
 import ProcurementDashboardPage from '@/pages/dashboard/ProcurementDashboardPage'
 import FinanceDashboardPage from '@/pages/dashboard/FinanceDashboardPage'
-import PaymentsDashboardPage from '@/pages/dashboard/PaymentsDashboardPage'
+import PaymentsPage from '@/pages/payments/PaymentsPage'
 import GeneralLedgerPage from '@/pages/dashboard/GeneralLedgerPage'
 import HRDashboardPage from '@/pages/dashboard/HRDashboardPage'
 import ManagementDashboardPage from '@/pages/dashboard/ManagementDashboardPage'
@@ -381,7 +381,7 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
             children: [
               { path: 'finance', element: <FinanceDashboardPage /> },
-              { path: 'finance/payments', element: <PaymentsDashboardPage /> },
+              { path: 'finance/payments', element: <PaymentsPage /> },
               { path: 'finance/ledger', element: <GeneralLedgerPage /> },
               { path: 'finance/vendor-credits', element: <VendorCreditsPage /> },
               // The Payment Request register (268). Route reach matches
