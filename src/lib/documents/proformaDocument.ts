@@ -19,7 +19,7 @@ export interface ProformaDocInput {
   vat: number
   vatRate: number
   total: number
-  /** What the lines add up to before the discount (migration 387). */
+  /** What the lines add up to before the discount (migration 390). */
   linesTotal?: number
   discount?: { amount: number; percent: number; label: string; reason?: string | null } | null
   paymentTerms: string

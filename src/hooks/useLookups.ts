@@ -156,7 +156,7 @@ export function useExpensesList() {
   })
 }
 
-/** Saved places for pickers — archived ones (migration 388) left out. */
+/** Saved places for pickers — archived ones (migration 391) left out. */
 export function useLocations() {
   return useQuery({
     queryKey: ['locations-lookup'],

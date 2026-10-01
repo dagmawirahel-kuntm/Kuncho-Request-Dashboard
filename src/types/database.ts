@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'executive' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager'
+export type UserRole = 'admin' | 'executive' | 'finance' | 'staff' | 'procurement_officer' | 'hr_officer' | 'project_manager' | 'stock_manager' | 'logistics_officer' | 'design' | 'sales' | 'hse_officer' | 'operations_manager' | 'technician'
 export type OrderItemStatus = 'pending' | 'sourced' | 'partially_sourced' | 'unfulfilled' | 'cancelled' | 'stock_fulfilled' | 'stock_pending_dispatch'
 export type StockItemType = 'raw_material' | 'tool' | 'consumable'
 export type StockMainCategory = 'wood_work' | 'electrical' | 'painting' | 'hardware' | 'construction' | 'tools' | 'booth_return'
@@ -458,7 +458,7 @@ export interface Expense {
   location_id: string | null
   vehicle_id: string | null
   fuel_liters: number | null
-  /** Odometer at the fill-up (migration 389) — km per litre comes from it. */
+  /** Odometer at the fill-up (migration 392) — km per litre comes from it. */
   odometer_km?: number | null
   approval_status: ExpenseApprovalStatus
   rejection_reason: string | null
@@ -662,7 +662,7 @@ export interface Location {
   project_id: string | null
   vendor_id: string | null
   created_at: string
-  // Migration 388.
+  // Migration 391.
   area: string | null
   address: string | null
   contact_name: string | null

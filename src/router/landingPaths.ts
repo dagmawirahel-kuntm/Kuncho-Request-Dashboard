@@ -19,6 +19,7 @@ export const ROLE_LANDING: Partial<Record<UserRole, string>> = {
   hr_officer: '/hr-view',
   hse_officer: '/hse-view',
   staff: '/my-home',
+  technician: '/my-home',
 }
 
 // Department name -> landing route, used as a fallback for any role

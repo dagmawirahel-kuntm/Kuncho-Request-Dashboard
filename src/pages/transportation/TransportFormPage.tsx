@@ -232,7 +232,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   }
 
   // Typing a place that is saved — by its name or one of its other names
-  // (migration 388) — picks the saved place too, so the job lands on the
+  // (migration 391) — picks the saved place too, so the job lands on the
   // map and in the place's history instead of staying loose text.
   function typePlace(end: 'pickup' | 'dropoff', text: string) {
     const key = text.trim().toLowerCase()
@@ -255,7 +255,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const flow = STATUS_FLOW[jobStatus]
   const isMoneyJob = form.transport_mode === 'ride_hailing' || form.transport_mode === 'hired'
 
-  // The vehicle's own status follows its jobs in the database (migration 389).
+  // The vehicle's own status follows its jobs in the database (migration 392).
   async function transition(next: TransportJobStatus) {
     const patch: Record<string, unknown> = { job_status: next }
     if (next === 'completed') {

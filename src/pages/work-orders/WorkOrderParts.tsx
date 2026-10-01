@@ -20,7 +20,7 @@ function refreshAll(qc: ReturnType<typeof useQueryClient>, id: string) {
 }
 
 // ── What it's made of ────────────────────────────────────────────────
-export function ItemsCard({ wo, canUpdate, onUpdate }: { wo: WorkOrder; canUpdate: boolean; onUpdate: () => void }) {
+export function ItemsCard({ wo, canUpdate, canEdit, onUpdate }: { wo: WorkOrder; canUpdate: boolean; canEdit: boolean; onUpdate: () => void }) {
   const { data: items = [], isLoading } = useWorkOrderItems(wo.id)
   const open = wo.status !== 'completed' && wo.status !== 'cancelled'
   return (
@@ -34,7 +34,7 @@ export function ItemsCard({ wo, canUpdate, onUpdate }: { wo: WorkOrder; canUpdat
       {isLoading ? <p className="p-6 text-center text-sm text-slate-400">Loading…</p> : items.length === 0 ? (
         <div className="p-6 text-center text-sm text-slate-500">
           No parts listed — progress is one overall %.{' '}
-          {canUpdate && <Link to={`/work-orders/${wo.id}/edit`} className="font-medium text-brand">Break it into parts</Link>}
+          {canEdit && <Link to={`/work-orders/${wo.id}/edit`} className="font-medium text-brand">Break it into parts</Link>}
         </div>
       ) : (
         <ul className="divide-y dark:divide-slate-700">

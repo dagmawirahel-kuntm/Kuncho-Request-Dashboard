@@ -1,4 +1,4 @@
-// Vehicle and driver papers (migration 389).
+// Vehicle and driver papers (migration 392).
 
 export const PAPER_KINDS = [
   { value: 'plate',          label: 'Plate',              forDriver: false, expires: false },

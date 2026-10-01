@@ -9,7 +9,7 @@ import { effectiveStatus } from '@/lib/documents/proformaDocument'
 
 type ProformaRow = Proforma & { clients: { client_name: string } | null; discount_amount?: number | null; lines_total?: number | null }
 
-// Discounts on live proformas (v_proforma_discounts, migration 387).
+// Discounts on live proformas (v_proforma_discounts, migration 390).
 interface DiscountRow {
   id: string; proforma_number: string | null; date: string; client_name: string | null; discount_amount: number; discount_percent: number
   discount_reason: string | null; discount_set_by_name: string | null; discount_approved_by_name: string | null; needs_approval: boolean

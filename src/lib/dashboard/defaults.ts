@@ -52,10 +52,10 @@ export function defaultLayout(ctx: WidgetContext): LayoutItem[] {
   // Everyone's own records last; tools and work orders for people in the
   // field, pay for staff logins (office roles can add them).
   add(W('my_requests'))
-  const field = !ctx.role || ['staff', 'project_manager', 'stock_manager', 'logistics_officer'].includes(ctx.role) || ctx.isSiteForeman
+  const field = !ctx.role || ['staff', 'technician', 'project_manager', 'stock_manager', 'logistics_officer'].includes(ctx.role) || ctx.isSiteForeman
   if (field) add(W('my_work_orders'), W('my_tools'))
   add(W('my_leave'))
-  if (!ctx.role || ctx.role === 'staff') add(W('my_pay'))
+  if (!ctx.role || ctx.role === 'staff' || ctx.role === 'technician') add(W('my_pay'))
   return out
 }
 
@@ -70,6 +70,7 @@ export function defaultPins(ctx: WidgetContext): string[] {
   if (r === 'design') return ['/design', '/projects']
   if (r === 'hse_officer') return ['/hse-incidents', '/hse-inductions']
   if (r === 'admin' || r === 'executive') return ['/exec', '/projects', '/finance/payments', '/accounts', '/staff']
+  if (r === 'technician') return ['/work-orders', '/purchase-requests/new', '/transportation/new', '/my-leave']
   if (ctx.managesProjects || r === 'project_manager') return ['/pm-view', '/projects', '/purchase-requests/new', '/work-orders']
   return ['/purchase-requests/new', '/transportation/new', '/my-leave', '/calendar']
 }

@@ -29,7 +29,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
   const [s, setS] = useState<CompanySignoff>(savedSignoff ?? { signatory_name: null, signatory_title: null, signature_data_url: null, stamp_data_url: null })
   const [saving, setSaving] = useState(false)
   const { role } = useAuth()
-  // The discount approval limit (migration 387) is admin's or an executive's to set.
+  // The discount approval limit (migration 390) is admin's or an executive's to set.
   const hasDiscountLimit = saved.discount_approval_percent != null
   const canSetDiscountLimit = role === 'admin' || role === 'executive'
   const set = <K extends keyof CompanyProfile>(k: K, v: CompanyProfile[K]) => setP(x => ({ ...x, [k]: v }))

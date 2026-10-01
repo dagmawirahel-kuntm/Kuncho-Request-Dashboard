@@ -1,4 +1,4 @@
--- 388 — Locations as a working directory of places
+-- 391 — Locations as a working directory of places
 --
 -- The locations table had nine rows, none pinned on the map, and the kind
 -- of place sitting in the old free-text location_type column while kind

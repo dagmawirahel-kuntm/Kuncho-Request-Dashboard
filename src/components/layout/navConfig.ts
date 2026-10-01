@@ -103,7 +103,7 @@ export const navGroups: NavGroup[] = [
       // has no read grant on that table, so it's left off here.
       { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager'] },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager'] },
-      { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
+      { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'technician'] },
       { label: 'Design Packages', to: '/design', icon: PenTool },
       // Three queues, one per approval step: the PM's, finance's, then the
       // executive's. Admin sees the last two, so they carry the step.

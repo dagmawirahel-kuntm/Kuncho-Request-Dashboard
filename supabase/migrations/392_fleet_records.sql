@@ -1,4 +1,4 @@
--- 389 — Fleet records that stay true
+-- 392 — Fleet records that stay true
 --
 -- What the data showed (Oct 2026): 46 transport jobs sitting at
 -- "requested", 45 of them purchase-order pickups, 19 for orders whose goods
