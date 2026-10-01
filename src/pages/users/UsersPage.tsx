@@ -16,7 +16,8 @@ import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront
 // match at all) fall back to the full role list.
 const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
   'Design': ['design'],
-  'Operations/Construction': ['operations_manager', 'project_manager', 'stock_manager', 'logistics_officer'],
+  // technician: electricians, carpenters, painters — the people on the jobs.
+  'Operations/Construction': ['operations_manager', 'project_manager', 'stock_manager', 'logistics_officer', 'technician', 'staff'],
   'Procurement & Logistics': ['procurement_officer', 'logistics_officer'],
   'Finance & Admin': ['finance'],
   'Business Development/Sales': ['sales'],
@@ -27,7 +28,7 @@ const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
 const ROLES: UserRole[] = [
   'admin', 'executive', 'finance', 'staff',
   'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager', 'logistics_officer',
-  'design', 'sales', 'hse_officer', 'operations_manager',
+  'design', 'sales', 'hse_officer', 'operations_manager', 'technician',
 ]
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -44,6 +45,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   sales: 'Sales',
   hse_officer: 'HSE Officer',
   operations_manager: 'Operations Manager',
+  technician: 'Technician',
 }
 
 const ROLE_CLS: Record<UserRole, string> = {
@@ -60,6 +62,7 @@ const ROLE_CLS: Record<UserRole, string> = {
   sales:               'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   hse_officer:         'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300',
   operations_manager:  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+  technician:          'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
 }
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'

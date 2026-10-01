@@ -141,7 +141,7 @@ export default function PurchaseRequestsPage() {
   // Matches orders' RLS delete grants exactly: admin, or staff on their
   // own request. Every other role can view/edit but not delete.
   function canDelete(order: OrderWithMeta) {
-    return role === 'admin' || (role === 'staff' && order.requested_by_user_id === user?.id)
+    return role === 'admin' || ((role === 'staff' || role === 'technician') && order.requested_by_user_id === user?.id)
   }
   const [search, setSearch] = useState('')
   const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentState | 'all'>('all')

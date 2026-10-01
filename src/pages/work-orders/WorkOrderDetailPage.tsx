@@ -17,7 +17,7 @@ import {
   type WorkOrderRatingRow,
 } from '@/hooks/useWorkOrderRatings'
 import { Pill } from '@/components/record/Record'
-import { WO_STATUS, type WorkOrderBoardRow } from '@/lib/workOrders'
+import { WO_STATUS, useMyJobIds, type WorkOrderBoardRow } from '@/lib/workOrders'
 import { ItemsCard, LabourCard, StatusActions, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
 import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, SiteMaterialReceipt } from '@/types/database'
 import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus, UserPlus2, Send } from 'lucide-react'
@@ -67,6 +67,9 @@ export default function WorkOrderDetailPage() {
 
   // The site's foreman updates progress too; the database has the last word.
   const canUpdate = useCanWriteWoOps(wo?.project_id ?? '', canWrite)
+  // The lead and crew record what they've done; changing the job stays above.
+  const myJobs = useMyJobIds()
+  const canRecord = canUpdate || (!!id && myJobs.has(id))
   const { data: board } = useQuery({
     queryKey: ['work-order-board', id],
     queryFn: async () => {
@@ -111,7 +114,7 @@ export default function WorkOrderDetailPage() {
             <p className="text-sm text-slate-500">{wo.projects?.project_name ?? '—'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {canUpdate && wo.status !== 'completed' && wo.status !== 'cancelled' && (
+            {canRecord && wo.status !== 'completed' && wo.status !== 'cancelled' && (
               <button onClick={() => setUpdating(true)} className="inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white"><TrendingUp className="h-4 w-4" /> Update progress</button>
             )}
             {canWrite && (
@@ -137,7 +140,7 @@ export default function WorkOrderDetailPage() {
         <div className="mt-4 border-t pt-3 dark:border-slate-700"><StatusActions wo={wo} canUpdate={canUpdate} /></div>
       </div>
 
-      <ItemsCard wo={wo} canUpdate={canUpdate} onUpdate={() => setUpdating(true)} />
+      <ItemsCard wo={wo} canUpdate={canRecord} canEdit={canWrite} onUpdate={() => setUpdating(true)} />
       <LabourCard wo={wo} canUpdate={canUpdate} />
       <BlockersPanel projectId={wo.project_id} />
       <UpdatesTimeline workOrderId={wo.id} />

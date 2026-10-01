@@ -16,7 +16,7 @@ import { UnitSelect } from '@/components/stock/UnitSelect'
 import { LinkedStockChip, DidYouMean } from '@/components/stock/StockLineLink'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { useMyManagedProjects } from '@/hooks/useMyStaff'
+import { useMyManagedProjects, useMyWorkProjects } from '@/hooks/useMyStaff'
 import { formatDate } from '@/lib/utils'
 import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/lib/budgetCheck'
 import { useLatestPrice, FRESHNESS_CLASS, FRESHNESS_LABEL } from '@/hooks/useMarketPrices'
@@ -567,12 +567,16 @@ function PurchaseRequestFormBody({
   const { projects: managedProjects, managesAny } = useMyManagedProjects()
   const hasCompanyWideProjectAccess = !!role && ['admin', 'executive', 'finance', 'procurement_officer'].includes(role)
   const scopeToManaged = !hasCompanyWideProjectAccess && managesAny
+  // A technician asks for the projects they work on (technician_own_orders, 388).
+  const isTechnician = role === 'technician'
+  const { projects: workProjects } = useMyWorkProjects(isTechnician)
 
   const projectOptions = useMemo(() => {
     const source: { id: string; project_name: string }[] =
-      scopeToManaged ? managedProjects : (projects as { id: string; project_name: string }[])
+      isTechnician ? workProjects
+        : scopeToManaged ? managedProjects : (projects as { id: string; project_name: string }[])
     return source.map(p => ({ id: p.id, label: p.project_name }))
-  }, [projects, managedProjects, scopeToManaged])
+  }, [projects, managedProjects, scopeToManaged, isTechnician, workProjects])
   const staffOptions   = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
   const vendorOptions  = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
 
@@ -872,7 +876,11 @@ function PurchaseRequestFormBody({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Project">
             <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Select project…" />
-            {scopeToManaged && (
+            {isTechnician ? (
+              <p className="mt-1 text-[11px] text-slate-400">
+                {workProjects.length ? 'The projects you work on.' : 'You are not on a project yet — ask your manager to assign you.'}
+              </p>
+            ) : scopeToManaged && (
               <p className="mt-1 text-[11px] text-slate-400">
                 Limited to the {managedProjects.length} project{managedProjects.length === 1 ? '' : 's'} you manage.
               </p>

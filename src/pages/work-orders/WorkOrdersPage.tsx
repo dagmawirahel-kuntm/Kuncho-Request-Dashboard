@@ -7,11 +7,11 @@ import { useStaffDirectory } from '@/hooks/useLookups'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Pill } from '@/components/record/Record'
 import type { WorkOrder } from '@/types/database'
-import { STALE_DAYS, WO_STATUS, daysSince, type WorkOrderBoardRow } from '@/lib/workOrders'
+import { STALE_DAYS, WO_STATUS, daysSince, useMyJobIds, type WorkOrderBoardRow } from '@/lib/workOrders'
 import { AlertTriangle, CalendarClock, Hammer, Plus, Search, Wrench, HardHat, CheckCircle2 } from 'lucide-react'
 
 type Row = WorkOrder & { projects: { project_name: string } | null }
-type Tab = 'attention' | 'in_progress' | 'requested' | 'completed' | 'cancelled'
+type Tab = 'mine' | 'attention' | 'in_progress' | 'requested' | 'completed' | 'cancelled'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -29,7 +29,9 @@ export default function WorkOrdersPage() {
   const [params, setParams] = useSearchParams()
   const { role } = useAuth()
   const canManage = ['admin', 'executive', 'operations_manager', 'project_manager'].includes(role ?? '')
-  const tab = (params.get('tab') as Tab) || 'attention'
+  const myJobs = useMyJobIds()
+  // A technician comes here for their own jobs; managers for what needs them.
+  const tab = (params.get('tab') as Tab) || (role === 'technician' ? 'mine' : 'attention')
   const [q, setQ] = useState(params.get('q') ?? '')
   const [project, setProject] = useState('')
 
@@ -62,12 +64,14 @@ export default function WorkOrdersPage() {
   const needle = q.trim().toLowerCase()
   const filtered = orders.filter(o => (!project || o.project_id === project)
     && (!needle || `${o.title ?? ''} ${o.scope_of_work} ${o.projects?.project_name ?? ''}`.toLowerCase().includes(needle)))
-  const inTab = (t: Tab, o: Row) => t === 'attention' ? !!attentionOf(o, boardById.get(o.id)) : o.status === t
+  const inTab = (t: Tab, o: Row) => t === 'mine' ? myJobs.has(o.id) && o.status !== 'cancelled'
+    : t === 'attention' ? !!attentionOf(o, boardById.get(o.id)) : o.status === t
   const count = (t: Tab) => filtered.filter(o => inTab(t, o)).length
   const shown = filtered.filter(o => inTab(tab, o))
     .sort((a, b) => (a.target_completion_date ?? '9999').localeCompare(b.target_completion_date ?? '9999'))
 
   const TABS: { key: Tab; label: string }[] = [
+    ...(myJobs.size > 0 || role === 'technician' ? [{ key: 'mine' as Tab, label: 'My jobs' }] : []),
     { key: 'attention', label: 'Needs attention' }, { key: 'in_progress', label: 'In progress' },
     { key: 'requested', label: 'Not started' }, { key: 'completed', label: 'Done' }, { key: 'cancelled', label: 'Cancelled' },
   ]
@@ -109,7 +113,8 @@ export default function WorkOrdersPage() {
 
       {isLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading…</p> : shown.length === 0 ? (
         <p className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
-          {tab === 'attention' ? <><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Every open job is up to date.</> : 'Nothing here.'}
+          {tab === 'attention' ? <><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Every open job is up to date.</>
+            : tab === 'mine' ? 'No jobs yet. When you lead a work order or are put on its crew, it shows here.' : 'Nothing here.'}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
