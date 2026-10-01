@@ -6,7 +6,7 @@ import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
-import { useVendors, useLocations, useStaff } from '@/hooks/useLookups'
+import { useVendors, useLocations, useStaff, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { CAPITALIZATION_THRESHOLD, CATEGORY_LABELS, DEFAULT_USEFUL_LIFE, METHOD_LABELS } from '@/lib/fixedAssetLabels'
@@ -58,7 +58,7 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
   const { data: staff = [] } = useStaff()
 
   const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
-  const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+  const locationOptions = useMemo(() => locationPickerOptions(locations), [locations])
   const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
 
   const [form, setForm] = useState<Partial<FixedAssetInsert>>(

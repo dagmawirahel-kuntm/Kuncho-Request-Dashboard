@@ -125,7 +125,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'On site', label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, roles: [], showIfSiteForeman: true },
-      { subgroup: 'Places', label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'executive', 'finance', 'project_manager'] },
+      { subgroup: 'Places', label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'executive', 'finance', 'project_manager', 'logistics_officer', 'operations_manager', 'procurement_officer', 'stock_manager'] },
       { subgroup: 'Places', label: 'Locations Map', to: '/locations/map', icon: Globe2 },
       { subgroup: 'Places', label: 'Rent', to: '/rent', icon: Building2, roles: ['admin', 'executive', 'finance', 'operations_manager'] },
     ],

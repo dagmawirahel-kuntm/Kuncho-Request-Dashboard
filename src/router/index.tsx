@@ -629,7 +629,14 @@ export const router = createBrowserRouter([
               { path: 'products', element: <Navigate to="/catalog" replace /> },
               { path: 'products/new', element: <Navigate to="/catalog" replace /> },
               { path: 'products/:id/edit', element: <Navigate to="/catalog" replace /> },
-              { path: 'locations', element: <LocationsPage /> },
+            ],
+          },
+          // Saved places (migration 388): everyone can look places up; adding
+          // and changing them is for the roles locations' RLS lets write.
+          { path: 'locations', element: <LocationsPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'logistics_officer']} />,
+            children: [
               { path: 'locations/new', element: <LocationFormPage /> },
               { path: 'locations/:id/edit', element: <LocationFormPage /> },
             ],

@@ -660,6 +660,15 @@ export interface Location {
   project_id: string | null
   vendor_id: string | null
   created_at: string
+  // Migration 388.
+  area: string | null
+  address: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  /** Other names people type for this place ("skyligh", "the workshop"). */
+  aliases: string[]
+  /** Archived places stay on old records but drop out of pickers. */
+  is_active: boolean
 }
 export type LocationInsert = Omit<Location, 'id' | 'created_at'>
 

@@ -14,6 +14,13 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 })
 
+// The plain pin, spelled out: L.Icon.Default prefixes its own image path to
+// the bundled URLs above and the image breaks.
+const DEFAULT_ICON = L.icon({
+  iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow,
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
+})
+
 // Addis Ababa — sensible default center for the company's operations
 export const DEFAULT_CENTER: [number, number] = [9.0108, 38.7613]
 
@@ -100,7 +107,9 @@ export function LocationMap({
         <MapController pins={pins} />
         {onPick && <ClickCapture onPick={onPick} />}
         {pins.map(pin => (
-          <Marker key={pin.id} position={[pin.lat, pin.lng]} icon={pin.color ? coloredIcon(pin.color) : undefined}>
+          // Always hand Marker an icon: icon={undefined} overrides Leaflet's
+          // default with nothing, and the map crashes ("createIcon").
+          <Marker key={pin.id} position={[pin.lat, pin.lng]} icon={pin.color ? coloredIcon(pin.color) : DEFAULT_ICON}>
             <Popup>
               <span className="font-semibold">{pin.name}</span>
               {pin.sub && <><br /><span className="text-xs">{pin.sub}</span></>}
