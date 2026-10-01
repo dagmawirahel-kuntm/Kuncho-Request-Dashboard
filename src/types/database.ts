@@ -458,6 +458,8 @@ export interface Expense {
   location_id: string | null
   vehicle_id: string | null
   fuel_liters: number | null
+  /** Odometer at the fill-up (migration 389) — km per litre comes from it. */
+  odometer_km?: number | null
   approval_status: ExpenseApprovalStatus
   rejection_reason: string | null
   manager_approved_by: string | null

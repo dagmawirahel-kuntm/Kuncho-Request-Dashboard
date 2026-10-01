@@ -9,7 +9,8 @@ import type { TransportationRequest, TransportJobStatus, TransportJobType, Trans
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
-import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle } from 'lucide-react'
+import { NEXT_STEP, OPEN_JOB_STATUSES, setJobStatus } from '@/lib/transport'
+import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight } from 'lucide-react'
 
 // Chained ETA per vehicle — own_fleet jobs only, since hired/ride-hailing
 // don't compete for a resource of ours. See v_transport_vehicle_queue
@@ -130,6 +131,76 @@ const transportQuickFilters: QuickFilter[] = [
   },
 ]
 
+const STALE_DAYS = 14
+
+// Jobs still open after two weeks are almost always done (or never
+// happened) and nobody pressed the button. Closing them in one go keeps the
+// queue honest; each one can still be opened first.
+function StaleJobsPanel({ jobs, onDone }: { jobs: JobRow[]; onDone: () => void }) {
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [now] = useState(() => Date.now())
+  if (jobs.length === 0) return null
+  const allPicked = picked.size === jobs.length
+
+  async function close(next: 'completed' | 'cancelled') {
+    const ids = [...picked]
+    if (!ids.length) return
+    setBusy(true)
+    const { data, error } = await setJobStatus(ids, next)
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    const n = data?.length ?? 0
+    if (n < ids.length) toast(`${n} of ${ids.length} updated — you can't change the others`, 'error')
+    else toast(`${n} job${n === 1 ? '' : 's'} marked ${next === 'completed' ? 'done' : 'cancelled'}`, 'success')
+    setPicked(new Set())
+    onDone()
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm dark:border-amber-800/40 dark:bg-slate-800">
+      <button onClick={() => setOpen(v => !v)} className="flex w-full items-center justify-between gap-2 bg-amber-50 px-4 py-2.5 text-left dark:bg-amber-900/10">
+        <span className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <History className="h-4 w-4" /> {jobs.length} job{jobs.length === 1 ? '' : 's'} still open after {STALE_DAYS} days
+        </span>
+        <span className="text-xs text-amber-800/80 dark:text-amber-300/80">Close the ones that are finished</span>
+      </button>
+      {open && (
+        <>
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2 dark:border-slate-700">
+            <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+              <input type="checkbox" className="accent-brand" checked={allPicked} onChange={() => setPicked(allPicked ? new Set() : new Set(jobs.map(j => j.id)))} />
+              All
+            </label>
+            <span className="text-xs text-slate-400">{picked.size} picked</span>
+            <div className="ml-auto flex gap-2">
+              <button disabled={!picked.size || busy} onClick={() => close('completed')} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-40">Mark done</button>
+              <button disabled={!picked.size || busy} onClick={() => close('cancelled')} className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300">Cancel them</button>
+            </div>
+          </div>
+          <ul className="max-h-80 divide-y overflow-y-auto dark:divide-slate-700">
+            {jobs.map(j => {
+              const days = Math.floor((now - new Date(j.created_at).getTime()) / 86400000)
+              return (
+                <li key={j.id} className="flex items-center gap-3 px-4 py-2">
+                  <input type="checkbox" className="accent-brand" checked={picked.has(j.id)}
+                    onChange={() => setPicked(p => { const n = new Set(p); if (n.has(j.id)) n.delete(j.id); else n.add(j.id); return n })} />
+                  <Link to={`/transportation/${j.id}/edit`} className="min-w-0 flex-1 truncate text-sm text-slate-700 hover:text-brand dark:text-slate-200">{j.request_name ?? 'Transport job'}</Link>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${JOB_STATUS_CLS[j.job_status]}`}>{j.job_status.replace('_', ' ')}</span>
+                  <span className="w-16 shrink-0 text-right text-xs tabular-nums text-slate-400">{days} days</span>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function TransportationPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
@@ -183,6 +254,25 @@ export default function TransportationPage() {
     })
   }, [data, myJobsOnly, user])
 
+  async function advance(job: JobRow) {
+    const step = NEXT_STEP[job.job_status]
+    if (!step) return
+    const { data: done, error } = await setJobStatus([job.id], step.to)
+    if (error) { toast(error.message, 'error'); return }
+    if (!done?.length) { toast("You can't change this job", 'error'); return }
+    toast(step.to === 'completed' ? 'Job done' : 'Job started', 'success')
+    refresh()
+  }
+
+  function refresh() {
+    for (const k of ['transportation', 'transportation-overdue', 'transport-vehicle-queue', 'vehicles', 'fleet-active-jobs']) qc.invalidateQueries({ queryKey: [k] })
+  }
+
+  const stale = useMemo(() => {
+    const cutoff = Date.now() - STALE_DAYS * 86400000
+    return data.filter(j => OPEN_JOB_STATUSES.includes(j.job_status) && new Date(j.created_at).getTime() < cutoff)
+  }, [data])
+
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this job? This cannot be undone.')) return
     const { error } = await supabase.from('transportation_requests').delete().eq('id', id)
@@ -205,9 +295,20 @@ export default function TransportationPage() {
     },
     {
       accessorKey: 'job_status', header: 'Status', filterFn: 'equals',
-      cell: ({ getValue }) => {
-        const s = getValue() as TransportJobStatus
-        return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${JOB_STATUS_CLS[s] ?? ''}`}>{s.replace('_', ' ')}</span>
+      cell: ({ row }) => {
+        const s = row.original.job_status
+        const step = NEXT_STEP[s]
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${JOB_STATUS_CLS[s] ?? ''}`}>{s.replace('_', ' ')}</span>
+            {step && (
+              <button onClick={() => advance(row.original)}
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-semibold text-white ${s === 'in_progress' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-violet-600 hover:bg-violet-700'}`}>
+                {s === 'in_progress' ? <Check className="h-3 w-3" /> : <Play className="h-3 w-3" />}{step.label}
+              </button>
+            )}
+          </div>
+        )
       },
     },
     {
@@ -237,7 +338,7 @@ export default function TransportationPage() {
         return <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[14rem] truncate block">{from ?? '?'} → {to ?? '?'}</span>
       },
     },
-    { accessorKey: 'requested_date', header: 'Date', cell: ({ getValue }) => formatDate(getValue() as string) },
+    { accessorKey: 'requested_date', header: 'Date', cell: ({ getValue }) => <span className="whitespace-nowrap text-xs">{formatDate(getValue() as string)}</span> },
     { accessorKey: 'amount', header: 'Cost', cell: ({ getValue }) => getValue() != null ? formatCurrency(getValue() as number) : '—' },
     {
       id: 'paid', header: 'Payment',
@@ -296,6 +397,7 @@ export default function TransportationPage() {
         </div>
       </div>
       {role === 'staff' && <OwnRecordsBanner />}
+      <StaleJobsPanel jobs={stale} onDone={refresh} />
       <VehicleQueuePanel />
 
       {overdue.length > 0 && (

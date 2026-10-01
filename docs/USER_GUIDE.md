@@ -50,6 +50,8 @@ and timesheets.
 |---|---|
 | Get money spent for work reimbursed | **+ New Expense** → describe the item, amount, date → Save. It goes to your manager for approval. |
 | Request transportation | **+ Transportation Request** → fill route and reason → Save |
+| Drive one of our vehicles (drivers) | **Supply → My Trips** on your phone → **Start** / **I've arrived — done** on each job; **Log a trip** for runs nobody booked; **Fuel** to record a fill-up with the odometer reading |
+| Keep a vehicle's papers current | Open the vehicle under **Fleet & Logistics** → **Papers** → add or renew plate, insurance, inspection, road fund and the driver's licence. Anything expiring within 30 days shows on the Fleet page and the driver's My Trips |
 | Log my attendance | **+ Timesheet Entry** → date, check-in/out times |
 | Check if my expense was approved | Open **Requests → Approvals** — the badge shows Pending / Manager Approved / Finance Approved / Rejected |
 | See my salary and payment history | **My Profile** → Payroll / Cash Advances tabs |

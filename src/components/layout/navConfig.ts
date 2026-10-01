@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
+  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -165,6 +165,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Stock', label: 'Duplicates', to: '/stock/duplicates', icon: Copy, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { subgroup: 'Stock', label: 'Dispatch Queue', to: '/stock/dispatch-queue', icon: Truck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { subgroup: 'Stock', label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'executive', 'stock_manager'] },
+      { subgroup: 'Fleet', label: 'My Trips', to: '/my-trips', icon: Route, roles: ['logistics_officer'], showIfLogisticsOfficer: true },
       { subgroup: 'Fleet', label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { subgroup: 'Fleet', label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
       { subgroup: 'Fleet', label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },

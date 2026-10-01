@@ -124,6 +124,7 @@ import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
 import UsersPage from '@/pages/users/UsersPage'
 import CalendarPage from '@/pages/calendar/CalendarPage'
 import FleetPage from '@/pages/logistics/FleetPage'
+import MyTripsPage from '@/pages/logistics/MyTripsPage'
 import VehicleDetailPage from '@/pages/logistics/VehicleDetailPage'
 import LocationsMapPage from '@/pages/locations/LocationsMapPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
@@ -270,6 +271,7 @@ export const router = createBrowserRouter([
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
           { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },
           { path: 'logistics', element: <FleetPage /> },
+          { path: 'my-trips', element: <MyTripsPage /> },
           { path: 'logistics/vehicles/:id', element: <VehicleDetailPage /> },
           { path: 'fleet/maintenance', element: <VehicleMaintenancePage /> },
           { path: 'fleet/maintenance/new', element: <VehicleMaintenanceFormPage /> },

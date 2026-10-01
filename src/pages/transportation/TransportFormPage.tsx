@@ -255,17 +255,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const flow = STATUS_FLOW[jobStatus]
   const isMoneyJob = form.transport_mode === 'ride_hailing' || form.transport_mode === 'hired'
 
-  // Keep vehicle status roughly in sync with the job lifecycle
-  async function syncVehicle(vehicleId: string | null | undefined, next: TransportJobStatus) {
-    if (!vehicleId) return
-    if (next === 'assigned' || next === 'in_progress') {
-      await supabase.from('vehicles').update({ status: 'on_job' }).eq('id', vehicleId)
-    } else if (next === 'completed' || next === 'cancelled') {
-      await supabase.from('vehicles').update({ status: 'available' }).eq('id', vehicleId)
-    }
-    qc.invalidateQueries({ queryKey: ['vehicles'] })
-  }
-
+  // The vehicle's own status follows its jobs in the database (migration 389).
   async function transition(next: TransportJobStatus) {
     const patch: Record<string, unknown> = { job_status: next }
     if (next === 'completed') {
@@ -276,7 +266,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     }
     const { error: err } = await supabase.from('transportation_requests').update(patch).eq('id', id!)
     if (err) { toast(err.message, 'error'); return }
-    await syncVehicle(record?.vehicle_id, next)
+    qc.invalidateQueries({ queryKey: ['vehicles'] })
     dropRecordCache(qc, 'transport-request', 'sourcing-bundle-for-transport', 'transport-linked-expense')
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['transport-request', id] })
