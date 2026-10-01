@@ -37,7 +37,7 @@ export function PaymentsToSend() {
 export function FinanceApprovals() {
   return (
     <QueryListWidget
-      title="Awaiting finance approval" icon={Clock} to="/finance/payments" queryKey={['fin-approvals']} empty="Nothing waiting for approval."
+      title="Awaiting finance approval" icon={Clock} to="/expenses/approvals" queryKey={['fin-approvals']} empty="Nothing waiting for approval."
       fetch={async () => {
         const { data, error } = await supabase.from('v_finance_pending_approval')
           .select('id, expense_code, item_service_description, vendor_name, project_name, amount_etb, approval_status, created_at')
@@ -61,7 +61,7 @@ export function FinanceApprovals() {
 export function AwaitingBank() {
   return (
     <QueryListWidget
-      title="Sent, not on the bank yet" icon={Banknote} to="/finance/payments" queryKey={['awaiting-bank']} empty="Every sent payment is on a statement."
+      title="Sent, not on the bank yet" icon={Banknote} to="/finance/payments?tab=confirm" queryKey={['awaiting-bank']} empty="Every sent payment is on a statement."
       fetch={async () => {
         const { data, error } = await supabase.from('v_awaiting_bank_confirmation')
           .select('id, expense_code, vendor_name, item_service_description, net_payable, amount_etb, account_name, days_waiting')
