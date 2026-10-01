@@ -5,12 +5,14 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDepartmentGaps, useSubcontractSummaries, useCandidateSummaries } from '@/hooks/useCompetency'
+import { useFfeJobDescriptions } from '@/hooks/useLookups'
+import { suggestJobDescription } from '@/lib/skills'
 import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { formatDate } from '@/lib/utils'
-import { Users, AlertTriangle, Clock, UserPlus, X, Star, HardHat } from 'lucide-react'
+import { Users, AlertTriangle, Clock, UserPlus, X, Star, HardHat, BadgeCheck } from 'lucide-react'
 
-type Tab = 'evaluations' | 'ranking' | 'external'
+type Tab = 'roles' | 'evaluations' | 'ranking' | 'external'
 
 // Competency Hub — HR / exec / dept heads land here to find who needs
 // rating, compare teams, and manage external assessments.
@@ -19,7 +21,23 @@ export default function CompetencyHubPage() {
   const { data: gaps = [] } = useDepartmentGaps()
   const { data: subs = [] } = useSubcontractSummaries()
   const { data: cands = [] } = useCandidateSummaries()
-  const [tab, setTab] = useState<Tab>('evaluations')
+  const canAssign = role === 'admin' || role === 'hr_officer'
+  const { data: people = [] } = useQuery({
+    queryKey: ['competency-hub-people'],
+    enabled: canAssign,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff')
+        .select('id, employee_name, role, staff_type, trade_tag, employment_type, job_description_id')
+        .eq('status', 'active').order('employee_name')
+      if (error) throw error
+      return (data ?? []) as HubPerson[]
+    },
+  })
+  const withoutJd = people.filter(p => !p.job_description_id && p.employment_type !== 'tier_2_casual').length
+  // Nobody can be rated until they have a job description, so that's
+  // where HR starts while most people still lack one.
+  const [tab, setTab] = useState<Tab | null>(null)
+  const effectiveTab: Tab = tab ?? (canAssign && withoutJd > 0 ? 'roles' : 'evaluations')
 
   const stats = useMemo(() => {
     const withJd = gaps.length
@@ -42,7 +60,9 @@ export default function CompetencyHubPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Staff with JD" value={stats.withJd} icon={<Users className="h-4 w-4" />} />
+        {canAssign
+          ? <Stat label="No job description" value={withoutJd} tone={withoutJd > 0 ? 'amber' : undefined} icon={<BadgeCheck className="h-4 w-4" />} onClick={() => setTab('roles')} />
+          : <Stat label="Staff with JD" value={stats.withJd} icon={<Users className="h-4 w-4" />} />}
         <Stat label="With gaps" value={stats.gapCount} tone="amber" icon={<AlertTriangle className="h-4 w-4" />} onClick={() => setTab('evaluations')} />
         <Stat label="Stale (>6mo)" value={stats.staleCount} tone="red" icon={<Clock className="h-4 w-4" />} onClick={() => setTab('evaluations')} />
         <Stat label="Candidates pending" value={stats.pendingCands} icon={<UserPlus className="h-4 w-4" />} onClick={() => setTab('external')} />
@@ -50,20 +70,120 @@ export default function CompetencyHubPage() {
 
       <div className="flex border-b dark:border-slate-700">
         {([
+          ...(canAssign ? [{ id: 'roles', label: 'Job descriptions' }] : []),
           { id: 'evaluations', label: 'Evaluations Needed' },
           { id: 'ranking',     label: 'Team Ranking' },
           { id: 'external',    label: 'External Assessments' },
         ] as { id: Tab; label: string }[]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              effectiveTab === t.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
             }`}>{t.label}</button>
         ))}
       </div>
 
-      {tab === 'evaluations' && <EvaluationsTab gaps={gaps} role={role} />}
-      {tab === 'ranking'     && <RankingTab gaps={gaps} role={role} />}
-      {tab === 'external'    && <ExternalTab subs={subs} cands={cands} />}
+      {effectiveTab === 'roles'       && <RolesTab people={people} />}
+      {effectiveTab === 'evaluations' && <EvaluationsTab gaps={gaps} role={role} />}
+      {effectiveTab === 'ranking'     && <RankingTab gaps={gaps} role={role} />}
+      {effectiveTab === 'external'    && <ExternalTab subs={subs} cands={cands} />}
+    </div>
+  )
+}
+
+interface HubPerson {
+  id: string
+  employee_name: string
+  role: string | null
+  staff_type: string | null
+  trade_tag: string | null
+  employment_type: string | null
+  job_description_id: string | null
+}
+
+// Give people a job description in one pass. Each row starts on the
+// suggestion from their role; HR changes what's wrong, ticks, applies.
+function RolesTab({ people }: { people: HubPerson[] }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { data: jdsRaw = [] } = useFfeJobDescriptions()
+  const jds = jdsRaw as { id: string; role_name: string }[]
+  const jdName = useMemo(() => new Map(jds.map(j => [j.id, j.role_name])), [jds])
+  const [scope, setScope] = useState<'missing' | 'casual' | 'all'>('missing')
+  const [choice, setChoice] = useState<Record<string, string | null>>({})
+  const [ticked, setTicked] = useState<Record<string, boolean>>({})
+  const [saving, setSaving] = useState(false)
+
+  const rows = useMemo(() => people.filter(p =>
+    scope === 'all' ? true
+      : scope === 'casual' ? p.employment_type === 'tier_2_casual' && !p.job_description_id
+      : p.employment_type !== 'tier_2_casual' && !p.job_description_id,
+  ), [people, scope])
+
+  const suggestionFor = (p: HubPerson) => suggestJobDescription(p, jds)?.id ?? null
+  const valueFor = (p: HubPerson) => (p.id in choice ? choice[p.id] : p.job_description_id ?? suggestionFor(p))
+  const isTicked = (p: HubPerson) => (p.id in ticked ? ticked[p.id] : !p.job_description_id && !!suggestionFor(p))
+  const toApply = rows.filter(p => isTicked(p) && valueFor(p) && valueFor(p) !== p.job_description_id)
+
+  async function apply() {
+    setSaving(true)
+    const byJd = new Map<string, string[]>()
+    for (const p of toApply) byJd.set(valueFor(p)!, [...(byJd.get(valueFor(p)!) ?? []), p.id])
+    for (const [jd, ids] of byJd) {
+      const { error } = await supabase.from('staff').update({ job_description_id: jd }).in('id', ids)
+      if (error) { setSaving(false); toast(error.message, 'error'); return }
+    }
+    setSaving(false)
+    setChoice({}); setTicked({})
+    qc.invalidateQueries({ queryKey: ['competency-hub-people'] })
+    qc.invalidateQueries({ queryKey: ['dept-competency-gaps'] })
+    toast(`${toApply.length} job description${toApply.length === 1 ? '' : 's'} set`, 'success')
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          <Chip active={scope === 'missing'} onClick={() => setScope('missing')}>Staff without one</Chip>
+          <Chip active={scope === 'casual'} onClick={() => setScope('casual')}>Casual workers without one</Chip>
+          <Chip active={scope === 'all'} onClick={() => setScope('all')}>Everyone</Chip>
+        </div>
+        <button onClick={apply} disabled={saving || toApply.length === 0}
+          className="rounded-md bg-brand px-3.5 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+          {saving ? 'Saving…' : `Set ${toApply.length} ticked`}
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        People are rated against their job description's responsibilities, so nobody shows up in Evaluations until they have one. Suggestions come from the role written on their record.
+      </p>
+      {rows.length === 0 ? (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 py-12 text-center text-sm text-slate-400">Everyone here has a job description.</div>
+      ) : (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 divide-y dark:divide-slate-700">
+          {rows.map(p => {
+            const sug = suggestionFor(p)
+            const v = valueFor(p)
+            return (
+              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-2.5">
+                <label className="flex items-center gap-3 min-w-0 sm:w-72 shrink-0">
+                  <input type="checkbox" checked={isTicked(p)} onChange={e => setTicked(t => ({ ...t, [p.id]: e.target.checked }))} className="h-4 w-4 accent-brand" />
+                  <span className="min-w-0">
+                    <Link to={`/staff/${p.id}`} className="block truncate text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-brand">{p.employee_name}</Link>
+                    <span className="block truncate text-[11px] text-slate-400">{[p.role, p.staff_type].filter(Boolean).join(' · ') || 'No role written'}</span>
+                  </span>
+                </label>
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect value={v} placeholder="Pick a job description"
+                    onChange={id => { setChoice(c => ({ ...c, [p.id]: id })); setTicked(t => ({ ...t, [p.id]: !!id })) }}
+                    options={jds.map(j => ({ id: j.id, label: j.role_name }))} />
+                </div>
+                <span className="text-[11px] text-slate-400 sm:w-28 shrink-0">
+                  {p.job_description_id ? (v === p.job_description_id ? 'Current' : `Was ${jdName.get(p.job_description_id) ?? '—'}`) : sug && v === sug ? 'Suggested' : sug ? '' : 'No suggestion'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

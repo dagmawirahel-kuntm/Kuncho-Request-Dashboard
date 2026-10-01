@@ -1,311 +1,153 @@
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { useState } from 'react'
+import { UserCheck, Plus, X, ListChecks, CalendarDays } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { StatusBadge } from '@/components/shared/StatusBadge'
+import { useMyStaffId } from '@/hooks/useMyStaff'
+import { useStaffDirectory } from '@/hooks/useLookups'
+import { RecordHeader, Stat } from '@/components/record/Record'
+import { Segmented } from '@/components/shared/Segmented'
+import { LeaveRequestForm } from '@/components/leave/LeaveRequestForm'
+import { LeaveCard, type LeaveCardRow } from '@/components/leave/LeaveCard'
+import { LeaveCalendar } from '@/components/leave/LeaveCalendar'
+import { LEAVE_QUERY_KEYS, addDays, iso, useHolidays, useLeaveBalances, useTeamLeave } from '@/lib/leave'
 import { formatDateGC } from '@/lib/utils'
-import type { LeaveRequest, LeaveType, Staff } from '@/types/database'
-import { CalendarClock, Plus, X, UserCheck } from 'lucide-react'
+import type { LeaveRequest } from '@/types/database'
 
-const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
-
-const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
-  { value: 'annual', label: 'Annual' },
-  { value: 'sick', label: 'Sick' },
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'maternity', label: 'Maternity' },
-  { value: 'compassionate', label: 'Compassionate' },
-  { value: 'other', label: 'Other' },
-]
-
-function daysBetween(start: string, end: string) {
-  const ms = new Date(end).getTime() - new Date(start).getTime()
-  return ms >= 0 ? Math.round(ms / 86400000) + 1 : null
-}
-
-// How a request found its approver — shown to the submitter so a
-// fallback routing is visible rather than looking like a normal one.
-const ROUTING_LABEL: Record<string, string> = {
-  line_manager:    'your line manager',
-  department_head: 'your department head',
-  hr_officer:      'HR',
-  admin:           'an administrator',
-  unresolved:      'nobody yet — ask HR',
-}
-
+// Everyone's own leave: what's left, asking for more, what happened to
+// past requests, who on the team is away — and, for anyone who manages
+// people, the requests waiting on them.
 export default function MyLeavePage() {
   const { user, role } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const [showForm, setShowForm] = useState(false)
+  const { data: me, isLoading: meLoading } = useMyStaffId()
+  const staffId = me?.id ?? null
+  const [asking, setAsking] = useState(false)
+  const [tab, setTab] = useState<'mine' | 'team'>('mine')
 
-  // Match the logged-in user to their staff record — same pattern as
-  // MyRequestsDashboardPage (explicit link, else email match).
-  const { data: staff } = useQuery({
-    queryKey: ['my-staff-record', user?.id],
-    queryFn: async () => {
-      const email = user!.email?.toLowerCase() ?? ''
-      const orFilter = email ? `user_id.eq.${user!.id},email.ilike.${email}` : `user_id.eq.${user!.id}`
-      const { data } = await supabase.from('staff').select('*').or(orFilter).limit(5)
-      if (!data || data.length === 0) return null
-      const linked = data.find(r => r.user_id === user!.id)
-      const byEmail = data.find(r => (r.email ?? '').toLowerCase() === email)
-      return (linked ?? byEmail ?? data[0]) as Staff
-    },
-    enabled: !!user,
-  })
-
-  const staffId = staff?.id
-
-  const { data: myRequests = [], isLoading } = useQuery({
+  const { data: mine = [], isLoading } = useQuery({
     queryKey: ['my-leave-requests', staffId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('leave_requests')
-        .select('*')
-        .eq('staff_id', staffId!)
-        .order('start_date', { ascending: false })
+      const { data, error } = await supabase.from('leave_requests').select('*').eq('staff_id', staffId!).order('start_date', { ascending: false })
       if (error) throw error
       return data as LeaveRequest[]
     },
     enabled: !!staffId,
   })
 
-  const thisYear = new Date().getFullYear()
-  const daysUsedThisYear = myRequests
-    .filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === thisYear)
-    .reduce((sum, r) => sum + (r.days ?? 0), 0)
-
-  const [form, setForm] = useState<{ leave_type: LeaveType; start_date: string; end_date: string; reason: string }>({
-    leave_type: 'annual', start_date: '', end_date: '', reason: '',
-  })
-  const [saving, setSaving] = useState(false)
-
-  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm(f => ({ ...f, [key]: value }))
-  }
-
-  async function handleSubmit() {
-    if (!staffId) { toast('Your login isn\'t linked to a staff profile yet — ask HR to link your account', 'error'); return }
-    if (!form.start_date || !form.end_date) { toast('Pick a start and end date', 'error'); return }
-    if (form.end_date < form.start_date) { toast('End date is before the start date', 'error'); return }
-    setSaving(true)
-    const { error } = await supabase.from('leave_requests').insert([{
-      staff_id: staffId,
-      leave_type: form.leave_type,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      days: daysBetween(form.start_date, form.end_date),
-      reason: form.reason || null,
-      status: 'pending',
-    }])
-    setSaving(false)
-    if (error) { toast(error.message, 'error'); return }
-    qc.invalidateQueries({ queryKey: ['my-leave-requests', staffId] })
-    setForm({ leave_type: 'annual', start_date: '', end_date: '', reason: '' })
-    setShowForm(false)
-    toast('Leave request submitted', 'success')
-  }
-
-  // Leave routed to ME to decide. Every staff member is potentially
-  // someone's manager, so this belongs on the page they already land on
-  // rather than behind a separate HR-only route — LeaveRequestsPage is
-  // gated to hr_officer/admin and a line manager is usually neither.
+  // Routed to me to decide (migration 161 picks the approver).
   const { data: awaitingMe = [] } = useQuery({
     queryKey: ['leave-awaiting-my-decision', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('leave_requests')
-        .select('*, staff(employee_name)')
-        .eq('assigned_approver_id', user!.id)
-        .eq('status', 'pending')
-        .order('start_date')
+      const { data, error } = await supabase.from('leave_requests')
+        .select('*, staff:staff_id(employee_name)')
+        .eq('assigned_approver_id', user!.id).eq('status', 'pending').order('start_date')
       if (error) throw error
-      return data as unknown as (LeaveRequest & { staff: { employee_name: string } | null })[]
+      return data as (LeaveRequest & { staff: { employee_name: string } | null })[]
     },
     enabled: !!user,
   })
 
-  async function handleDecide(id: string, status: 'approved' | 'rejected') {
-    // approved_by / approved_at are stamped server-side (migration 161),
-    // so they are deliberately not sent from here.
-    const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id)
-    if (error) { toast(error.message, 'error'); return }
-    qc.invalidateQueries({ queryKey: ['leave-awaiting-my-decision', user?.id] })
-    qc.invalidateQueries({ queryKey: ['leave-requests'] })
-    toast(status === 'approved' ? 'Leave approved' : 'Leave rejected', 'success')
+  const { data: balances = [] } = useLeaveBalances()
+  const balance = balances.find(b => b.staff_id === staffId) ?? null
+  const { data: holidays = [] } = useHolidays()
+  const today = iso(new Date())
+  const nextHoliday = holidays.find(h => h.holiday_date >= today)
+  const { data: team = [] } = useTeamLeave(addDays(today, -62), addDays(today, 186), tab === 'team')
+  const { data: directory = [] } = useStaffDirectory()
+  const nameById = useMemo(() => new Map((directory as { id: string; employee_name: string }[]).map(p => [p.id, p.employee_name])), [directory])
+
+  const withNames = (r: LeaveRequest & { staff?: { employee_name: string } | null }): LeaveCardRow => ({
+    ...r,
+    staff_name: r.staff?.employee_name ?? nameById.get(r.staff_id) ?? null,
+    cover_name: r.cover_staff_id ? nameById.get(r.cover_staff_id) ?? null : null,
+  })
+
+  async function refresh() {
+    for (const k of LEAVE_QUERY_KEYS) await qc.invalidateQueries({ queryKey: k })
   }
 
-  async function handleCancel(id: string) {
-    if (!window.confirm('Withdraw this leave request?')) return
+  async function decide(id: string, status: 'approved' | 'rejected', note: string) {
+    // approved_by / approved_at are stamped by the database.
+    const { error } = await supabase.from('leave_requests').update({ status, decision_note: note || null }).eq('id', id)
+    if (error) { toast(error.message, 'error'); return }
+    await refresh()
+    toast(status === 'approved' ? 'Approved' : 'Rejected', 'success')
+  }
+
+  async function withdraw(id: string) {
+    if (!window.confirm('Withdraw this request?')) return
     const { error } = await supabase.from('leave_requests').update({ status: 'cancelled' }).eq('id', id)
     if (error) { toast(error.message, 'error'); return }
-    qc.invalidateQueries({ queryKey: ['my-leave-requests', staffId] })
+    await refresh()
     toast('Request withdrawn', 'success')
   }
 
+  const isHr = role === 'admin' || role === 'hr_officer'
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">My Leave</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Request time off and track your submissions</p>
-        </div>
-        <button
-          onClick={() => setShowForm(s => !s)}
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
-        >
-          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {showForm ? 'Cancel' : 'Request Leave'}
-        </button>
-      </div>
+      <RecordHeader
+        back={{ to: '/dashboard', label: 'Dashboard' }}
+        title="My leave"
+        subtitle="What you have left, asking for time off, and who's away"
+        actions={[
+          { label: 'Leave desk', to: '/leave-requests', hidden: !isHr },
+          { label: asking ? 'Close' : 'Ask for leave', icon: asking ? X : Plus, primary: !asking, onClick: () => setAsking(a => !a), disabled: !staffId },
+        ]}
+      />
 
-      {!staff && (
+      {!meLoading && !staffId && (
         <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-900/40 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          Your login isn't linked to a staff profile yet, so you can't submit a leave request. Ask HR to set your email or link your account.
+          Your login isn't linked to a staff profile yet, so you can't ask for leave here. Ask HR to set your email on your staff record or link your account.
         </div>
       )}
 
-      {staff && (
-        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Approved days used in {thisYear}</p>
-            <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{daysUsedThisYear}</p>
-          </div>
-          <span className="rounded-lg p-2 bg-blue-50 text-blue-500 dark:bg-blue-900/20"><CalendarClock className="h-5 w-5" /></span>
+      {staffId && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Stat label="Annual leave left" value={balance ? `${balance.annual_left} days` : '—'}
+            tone={balance && balance.annual_left <= 0 ? 'red' : 'green'}
+            sub={balance ? `of ${balance.entitlement} for ${balance.year_start.slice(0, 4)}/${balance.year_end.slice(2, 4)}` : undefined} />
+          <Stat label="Waiting for approval" value={balance ? `${balance.annual_pending} days` : '—'} />
+          <Stat label="Sick, last 12 months" value={balance ? `${balance.sick_taken_12m} days` : '—'} />
+          <Stat label="Next public holiday" value={nextHoliday ? formatDateGC(nextHoliday.holiday_date) : '—'} sub={nextHoliday?.name} />
         </div>
       )}
 
       {awaitingMe.length > 0 && (
-        <div className="rounded-xl border border-brand/30 bg-brand/5 dark:bg-brand/10 p-4 space-y-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-            <UserCheck className="h-4 w-4 text-brand" /> Awaiting your decision
+        <div className="rounded-xl border border-brand/30! bg-brand/5 dark:bg-brand/10 shadow-sm">
+          <h2 className="flex items-center gap-2 px-4 pt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <UserCheck className="h-4 w-4 text-brand" /> Waiting for your decision
             <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[10px] font-semibold text-brand">{awaitingMe.length}</span>
           </h2>
           <div className="divide-y dark:divide-slate-700">
-            {awaitingMe.map(r => (
-              <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                    {r.staff?.employee_name ?? 'Staff member'} — {r.leave_type}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {formatDateGC(r.start_date)} → {formatDateGC(r.end_date)}
-                    {r.days != null && ` · ${r.days} day${r.days === 1 ? '' : 's'}`}
-                    {r.reason && ` · ${r.reason}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleDecide(r.id, 'approved')}
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => handleDecide(r.id, 'rejected')}
-                    className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ))}
+            {awaitingMe.map(r => <LeaveCard key={r.id} r={withNames(r)} onDecide={(s, note) => decide(r.id, s, note)} />)}
           </div>
-          <p className="text-[11px] text-slate-400">
-            These reached you because you're the submitter's line manager, or the fallback when their line is incomplete.
-          </p>
+          <p className="px-4 pb-3 text-[11px] text-slate-400">These reached you as their line manager, or as the fallback when their line isn't set.</p>
         </div>
       )}
 
-      {showForm && staff && (
-        <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Leave Type</label>
-              <select className={inputCls} value={form.leave_type} onChange={e => set('leave_type', e.target.value as LeaveType)}>
-                {LEAVE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Days {form.start_date && form.end_date && daysBetween(form.start_date, form.end_date) != null && (
-                  <span className="text-slate-400">({daysBetween(form.start_date, form.end_date)})</span>
-                )}
-              </label>
-              <div className={`${inputCls} bg-slate-50 dark:bg-slate-700/50 text-slate-400 dark:text-slate-500`}>Calculated from dates</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Start Date *</label>
-              <input type="date" className={inputCls} value={form.start_date} onChange={e => set('start_date', e.target.value)} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">End Date *</label>
-              <input type="date" className={inputCls} value={form.end_date} onChange={e => set('end_date', e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Reason</label>
-            <textarea rows={2} className={inputCls} value={form.reason} onChange={e => set('reason', e.target.value)} />
-          </div>
-          <div className="flex justify-end">
-            <button onClick={handleSubmit} disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60">
-              {saving ? 'Submitting…' : 'Submit Request'}
-            </button>
-          </div>
-        </div>
+      {asking && staffId && (
+        <LeaveRequestForm mode="self" staffId={staffId} onSaved={() => setAsking(false)} onCancel={() => setAsking(false)} />
       )}
 
-      <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b dark:border-slate-700">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">My Requests</p>
-        </div>
-        {isLoading ? (
-          <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
-        ) : myRequests.length === 0 ? (
-          <div className="py-10 text-center text-sm text-slate-400">
-            {staff ? 'No leave requests yet' : 'Nothing to show'}
-          </div>
-        ) : (
-          <div className="divide-y dark:divide-slate-700">
-            {myRequests.map(r => (
-              <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 capitalize">{r.leave_type}</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
-                    {formatDateGC(r.start_date)} – {formatDateGC(r.end_date)}{r.days != null ? ` · ${r.days} day${r.days !== 1 ? 's' : ''}` : ''}
-                  </p>
-                  {r.reason && <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 truncate">{r.reason}</p>}
-                  {/* Who it went to, and why. Without this the routing is
-                      invisible and a request that landed on the fallback
-                      looks identical to one that reached your manager. */}
-                  {r.status === 'pending' && r.routing_basis && (
-                    <p className="mt-0.5 text-[11px] text-slate-400">
-                      With {ROUTING_LABEL[r.routing_basis] ?? r.routing_basis} for a decision
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <StatusBadge status={r.status} />
-                  {r.status === 'pending' && (
-                    <button onClick={() => handleCancel(r.id)} className="text-xs text-red-500 hover:underline">Withdraw</button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <Segmented value={tab} onChange={setTab} ariaLabel="View" options={[
+        { value: 'mine', label: 'My requests', icon: ListChecks },
+        { value: 'team', label: "Who's away", icon: CalendarDays },
+      ]} />
 
-      {role === 'admin' || role === 'hr_officer' ? (
-        <p className="text-xs text-slate-400 dark:text-slate-500">
-          Looking for the approval queue? See <Link to="/leave-requests" className="text-brand hover:underline">Leave Requests</Link>.
-        </p>
-      ) : null}
+      {tab === 'mine' ? (
+        <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm divide-y dark:divide-slate-700">
+          {isLoading ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p>
+            : mine.length === 0 ? <p className="py-10 text-center text-sm text-slate-400">{staffId ? 'No leave requests yet' : 'Nothing to show'}</p>
+            : mine.map(r => <LeaveCard key={r.id} r={withNames(r)} showName={false} onWithdraw={() => withdraw(r.id)} />)}
+        </div>
+      ) : (
+        <LeaveCalendar holidays={holidays}
+          leaves={team.map(t => ({ id: t.request_id, staff_id: t.staff_id, name: t.employee_name, start_date: t.start_date, end_date: t.end_date, leave_type: t.leave_type, status: t.status }))} />
+      )}
     </div>
   )
 }

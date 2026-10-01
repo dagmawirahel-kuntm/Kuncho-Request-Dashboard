@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import type { SkillLevelRow } from '@/lib/skills'
 
 export interface Responsibility {
   id: string
@@ -162,6 +163,59 @@ export function useSubmitCompetencyRating() {
       qc.invalidateQueries({ queryKey: ['dept-competency-gaps'] })
       qc.invalidateQueries({ queryKey: ['subcontract-competency-summary'] })
       qc.invalidateQueries({ queryKey: ['candidate-competency-summary'] })
+      qc.invalidateQueries({ queryKey: ['staff-skill-levels'] })
+    },
+  })
+}
+
+// Several scores for one person in one go — the usual way an assessment
+// is done, rather than a save per row.
+export function useSubmitCompetencyRatings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (p: {
+      target: { staff_id?: string | null; subcontract_id?: string | null; candidate_id?: string | null }
+      scores: { responsibility_id: string; score: number; notes?: string | null }[]
+    }) => {
+      const rows = p.scores.map(s => ({
+        responsibility_id: s.responsibility_id,
+        score: s.score,
+        notes: s.notes?.trim() || null,
+        staff_id: p.target.staff_id ?? null,
+        subcontract_id: p.target.subcontract_id ?? null,
+        candidate_id: p.target.candidate_id ?? null,
+      }))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase.from('competency_ratings').insert(rows as any)
+      if (error) throw error
+    },
+    onSuccess: (_, vars) => {
+      const staffId = vars.target.staff_id
+      if (staffId) {
+        qc.invalidateQueries({ queryKey: ['staff-current-scores', staffId] })
+        qc.invalidateQueries({ queryKey: ['staff-competency-summary', staffId] })
+        qc.invalidateQueries({ queryKey: ['staff-competency-history', staffId] })
+      }
+      qc.invalidateQueries({ queryKey: ['staff-skill-levels'] })
+      qc.invalidateQueries({ queryKey: ['dept-competency-gaps'] })
+      qc.invalidateQueries({ queryKey: ['subcontract-competency-summary'] })
+      qc.invalidateQueries({ queryKey: ['candidate-competency-summary'] })
+    },
+  })
+}
+
+// Skill level per role, worked out from current scores (migration 398).
+// Without a staff id: everyone the viewer may see.
+export function useStaffSkillLevels(staffId?: string | null) {
+  return useQuery({
+    queryKey: ['staff-skill-levels', staffId ?? 'all'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      let q = supabase.from('v_staff_skill_level').select('*')
+      if (staffId) q = q.eq('staff_id', staffId)
+      const { data, error } = await q
+      if (error) throw error
+      return (data ?? []) as SkillLevelRow[]
     },
   })
 }
