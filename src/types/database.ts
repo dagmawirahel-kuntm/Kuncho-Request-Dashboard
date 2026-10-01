@@ -460,6 +460,12 @@ export interface Expense {
   fuel_liters: number | null
   /** Odometer at the fill-up (migration 392) — km per litre comes from it. */
   odometer_km?: number | null
+  /** No project on purpose: company overhead (migration 395). */
+  is_overhead?: boolean
+  /** The attached receipt is a VAT invoice (true), a plain receipt (false), or not said (395). */
+  receipt_is_vat?: boolean | null
+  receipt_no?: string | null
+  receipt_vat_amount?: number | null
   approval_status: ExpenseApprovalStatus
   rejection_reason: string | null
   manager_approved_by: string | null
@@ -3146,6 +3152,8 @@ export interface VehicleMaintenanceRequest {
   actual_cost: number | null
   completed_at: string | null
   expense_id: string | null
+  /** The garage that did the work; carried to the expense (395). */
+  vendor_id?: string | null
   created_at: string
 }
 export type VehicleMaintenanceRequestInsert = Omit<VehicleMaintenanceRequest, 'id' | 'approved_by' | 'approved_at' | 'expense_id' | 'created_at'>

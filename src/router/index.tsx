@@ -27,6 +27,8 @@ import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import ExpenseFormPage from '@/pages/expenses/ExpenseFormPage'
 import ExpenseDetailPage from '@/pages/expenses/ExpenseDetailPage'
 import FuelRequestFormPage from '@/pages/expenses/FuelRequestFormPage'
+import ExpenseApprovalQueuePage from '@/pages/expenses/ExpenseApprovalQueuePage'
+import ExpenseFixPage from '@/pages/expenses/ExpenseFixPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import OrderFormPage from '@/pages/orders/OrderFormPage'
 import OrderDetailPage from '@/pages/orders/OrderDetailPage'
@@ -232,6 +234,14 @@ export const router = createBrowserRouter([
           { path: 'expenses', element: <ExpensesPage /> },
           { path: 'expenses/new', element: <ExpenseFormPage /> },
           { path: 'expenses/fuel/new', element: <FuelRequestFormPage /> },
+          {
+            // Finance's queue and record fixer (395); executive sees both.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
+            children: [
+              { path: 'expenses/approvals', element: <ExpenseApprovalQueuePage /> },
+              { path: 'expenses/fix', element: <ExpenseFixPage /> },
+            ],
+          },
           { path: 'expenses/:id', element: <ExpenseDetailPage /> },
           { path: 'expenses/:id/edit', element: <ExpenseFormPage /> },
           { path: 'orders', element: <Navigate to="/purchase-requests" replace /> },

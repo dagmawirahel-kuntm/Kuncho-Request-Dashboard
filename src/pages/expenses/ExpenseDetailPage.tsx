@@ -20,6 +20,8 @@ import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type { Expense } from '@/types/database'
 import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
+import { IssueChips } from '@/components/expenses/ExpenseFields'
+import { ISSUE, type ExpenseIssue } from '@/lib/expenseQuality'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
 
@@ -324,6 +326,17 @@ export default function ExpenseDetailPage() {
         .eq('source_table', 'expenses').eq('source_id', id!).eq('resolved', false)
       if (error) throw error
       return (count ?? 0) > 0
+    },
+    enabled: !!id,
+  })
+  // What's missing on it (395) — the same list the approval queue and the
+  // fixer read.
+  const { data: issues = [] } = useQuery({
+    queryKey: ['expense-issues', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_expense_issues').select('issues').eq('id', id!).maybeSingle()
+      if (error) throw error
+      return ((data as { issues: ExpenseIssue[] } | null)?.issues ?? [])
     },
     enabled: !!id,
   })
@@ -664,7 +677,7 @@ export default function ExpenseDetailPage() {
     setRejectionReason('')
   }
 
-  const projectName = expense.projects?.project_name ?? expense.project_name
+  const projectName = expense.projects?.project_name ?? expense.project_name ?? (expense.is_overhead ? 'Company overhead' : null)
   const vendorName  = expense.vendors?.vendor_name ?? expense.vendors_name
   const vendorBank  = expense.vendors?.bank_account ?? expense.vendors_bank_account
 
@@ -703,6 +716,15 @@ export default function ExpenseDetailPage() {
 
   return (
       <div className="space-y-5">
+
+        {issues.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800/40 dark:bg-amber-900/10">
+            <span className="font-semibold text-amber-800 dark:text-amber-300">Missing:</span>
+            <IssueChips issues={issues} />
+            <span className="text-amber-700 dark:text-amber-400">{ISSUE[issues[0]]?.hint}</span>
+            <Link to={`/expenses/${expense.id}/edit`} className="ml-auto font-medium text-brand hover:underline">Fix it →</Link>
+          </div>
+        )}
 
         {/* Back + actions */}
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1001,6 +1023,7 @@ export default function ExpenseDetailPage() {
               { label: 'Sub-category',       value: expense.sub_categories?.item_name ?? null,                                icon: null },
               { label: 'Quantity / UOM',     value: expense.quantity != null ? `${expense.quantity}${expense.uom ? ' ' + expense.uom : ''}` : null, icon: null },
               { label: 'Purchase Type',      value: expense.purchase_type,                                                    icon: null },
+              { label: 'Receipt',            value: expense.receipt_url ? (expense.receipt_is_vat ? `VAT invoice${expense.receipt_no ? ' ' + expense.receipt_no : ''}${expense.receipt_vat_amount != null ? ' · VAT ' + formatCurrency(expense.receipt_vat_amount) : ''}` : expense.receipt_is_vat === false ? 'Plain receipt (no VAT)' : 'Attached') : expense.receipt_available === 'No' ? 'None given' : null, icon: null },
               { label: 'Notes',              value: expense.notes,                                                            icon: null },
               { label: 'Bank Reference',     value: expense.bank_ref,                                                         icon: null },
               { label: 'WHT',                value: expense.verify_wht ? `Required${expense.wht_handling_method ? ' — ' + expense.wht_handling_method : ''}` : null, icon: null },

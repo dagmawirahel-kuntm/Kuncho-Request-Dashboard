@@ -88,6 +88,9 @@ export const navGroups: NavGroup[] = [
     to: '/requests',
     items: [
       { label: 'Approvals', to: '/expenses', icon: Receipt },
+      // Finance's queue, oldest first, and the record fixer (395).
+      { label: 'Approval Queue', to: '/expenses/approvals', icon: Clock, roles: ['admin', 'executive', 'finance'] },
+      { label: 'Fix Expense Records', to: '/expenses/fix', icon: Wrench, roles: ['admin', 'executive', 'finance'] },
       { label: 'Purchase Requests', to: '/purchase-requests', icon: ShoppingCart },
       { label: 'Transport Jobs', to: '/transportation', icon: Truck },
       { label: 'Purchase Allocation', to: '/purchase-allocation', icon: Layers },

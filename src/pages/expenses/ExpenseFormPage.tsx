@@ -9,26 +9,28 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement, SourcingBundleDiscountKind } from '@/types/database'
-import { useVendors, useProjects, useCategories, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties, locationPickerOptions } from '@/hooks/useLookups'
+import { useVendors, useCategories, useStaffDirectory, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { poTax } from '@/lib/poTax'
-import { FileUpload } from '@/components/shared/FileUpload'
 import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
+import { ProjectOrOverheadSelect, ReceiptFields } from '@/components/expenses/ExpenseFields'
+import { expenseFormProblems, findPossibleDuplicates, fromProjectChoice, projectChoice } from '@/lib/expenseQuality'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
-function Field({ label, locked, children }: { label: string; locked?: boolean; children: React.ReactNode }) {
+function Field({ label, locked, error, children }: { label: string; locked?: boolean; error?: string; children: React.ReactNode }) {
   const required = label.endsWith('*')
   return (
-    <div>
+    <div className={error ? '[&_input]:border-red-400 [&_textarea]:border-red-400' : undefined}>
       <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">
         {required ? label.slice(0, -1).trim() : label}
         {required && <span className="text-brand"> *</span>}
         {locked && <span title="Finance only" className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-normal text-slate-400"><Lock className="h-2.5 w-2.5" /> Finance only</span>}
       </label>
       {children}
+      {error && <p className="mt-1 text-[11px] font-medium text-red-600">{error}</p>}
     </div>
   )
 }
@@ -213,7 +215,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const { toast } = useToast()
     const qc = useQueryClient()
     const { data: vendors = [] } = useVendors()
-    const { data: projects = [] } = useProjects()
+    const { data: staffDirectory = [] } = useStaffDirectory()
     const { data: categories = [] } = useCategories()
     const { data: subCategories = [] } = useSubCategories()
     const { data: accounts = [] } = useAccounts()
@@ -223,8 +225,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     const { data: userProfiles = [] } = useUserProfiles()
     const { data: subcontractorEngagements = [] } = useSubcontractorEngagements()
     const { data: properties = [] } = useProperties()
-
-    const financeLocked = !canEditFinanceFields(role)
 
     const { data: linkedOrders = [] } = useQuery({
       queryKey: ['expense-linked-orders', id],
@@ -318,12 +318,9 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       },
       enabled: isEdit,
     })
-    const isCuratedGateway = isEdit && ((!!record && record.expense_type !== 'general') || !!linkedTransportJob)
-    const [showAllFields, setShowAllFields] = useState(false)
-    const showFullFieldSet = !isCuratedGateway || showAllFields
 
     const vendorOptions = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
-    const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
+    const staffOptions = useMemo(() => (staffDirectory as { id: string; employee_name: string; role: string | null }[]).map(s => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staffDirectory])
     const categoryOptions = useMemo(() => categories.map((c: any) => ({ id: c.id, label: c.category_name })), [categories])
     const engagementOptions = useMemo(() => subcontractorEngagements.map((e: any) => ({
       id: e.id,
@@ -388,6 +385,12 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         fuel_liters: record.fuel_liters ?? undefined,
         subcontractor_engagement_id: record.subcontractor_engagement_id,
         property_id: record.property_id,
+        paid_to_staff_id: record.paid_to_staff_id,
+        wht_amount: record.wht_amount,
+        is_overhead: record.is_overhead ?? false,
+        receipt_is_vat: record.receipt_is_vat ?? null,
+        receipt_no: record.receipt_no ?? null,
+        receipt_vat_amount: record.receipt_vat_amount ?? null,
       }
       : {
     payment_status: false,
@@ -509,6 +512,39 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
 
     function set(key: keyof ExpenseInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
 
+    // Checked on save; shown under the fields once a save was tried.
+    const [showErrors, setShowErrors] = useState(false)
+    const problems = expenseFormProblems(form, !isEdit)
+    const [dupes, setDupes] = useState<Awaited<ReturnType<typeof findPossibleDuplicates>>>([])
+
+    // Who is paid: a vendor, a staff member, or a typed name.
+    type PayeeMode = 'vendor' | 'staff' | 'other'
+    const [payeeMode, setPayeeMode] = useState<PayeeMode>(
+      form.vendor_id ? 'vendor' : form.paid_to_staff_id ? 'staff' : form.vendors_name ? 'other' : 'vendor')
+    function choosePayee(mode: PayeeMode, vendorId?: string) {
+      setPayeeMode(mode)
+      if (mode === 'vendor') {
+        setForm(f => ({ ...f, paid_to_staff_id: null, vendors_name: f.vendor_id ? f.vendors_name : null }))
+        if (vendorId) handleVendorChange(vendorId)
+      } else if (mode === 'staff') {
+        setForm(f => ({ ...f, vendor_id: null, vendors_name: null }))
+      } else {
+        setForm(f => ({ ...f, vendor_id: null, paid_to_staff_id: null }))
+      }
+    }
+    // A typed name that is already a vendor: offer the vendor instead.
+    const typedNameMatch = useMemo(() => {
+      const n = (form.vendors_name ?? '').trim().toLowerCase()
+      if (payeeMode !== 'other' || n.length < 3) return null
+      return (vendors as { id: string; vendor_name: string }[]).find(v => v.vendor_name.toLowerCase() === n)
+        ?? (vendors as { id: string; vendor_name: string }[]).find(v => v.vendor_name.toLowerCase().startsWith(n)) ?? null
+    }, [form.vendors_name, payeeMode, vendors])
+
+    // Rarely used fields fold away; open when one already holds a value.
+    const [showMore, setShowMore] = useState(false)
+    const moreOpen = showMore || !!(form.quantity || form.uom || form.purchase_type || form.description_of_item || form.sub_category_id
+      || form.location_id || form.vendors_location || form.delivery_notes || (form.delivery_status as string[] | undefined)?.length || form.completion_percentage)
+
   function handleVendorChange(id: string | null) {
     set('vendor_id', id)
     if (id) {
@@ -564,14 +600,30 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const effectiveCategoryId = form.category_id ?? defaultCategoryId ?? null
   const categoryIsDefaulted = !form.category_id && !!defaultCategoryId
 
-  async function handleSave() {
-    setError(''); setSaving(true)
+  async function handleSave(duplicateConfirmed = false) {
+    setError('')
+    const firstProblem = Object.values(problems)[0]
+    if (firstProblem) { setShowErrors(true); setError(firstProblem); return }
+    // Same payee, same amount, within 3 days: ask before recording it twice.
+    if (!duplicateConfirmed && (!isEdit || form.amount_etb !== record?.amount_etb)) {
+      const found = await findPossibleDuplicates({ ...form, id })
+      if (found.length) { setDupes(found); return }
+    }
+    setDupes([])
+    setSaving(true)
     let expenseId = id
     // Persist the ledger the form is actually showing. The database
     // trigger would fill the same value anyway (migration 154), but
     // saving it explicitly keeps what was on screen and what lands in
     // the row identical, rather than depending on the two agreeing.
-    const payload = { ...form, category_id: effectiveCategoryId }
+    const payload = {
+      ...form,
+      category_id: effectiveCategoryId,
+      // Only the chosen kind of payee is kept.
+      ...(payeeMode === 'vendor' ? { paid_to_staff_id: null } : payeeMode === 'staff' ? { vendor_id: null, vendors_name: null } : { vendor_id: null, paid_to_staff_id: null }),
+      receipt_available: form.receipt_url ? 'Yes' : form.receipt_available ?? null,
+      receipt_is_vat: form.receipt_url ? form.receipt_is_vat ?? null : null,
+    }
     if (isEdit) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: err } = await supabase.from('expenses').update(payload as any).eq('id', id!)
@@ -629,7 +681,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || record?.purchaser_user_id === user?.id)
 
   return (
-    <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo={returnTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={handleSave}>
+    <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo={returnTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={() => handleSave()}>
 
       {isEdit && (
         <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
@@ -748,20 +800,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </div>
       )}
 
-      {/* Curated gateways (Fuel/Transport/every typed auto-created expense)
-          hide the fields that never apply to them; finance can still reach
-          everything if a genuine edge case needs it */}
-      {isCuratedGateway && (
-        <button
-          type="button"
-          onClick={() => setShowAllFields(v => !v)}
-          className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-        >
-          {showAllFields ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          {showAllFields ? 'Hide fields not used by this request type' : 'Show all fields'}
-        </button>
-      )}
-
       {/* Linked VRF banner */}
       {!isEdit && linkedVrf && (
         <div className="flex items-start gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700/40 px-4 py-3">
@@ -823,19 +861,19 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </div>
       )}
 
-      <SectionHeader title="Basic Info" />
-      <Field label="Description">
-        <textarea rows={2} className={inputCls} value={form.item_service_description ?? ''} onChange={e => set('item_service_description', e.target.value)} />
+      <SectionHeader title="What and how much" />
+      <Field label="What was it for? *" error={showErrors ? problems.description : undefined}>
+        <textarea rows={2} className={inputCls} value={form.item_service_description ?? ''} onChange={e => set('item_service_description', e.target.value)} placeholder="e.g. 20 bags of cement for the Bole site" />
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Total Amount (ETB, incl VAT + WHT)">
+        <Field label="Total paid (ETB, VAT included) *" error={showErrors ? problems.amount : undefined}>
           <FormattedNumberInput className={inputCls} value={form.amount_etb ?? null} onChange={n => set('amount_etb', n ?? null)} />
         </Field>
-        <Field label="Date">
+        <Field label="Date *" error={showErrors ? problems.date : undefined}>
           <input type="date" className={inputCls} value={form.date ?? ''} onChange={e => set('date', e.target.value)} />
         </Field>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {canEditFinanceFields(role) ? (
         <Field label="Expense Type">
           <select className={inputCls} value={form.expense_type ?? 'general'} onChange={e => set('expense_type', e.target.value)}>
             <option value="general">General</option>
@@ -846,67 +884,51 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
             <option value="subcontract">Subcontract</option>
             <option value="maintenance">Vehicle Maintenance / Penalty</option>
             <option value="property_rent">Property Rent</option>
+            <option value="labor_payment">Labour payment</option>
+            <option value="transportation">Transportation</option>
           </select>
         </Field>
-        {showFullFieldSet && (
-          <Field label="Purchase Type">
-            <select className={inputCls} value={form.purchase_type ?? ''} onChange={e => set('purchase_type', e.target.value)}>
-              <option value="">— Select —</option>
-              <option>Goods</option><option>Services</option><option>Labor</option>
-            </select>
-          </Field>
-        )}
+      ) : form.expense_type && form.expense_type !== 'general' && (
+        <p className="text-xs text-slate-500">Type: {EXPENSE_TYPE_LABEL[form.expense_type] ?? form.expense_type}</p>
+      )}
+
+      <SectionHeader title="Who is paid" />
+      <div className="flex flex-wrap gap-2">
+        {([['vendor', 'A vendor'], ['staff', 'A staff member'], ['other', 'Someone else']] as const).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => choosePayee(k)}
+            className={`rounded-md border px-3 py-1.5 text-xs font-medium ${payeeMode === k ? 'border-brand bg-brand/10 text-brand' : 'text-slate-600 dark:text-slate-300 dark:border-slate-600'}`}>
+            {label}
+          </button>
+        ))}
       </div>
-      <div className={showFullFieldSet ? 'grid grid-cols-1 sm:grid-cols-3 gap-3' : ''}>
-        {showFullFieldSet && (
-          <>
-            <Field label="Quantity">
-              <input type="number" step="0.01" className={inputCls} value={form.quantity ?? ''} onChange={e => set('quantity', e.target.value ? parseFloat(e.target.value) : null)} />
-            </Field>
-            <Field label="UOM">
-              <select className={inputCls} value={form.uom ?? ''} onChange={e => set('uom', e.target.value)}>
-                <option value="">— Select —</option>
-                {UOM_OPTIONS.map(u => <option key={u}>{u}</option>)}
-              </select>
-            </Field>
-          </>
-        )}
-        <Field label="Receipt Available">
-          <select className={inputCls} value={form.receipt_available ?? ''} onChange={e => set('receipt_available', e.target.value)}>
-            <option value="">— Select —</option>
-            <option>Yes</option><option>No</option><option>Pending</option>
-          </select>
+      {payeeMode === 'vendor' && (
+        <Field label="Vendor *" error={showErrors ? problems.payee : undefined}>
+          <SearchableSelect value={form.vendor_id ?? null} onChange={handleVendorChange} options={vendorOptions} placeholder="Search vendors…" />
+          <p className="mt-1 text-[11px] text-slate-400">Not in the list? Procurement adds vendors under Supply Chain → Vendors; meanwhile use "Someone else".</p>
         </Field>
-      </div>
-      {showFullFieldSet && !!form.quantity && form.amount_etb != null && (
-        <p className="text-xs text-slate-400">Unit price: {formatCurrency(form.amount_etb / form.quantity)}</p>
       )}
-      <Field label="Notes">
-        <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
-      </Field>
-
-      {showFullFieldSet && (
-        <>
-          <SectionHeader title="Vendor" subtitle={isCuratedGateway ? 'Already captured by the request gateway — shown because "Show all fields" is on' : undefined} />
-          <Field label="Vendor">
-            <SearchableSelect value={form.vendor_id ?? null} onChange={handleVendorChange} options={vendorOptions} placeholder="Select vendor…" />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Vendor Name (override)">
-              <input type="text" className={inputCls} value={form.vendors_name ?? ''} onChange={e => set('vendors_name', e.target.value)} />
-            </Field>
-            <Field label="Vendor Bank Account">
-              <input type="text" className={inputCls} value={form.vendors_bank_account ?? ''} onChange={e => set('vendors_bank_account', e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Vendor Location">
-            <input type="text" className={inputCls} value={form.vendors_location ?? ''} onChange={e => set('vendors_location', e.target.value)} />
-          </Field>
-        </>
+      {payeeMode === 'staff' && (
+        <Field label="Staff member *" error={showErrors ? problems.payee : undefined}>
+          <SearchableSelect value={form.paid_to_staff_id ?? null} onChange={id => set('paid_to_staff_id', id)} options={staffOptions} placeholder="Search staff…" />
+        </Field>
+      )}
+      {payeeMode === 'other' && (
+        <Field label="Name *" error={showErrors ? problems.payee : undefined}>
+          <input type="text" className={inputCls} value={form.vendors_name ?? ''} onChange={e => set('vendors_name', e.target.value)} placeholder="e.g. the driver's or shop's name" />
+          {typedNameMatch && (
+            <button type="button" onClick={() => choosePayee('vendor', typedNameMatch.id)} className="mt-1 text-[11px] font-medium text-brand hover:underline">
+              Is it {typedNameMatch.vendor_name}? Use the vendor →
+            </button>
+          )}
+          <p className="mt-1 text-[11px] text-slate-400">A typed name doesn't show on any vendor's statement. If they're paid again, ask for them to be added as a vendor.</p>
+        </Field>
       )}
 
-      <SectionHeader title="Classification" />
+      <SectionHeader title="Where it goes" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label={`Project${(form.expense_type ?? 'general') === 'general' ? ' *' : ''}`} error={showErrors ? problems.project : undefined}>
+          <ProjectOrOverheadSelect value={projectChoice(form.project_id, form.is_overhead)} onChange={v => setForm(f => ({ ...f, ...fromProjectChoice(v) }))} />
+        </Field>
         <Field label="General Ledger">
           <SearchableSelect value={effectiveCategoryId} onChange={id => set('category_id', id)} options={categoryOptions} placeholder="Select general ledger…" />
           {categoryIsDefaulted && (
@@ -916,173 +938,217 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           )}
           {!effectiveCategoryId && (
             <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-              Without a general ledger this expense can't post to the ledger when it's paid.
+              {canEditFinanceFields(role) ? 'Finance can\'t approve it until a ledger is picked.' : 'Pick one if you know it — otherwise finance will.'}
             </p>
           )}
         </Field>
-        <Field label="Project">
-          <SearchableSelect value={form.project_id ?? null} onChange={id => set('project_id', id)} options={projectOptions} placeholder="Select project…" />
-        </Field>
       </div>
-      <Field label="Subcontractor Engagement (optional)">
-        <SearchableSelect value={form.subcontractor_engagement_id ?? null} onChange={id => set('subcontractor_engagement_id', id)} options={engagementOptions} placeholder="Only if this is a subcontract payment…" />
-        {form.subcontractor_engagement_id && (
-          <p className="mt-1 text-[11px] text-slate-400">
-            Requires at least one completion certificate on the engagement — admin can override if needed, but the save will be blocked otherwise.
-          </p>
-        )}
-      </Field>
-      {showFullFieldSet && (
-        <Field label="Description of Item">
-          <textarea rows={2} className={inputCls} value={form.description_of_item ?? ''} onChange={e => set('description_of_item', e.target.value)} />
+      {(form.expense_type === 'subcontract' || !!form.subcontractor_engagement_id) && (
+        <Field label="Subcontractor Engagement">
+          <SearchableSelect value={form.subcontractor_engagement_id ?? null} onChange={id => set('subcontractor_engagement_id', id)} options={engagementOptions} placeholder="Which engagement is this certificate for?" />
+          {form.subcontractor_engagement_id && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              Requires at least one completion certificate on the engagement — admin can override if needed, but the save will be blocked otherwise.
+            </p>
+          )}
+        </Field>
+      )}
+      {form.expense_type === 'property_rent' && (
+        <Field label="Property">
+          <SearchableSelect value={form.property_id ?? null} onChange={id => set('property_id', id)} options={propertyOptions} placeholder="Select property…" />
         </Field>
       )}
 
-      <SectionHeader title="Payment & Status" />
-      <Field label="Bank Reference" locked={financeLocked}>
-        <input disabled={financeLocked} type="text" className={inputCls} value={form.bank_ref ?? ''} onChange={e => set('bank_ref', e.target.value)} />
-      </Field>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Paid Date" locked={financeLocked}>
-          <input disabled={financeLocked} type="date" className={inputCls} value={form.paid_date ?? ''} onChange={e => set('paid_date', e.target.value)} />
-        </Field>
-        <Field label="Total Payment Date" locked={financeLocked}>
-          <input disabled={financeLocked} type="date" className={inputCls} value={form.total_payment_date ?? ''} onChange={e => set('total_payment_date', e.target.value)} />
-        </Field>
-      </div>
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        {isEdit ? (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">Payment:</span>
-            <StatusBadge status={record?.payment_state ?? 'unpaid'} />
-            {canEditFinanceFields(role) && (
-              <Link to="/finance/payments" className="text-xs text-brand hover:underline">Manage in Payments →</Link>
-            )}
-          </div>
-        ) : (
-          <span className="text-xs text-slate-400">New expenses start Unpaid — approve &amp; pay from the Payments dashboard.</span>
-        )}
-        <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
-          <input disabled={financeLocked} type="checkbox" checked={!!form.partially_paid} onChange={e => set('partially_paid', e.target.checked)} />
-          Partially Paid {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
-        </label>
-      </div>
-      {!!form.partially_paid && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Partial Paid Amount" locked={financeLocked}>
-              <FormattedNumberInput disabled={financeLocked} className={inputCls} value={form.partial_paid_amount ?? null} onChange={n => set('partial_paid_amount', n ?? null)} />
-            </Field>
-            <Field label="Partial Payment Date" locked={financeLocked}>
-              <input disabled={financeLocked} type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Partial Payment Notes" locked={financeLocked}>
-            <input disabled={financeLocked} type="text" className={inputCls} value={form.partial_payment_notes ?? ''} onChange={e => set('partial_payment_notes', e.target.value)} />
-          </Field>
-        </>
-      )}
-      {showFullFieldSet && (
-        <Field label="Completion %">
-          <input type="number" step="1" min="0" max="100" className={inputCls} value={form.completion_percentage ?? ''} onChange={e => set('completion_percentage', e.target.value ? parseFloat(e.target.value) : null)} />
-        </Field>
-      )}
-
-      <SectionHeader title="Receipt Attachment" />
-      <FileUpload
-        bucket="documents"
-        folder="expense-receipts"
-        fileUrl={form.receipt_url ?? null}
-        fileName={form.receipt_name ?? null}
-        onUpload={(url, name) => { set('receipt_url', url); set('receipt_name', name) }}
-        onClear={() => { set('receipt_url', null); set('receipt_name', null) }}
-        accept="image/*,application/pdf"
-        label="Upload Receipt"
+      <SectionHeader title="Receipt" subtitle="A photo is enough. A VAT invoice lets the VAT be claimed back." />
+      <ReceiptFields
+        value={{
+          receipt_url: form.receipt_url ?? null, receipt_name: form.receipt_name ?? null,
+          receipt_is_vat: form.receipt_is_vat ?? null, receipt_no: form.receipt_no ?? null, receipt_vat_amount: form.receipt_vat_amount ?? null,
+        }}
+        onChange={patch => setForm(f => ({ ...f, ...patch }))}
+        total={form.amount_etb ?? null}
       />
+      {showErrors && problems.receipt_vat && <p className="text-xs text-red-600">{problems.receipt_vat}</p>}
+      {!form.receipt_url && (
+        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <input type="checkbox" checked={form.receipt_available === 'No'} onChange={e => set('receipt_available', e.target.checked ? 'No' : null)} />
+          The payee gave no receipt
+        </label>
+      )}
+      <Field label="Notes">
+        <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
+      </Field>
 
-      {showFullFieldSet && (
+      {canEditFinanceFields(role) ? (
         <>
-          <SectionHeader title="Delivery" subtitle={isCuratedGateway ? 'Doesn\'t apply here, shown because "Show all fields" is on' : undefined} />
-          <Field label="Delivery Status">
-            <select
-              className={inputCls}
-              value={deliveryStatuses[0] ?? ''}
-              onChange={e => set('delivery_status', e.target.value ? [e.target.value] : [])}
-            >
-              <option value="">— Select —</option>
-              {DELIVERY_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+          <SectionHeader title="Payment & tax" subtitle="Finance only" />
+          <Field label="Bank Reference">
+            <input type="text" className={inputCls} value={form.bank_ref ?? ''} onChange={e => set('bank_ref', e.target.value)} />
           </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Paid Date">
+              <input type="date" className={inputCls} value={form.paid_date ?? ''} onChange={e => set('paid_date', e.target.value)} />
+            </Field>
+            <Field label="Total Payment Date">
+              <input type="date" className={inputCls} value={form.total_payment_date ?? ''} onChange={e => set('total_payment_date', e.target.value)} />
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            {isEdit ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Payment:</span>
+                <StatusBadge status={record?.payment_state ?? 'unpaid'} />
+                <Link to="/finance/payments" className="text-xs text-brand hover:underline">Manage in Payments →</Link>
+              </div>
+            ) : (
+              <span className="text-xs text-slate-400">New expenses start Unpaid — approve &amp; pay from the Payments dashboard.</span>
+            )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!form.partially_paid} onChange={e => set('partially_paid', e.target.checked)} />
+              Partially Paid
+            </label>
+          </div>
+          {!!form.partially_paid && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Partial Paid Amount">
+                  <FormattedNumberInput className={inputCls} value={form.partial_paid_amount ?? null} onChange={n => set('partial_paid_amount', n ?? null)} />
+                </Field>
+                <Field label="Partial Payment Date">
+                  <input type="date" className={inputCls} value={form.partial_payment_date ?? ''} onChange={e => set('partial_payment_date', e.target.value)} />
+                </Field>
+              </div>
+              <Field label="Partial Payment Notes">
+                <input type="text" className={inputCls} value={form.partial_payment_notes ?? ''} onChange={e => set('partial_payment_notes', e.target.value)} />
+              </Field>
+            </>
+          )}
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={!!form.verify_wht} onChange={e => set('verify_wht', e.target.checked)} />
+            Verify WHT
+          </label>
+          {/* The amount above is the total (incl VAT + WHT). The WHT levied is
+              withheld from it; net is what actually leaves to the payee. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="WHT Handling Method">
+              <select className={inputCls} value={form.wht_handling_method ?? ''} onChange={e => set('wht_handling_method', e.target.value)}>
+                <option value="">— Select —</option>
+                {WHT_HANDLING_OPTIONS.map(o => <option key={o}>{o}</option>)}
+                {form.wht_handling_method && !WHT_HANDLING_OPTIONS.includes(form.wht_handling_method) && (
+                  <option value={form.wht_handling_method}>{form.wht_handling_method} (as entered)</option>
+                )}
+              </select>
+            </Field>
+            <Field label="WHT Amount (levied)">
+              <FormattedNumberInput className={inputCls} value={form.wht_amount ?? null} onChange={n => set('wht_amount', n ?? null)} />
+            </Field>
+            <div>
+              <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">Net Payable</label>
+              <div className="rounded-md border bg-slate-50 dark:bg-slate-900/40 dark:border-slate-600 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                {form.amount_etb != null ? formatCurrency(Number(form.amount_etb) - Number(form.wht_amount ?? 0)) : '—'}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Account">
+              <SearchableSelect value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
+            </Field>
+            <Field label="Transfer">
+              <SearchableSelect value={form.transfer_id ?? null} onChange={id => set('transfer_id', id)} options={transferOptions} placeholder="Select transfer…" />
+            </Field>
+            <Field label="Paid from VRF (returned money)">
+              <SearchableSelect value={form.vrf_id ?? null} onChange={id => set('vrf_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Not paid from a VRF" />
+            </Field>
+            {/* Was a "Tax Month" picker over tax_summary, which is empty and
+                retired. The period for VAT and WHT follows from the date. */}
+            <Field label="Tax period">
+              <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{taxPeriodOf(form.date) ?? 'Set a date'}</p>
+            </Field>
+          </div>
+        </>
+      ) : isEdit && (
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span>Payment:</span>
+          <StatusBadge status={record?.payment_state ?? 'unpaid'} />
+          <span className="text-slate-400">Finance approves and pays it.</span>
+        </div>
+      )}
+
+      <button type="button" onClick={() => setShowMore(v => !v)}
+        className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+        {moreOpen ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        {moreOpen ? 'Hide more details' : 'More details (quantity, delivery, location…)'}
+      </button>
+      {moreOpen && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="Purchase Type">
+              <select className={inputCls} value={form.purchase_type ?? ''} onChange={e => set('purchase_type', e.target.value)}>
+                <option value="">— Select —</option>
+                <option>Goods</option><option>Services</option><option>Labor</option>
+              </select>
+            </Field>
+            <Field label="Quantity">
+              <input type="number" step="0.01" className={inputCls} value={form.quantity ?? ''} onChange={e => set('quantity', e.target.value ? parseFloat(e.target.value) : null)} />
+            </Field>
+            <Field label="UOM">
+              <select className={inputCls} value={form.uom ?? ''} onChange={e => set('uom', e.target.value)}>
+                <option value="">— Select —</option>
+                {UOM_OPTIONS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </Field>
+          </div>
+          {!!form.quantity && form.amount_etb != null && (
+            <p className="text-xs text-slate-400">Unit price: {formatCurrency(form.amount_etb / form.quantity)}</p>
+          )}
+          <Field label="Description of Item">
+            <textarea rows={2} className={inputCls} value={form.description_of_item ?? ''} onChange={e => set('description_of_item', e.target.value)} />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Sub Ledger">
+              <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub ledger…" />
+            </Field>
+            <Field label="Location">
+              <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
+            </Field>
+            <Field label="Payee Bank Account">
+              <input type="text" className={inputCls} value={form.vendors_bank_account ?? ''} onChange={e => set('vendors_bank_account', e.target.value)} />
+            </Field>
+            <Field label="Vendor Location">
+              <input type="text" className={inputCls} value={form.vendors_location ?? ''} onChange={e => set('vendors_location', e.target.value)} />
+            </Field>
+            <Field label="Delivery Status">
+              <select className={inputCls} value={deliveryStatuses[0] ?? ''} onChange={e => set('delivery_status', e.target.value ? [e.target.value] : [])}>
+                <option value="">— Select —</option>
+                {DELIVERY_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="Completion %">
+              <input type="number" step="1" min="0" max="100" className={inputCls} value={form.completion_percentage ?? ''} onChange={e => set('completion_percentage', e.target.value ? parseFloat(e.target.value) : null)} />
+            </Field>
+          </div>
           <Field label="Delivery Notes">
             <textarea rows={2} className={inputCls} value={form.delivery_notes ?? ''} onChange={e => set('delivery_notes', e.target.value)} />
           </Field>
         </>
       )}
 
-      <SectionHeader title="WHT" />
-      <div className="flex items-center gap-4 text-sm">
-        <label className={`flex items-center gap-2 ${financeLocked ? 'opacity-50' : 'cursor-pointer'}`}>
-          <input disabled={financeLocked} type="checkbox" checked={!!form.verify_wht} onChange={e => set('verify_wht', e.target.checked)} />
-          Verify WHT {financeLocked && <Lock className="h-3 w-3 text-slate-400" />}
-        </label>
-      </div>
-      <Field label="WHT Handling Method" locked={financeLocked}>
-        <select disabled={financeLocked} className={inputCls} value={form.wht_handling_method ?? ''} onChange={e => set('wht_handling_method', e.target.value)}>
-          <option value="">— Select —</option>
-          {WHT_HANDLING_OPTIONS.map(o => <option key={o}>{o}</option>)}
-          {form.wht_handling_method && !WHT_HANDLING_OPTIONS.includes(form.wht_handling_method) && (
-            <option value={form.wht_handling_method}>{form.wht_handling_method} (as entered)</option>
-          )}
-        </select>
-      </Field>
-      {/* The amount above is the total (incl VAT + WHT). The WHT levied is
-          withheld from it; net is what actually leaves to the payee. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="WHT Amount (levied)" locked={financeLocked}>
-          <FormattedNumberInput disabled={financeLocked} className={inputCls} value={form.wht_amount ?? null} onChange={n => set('wht_amount', n ?? null)} />
-        </Field>
-        <div>
-          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">Net Payable</label>
-          <div className="rounded-md border bg-slate-50 dark:bg-slate-900/40 dark:border-slate-600 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
-            {form.amount_etb != null ? formatCurrency(Number(form.amount_etb) - Number(form.wht_amount ?? 0)) : '—'}
+      {dupes.length > 0 && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm dark:border-violet-800/40 dark:bg-violet-900/20">
+          <p className="font-semibold text-violet-800 dark:text-violet-300">This looks like it may already be recorded</p>
+          <ul className="mt-1 space-y-0.5 text-xs text-violet-700 dark:text-violet-300">
+            {dupes.map(d => (
+              <li key={d.id}>
+                <Link to={`/expenses/${d.id}`} target="_blank" className="font-mono font-semibold hover:underline">{d.expense_code ?? 'Expense'}</Link>
+                {' '}· {formatDate(d.date)} · {formatCurrency(d.amount_etb)} · {d.item_service_description ?? ''}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={() => handleSave(true)} className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">It's a different payment — save</button>
+            <button type="button" onClick={() => setDupes([])} className="rounded-md border px-3 py-1.5 text-xs">Go back</button>
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">Total {form.amount_etb != null ? formatCurrency(Number(form.amount_etb)) : '—'} − WHT = amount that leaves to the payee.</p>
         </div>
-      </div>
-
-      <SectionHeader title="Linked Records" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Sub Ledger">
-          <SearchableSelect value={form.sub_category_id ?? null} onChange={id => set('sub_category_id', id)} options={subCategoryOptions} placeholder="Select sub ledger…" />
-        </Field>
-        <Field label="Account" locked={financeLocked}>
-          <SearchableSelect disabled={financeLocked} value={form.account_id ?? null} onChange={id => set('account_id', id)} options={accountOptions} placeholder="Select account…" />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {showFullFieldSet && (
-          <Field label="Paid from VRF (returned money)">
-            <SearchableSelect value={form.vrf_id ?? null} onChange={id => set('vrf_id', id)} options={vendorReceiptFacilitationOptions} placeholder="Not paid from a VRF" />
-          </Field>
-        )}
-        <Field label="Transfer" locked={financeLocked}>
-          <SearchableSelect disabled={financeLocked} value={form.transfer_id ?? null} onChange={id => set('transfer_id', id)} options={transferOptions} placeholder="Select transfer…" />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Was a "Tax Month" picker over tax_summary, which is empty and
-            retired. The period for VAT and WHT follows from the date. */}
-        <Field label="Tax period">
-          <p className="py-2 text-sm text-slate-600 dark:text-slate-300">{taxPeriodOf(form.date) ?? 'Set a date'}</p>
-        </Field>
-        <Field label="Location">
-          <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
-        </Field>
-      </div>
-      {form.expense_type === 'property_rent' && (
-        <Field label="Property">
-          <SearchableSelect value={form.property_id ?? null} onChange={id => set('property_id', id)} options={propertyOptions} placeholder="Select property…" />
-        </Field>
       )}
 
       {isEdit && (linkedOrders.length > 0 || linkedBatchPayments.length > 0 || linkedCashAdvances.length > 0) && (

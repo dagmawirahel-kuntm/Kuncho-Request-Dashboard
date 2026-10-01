@@ -64,6 +64,8 @@ export default function VehicleMaintenancePage() {
       expense_type: 'maintenance',
       category_id: category?.id ?? null,
       vehicle_id: row.vehicle_id,
+      vendor_id: row.vendor_id ?? null,
+      is_overhead: true,
       purchaser_user_id: user?.id ?? null,
       approval_status: 'pending',
       requested: true,
