@@ -1100,7 +1100,14 @@ export default function StaffDetailPage() {
               jobDescriptionId={(staff as any).job_description_id ?? null}
               showSummary
               editHref={canEdit ? `/staff/${staff.id}/edit` : undefined}
+              canAssignJd={canEdit}
+              person={staff}
             />
+          )}
+          {activeTab === 'competency' && (
+            <Link to={`/staff/${staff.id}/ffe-skills`} className="inline-block text-xs text-brand hover:underline">
+              Rate other trades this person can do, and see score history →
+            </Link>
           )}
           {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
           {activeTab === 'tax'        && canSeeTaxCost && <StaffTaxCostSection staffId={staff.id} />}

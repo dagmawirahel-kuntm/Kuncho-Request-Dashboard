@@ -2595,7 +2595,7 @@ export interface Opportunity {
 export type OpportunityInsert = Omit<Opportunity, 'id' | 'created_at' | 'updated_at' | 'stage_changed_at'>
 
 // ── HR & People ───────────────────────────────────────────────────
-export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'maternity' | 'compassionate' | 'other'
+export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'maternity' | 'paternity' | 'marriage' | 'compassionate' | 'other'
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 export interface LeaveRequest {
   id: string
@@ -2613,6 +2613,11 @@ export interface LeaveRequest {
   // silently re-route history every time someone's manager changed.
   assigned_approver_id: string | null
   routing_basis: LeaveRoutingBasis | null
+  // Migration 399.
+  cover_staff_id: string | null
+  handover_note: string | null
+  certificate_received: boolean
+  decision_note: string | null
   created_at: string
 }
 
