@@ -8,18 +8,27 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Pill } from '@/components/record/Record'
 import type { WorkOrder } from '@/types/database'
 import { STALE_DAYS, WO_STATUS, daysSince, useMyJobIds, type WorkOrderBoardRow } from '@/lib/workOrders'
+import { BLOCKER_KIND, BlockedIcon, blockerEffect, dayWord, daysBetween, type BlockerKind } from '@/lib/workOrderBlockers'
 import { AlertTriangle, CalendarClock, Hammer, Plus, Search, Wrench, HardHat, CheckCircle2 } from 'lucide-react'
 
 type Row = WorkOrder & { projects: { project_name: string } | null }
-type Tab = 'mine' | 'attention' | 'in_progress' | 'requested' | 'completed' | 'cancelled'
+type Tab = 'mine' | 'attention' | 'blocked' | 'in_progress' | 'requested' | 'completed' | 'cancelled'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-// What needs a manager now: an open order that is late, or that nobody has
-// updated for a few days.
+// What needs a manager now: an open order that is stopped by a blocker,
+// late (against its due date pushed by the days it was blocked, 397), or
+// that nobody has updated for a few days. A blocked order isn't "stale" —
+// the blocker is why.
 function attentionOf(w: Row, b: WorkOrderBoardRow | undefined): string | null {
   if (w.status === 'completed' || w.status === 'cancelled') return null
-  if (w.target_completion_date && w.target_completion_date < today()) return `Late since ${formatDate(w.target_completion_date)}`
+  const eff = blockerEffect(b)
+  if (eff?.blocked) {
+    const k = BLOCKER_KIND[(b?.main_blocker_kind ?? 'other') as BlockerKind] ?? BLOCKER_KIND.other
+    return `Blocked ${eff.since ? dayWord(daysBetween(eff.since)) : ''} — ${k.label.toLowerCase()}`
+  }
+  const due = b?.adjusted_due_date ?? w.target_completion_date
+  if (due && due < today()) return `Late since ${formatDate(due)}`
   const since = daysSince(b?.last_update_at ?? w.created_at)
   if (since != null && since >= STALE_DAYS) return `No update for ${since} days`
   return null
@@ -65,14 +74,16 @@ export default function WorkOrdersPage() {
   const filtered = orders.filter(o => (!project || o.project_id === project)
     && (!needle || `${o.title ?? ''} ${o.scope_of_work} ${o.projects?.project_name ?? ''}`.toLowerCase().includes(needle)))
   const inTab = (t: Tab, o: Row) => t === 'mine' ? myJobs.has(o.id) && o.status !== 'cancelled'
-    : t === 'attention' ? !!attentionOf(o, boardById.get(o.id)) : o.status === t
+    : t === 'attention' ? !!attentionOf(o, boardById.get(o.id))
+    : t === 'blocked' ? Number(boardById.get(o.id)?.open_blockers ?? 0) > 0 && o.status !== 'completed' && o.status !== 'cancelled'
+    : o.status === t
   const count = (t: Tab) => filtered.filter(o => inTab(t, o)).length
   const shown = filtered.filter(o => inTab(tab, o))
     .sort((a, b) => (a.target_completion_date ?? '9999').localeCompare(b.target_completion_date ?? '9999'))
 
   const TABS: { key: Tab; label: string }[] = [
     ...(myJobs.size > 0 || role === 'technician' ? [{ key: 'mine' as Tab, label: 'My jobs' }] : []),
-    { key: 'attention', label: 'Needs attention' }, { key: 'in_progress', label: 'In progress' },
+    { key: 'attention', label: 'Needs attention' }, { key: 'blocked', label: 'Held up' }, { key: 'in_progress', label: 'In progress' },
     { key: 'requested', label: 'Not started' }, { key: 'completed', label: 'Done' }, { key: 'cancelled', label: 'Cancelled' },
   ]
 
@@ -113,7 +124,7 @@ export default function WorkOrdersPage() {
 
       {isLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading…</p> : shown.length === 0 ? (
         <p className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
-          {tab === 'attention' ? <><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Every open job is up to date.</>
+          {tab === 'attention' || tab === 'blocked' ? <><CheckCircle2 className="h-4 w-4 text-emerald-500" /> {tab === 'blocked' ? 'Nothing is holding up an open job.' : 'Every open job is up to date.'}</>
             : tab === 'mine' ? 'No jobs yet. When you lead a work order or are put on its crew, it shows here.' : 'Nothing here.'}
         </p>
       ) : (
@@ -125,7 +136,7 @@ export default function WorkOrdersPage() {
             const st = WO_STATUS[o.status] ?? WO_STATUS.requested
             return (
               <Link key={o.id} to={`/work-orders/${o.id}`}
-                className={`block rounded-xl border bg-white p-4 transition-colors hover:border-brand dark:bg-slate-800 ${flag ? 'border-amber-300 dark:border-amber-700' : 'dark:border-slate-700'}`}>
+                className={`block rounded-xl border bg-white p-4 transition-colors hover:border-brand dark:bg-slate-800 ${flag?.startsWith('Blocked') ? 'border-red-300 dark:border-red-800' : flag ? 'border-amber-300 dark:border-amber-700' : 'dark:border-slate-700'}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-slate-800 dark:text-slate-100">{o.title || o.scope_of_work}</p>
@@ -145,10 +156,20 @@ export default function WorkOrdersPage() {
                   <Pill tone={st.tone}>{st.label}</Pill>
                   {b && b.items_total > 0 && <span>{b.items_done}/{b.items_total} items</span>}
                   {o.assigned_lead_staff_id && <span className="truncate">Lead: {staffName.get(o.assigned_lead_staff_id) ?? '—'}</span>}
-                  {o.target_completion_date && <span className="inline-flex items-center gap-1"><CalendarClock className="h-3 w-3" />{formatDate(o.target_completion_date)}</span>}
+                  {o.target_completion_date && (
+                    <span className="inline-flex items-center gap-1"><CalendarClock className="h-3 w-3" />
+                      {b?.days_lost ? <>{formatDate(b.adjusted_due_date)} <span className="text-red-600">(+{b.days_lost}d)</span></> : formatDate(o.target_completion_date)}
+                    </span>
+                  )}
+                  {b && Number(b.open_blockers ?? 0) > 0 && !Number(b.stopping_blockers ?? 0) && <span className="text-amber-600">Slowed: {b.main_blocker}</span>}
                   {b && Number(b.labour_cost) > 0 && <span className="inline-flex items-center gap-1"><HardHat className="h-3 w-3" />{formatCurrency(b.labour_cost)}</span>}
                 </div>
-                {flag && <p className="mt-2 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />{flag}</p>}
+                {flag && (
+                  <p className={`mt-2 flex items-center gap-1 text-xs font-medium ${flag.startsWith('Blocked') ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>
+                    {flag.startsWith('Blocked') ? <BlockedIcon className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}{flag}
+                  </p>
+                )}
+                {flag?.startsWith('Blocked') && b?.main_blocker && <p className="mt-0.5 truncate text-[11px] text-slate-500">{b.main_blocker}</p>}
               </Link>
             )
           })}

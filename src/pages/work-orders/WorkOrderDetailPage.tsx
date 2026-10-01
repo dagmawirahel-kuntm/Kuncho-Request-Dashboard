@@ -18,9 +18,11 @@ import {
 } from '@/hooks/useWorkOrderRatings'
 import { Pill } from '@/components/record/Record'
 import { WO_STATUS, useMyJobIds, type WorkOrderBoardRow } from '@/lib/workOrders'
+import { blockerEffect } from '@/lib/workOrderBlockers'
+import { BlockersCard } from './WorkOrderBlockers'
 import { ItemsCard, LabourCard, StatusActions, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
 import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, SiteMaterialReceipt } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, AlertTriangle, UserMinus, UserPlus2, Send } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, UserMinus, UserPlus2, Send } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
@@ -99,6 +101,7 @@ export default function WorkOrderDetailPage() {
 
   const pct = Math.round(Number(wo.current_progress_pct ?? 0))
   const st = WO_STATUS[wo.status] ?? WO_STATUS.requested
+  const effect = blockerEffect(board)
   return (
     <div className="animate-fade-in-up mx-auto max-w-4xl space-y-4">
       <Link to="/work-orders" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Work orders</Link>
@@ -108,6 +111,7 @@ export default function WorkOrderDetailPage() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Pill tone={st.tone}>{st.label}</Pill>
+              {effect?.blocked && <Pill tone="red">Blocked</Pill>}
               <span className="text-xs text-slate-500">{wo.work_type === 'workshop' ? 'In the workshop' : 'On site'}</span>
             </div>
             <h1 className="mt-1 text-xl font-bold text-slate-800 dark:text-slate-100">{wo.title || wo.scope_of_work}</h1>
@@ -132,7 +136,14 @@ export default function WorkOrderDetailPage() {
 
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div><dt className="text-xs text-slate-400">Lead</dt><dd className="text-slate-700 dark:text-slate-200">{(wo.assigned_lead_staff_id && staffNameById.get(wo.assigned_lead_staff_id)) ?? '—'}</dd></div>
-          <div><dt className="text-xs text-slate-400">Due</dt><dd className="text-slate-700 dark:text-slate-200">{formatDate(wo.target_completion_date)} <span className="text-xs text-slate-400">{daysRemainingLabel(wo.target_completion_date, wo.status)}</span></dd></div>
+          <div><dt className="text-xs text-slate-400">Due</dt><dd className="text-slate-700 dark:text-slate-200">
+            {effect && effect.lost > 0 && effect.adjustedDue ? (
+              <>{formatDate(effect.adjustedDue)} <span className="text-xs text-slate-400">{daysRemainingLabel(effect.adjustedDue, wo.status)}</span>
+                <span className="block text-[11px] text-red-600">was {formatDate(wo.target_completion_date)} · +{effect.lost}d blocked</span></>
+            ) : (
+              <>{formatDate(wo.target_completion_date)} <span className="text-xs text-slate-400">{daysRemainingLabel(wo.target_completion_date, wo.status)}</span></>
+            )}
+          </dd></div>
           <div><dt className="text-xs text-slate-400">Labour</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(Number(board?.labour_cost ?? 0) + Number(cost?.labor_cost ?? 0))}</dd></div>
           <div><dt className="text-xs text-slate-400">Materials</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(cost?.materials_cost ?? 0)}</dd></div>
         </dl>
@@ -140,9 +151,9 @@ export default function WorkOrderDetailPage() {
         <div className="mt-4 border-t pt-3 dark:border-slate-700"><StatusActions wo={wo} canUpdate={canUpdate} /></div>
       </div>
 
+      <BlockersCard wo={wo} board={board} canAct={canRecord} />
       <ItemsCard wo={wo} canUpdate={canRecord} canEdit={canWrite} onUpdate={() => setUpdating(true)} />
       <LabourCard wo={wo} canUpdate={canUpdate} />
-      <BlockersPanel projectId={wo.project_id} />
       <UpdatesTimeline workOrderId={wo.id} />
       <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
       <MaterialReceiptsSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
@@ -1068,84 +1079,6 @@ function MaterialReceiptModal({ workOrderId, projectId, onClose, onSaved }: {
           <button onClick={handleSave} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ── Blockers panel: open HSE incidents today + pending purchase requests ──
-function BlockersPanel({ projectId }: { projectId: string }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const { data: incidents = [] } = useQuery({
-    queryKey: ['wo-blockers-hse', projectId, today],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('hse_incidents').select('id, incident_type, severity, description').eq('project_id', projectId).eq('status', 'open').eq('incident_date', today)
-      if (error) throw error
-      return data as { id: string; incident_type: string; severity: string; description: string | null }[]
-    },
-  })
-  // A purchase request still blocks the WO only while its lines haven't
-  // actually arrived. orders.status is a vestigial column — set once at
-  // PR creation and never updated by anything, GRN included — so it
-  // can't tell "material arrived" from "material never even ordered".
-  // The real signal is the sourcing chain: an order_item still blocks
-  // if it isn't cancelled AND either hasn't been put into a PO yet, or
-  // its PO's linked bundle hasn't been marked fulfilled (which only
-  // happens once a GRN is actually recorded against it).
-  const { data: pendingOrders = [] } = useQuery({
-    queryKey: ['wo-blockers-orders', projectId],
-    queryFn: async () => {
-      const { data: orders, error: ordersErr } = await supabase
-        .from('orders')
-        .select('id, order_name, item_service_description')
-        .eq('project_id', projectId)
-      if (ordersErr) throw ordersErr
-      if (!orders || orders.length === 0) return []
-
-      const { data: items, error: itemsErr } = await supabase
-        .from('order_items')
-        .select('id, order_id, status, sourcing_bundle_items(sourcing_bundles(status))')
-        .in('order_id', orders.map(o => o.id))
-      if (itemsErr) throw itemsErr
-
-      const stillBlocking = new Set<string>()
-      for (const item of items ?? []) {
-        if (item.status === 'cancelled') continue
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const bundleLinks = (item as any).sourcing_bundle_items as { sourcing_bundles: { status: string } | null }[]
-        const anyFulfilled = bundleLinks.some(l => l.sourcing_bundles?.status === 'fulfilled')
-        if (!anyFulfilled) stillBlocking.add(item.order_id)
-      }
-      return orders.filter(o => stillBlocking.has(o.id))
-    },
-  })
-
-  if (incidents.length === 0 && pendingOrders.length === 0) return null
-
-  return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-900/10 space-y-3">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800 dark:text-amber-300"><AlertTriangle className="h-4 w-4" /> Blockers</h2>
-      {incidents.length > 0 && (
-        <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">Open HSE Incidents Today</p>
-          <ul className="space-y-1">
-            {incidents.map(i => (
-              <li key={i.id} className="text-sm text-amber-900 dark:text-amber-200">
-                <span className="font-semibold capitalize">{i.incident_type.replace('_', ' ')}</span> ({i.severity}) {i.description && `— ${i.description}`}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {pendingOrders.length > 0 && (
-        <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">Pending Purchase Requests</p>
-          <ul className="space-y-1">
-            {pendingOrders.map(o => (
-              <li key={o.id} className="text-sm text-amber-900 dark:text-amber-200">{o.order_name ?? o.item_service_description ?? 'Untitled request'}</li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   )
 }

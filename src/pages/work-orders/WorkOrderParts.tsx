@@ -8,6 +8,7 @@ import { FileUpload } from '@/components/shared/FileUpload'
 import { Pill } from '@/components/record/Record'
 import type { WorkOrder } from '@/types/database'
 import { itemDone, itemShare, itemsProgress, useWorkOrderItems, type WorkOrderItem, type WorkOrderLabourRow } from '@/lib/workOrders'
+import { BLOCKER_KIND, useBlockedItems } from '@/lib/workOrderBlockers'
 import { Check, CheckCircle2, ClipboardCheck, HardHat, Minus, Plus, RotateCcw, TrendingUp, X, Ban } from 'lucide-react'
 
 const card = 'rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800'
@@ -22,6 +23,7 @@ function refreshAll(qc: ReturnType<typeof useQueryClient>, id: string) {
 // ── What it's made of ────────────────────────────────────────────────
 export function ItemsCard({ wo, canUpdate, canEdit, onUpdate }: { wo: WorkOrder; canUpdate: boolean; canEdit: boolean; onUpdate: () => void }) {
   const { data: items = [], isLoading } = useWorkOrderItems(wo.id)
+  const blockedItems = useBlockedItems(wo.id)
   const open = wo.status !== 'completed' && wo.status !== 'cancelled'
   return (
     <section className={card}>
@@ -47,6 +49,11 @@ export function ItemsCard({ wo, canUpdate, canEdit, onUpdate }: { wo: WorkOrder;
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className={`truncate text-sm ${done ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{i.description}</p>
+                  {blockedItems.get(i.id) && (
+                    <p className="mt-0.5 text-[11px] font-medium text-red-600">
+                      Held up — {(BLOCKER_KIND[blockedItems.get(i.id)!.kind] ?? BLOCKER_KIND.other).label.toLowerCase()}
+                    </p>
+                  )}
                   {i.quantity != null && (
                     <div className="mt-1 flex items-center gap-2">
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
