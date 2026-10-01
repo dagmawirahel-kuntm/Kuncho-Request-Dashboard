@@ -130,7 +130,7 @@ export default function ProformaInvoicePage() {
   const [templateId, setTemplateId]     = useState<string | null>(null)
   const [sourceBoqId, setSourceBoqId]   = useState<string | null>(null)
   const [items, setItems]               = useState<LineItem[]>([])
-  // One discount on the whole job, taken off before VAT (migration 383).
+  // One discount on the whole job, taken off before VAT (migration 390).
   const [discountKind, setDiscountKind]     = useState<DiscountKind>('percent')
   const [discountValue, setDiscountValue]   = useState(0)
   const [discountReason, setDiscountReason] = useState('')
@@ -561,7 +561,7 @@ export default function ProformaInvoicePage() {
               </div>
             ) : <div />}
             <div className="ml-auto w-full max-w-sm space-y-2 text-sm">
-              {/* Discount on the whole job, before VAT (migration 383). */}
+              {/* Discount on the whole job, before VAT (migration 390). */}
               <div className="rounded-lg border border-dashed border-slate-200 p-3 dark:border-slate-600">
                 <div className="flex items-center gap-2">
                   <Percent className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />

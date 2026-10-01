@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Project, ProjectInsert } from '@/types/database'
-import { useStaff, useLocations, useFinanceContacts, useClients } from '@/hooks/useLookups'
+import { useStaff, useLocations, useFinanceContacts, useClients, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -56,7 +56,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     const { data: clients = [] } = useClients()
     const clientOptions = useMemo(() => (clients as { id: string; client_name: string }[]).map(c => ({ id: c.id, label: c.client_name })), [clients])
     const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
-    const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+    const locationOptions = useMemo(() => locationPickerOptions(locations), [locations])
     const financeContactOptions = useMemo(() => financeContacts.map(f => ({ id: f.id, label: f.full_name })), [financeContacts])
     // Reassignment is admin-only, enforced server-side (147) regardless
     // of this check — this just avoids a confusing "why didn't that save"

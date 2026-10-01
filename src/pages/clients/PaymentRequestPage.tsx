@@ -259,7 +259,7 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
   const ctFromBasis = basis.startsWith('ct:') ? contracts.find(c => `ct:${c.id}` === basis) ?? null : null
   const contract = ctFromBasis ?? contracts.find(c => c.id === contractId) ?? null
   const basisAmount = pf ? Number(pf.total ?? 0) : ctFromBasis ? Number(ctFromBasis.contract_value ?? 0) : Number(manualBasis) || 0
-  // A discounted proforma's total is already after the discount (migration 383); say so.
+  // A discounted proforma's total is already after the discount (migration 390); say so.
   const basisLabel = pf ? `Proforma ${pf.proforma_number ?? ''} Total${Number(pf.discount_amount ?? 0) > 0 ? ' (after discount)' : ''}`.replace('  ', ' ') : 'Total Contract Value'
   const projectName = contract?.projects?.project_name?.trim() ?? ''
 

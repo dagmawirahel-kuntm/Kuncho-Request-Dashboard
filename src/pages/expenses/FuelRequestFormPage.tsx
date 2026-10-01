@@ -71,7 +71,20 @@ export default function FuelRequestFormPage() {
     enabled: !!vehicleId,
   })
 
+  // The last odometer reading for this vehicle, so a typo (or a reading
+  // lower than last time) shows before it's saved.
+  const { data: lastOdometer } = useQuery({
+    queryKey: ['vehicle-last-odometer', vehicleId],
+    queryFn: async () => {
+      const { data } = await supabase.from('expenses').select('odometer_km, date').eq('vehicle_id', vehicleId!).eq('expense_type', 'fuel')
+        .not('odometer_km', 'is', null).order('date', { ascending: false }).limit(1).maybeSingle()
+      return data as { odometer_km: number; date: string } | null
+    },
+    enabled: !!vehicleId,
+  })
+
   const [liters, setLiters] = useState(requestedLiters ?? '')
+  const [odometer, setOdometer] = useState('')
   const [amount, setAmount] = useState('')
   const [vendorId, setVendorId] = useState<string | null>(null)
   const [vendorName, setVendorName] = useState('')
@@ -104,6 +117,9 @@ export default function FuelRequestFormPage() {
     const amountNum = parseFloat(amount)
     if (!liters || Number.isNaN(litersNum) || litersNum <= 0) { setError('Enter the liters filled'); return }
     if (!amount || Number.isNaN(amountNum) || amountNum <= 0) { setError('Enter the amount paid'); return }
+    const odoNum = odometer ? parseFloat(odometer) : null
+    if (odoNum == null || Number.isNaN(odoNum) || odoNum <= 0) { setError("Enter the odometer reading — it's how km per litre is worked out"); return }
+    if (lastOdometer && odoNum < Number(lastOdometer.odometer_km)) { setError(`The odometer read ${Number(lastOdometer.odometer_km).toLocaleString()} km last time — check the number`); return }
 
     setError(''); setSaving(true)
     const { error: err } = await supabase.from('expenses').insert([{
@@ -112,6 +128,7 @@ export default function FuelRequestFormPage() {
       vehicle_id: vehicleId,
       fuel_liters: litersNum,
       amount_etb: amountNum,
+      odometer_km: odoNum,
       date,
       vendor_id: vendorId,
       vendors_name: vendorId ? null : (vendorName || null),
@@ -135,6 +152,9 @@ export default function FuelRequestFormPage() {
     dropRecordCache(qc, 'vehicle-for-fuel-request', 'vehicle-last-fuel-vendor')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['vehicle-fuel-expenses', vehicleId] })
+    qc.invalidateQueries({ queryKey: ['vehicle-fuel-economy', vehicleId] })
+    qc.invalidateQueries({ queryKey: ['vehicle-month-costs', vehicleId] })
+    qc.invalidateQueries({ queryKey: ['vehicle-last-odometer', vehicleId] })
     qc.invalidateQueries({ queryKey: ['logistics-dashboard-fuel'] })
     toast('Fuel request submitted', 'success')
     navigate(`/logistics/vehicles/${vehicleId}`)
@@ -163,6 +183,15 @@ export default function FuelRequestFormPage() {
           <input type="number" min={0} step="any" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g. 4200" />
         </Field>
       </div>
+
+      <Field label="Odometer reading (km) *">
+        <input type="number" inputMode="numeric" min={0} step="any" className={inputCls} value={odometer} onChange={e => setOdometer(e.target.value)} placeholder="The number on the dashboard" />
+        <p className="mt-1 text-[11px] text-slate-400">
+          {lastOdometer
+            ? <>Last time: {Number(lastOdometer.odometer_km).toLocaleString()} km{odometer && parseFloat(odometer) > Number(lastOdometer.odometer_km) ? ` — ${(parseFloat(odometer) - Number(lastOdometer.odometer_km)).toLocaleString()} km since` : ''}</>
+            : 'The first reading starts the km-per-litre count'}
+        </p>
+      </Field>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Fuel Station / Vendor">

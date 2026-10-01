@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -22,13 +22,14 @@ import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/li
 import { useLatestPrice, FRESHNESS_CLASS, FRESHNESS_LABEL } from '@/hooks/useMarketPrices'
 import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckModal'
 import { formatCurrency as fmtCurrency } from '@/lib/utils'
+import { FactList, Panel, RecordHeader, RecordLayout } from '@/components/record/Record'
+import { Segmented } from '@/components/shared/Segmented'
 import {
-  ArrowLeft, Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
-  Sparkles, Copy,
+  Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
+  Sparkles, Copy, Save, ClipboardList, StickyNote, Receipt, AlertTriangle,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
-const sectionCls = 'rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-3 shadow-sm'
 
 function Field({ label, children, required }: { label: string; children: React.ReactNode; required?: boolean }) {
   return (
@@ -41,20 +42,7 @@ function Field({ label, children, required }: { label: string; children: React.R
   )
 }
 
-function SectionHeader({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="border-b dark:border-slate-700 pb-2 mb-1">
-      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</p>
-      {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
-    </div>
-  )
-}
-
-const PRIORITY_OPTS: { value: OrderPriority; label: string; cls: string }[] = [
-  { value: 'normal',   label: 'Normal',   cls: 'text-slate-600 bg-slate-100 dark:bg-slate-700' },
-  { value: 'urgent',   label: 'Urgent',   cls: 'text-amber-700 bg-amber-50 dark:bg-amber-900/30' },
-  { value: 'critical', label: 'Critical', cls: 'text-red-700 bg-red-50 dark:bg-red-900/30' },
-]
+const PRIORITY_LABEL: Record<OrderPriority, string> = { normal: 'Normal', urgent: 'Urgent', critical: 'Critical' }
 
 const ITEM_STATUSES: { value: OrderItemStatus; label: string }[] = [
   { value: 'pending',                label: 'Pending' },
@@ -809,216 +797,201 @@ function PurchaseRequestFormBody({
     navigate('/purchase-requests')
   }
 
-  const filledCount = lines.filter(l => l.item_name.trim()).length
+  const filled = lines.filter(l => l.item_name.trim())
+  const filledCount = filled.length
+  const estimatedTotal = filled.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_price_est) || 0), 0)
+  const unpriced = filled.filter(l => !(parseFloat(l.unit_price_est) > 0)).length
+  const fromStock = filled.filter(l => l.stock_item_id).length
+  const neededIn = header.required_by_date
+    ? Math.round((new Date(header.required_by_date).getTime() - new Date(new Date().toDateString()).getTime()) / 86400000)
+    : null
+  const saveLabel = saving ? 'Saving…' : isEdit ? 'Save changes' : 'Submit request'
+  const showApproval = isEdit && (approvalStatus === 'rejected' || !!record?.manager_approved_by || !!record?.finance_approved_by)
 
   return (
-    <div className="space-y-5">
+    <div className="pb-20 sm:pb-0">
+      <RecordHeader
+        back={isEdit ? { to: `/purchase-requests/${id}`, label: 'Back to the request' } : { to: '/purchase-requests', label: 'Purchase requests' }}
+        code={record?.request_code ?? null}
+        title={isEdit ? 'Edit purchase request' : 'New purchase request'}
+        subtitle={isEdit ? undefined : 'What you need, for which project, and by when — procurement takes it from here'}
+        actions={[
+          { label: 'Cancel', to: isEdit ? `/purchase-requests/${id}` : '/purchase-requests' },
+          { label: saveLabel, icon: Save, primary: true, onClick: handleSave, disabled: saving },
+        ]}
+      />
 
-      {/* Top bar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Link to="/purchase-requests"
-            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand transition-colors flex-shrink-0">
-            <ArrowLeft className="h-4 w-4" />Purchase Requests
-          </Link>
-          <span className="text-slate-300 dark:text-slate-600 flex-shrink-0">/</span>
-          <h1 className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">
-            {isEdit
-              ? `Edit${record?.request_code ? ` · ${record.request_code}` : ' Request'}`
-              : 'New Purchase Request'}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Link to="/purchase-requests"
-            className="rounded-md border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-            Cancel
-          </Link>
-          <button onClick={handleSave} disabled={saving}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-60 transition-colors shadow-sm">
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Submit Request'}
-          </button>
-        </div>
-      </div>
-
-      {/* Error banner */}
       {error && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/50 px-4 py-3 text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-700/50 dark:bg-red-900/20 dark:text-red-400">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />{error}
         </div>
       )}
 
-      {/* Approval panel */}
-      {isEdit && (
-        <div className="rounded-lg border bg-slate-50 dark:bg-slate-700/30 dark:border-slate-700 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Approval</p>
-            <StatusBadge status={approvalStatus} />
-          </div>
-          {record?.manager_approved_by && (
-            <p className="text-xs text-slate-500">Manager: {profileName(record.manager_approved_by)} · {formatDate(record.manager_approved_at)}</p>
-          )}
-          {record?.finance_approved_by && (
-            <p className="text-xs text-slate-500">Finance: {profileName(record.finance_approved_by)} · {formatDate(record.finance_approved_at)}</p>
-          )}
-          {approvalStatus === 'rejected' && record?.rejection_reason && (
-            <p className="text-xs text-red-600 dark:text-red-400">Rejected: {record.rejection_reason}</p>
-          )}
-          {canResubmit && (
-            <button type="button" onClick={() => handleApprovalTransition('pending')}
-              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">Resubmit</button>
-          )}
-        </div>
-      )}
-
-      {/* Section 1: Header */}
-      <div className={sectionCls}>
-        <SectionHeader title="Request Details" sub="Project context and urgency" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="Project">
-            <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Select project…" />
-            {isTechnician ? (
-              <p className="mt-1 text-[11px] text-slate-400">
-                {workProjects.length ? 'The projects you work on.' : 'You are not on a project yet — ask your manager to assign you.'}
-              </p>
-            ) : scopeToManaged && (
-              <p className="mt-1 text-[11px] text-slate-400">
-                Limited to the {managedProjects.length} project{managedProjects.length === 1 ? '' : 's'} you manage.
-              </p>
-            )}
-          </Field>
-          <Field label="Requested By">
-            <div className={`${inputCls} bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 cursor-default select-none`}>
-              {profile?.full_name ?? 'Current User'}
+      <RecordLayout
+        main={<>
+          {showApproval && (
+            <div className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-xs ${approvalStatus === 'rejected'
+              ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800/40 dark:bg-red-900/10 dark:text-red-300'
+              : 'bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-700/30'}`}>
+              <StatusBadge status={approvalStatus} />
+              {record?.manager_approved_by && <span>Manager: {profileName(record.manager_approved_by)} · {formatDate(record.manager_approved_at)}</span>}
+              {record?.finance_approved_by && <span>Finance: {profileName(record.finance_approved_by)} · {formatDate(record.finance_approved_at)}</span>}
+              {approvalStatus === 'rejected' && record?.rejection_reason && <span className="font-medium">Rejected: {record.rejection_reason}</span>}
+              {canResubmit && (
+                <button type="button" onClick={() => handleApprovalTransition('pending')}
+                  className="ml-auto rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">Resubmit</button>
+              )}
             </div>
-          </Field>
-          <Field label="Assign Procurement Officer">
-            <SearchableSelect value={header.staff_id ?? null} onChange={v => setHdr('staff_id', v)} options={staffOptions} placeholder="Select officer…" />
-          </Field>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Required By">
-            <input type="date" className={inputCls} value={header.required_by_date ?? ''}
-              onChange={e => setHdr('required_by_date', e.target.value || null)} />
-          </Field>
-          <Field label="Order Date">
-            <input type="date" className={inputCls} value={header.order_date ?? ''}
-              onChange={e => setHdr('order_date', e.target.value || null)} />
-          </Field>
-        </div>
-        <Field label="Priority">
-          <div className="flex gap-2">
-            {PRIORITY_OPTS.map(({ value, label, cls }) => (
-              <button key={value} type="button" onClick={() => setHdr('priority', value)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold border-2 transition-all ${
-                  header.priority === value ? `${cls} border-current` : 'border-transparent bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </Field>
-        <Field label="Request Title / Description">
-          <input type="text" className={inputCls} placeholder="Short title for this request…"
-            value={header.order_name ?? ''} onChange={e => setHdr('order_name', e.target.value || null)} />
-        </Field>
-        <Field label="Notes">
-          <textarea rows={2} className={inputCls} placeholder="Context or instructions for procurement…"
-            value={header.notes ?? ''} onChange={e => setHdr('notes', e.target.value)} />
-        </Field>
-      </div>
+          )}
 
-      {/* Section 2: Line Items */}
-      <div className={sectionCls}>
-        <div className="flex items-center justify-between border-b dark:border-slate-700 pb-2 mb-1">
-          <div>
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Line Items</p>
-            <p className="text-xs text-slate-400">Type an item name to pick it from stock · <Package className="inline h-3 w-3" /> picks the GL sub-ledger</p>
-          </div>
-          <span className="text-xs text-slate-400">{filledCount} item{filledCount !== 1 ? 's' : ''}</span>
-        </div>
+          <Panel title="What and where" icon={ClipboardList}>
+            <div className="space-y-4">
+              <Field label="Title">
+                <input type="text" className={`${inputCls} text-base font-medium`} placeholder="e.g. Kitchen hardware for the Mesob fit-out"
+                  value={header.order_name ?? ''} onChange={e => setHdr('order_name', e.target.value || null)} />
+              </Field>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Project">
+                  <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Search projects…" />
+                  {isTechnician ? (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {workProjects.length ? 'The projects you work on.' : 'You are not on a project yet — ask your manager to assign you.'}
+                    </p>
+                  ) : scopeToManaged && (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      The {managedProjects.length} project{managedProjects.length === 1 ? '' : 's'} you manage.
+                    </p>
+                  )}
+                </Field>
+                <Field label="Needed by">
+                  <input type="date" className={inputCls} value={header.required_by_date ?? ''}
+                    onChange={e => setHdr('required_by_date', e.target.value || null)} />
+                </Field>
+              </div>
+              <Field label="How urgent">
+                <Segmented value={(header.priority ?? 'normal') as OrderPriority} onChange={v => setHdr('priority', v)} ariaLabel="How urgent"
+                  options={[
+                    { value: 'normal', label: 'Normal' },
+                    { value: 'urgent', label: 'Urgent', icon: AlertTriangle, tone: 'amber' },
+                    { value: 'critical', label: 'Critical', icon: AlertCircle, tone: 'red' },
+                  ]} />
+              </Field>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Requested by">
+                  <div className={`${inputCls} cursor-default select-none bg-slate-50 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300`}>
+                    {profileName(header.requested_by_user_id ?? null) ?? profile?.full_name ?? 'You'}
+                  </div>
+                </Field>
+                <Field label="Procurement officer">
+                  <SearchableSelect value={header.staff_id ?? null} onChange={v => setHdr('staff_id', v)} options={staffOptions} placeholder="Leave for procurement" />
+                </Field>
+                <Field label="Request date">
+                  <input type="date" className={inputCls} value={header.order_date ?? ''}
+                    onChange={e => setHdr('order_date', e.target.value || null)} />
+                </Field>
+              </div>
+            </div>
+          </Panel>
 
-        {/* Column headers — match LineItemRow grid. Hidden below sm: a
-        stacked mobile card doesn't need column labels, and showing this
-        fixed-width grid on a phone is exactly what used to overflow. */}
-        <div className={`hidden sm:grid gap-x-2 px-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider ${
-          isEdit
-            ? 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
-            : 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
-        }`}>
-          <span />
-          <span>Item / GL Account</span>
-          <span>Qty</span>
-          <span>Unit</span>
-          <span>Est. Price</span>
-          {isEdit && <span>Status</span>}
-          <span />
-        </div>
+          <Panel title="Items" icon={Package} count={filledCount}
+            action={estimatedTotal > 0 && <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{fmtCurrency(estimatedTotal)}</span>}>
+            <p className="-mt-1 mb-3 text-xs text-slate-400">Type a name to find it in stock — stock is checked before anything is bought. <Package className="inline h-3 w-3" /> picks the account.</p>
 
-        <div className="space-y-2">
-          {lines.map((line, idx) => (
-            <LineItemRow
-              key={line._id}
-              item={line}
-              index={idx}
-              isEdit={isEdit}
-              subCategories={subCategories}
-              recentItems={recentItems}
-              dupOf={dupOf[idx]}
-              canCombine={dupOf[idx] != null && line.status === 'pending' && lines[dupOf[idx]!].status === 'pending' && lines[dupOf[idx]!].unit === line.unit}
-              onChange={patch => updateLine(idx, patch)}
-              onRemove={() => removeLine(idx)}
-              onCombine={() => { if (dupOf[idx] != null) combineLine(idx, dupOf[idx]!) }}
-            />
-          ))}
-        </div>
+            {/* Column labels — match LineItemRow's grid; a phone gets stacked cards instead. */}
+            <div className={`hidden gap-x-2 px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:grid ${
+              isEdit
+                ? 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_8rem_2rem]'
+                : 'grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_5rem_7rem_2rem]'
+            }`}>
+              <span />
+              <span>Item</span>
+              <span>Qty</span>
+              <span>Unit</span>
+              <span>Est. price</span>
+              {isEdit && <span>Status</span>}
+              <span />
+            </div>
 
-        <button type="button" onClick={addLine}
-          className="mt-1 flex items-center gap-1.5 text-sm text-brand font-medium hover:underline">
-          <Plus className="h-4 w-4" /> Add line item
-        </button>
+            <div className="space-y-2">
+              {lines.map((line, idx) => (
+                <LineItemRow
+                  key={line._id}
+                  item={line}
+                  index={idx}
+                  isEdit={isEdit}
+                  subCategories={subCategories}
+                  recentItems={recentItems}
+                  dupOf={dupOf[idx]}
+                  canCombine={dupOf[idx] != null && line.status === 'pending' && lines[dupOf[idx]!].status === 'pending' && lines[dupOf[idx]!].unit === line.unit}
+                  onChange={patch => updateLine(idx, patch)}
+                  onRemove={() => removeLine(idx)}
+                  onCombine={() => { if (dupOf[idx] != null) combineLine(idx, dupOf[idx]!) }}
+                />
+              ))}
+            </div>
 
-        {lines.some(l => l.status === 'unfulfilled') && (
-          <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 p-3 mt-1">
-            <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700 dark:text-amber-300">
-              Unfulfilled items will require a new purchase request. Mark them as cancelled if no longer needed.
-            </p>
-          </div>
-        )}
+            <button type="button" onClick={addLine}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed py-2.5 text-sm font-medium text-brand transition-colors hover:border-brand hover:bg-brand/5 dark:border-slate-600">
+              <Plus className="h-4 w-4" /> Add an item
+            </button>
 
-        {/* Phase 2 budget check — preview only, never blocks (see src/lib/budgetCheck.ts) */}
-        {flaggedChecks.length > 0 && (
-          <div className="space-y-1.5 mt-1">
-            {flaggedChecks.map((r, i) => (
-              <div key={i} className={`flex items-start gap-2 rounded-lg p-3 border ${
-                r.outcome === 'block'
-                  ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
-                  : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/40'
-              }`}>
-                <ShieldAlert className={`h-4 w-4 flex-shrink-0 mt-0.5 ${r.outcome === 'block' ? 'text-red-600' : 'text-amber-600'}`} />
-                <p className={`text-xs ${r.outcome === 'block' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
-                  {r.message}
-                  {r.outcome === 'block' && <span className="font-medium"> — preview only, not blocked (budget checks: preview only)</span>}
+            {lines.some(l => l.status === 'unfulfilled') && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700/40 dark:bg-amber-900/20">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Unfulfilled items need a new purchase request. Mark them cancelled if they're no longer needed.
                 </p>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            )}
+          </Panel>
 
-      {/* Section 3: Vendor context */}
-      <div className={sectionCls}>
-        <SectionHeader title="Vendor Context" sub="Optional — leave blank for procurement to decide" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Recommended Vendor">
-            <SearchableSelect value={header.recommended_vendor_id ?? null} onChange={v => setHdr('recommended_vendor_id', v)} options={vendorOptions} placeholder="Select vendor…" />
-          </Field>
-          <Field label="Vendor Notes">
-            <input type="text" className={inputCls} placeholder="e.g. ask for bulk discount…"
-              value={header.vendor_recommendation ?? ''} onChange={e => setHdr('vendor_recommendation', e.target.value)} />
-          </Field>
-        </div>
-      </div>
+          <Panel title="Notes for procurement" icon={StickyNote}>
+            <div className="space-y-4">
+              <Field label="Notes">
+                <textarea rows={3} className={inputCls} placeholder="Where it goes, finish or brand to match, who to call on site…"
+                  value={header.notes ?? ''} onChange={e => setHdr('notes', e.target.value)} />
+              </Field>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="A vendor you'd suggest (optional)">
+                  <SearchableSelect value={header.recommended_vendor_id ?? null} onChange={v => setHdr('recommended_vendor_id', v)} options={vendorOptions} placeholder="Leave for procurement" />
+                </Field>
+                <Field label="About the vendor">
+                  <input type="text" className={inputCls} placeholder="e.g. had it last time, ask for a bulk price"
+                    value={header.vendor_recommendation ?? ''} onChange={e => setHdr('vendor_recommendation', e.target.value)} />
+                </Field>
+              </div>
+            </div>
+          </Panel>
+        </>}
+        rail={<div className="space-y-4 lg:sticky lg:top-28">
+          <Panel title="Summary" icon={Receipt}>
+            <FactList facts={[
+              { label: 'Items', value: filledCount, hint: fromStock > 0 ? `${fromStock} found in stock` : undefined },
+              { label: 'Estimated total', value: estimatedTotal > 0 ? fmtCurrency(estimatedTotal) : '—', hint: unpriced > 0 ? `${unpriced} item${unpriced === 1 ? '' : 's'} without an estimate` : undefined, tone: unpriced > 0 && filledCount > 0 ? 'amber' : undefined },
+              { label: 'Needed by', value: header.required_by_date ? formatDate(header.required_by_date) : 'Not set',
+                hint: neededIn == null ? undefined : neededIn < 0 ? `${-neededIn} days ago` : neededIn === 0 ? 'Today' : `In ${neededIn} day${neededIn === 1 ? '' : 's'}`,
+                tone: neededIn != null && neededIn < 3 ? 'red' : undefined },
+              { label: 'Urgency', value: PRIORITY_LABEL[(header.priority ?? 'normal') as OrderPriority], tone: header.priority === 'critical' ? 'red' : header.priority === 'urgent' ? 'amber' : undefined },
+            ]} />
+            <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-slate-400 dark:border-slate-700">
+              After you submit: stock is checked first, then procurement puts the rest on a purchase order and finance approves it.
+            </p>
+          </Panel>
+
+          {/* Budget check — a preview only, never blocks (see src/lib/budgetCheck.ts). */}
+          {flaggedChecks.map((r, i) => (
+            <div key={i} className={`flex items-start gap-2 rounded-xl border p-3 ${r.outcome === 'block'
+              ? 'border-red-200 bg-red-50 dark:border-red-700/40 dark:bg-red-900/20'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-700/40 dark:bg-amber-900/20'}`}>
+              <ShieldAlert className={`mt-0.5 h-4 w-4 flex-shrink-0 ${r.outcome === 'block' ? 'text-red-600' : 'text-amber-600'}`} />
+              <p className={`text-xs ${r.outcome === 'block' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                {r.message}
+                {r.outcome === 'block' && <span className="font-medium"> — a preview, not blocked</span>}
+              </p>
+            </div>
+          ))}
+        </div>}
+      />
     </div>
   )
 }

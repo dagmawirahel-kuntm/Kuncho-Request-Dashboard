@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import type { Location } from '@/types/database'
 
 export function useVendors() {
   return useQuery({
@@ -155,6 +156,7 @@ export function useExpensesList() {
   })
 }
 
+/** Saved places for pickers — archived ones (migration 391) left out. */
 export function useLocations() {
   return useQuery({
     queryKey: ['locations-lookup'],
@@ -162,11 +164,23 @@ export function useLocations() {
     queryFn: async () => {
       const { data } = await supabase
         .from('locations')
-        .select('id,location_name,location_type,project_id,vendor_id')
+        .select('*')
         .order('location_name')
-      return data ?? []
+      return ((data ?? []) as Location[]).filter(l => l.is_active !== false)
     },
   })
+}
+
+/**
+ * Picker options for saved places: the name, with the area and the other
+ * names people type underneath, so searching "skyligh" finds Skylight Hotel.
+ */
+export function locationPickerOptions(locations: Pick<Location, 'id' | 'location_name' | 'area' | 'aliases'>[]) {
+  return locations.map(l => ({
+    id: l.id,
+    label: l.location_name,
+    sub: [l.area, ...(l.aliases ?? [])].filter(Boolean).join(' · ') || undefined,
+  }))
 }
 
 export function useTransfers() {

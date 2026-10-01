@@ -390,7 +390,7 @@ export default function VendorContractPage() {
       {bundle && (
         <div className="rounded-lg border dark:border-slate-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 text-sm">
           <p className="font-medium text-blue-800 dark:text-blue-300">
-            Sourcing Bundle: {bundle.bundle_code}
+            Purchase order: {bundle.bundle_code}
             {bundleTotal > 0 && <span className="ml-2 text-blue-600 dark:text-blue-400">— Total: {formatCurrency(bundleTotal)}</span>}
           </p>
           <Link to={`/sourcing/${bundleId}`} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">View bundle →</Link>

@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
+  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -125,7 +125,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'On site', label: 'HSE Log', to: '/site-foreman/hse', icon: AlertTriangle, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'Work Orders on My Sites', to: '/site-foreman/work-orders', icon: HardHat, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'My Projects', to: '/site-foreman/projects', icon: FolderKanban, roles: [], showIfSiteForeman: true },
-      { subgroup: 'Places', label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'executive', 'finance', 'project_manager'] },
+      { subgroup: 'Places', label: 'Locations', to: '/locations', icon: MapPin, roles: ['admin', 'executive', 'finance', 'project_manager', 'logistics_officer', 'operations_manager', 'procurement_officer', 'stock_manager'] },
       { subgroup: 'Places', label: 'Locations Map', to: '/locations/map', icon: Globe2 },
       { subgroup: 'Places', label: 'Rent', to: '/rent', icon: Building2, roles: ['admin', 'executive', 'finance', 'operations_manager'] },
     ],
@@ -149,7 +149,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { subgroup: 'Buying', label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Vendor Review', to: '/vendors/review', icon: ShieldCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
-      { subgroup: 'Buying', label: 'Sourcing Bundles', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      { subgroup: 'Buying', label: 'Purchase Orders', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Price Check Queue', to: '/procurement/price-check-requests', icon: Clock, roles: ['admin', 'executive', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Market Trends', to: '/procurement/market-trends', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Volatility Settings', to: '/procurement/volatility', icon: Settings, roles: ['admin', 'procurement_officer'] },
@@ -165,6 +165,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Stock', label: 'Duplicates', to: '/stock/duplicates', icon: Copy, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { subgroup: 'Stock', label: 'Dispatch Queue', to: '/stock/dispatch-queue', icon: Truck, roles: ['admin', 'executive', 'stock_manager', 'procurement_officer'] },
       { subgroup: 'Stock', label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'executive', 'stock_manager'] },
+      { subgroup: 'Fleet', label: 'My Trips', to: '/my-trips', icon: Route, roles: ['logistics_officer'], showIfLogisticsOfficer: true },
       { subgroup: 'Fleet', label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
       { subgroup: 'Fleet', label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
       { subgroup: 'Fleet', label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },

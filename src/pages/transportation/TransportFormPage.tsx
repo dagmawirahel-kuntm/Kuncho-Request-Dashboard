@@ -11,7 +11,7 @@ import type {
   TransportJobType, HiredVehicleClass, TransportJobStatus, VehicleCapacityClass,
   SuggestedVehicle,
 } from '@/types/database'
-import { useProjects, useLocations, useVendors, useStaff } from '@/hooks/useLookups'
+import { useProjects, useLocations, useVendors, useStaff, locationPickerOptions } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Receipt, ExternalLink, CheckCircle2 } from 'lucide-react'
@@ -115,7 +115,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const projectOptions  = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
-  const locationOptions = useMemo(() => locations.map((l: any) => ({ id: l.id, label: l.location_name })), [locations])
+  const locationOptions = useMemo(() => locationPickerOptions(locations), [locations])
   const locationById    = useMemo(() => new Map(locations.map((l: any) => [l.id, l])), [locations])
   const vendorOptions   = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
   const staffOptions    = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
@@ -231,6 +231,17 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     })
   }
 
+  // Typing a place that is saved — by its name or one of its other names
+  // (migration 391) — picks the saved place too, so the job lands on the
+  // map and in the place's history instead of staying loose text.
+  function typePlace(end: 'pickup' | 'dropoff', text: string) {
+    const key = text.trim().toLowerCase()
+    const hit = key ? (locations as { id: string; location_name: string; aliases?: string[] }[])
+      .find(l => l.location_name.trim().toLowerCase() === key || (l.aliases ?? []).some(a => a.trim().toLowerCase() === key)) : undefined
+    set(`${end}_location_text`, text)
+    if (hit && !form[`${end}_location_id`]) pickLocation(`${end}_location_id`, hit.id)
+  }
+
   // Dedicated vehicle per driver (migration 166) — the fleet's real
   // operating model. Picking a driver defaults straight to their own
   // vehicle instead of a ranked list; still overridable.
@@ -244,17 +255,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const flow = STATUS_FLOW[jobStatus]
   const isMoneyJob = form.transport_mode === 'ride_hailing' || form.transport_mode === 'hired'
 
-  // Keep vehicle status roughly in sync with the job lifecycle
-  async function syncVehicle(vehicleId: string | null | undefined, next: TransportJobStatus) {
-    if (!vehicleId) return
-    if (next === 'assigned' || next === 'in_progress') {
-      await supabase.from('vehicles').update({ status: 'on_job' }).eq('id', vehicleId)
-    } else if (next === 'completed' || next === 'cancelled') {
-      await supabase.from('vehicles').update({ status: 'available' }).eq('id', vehicleId)
-    }
-    qc.invalidateQueries({ queryKey: ['vehicles'] })
-  }
-
+  // The vehicle's own status follows its jobs in the database (migration 392).
   async function transition(next: TransportJobStatus) {
     const patch: Record<string, unknown> = { job_status: next }
     if (next === 'completed') {
@@ -265,7 +266,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     }
     const { error: err } = await supabase.from('transportation_requests').update(patch).eq('id', id!)
     if (err) { toast(err.message, 'error'); return }
-    await syncVehicle(record?.vehicle_id, next)
+    qc.invalidateQueries({ queryKey: ['vehicles'] })
     dropRecordCache(qc, 'transport-request', 'sourcing-bundle-for-transport', 'transport-linked-expense')
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['transport-request', id] })
@@ -422,19 +423,19 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
       {/* ── Route ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="From (pinned location)">
+        <Field label="From (saved place)">
           <SearchableSelect value={form.pickup_location_id ?? null} onChange={lid => pickLocation('pickup_location_id', lid)} options={locationOptions} placeholder="Pickup…" />
         </Field>
-        <Field label="To (pinned location)">
+        <Field label="To (saved place)">
           <SearchableSelect value={form.dropoff_location_id ?? null} onChange={lid => pickLocation('dropoff_location_id', lid)} options={locationOptions} placeholder="Dropoff…" />
         </Field>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="From (free text, if unpinned)">
-          <input type="text" className={inputCls} value={form.pickup_location_text ?? ''} onChange={e => set('pickup_location_text', e.target.value)} />
+        <Field label="From — or type it">
+          <input type="text" className={inputCls} placeholder="e.g. Merkato" value={form.pickup_location_text ?? ''} onChange={e => typePlace('pickup', e.target.value)} />
         </Field>
-        <Field label="To (free text, if unpinned)">
-          <input type="text" className={inputCls} value={form.dropoff_location_text ?? ''} onChange={e => set('dropoff_location_text', e.target.value)} />
+        <Field label="To — or type it">
+          <input type="text" className={inputCls} placeholder="e.g. Urael site" value={form.dropoff_location_text ?? ''} onChange={e => typePlace('dropoff', e.target.value)} />
         </Field>
       </div>
 

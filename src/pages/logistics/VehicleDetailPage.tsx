@@ -8,7 +8,7 @@ import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { useStaff } from '@/hooks/useLookups'
-import type { Expense, Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
+import type { Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
 import { ChevronLeft, BookOpen, BookX, History, ArrowRight, Car, Truck, Bike, Camera, Fuel, Pencil, UserCircle2, Archive } from 'lucide-react'
 
 const STATUS_META: Record<VehicleStatus, { label: string; cls: string }> = {
@@ -22,8 +22,8 @@ type JobRow = Pick<TransportationRequest,
   'id' | 'request_name' | 'job_status' | 'job_type' | 'dropoff_location_text' | 'pickup_location_text' | 'created_at' | 'priority'>
 
 import { VehicleEnergyGauge } from '@/components/fleet/VehicleEnergyGauge'
-
-type FuelExpenseRow = Pick<Expense, 'id' | 'expense_code' | 'amount_etb' | 'fuel_liters' | 'date' | 'approval_status'>
+import { VehiclePapers } from '@/components/fleet/VehiclePapers'
+import { VehicleRunningCosts } from '@/components/fleet/VehicleRunningCosts'
 
 function vehicleIcon(type: Vehicle['vehicle_type']) {
   if (type === 'motorbike') return <Bike className="h-16 w-16" />
@@ -109,22 +109,6 @@ export default function VehicleDetailPage() {
     qc.invalidateQueries({ queryKey: ['vehicles'] })
     toast(driverId ? 'Driver assigned' : 'Driver unassigned', 'success')
   }
-
-  const { data: fuelExpenses = [] } = useQuery({
-    queryKey: ['vehicle-fuel-expenses', id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('id, expense_code, amount_etb, fuel_liters, date, approval_status')
-        .eq('vehicle_id', id!)
-        .eq('expense_type', 'fuel')
-        .order('date', { ascending: false })
-        .limit(50)
-      if (error) throw error
-      return data as FuelExpenseRow[]
-    },
-    enabled: !!id,
-  })
 
   async function saveTank() {
     const liters = parseFloat(tankInput)
@@ -391,6 +375,14 @@ export default function VehicleDetailPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <VehiclePapers vehicleId={vehicle.id} driverStaffId={vehicle.assigned_driver_id} canManage={canManage}
+          driverName={driverOptions.find(d => d.id === vehicle.assigned_driver_id)?.employee_name ?? null} />
+        <div className="space-y-5">
+          <VehicleRunningCosts vehicleId={vehicle.id} isFuel={vehicle.energy_type === 'fuel'} />
+        </div>
+      </div>
+
       {/* Recent engagements feed */}
       <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between gap-2 border-b dark:border-slate-700 px-5 py-3.5">
@@ -445,50 +437,6 @@ export default function VehicleDetailPage() {
         )}
       </div>
 
-      {/* Fuel history */}
-      <div className="rounded-2xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-2 border-b dark:border-slate-700 px-5 py-3.5">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-            <Fuel className="h-4 w-4 text-slate-400" /> Fuel History
-          </h2>
-          <span className="text-xs text-slate-400">{fuelExpenses.length} request{fuelExpenses.length === 1 ? '' : 's'}</span>
-        </div>
-
-        {fuelExpenses.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">No fuel requests recorded for this vehicle yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-700/40 border-b dark:border-slate-700 text-left">
-                  <th className="px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Expense</th>
-                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Liters</th>
-                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Amount</th>
-                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</th>
-                  <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Date</th>
-                  <th className="px-4 py-2.5 w-8"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y dark:divide-slate-700">
-                {fuelExpenses.map(f => (
-                  <tr key={f.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-700/20 transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-brand">{f.expense_code ?? '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-300">{f.fuel_liters != null ? `${f.fuel_liters} L` : '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(f.amount_etb)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={f.approval_status} /></td>
-                    <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDateGC(f.date)}</td>
-                    <td className="px-4 py-3">
-                      <Link to={`/expenses/${f.id}`} className="text-slate-400 hover:text-brand" title="Open expense">
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   )
 }

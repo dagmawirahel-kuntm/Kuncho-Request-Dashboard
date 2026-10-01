@@ -124,6 +124,7 @@ import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
 import UsersPage from '@/pages/users/UsersPage'
 import CalendarPage from '@/pages/calendar/CalendarPage'
 import FleetPage from '@/pages/logistics/FleetPage'
+import MyTripsPage from '@/pages/logistics/MyTripsPage'
 import VehicleDetailPage from '@/pages/logistics/VehicleDetailPage'
 import LocationsMapPage from '@/pages/locations/LocationsMapPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
@@ -270,6 +271,7 @@ export const router = createBrowserRouter([
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
           { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },
           { path: 'logistics', element: <FleetPage /> },
+          { path: 'my-trips', element: <MyTripsPage /> },
           { path: 'logistics/vehicles/:id', element: <VehicleDetailPage /> },
           { path: 'fleet/maintenance', element: <VehicleMaintenancePage /> },
           { path: 'fleet/maintenance/new', element: <VehicleMaintenanceFormPage /> },
@@ -629,7 +631,14 @@ export const router = createBrowserRouter([
               { path: 'products', element: <Navigate to="/catalog" replace /> },
               { path: 'products/new', element: <Navigate to="/catalog" replace /> },
               { path: 'products/:id/edit', element: <Navigate to="/catalog" replace /> },
-              { path: 'locations', element: <LocationsPage /> },
+            ],
+          },
+          // Saved places (migration 391): everyone can look places up; adding
+          // and changing them is for the roles locations' RLS lets write.
+          { path: 'locations', element: <LocationsPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'logistics_officer']} />,
+            children: [
               { path: 'locations/new', element: <LocationFormPage /> },
               { path: 'locations/:id/edit', element: <LocationFormPage /> },
             ],

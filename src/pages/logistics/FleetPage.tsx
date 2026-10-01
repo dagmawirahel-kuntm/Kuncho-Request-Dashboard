@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import { PAPER_LABEL, paperStateText, type FleetPaper } from '@/lib/fleet'
 import { FileUpload } from '@/components/shared/FileUpload'
 import type { Vehicle, VehicleStatus, TransportationRequest } from '@/types/database'
 import { useStaff } from '@/hooks/useLookups'
@@ -28,8 +29,10 @@ function vehicleIcon(type: Vehicle['vehicle_type']) {
 }
 
 function VehicleCard({
-  vehicle, jobs, canManage, onStatusChange, onImageSaved, driverOptions, driverName, onDriverChange,
+  vehicle, jobs, canManage, onStatusChange, onImageSaved, driverOptions, driverName, onDriverChange, papers, month,
 }: {
+  papers: FleetPaper[]
+  month: { total_etb: number; trips: number } | null
   vehicle: Vehicle
   jobs: JobRow[]
   canManage: boolean
@@ -117,6 +120,23 @@ function VehicleCard({
         </div>
       </div>
 
+      {/* Papers and this month's running cost */}
+      <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3 text-[11px]">
+        {papers.filter(p => p.state !== 'ok').length === 0
+          ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Papers in order</span>
+          : papers.filter(p => p.state !== 'ok').map(p => (
+            <span key={p.kind + (p.staff_id ?? '')} title={paperStateText(p)}
+              className={`rounded-full px-2 py-0.5 font-medium ${p.state === 'expired' ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300' : p.state === 'due' ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+              {PAPER_LABEL[p.kind]} {p.state === 'missing' ? '?' : p.state === 'expired' ? 'expired' : `${p.days_left}d`}
+            </span>
+          ))}
+        {month && Number(month.total_etb) > 0 && (
+          <span className="ml-auto text-slate-500 dark:text-slate-400">
+            This month <b className="text-slate-700 dark:text-slate-200">{formatCurrency(Number(month.total_etb)).replace(/\.00$/, '')}</b>{month.trips ? ` · ${month.trips} trip${month.trips === 1 ? '' : 's'}` : ''}
+          </span>
+        )}
+      </div>
+
       {/* Active jobs on this vehicle */}
       <div className="px-4 pb-3">
         {jobs.length === 0 ? (
@@ -182,6 +202,27 @@ export default function FleetPage() {
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Active jobs per vehicle (assigned or in progress)
+  const { data: papers = [] } = useQuery({
+    queryKey: ['fleet-papers'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_fleet_papers').select('*')
+      if (error) throw error
+      return (data ?? []) as FleetPaper[]
+    },
+    retry: false,
+  })
+  const { data: monthCosts = [] } = useQuery({
+    queryKey: ['vehicle-month-costs', 'this-month'],
+    queryFn: async () => {
+      const first = new Date(); first.setDate(1)
+      const { data, error } = await supabase.from('v_vehicle_month_costs').select('vehicle_id, total_etb, trips').eq('month', first.toISOString().slice(0, 10))
+      if (error) throw error
+      return (data ?? []) as { vehicle_id: string; total_etb: number; trips: number }[]
+    },
+    retry: false,
+  })
+  const paperIssues = papers.filter(p => p.state !== 'ok')
+
   const { data: activeJobs = [] } = useQuery({
     queryKey: ['fleet-active-jobs'],
     queryFn: async () => {
@@ -330,6 +371,19 @@ export default function FleetPage() {
         </div>
       )}
 
+      {paperIssues.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/40 dark:bg-amber-900/10 dark:text-amber-200">
+          <p className="font-semibold">
+            Papers: {[
+              paperIssues.filter(p => p.state === 'expired').length && `${paperIssues.filter(p => p.state === 'expired').length} expired`,
+              paperIssues.filter(p => p.state === 'due').length && `${paperIssues.filter(p => p.state === 'due').length} due within 30 days`,
+              paperIssues.filter(p => p.state === 'missing').length && `${paperIssues.filter(p => p.state === 'missing').length} not on file`,
+            ].filter(Boolean).join(' · ')}
+          </p>
+          <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-300/80">Three of September's five traffic penalties were for papers. Open a vehicle to add its plate, insurance, inspection and road fund, and the driver's licence.</p>
+        </div>
+      )}
+
       {/* Fleet board */}
       {isLoading ? (
         <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
@@ -340,6 +394,8 @@ export default function FleetPage() {
               key={v.id}
               vehicle={v}
               jobs={activeJobs.filter(j => j.vehicle_id === v.id)}
+              papers={papers.filter(p => p.vehicle_id === v.id || (!!v.assigned_driver_id && p.staff_id === v.assigned_driver_id))}
+              month={monthCosts.find(m => m.vehicle_id === v.id) ?? null}
               canManage={canManage}
               onStatusChange={setStatus}
               onImageSaved={setImage}

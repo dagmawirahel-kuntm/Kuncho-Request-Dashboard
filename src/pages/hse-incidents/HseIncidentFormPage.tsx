@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { HseIncident, HseIncidentInsert } from '@/types/database'
-import { useProjects, useLocations } from '@/hooks/useLookups'
+import { useProjects, useLocations, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -53,7 +53,7 @@ function HseIncidentFormPageBody({ id, record }: { id?: string; record?: HseInci
   const { data: projects = [] } = useProjects()
   const { data: locations = [] } = useLocations()
   const projectOptions = useMemo(() => projects.map(p => ({ id: p.id, label: p.project_name })), [projects])
-  const locationOptions = useMemo(() => locations.map(l => ({ id: l.id, label: l.location_name, sub: l.location_type ?? undefined })), [locations])
+  const locationOptions = useMemo(() => locationPickerOptions(locations), [locations])
 
   const [form, setForm] = useState<Partial<HseIncidentInsert>>(
     record
