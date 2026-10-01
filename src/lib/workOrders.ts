@@ -23,6 +23,16 @@ export interface WorkOrderBoardRow {
   last_update_at: string | null
   open_labour_requests: number
   labour_cost: number
+  // Blockers (397)
+  open_blockers?: number
+  stopping_blockers?: number
+  blocked_since?: string | null
+  main_blocker_kind?: string | null
+  main_blocker?: string | null
+  /** Days the work was stopped, each day once. */
+  days_lost?: number
+  /** The target date pushed by days_lost. */
+  adjusted_due_date?: string | null
 }
 
 export interface WorkOrderLabourRow {
