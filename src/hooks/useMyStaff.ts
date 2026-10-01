@@ -157,3 +157,21 @@ export function useMySiteForemanProjects() {
     isLoading: staffLoading || (!!staffId && query.isLoading),
   }
 }
+
+// The projects a person works on (migration 388): an active assignment, or
+// an open work order they lead or are on the crew of. A technician raises
+// purchase requests for these and no others.
+export function useMyWorkProjects(enabled = true) {
+  const { user } = useAuth()
+  const query = useQuery({
+    queryKey: ['my-work-projects', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('my_work_projects')
+      if (error) throw error
+      return (data ?? []) as { id: string; project_name: string }[]
+    },
+    enabled: !!user && enabled,
+    staleTime: 60000,
+  })
+  return { projects: query.data ?? [], isLoading: query.isLoading }
+}

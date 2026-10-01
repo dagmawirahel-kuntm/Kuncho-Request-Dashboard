@@ -68,7 +68,7 @@ export default function TimesheetPage() {
           <Plus className="h-4 w-4" /> New Entry
         </Link>
       </div>
-      {role === 'staff' && <OwnRecordsBanner />}
+      {(role === 'staff' || role === 'technician') && <OwnRecordsBanner />}
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search timesheet…" persistKey="timesheet" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="timesheet" queryKeys={['timesheet']} />}
     </div>
   )

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { useMyStaffId } from '@/hooks/useMyStaff'
 import type { Tone } from '@/components/record/Record'
 
 // Work orders (386): a job broken into items; progress follows the items.
@@ -75,3 +76,25 @@ export function useWorkOrderItems(workOrderId: string) {
   })
 }
 
+
+/** The work orders the signed-in person leads or is on the crew of (388):
+ *  theirs to record progress on, whatever their login role. */
+export function useMyJobIds() {
+  const { data: me } = useMyStaffId()
+  const staffId = me?.id
+  const query = useQuery({
+    queryKey: ['my-work-order-ids', staffId],
+    queryFn: async () => {
+      const [lead, crew] = await Promise.all([
+        supabase.from('work_orders').select('id').eq('assigned_lead_staff_id', staffId!),
+        supabase.from('work_order_crew').select('work_order_id').eq('staff_id', staffId!).is('removed_at', null),
+      ])
+      if (lead.error) throw lead.error
+      if (crew.error) throw crew.error
+      return new Set([...(lead.data ?? []).map(r => r.id as string), ...(crew.data ?? []).map(r => r.work_order_id as string)])
+    },
+    enabled: !!staffId,
+  })
+  return query.data ?? EMPTY_IDS
+}
+const EMPTY_IDS: ReadonlySet<string> = new Set()
