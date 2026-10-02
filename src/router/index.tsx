@@ -128,6 +128,8 @@ import FleetPage from '@/pages/logistics/FleetPage'
 import MyTripsPage from '@/pages/logistics/MyTripsPage'
 import VehicleDetailPage from '@/pages/logistics/VehicleDetailPage'
 import LocationsMapPage from '@/pages/locations/LocationsMapPage'
+import LocationsTidyPage from '@/pages/locations/LocationsTidyPage'
+import TransportInsightsPage from '@/pages/logistics/TransportInsightsPage'
 import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
 import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
 import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
@@ -287,6 +289,7 @@ export const router = createBrowserRouter([
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
           { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },
           { path: 'logistics', element: <FleetPage /> },
+          { path: 'logistics/insights', element: <TransportInsightsPage /> },
           { path: 'my-trips', element: <MyTripsPage /> },
           { path: 'logistics/vehicles/:id', element: <VehicleDetailPage /> },
           { path: 'fleet/maintenance', element: <VehicleMaintenancePage /> },
@@ -653,6 +656,7 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'logistics_officer']} />,
             children: [
               { path: 'locations/new', element: <LocationFormPage /> },
+              { path: 'locations/tidy', element: <LocationsTidyPage /> },
               { path: 'locations/:id/edit', element: <LocationFormPage /> },
             ],
           },
