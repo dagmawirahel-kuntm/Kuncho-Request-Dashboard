@@ -99,8 +99,7 @@ import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
 import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
 import PurchaseAllocationPage from '@/pages/purchase-allocation/PurchaseAllocationPage'
 import AllocationFormPage from '@/pages/purchase-allocation/AllocationFormPage'
-import TimesheetPage from '@/pages/timesheet/TimesheetPage'
-import TimesheetFormPage from '@/pages/timesheet/TimesheetFormPage'
+import AttendancePage from '@/pages/attendance/AttendancePage'
 import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
 import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
@@ -227,6 +226,13 @@ export const router = createBrowserRouter([
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'my-home', element: <MyRequestsDashboardPage /> },
           { path: 'my-leave', element: <MyLeavePage /> },
+          // Staff attendance (migration 400). Open to everyone: each person
+          // sees their own day; the page and RLS decide who records whom.
+          // Casual labour is recorded under /labour, which pays it.
+          { path: 'timesheet', element: <AttendancePage /> },
+          { path: 'timesheet/new', element: <Navigate to="/timesheet" replace /> },
+          { path: 'timesheet/:id/edit', element: <Navigate to="/timesheet" replace /> },
+          { path: 'attendance', element: <Navigate to="/timesheet" replace /> },
           { path: 'calendar', element: <CalendarPage /> },
           { path: 'settings', element: <SettingsPage /> },
           { path: 'no-department', element: <NoDepartmentPage /> },
@@ -593,9 +599,6 @@ export const router = createBrowserRouter([
               { path: 'cash-advances', element: <CashAdvancesPage /> },
               { path: 'cash-advances/new', element: <CashAdvanceFormPage /> },
               { path: 'cash-advances/:id/edit', element: <CashAdvanceFormPage /> },
-              { path: 'timesheet', element: <TimesheetPage /> },
-              { path: 'timesheet/new', element: <TimesheetFormPage /> },
-              { path: 'timesheet/:id/edit', element: <TimesheetFormPage /> },
             ],
           },
           {

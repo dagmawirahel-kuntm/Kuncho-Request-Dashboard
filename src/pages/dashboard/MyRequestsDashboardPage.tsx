@@ -5,6 +5,7 @@ import {
   CalendarDays, CheckCircle2, Plus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { addisToday, ecMonthOf, ecMonthRange } from '@/lib/attendance'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { DepartmentBoard } from '@/components/shared/DepartmentBoard'
@@ -133,12 +134,17 @@ export default function MyRequestsDashboardPage() {
     },
   })
 
+  // Days recorded for me this Ethiopian month (staff_attendance, migration 400).
   const { data: timesheetStats } = useQuery({
-    queryKey: ['my-requests-timesheet'],
+    queryKey: ['my-requests-attendance', staff?.id],
+    enabled: !!staff?.id,
     queryFn: async () => {
+      const { start, end } = ecMonthRange(ecMonthOf(addisToday()))
       const { count } = await supabase
-        .from('timesheet')
+        .from('staff_attendance')
         .select('*', { count: 'exact', head: true })
+        .eq('staff_id', staff!.id).gte('work_date', start).lte('work_date', end)
+        .in('status', ['present', 'late', 'half_day', 'field'])
       return { count: count ?? 0 }
     },
   })
@@ -234,9 +240,9 @@ export default function MyRequestsDashboardPage() {
             to="/transportation"
           />
           <StatPill
-            label="Timesheet Entries"
+            label="Days at work"
             value={String(timesheetStats?.count ?? '—')}
-            sub="Logged"
+            sub="This month"
             icon={<Clock className="h-5 w-5" />}
             color="bg-blue-50 text-blue-500 dark:bg-blue-900/20"
             to="/timesheet"
@@ -254,8 +260,8 @@ export default function MyRequestsDashboardPage() {
           <Link to="/transportation/new" className="flex items-center gap-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Plus className="h-4 w-4" /> Transportation Request
           </Link>
-          <Link to="/timesheet/new" className="flex items-center gap-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
-            <Plus className="h-4 w-4" /> Timesheet Entry
+          <Link to="/timesheet" className="flex items-center gap-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Clock className="h-4 w-4" /> Check in / out
           </Link>
           <Link to="/my-leave" className="flex items-center gap-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Plus className="h-4 w-4" /> Request Leave
@@ -269,7 +275,7 @@ export default function MyRequestsDashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <ActionTile to="/expenses" icon={<Receipt className="h-5 w-5" />} label="My Expenses" desc="View and submit expense requests" color="bg-orange-50 text-orange-500 dark:bg-orange-900/20" />
           <ActionTile to="/transportation" icon={<Truck className="h-5 w-5" />} label="My Transportation" desc="View and submit transportation requests" color="bg-purple-50 text-purple-500 dark:bg-purple-900/20" />
-          <ActionTile to="/timesheet" icon={<Clock className="h-5 w-5" />} label="My Timesheet" desc="Log and review attendance" color="bg-blue-50 text-blue-500 dark:bg-blue-900/20" />
+          <ActionTile to="/timesheet" icon={<Clock className="h-5 w-5" />} label="My Attendance" desc="Check in, check out, see your month" color="bg-blue-50 text-blue-500 dark:bg-blue-900/20" />
         </div>
       </div>
 
