@@ -422,6 +422,35 @@ html.theme-transition *::after {
 .no-fun-effects .balloon, .no-fun-effects .petal { display: none; }
 .no-fun-effects .recap-tile { animation: none; }
 
+/* A status badge flipping to its new state (StatusBadge); an approved row
+   sliding out of the queue (approval queue). */
+@keyframes badge-flip {
+  0%   { transform: perspective(200px) rotateX(90deg); opacity: .3; }
+  60%  { transform: perspective(200px) rotateX(-12deg); opacity: 1; }
+  100% { transform: none; }
+}
+.badge-flip { animation: badge-flip 480ms cubic-bezier(0.2, 0.8, 0.2, 1.1) both; }
+@keyframes row-out {
+  0%   { opacity: 1; transform: none; max-height: 400px; }
+  35%  { opacity: 1; transform: translateX(12px); background-color: rgb(220 252 231 / .9); }
+  100% { opacity: 0; transform: translateX(110%); max-height: 0; padding-top: 0; padding-bottom: 0; }
+}
+.row-out { animation: row-out 520ms cubic-bezier(.5, 0, .75, 0) both; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .badge-flip, .row-out { animation: none; }
+}
+.no-fun-effects .badge-flip, .no-fun-effects .row-out { animation: none; }
+
+/* Loading skeletons (LoadingRows): a soft light passing over the shapes. */
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.shimmer {
+  background: linear-gradient(90deg, rgb(226 232 240) 0%, rgb(241 245 249) 50%, rgb(226 232 240) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.dark .shimmer { background-image: linear-gradient(90deg, rgb(51 65 85) 0%, rgb(71 85 105) 50%, rgb(51 65 85) 100%); }
+@media (prefers-reduced-motion: reduce) { .shimmer { animation: none; } }
+
 /* ── Client world (components/clientWorld) ───────────────────────────────
    A client's pages are painted in the colours of its logo. The colours
    arrive as --w1..--w3 (accents) and --wd1/--wd2 (dark, for white text);

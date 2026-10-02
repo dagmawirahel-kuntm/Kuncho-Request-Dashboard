@@ -1135,6 +1135,27 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </>
       )}
 
+      {!isEdit && (() => {
+        // How complete this expense is: what the form requires, plus the two
+        // things finance otherwise chases (a ledger, a receipt photo). A
+        // complete one goes straight through the approval queue.
+        const missing = [
+          ...Object.values(problems),
+          ...(effectiveCategoryId ? [] : ['Pick the general ledger']),
+          ...(form.receipt_url ? [] : ['Add a photo of the receipt']),
+        ]
+        return missing.length === 0 ? (
+          <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 animate-fade-in dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300">
+            <span aria-hidden>✅</span> Complete — finance can approve this one straight away.
+          </p>
+        ) : (
+          <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">{missing.length === 1 ? 'One thing' : `${missing.length} things`} to make it complete:</span>{' '}
+            {missing.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(' · ')}
+          </p>
+        )
+      })()}
+
       {dupes.length > 0 && (
         <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm dark:border-violet-800/40 dark:bg-violet-900/20">
           <p className="font-semibold text-violet-800 dark:text-violet-300">This looks like it may already be recorded</p>

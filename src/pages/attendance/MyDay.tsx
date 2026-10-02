@@ -10,7 +10,7 @@ import {
 } from '@/lib/attendance'
 import { useHolidays, useTeamLeave, leaveLabel } from '@/lib/leave'
 import { toEthiopian } from '@/lib/ethiopianCalendar'
-import { buzz, confetti } from '@/lib/celebrate'
+import { buzz, chime, confetti } from '@/lib/celebrate'
 
 // How far back the on-time streak looks.
 const STREAK_DAYS = 90
@@ -74,6 +74,7 @@ export function MyDay({ me }: { me: AttendancePerson }) {
     toast('Checked in', 'success')
     buzz([20, 40, 20])
     confetti('pop', btn)
+    chime('tap')
   }
 
   async function backFromLunch() {

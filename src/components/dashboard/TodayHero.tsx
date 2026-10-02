@@ -10,7 +10,7 @@ import { SeasonalEventIcon } from '@/components/seasonal/MeskelArt'
 import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
 import { useWaitingOn } from '@/lib/dashboard/waiting'
 import { useDayProgress } from '@/lib/dashboard/progress'
-import { confetti, firstTimeToday } from '@/lib/celebrate'
+import { chime, confetti, firstTimeToday } from '@/lib/celebrate'
 import { amharicHello } from '@/lib/celebrations'
 import { useToast } from '@/contexts/ToastContext'
 import type { WidgetContext } from '@/lib/dashboard/types'
@@ -165,9 +165,11 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
     if (landmark && firstTimeToday(`streak-${landmark}`)) {
       firstTimeToday('queue-zero')
       confetti('big', ring.current)
+      chime('fanfare')
       toast(`🔥 ${landmark}-day streak! You've cleared your queue ${landmark} working days in a row.`, 'success')
     } else if (firstTimeToday('queue-zero')) {
       confetti('burst', ring.current)
+      chime('success')
     }
   }, [progress, toast])
 

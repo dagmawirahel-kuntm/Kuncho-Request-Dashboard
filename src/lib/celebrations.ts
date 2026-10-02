@@ -101,3 +101,20 @@ export function amharicHello(hour: number) {
   if (hour < 17) return 'እንደምን ዋሉ'
   return 'እንደምን አመሹ'
 }
+
+// ── Project handovers (migration 407) ───────────────────────────────
+export interface Handover { project_id: string; project_name: string; handed_over_at: string; project_manager: string | null; is_mine: boolean }
+
+export function useRecentHandovers(enabled = true) {
+  return useQuery({
+    queryKey: ['celebrate', 'handovers'],
+    enabled,
+    staleTime: 15 * 60_000,
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('recent_handovers', { p_days: 3 })
+      if (error) throw error
+      return (data ?? []) as Handover[]
+    },
+  })
+}

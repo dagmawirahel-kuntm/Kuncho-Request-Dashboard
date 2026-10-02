@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { confetti } from '@/lib/celebrate'
+import { chime, confetti } from '@/lib/celebrate'
 
 // Tells you when one of your own expenses moves forward — approved, then
 // paid — the next time you have the app open. "Your own" is the submitter
@@ -84,6 +84,7 @@ export function MyExpenseWatcher() {
       toast(`✨ ${moved.length} of your expenses moved forward — ${parts}`, 'success')
     }
     if (paid.length) confetti('burst')
+    chime(paid.length ? 'fanfare' : 'success')
   }, [data, user, toast])
 
   return null

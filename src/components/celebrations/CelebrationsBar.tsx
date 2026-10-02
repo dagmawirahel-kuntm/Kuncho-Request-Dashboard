@@ -7,9 +7,9 @@ import { useHolidays, type Holiday } from '@/lib/leave'
 import { addisToday } from '@/lib/attendance'
 import { formatEthiopian, toEthiopian } from '@/lib/ethiopianCalendar'
 import { lastEndedEcMonth } from '@/lib/ecMonths'
-import { confetti, effectsAllowed, emojiBurst, firstTimeToday } from '@/lib/celebrate'
+import { chime, confetti, effectsAllowed, emojiBurst, firstTimeToday } from '@/lib/celebrate'
 import {
-  holidayWords, useMonthRecap, useMyCelebrations, useMyKudosReceived, type MonthRecap,
+  holidayWords, useMonthRecap, useMyCelebrations, useMyKudosReceived, useRecentHandovers, type Handover, type MonthRecap,
 } from '@/lib/celebrations'
 
 // The good-news strip at the top of each landing page, under the seasonal
@@ -145,6 +145,7 @@ function useThanksSinceLastVisit(userId: string | null) {
       ? `💛 ${first.from_name ?? 'A colleague'} thanked you: “${quote}”`
       : `💛 ${data.length} thanks from colleagues since you were last here — see Team pulse`, 'success')
     emojiBurst('💛')
+    chime('success')
   }, [data, key, since, toast])
 }
 
@@ -190,7 +191,7 @@ function MonthRecapCard() {
             <p className="text-lg font-bold leading-snug">Your {month.label}, wrapped</p>
           </div>
           {!open && (
-            <button ref={button} type="button" onClick={() => { setOpen(true); confetti('burst', button.current) }}
+            <button ref={button} type="button" onClick={() => { setOpen(true); confetti('burst', button.current); chime('success') }}
               className="rounded-full bg-[#D4AF37] px-4 py-2 text-sm font-semibold text-[#1a1100] hover:bg-[#e8c547]">
               Open my {name}
             </button>
@@ -204,6 +205,37 @@ function MonthRecapCard() {
             <p className="text-xs text-white/50">Only you can see this. Thanks for a good month.</p>
           </>
         )}
+      </div>
+    </Dismissible>
+  )
+}
+
+// ── Project handovers ────────────────────────────────────────────────
+
+function HandoverCard({ h }: { h: Handover }) {
+  // Confetti the first time each person sees each handover (the project id
+  // stands in for the day, so it plays once, not once a day).
+  useEffect(() => {
+    if (!firstTimeToday(`handover-${h.project_id}`, h.project_id)) return
+    const t = window.setTimeout(() => { confetti(h.is_mine ? 'big' : 'burst'); chime(h.is_mine ? 'fanfare' : 'success') }, 400)
+    return () => window.clearTimeout(t)
+  }, [h.project_id, h.is_mine])
+  const when = new Date(h.handed_over_at).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  return (
+    <Dismissible storageKey={`handover-card:${h.project_id}`} label="Project handover" className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white dark:border-emerald-900/50 dark:from-emerald-900/20 dark:to-slate-800">
+      <div className="flex items-center gap-4">
+        <span className="flex h-14 w-14 flex-none items-center justify-center rounded-2xl bg-[#151a1f] text-3xl" aria-hidden>🏗️</span>
+        <div className="min-w-0">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Handed over · {when}</p>
+          <p className="text-lg font-bold leading-snug text-slate-900 dark:text-slate-100">
+            {h.is_mine ? 'Your project ' : ''}{h.project_name} is complete! 🎉
+          </p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {h.is_mine
+              ? 'Congratulations — and thank your team. Send them a thank-you from Team pulse.'
+              : `Congratulations to ${h.project_manager ? `${h.project_manager} and the team` : 'the team'} on reaching 100%.`}
+          </p>
+        </div>
       </div>
     </Dismissible>
   )
@@ -230,14 +262,16 @@ export function CelebrationsBar({ skipHoliday = false }: { skipHoliday?: boolean
     : holidays.find(h => h.holiday_date === today) ?? holidays.find(h => h.holiday_date === tomorrow) ?? null
   const inFirstWeek = toEthiopian(today).day <= 7
   const yourDay = mine && (mine.birthday_today || mine.anniversary_years)
+  const { data: handovers = [] } = useRecentHandovers(!!user)
 
-  if (!holiday && !yourDay && !inFirstWeek) return null
+  if (!holiday && !yourDay && !inFirstWeek && handovers.length === 0) return null
   return (
     <div className="mb-4 space-y-3 sm:mb-6 print:hidden">
       {holiday && <HolidayCard holiday={holiday} today={today} />}
       {yourDay && (
         <YourDayCard firstName={mine.employee_name.split(' ')[0]} birthday={mine.birthday_today} years={mine.anniversary_years} today={today} />
       )}
+      {handovers.map(h => <HandoverCard key={h.project_id} h={h} />)}
       {inFirstWeek && <MonthRecapCard />}
     </div>
   )

@@ -7,10 +7,20 @@ import { useToast } from '@/contexts/ToastContext'
 import { useLocations, useProjects } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Segmented } from '@/components/shared/Segmented'
+import { LoadingRows } from '@/components/shared/LoadingRows'
 import { NEXT_STEP, OPEN_JOB_STATUSES, setJobStatus } from '@/lib/transport'
 import { PAPER_LABEL } from '@/lib/fleet'
 import type { Location, TransportJobStatus, TransportJobType } from '@/types/database'
-import { Car, Play, Check, Plus, Fuel, MapPin, ArrowRight, AlertTriangle, Phone, X, Truck } from 'lucide-react'
+import { Car, Play, Check, Plus, Fuel, MapPin, ArrowRight, AlertTriangle, Phone, X, Truck, ShieldCheck } from 'lucide-react'
+import { buzz, chime, confetti, firstTimeToday } from '@/lib/celebrate'
+
+// Trips in a month worth a cheer when the driver reaches them.
+const TRIP_LANDMARKS = [10, 25, 50, 100]
+
+function monthStart() {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString()
+}
 
 type Job = {
   id: string
@@ -91,26 +101,51 @@ export default function MyTripsPage() {
     retry: false,
   })
   const papersToFix = papers.filter(p => p.state !== 'ok')
+  const papersAllCurrent = papers.length > 0 && papersToFix.length === 0
+
+  // Jobs this driver finished this month — theirs to see, nobody else's.
+  const tripsKey = ['my-trips-month', staffId, vehicle?.id]
+  const fetchTripsThisMonth = async () => {
+    const ors = [`assigned_staff_id.eq.${staffId}`, ...(vehicle ? [`vehicle_id.eq.${vehicle.id}`] : [])].join(',')
+    const { count, error } = await supabase.from('transportation_requests').select('id', { count: 'exact', head: true })
+      .or(ors).eq('job_status', 'completed').gte('completed_at', monthStart())
+    if (error) throw error
+    return count ?? 0
+  }
+  const { data: tripsThisMonth = 0 } = useQuery({ queryKey: tripsKey, queryFn: fetchTripsThisMonth, enabled: !!staffId, retry: false })
 
   const onRoad = jobs.filter(j => j.job_status === 'in_progress')
   const upNext = jobs.filter(j => j.job_status === 'requested' || j.job_status === 'assigned')
   const doneToday = jobs.filter(j => j.job_status === 'completed')
 
   function refresh() {
-    for (const k of ['my-trips', 'my-staff-and-vehicle', 'transportation', 'vehicles', 'fleet-active-jobs']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['my-trips', 'my-trips-month', 'my-staff-and-vehicle', 'transportation', 'vehicles', 'fleet-active-jobs']) qc.invalidateQueries({ queryKey: [k] })
   }
 
-  async function advance(job: Job) {
+  async function advance(job: Job, button: HTMLElement | null) {
     const step = NEXT_STEP[job.job_status]
     if (!step) return
     const { data, error } = await setJobStatus([job.id], step.to)
     if (error) { toast(error.message, 'error'); return }
     if (!data?.length) { toast("You can't change this job — ask logistics", 'error'); return }
     toast(step.to === 'completed' ? 'Done — nice one' : 'Started — drive safe', 'success')
+    if (step.to === 'completed') {
+      buzz([20, 40, 20])
+      confetti('burst', button)
+      chime('success')
+      // A landmark month: 10, 25, 50, 100 trips.
+      const n = await qc.fetchQuery({ queryKey: tripsKey, queryFn: fetchTripsThisMonth, staleTime: 0 }).catch(() => 0)
+      if (TRIP_LANDMARKS.includes(n) && firstTimeToday(`trips-${monthStart().slice(0, 7)}-${n}`)) {
+        window.setTimeout(() => { confetti('big'); chime('fanfare') }, 500)
+        toast(`🚚 ${n} trips this month — thank you for keeping the sites supplied`, 'success')
+      }
+    } else {
+      buzz(30)
+    }
     refresh()
   }
 
-  if (meLoading) return <div className="py-24 text-center text-sm text-slate-400">Loading…</div>
+  if (meLoading) return <LoadingRows rows={3} className="mx-auto max-w-xl py-6" />
   if (!staffId) {
     return (
       <div className="mx-auto max-w-md py-16 text-center">
@@ -135,6 +170,21 @@ export default function MyTripsPage() {
           </Link>
         )}
       </div>
+
+      {(papersAllCurrent || tripsThisMonth > 0) && (
+        <div className="flex flex-wrap gap-2">
+          {papersAllCurrent && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+              <ShieldCheck className="h-3.5 w-3.5" /> Papers all current
+            </span>
+          )}
+          {tripsThisMonth > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">
+              🚚 {tripsThisMonth} trip{tripsThisMonth === 1 ? '' : 's'} done this month
+            </span>
+          )}
+        </div>
+      )}
 
       {papersToFix.length > 0 && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800/40 dark:bg-amber-900/10 dark:text-amber-200">
@@ -173,7 +223,7 @@ export default function MyTripsPage() {
   )
 }
 
-function Section({ title, jobs, empty, onAdvance, highlight }: { title: string; jobs: Job[]; empty: string | null; onAdvance: (j: Job) => void; highlight?: boolean }) {
+function Section({ title, jobs, empty, onAdvance, highlight }: { title: string; jobs: Job[]; empty: string | null; onAdvance: (j: Job, button: HTMLElement | null) => void; highlight?: boolean }) {
   if (!jobs.length && !empty) return null
   return (
     <section>
@@ -196,7 +246,7 @@ function Section({ title, jobs, empty, onAdvance, highlight }: { title: string; 
                 {j.projects?.project_name && <p className="mt-0.5 text-xs text-slate-400">{j.projects.project_name}</p>}
                 <div className="mt-3 flex gap-2">
                   {step && (
-                    <button onClick={() => onAdvance(j)}
+                    <button onClick={e => onAdvance(j, e.currentTarget)}
                       className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-semibold text-white active:scale-[.98] ${j.job_status === 'in_progress' ? 'bg-emerald-600' : 'bg-violet-600'}`}>
                       {j.job_status === 'in_progress' ? <Check className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                       {j.job_status === 'in_progress' ? "I've arrived — done" : 'Start'}

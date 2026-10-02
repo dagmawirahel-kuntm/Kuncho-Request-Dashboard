@@ -38,6 +38,68 @@ export function useFunEffects(): [boolean, (on: boolean) => void] {
   }]
 }
 
+// ── Sounds ───────────────────────────────────────────────────────────
+// Off unless someone turns them on (offices are quiet places). Small
+// tones made with Web Audio, so there are no files to download.
+
+const SOUND_KEY = 'fun-sounds'
+
+function readSounds() {
+  try { return localStorage.getItem(SOUND_KEY) === 'on' } catch { return false }
+}
+
+/** The header's second switch: [on, set]. Off by default. */
+export function useFunSounds(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(readSounds)
+  useEffect(() => {
+    const sync = () => setOn(readSounds())
+    window.addEventListener(CHANGE, sync)
+    window.addEventListener('storage', sync)
+    return () => { window.removeEventListener(CHANGE, sync); window.removeEventListener('storage', sync) }
+  }, [])
+  return [on, (next: boolean) => {
+    try { localStorage.setItem(SOUND_KEY, next ? 'on' : 'off') } catch { /* nothing to do */ }
+    window.dispatchEvent(new Event(CHANGE))
+  }]
+}
+
+export type Chime = 'tap' | 'stamp' | 'success' | 'fanfare'
+
+// Notes (Hz) and when each starts (s): short, soft, major-key.
+const TUNES: Record<Chime, [number, number][]> = {
+  tap: [[880, 0]],
+  stamp: [[392, 0], [587.3, 0.09]],
+  success: [[523.3, 0], [659.3, 0.08], [784, 0.16]],
+  fanfare: [[523.3, 0], [659.3, 0.1], [784, 0.2], [1046.5, 0.32]],
+}
+
+let audio: AudioContext | null = null
+
+/** A soft chime, when sounds are on. */
+export function chime(kind: Chime) {
+  if (!readSounds()) return
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctx) return
+    audio ??= new Ctx()
+    const ctx = audio
+    if (ctx.state === 'suspended') void ctx.resume()
+    const t0 = ctx.currentTime + 0.01
+    for (const [freq, at] of TUNES[kind]) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0, t0 + at)
+      gain.gain.linearRampToValueAtTime(0.12, t0 + at + 0.015)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.35)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(t0 + at)
+      osc.stop(t0 + at + 0.4)
+    }
+  } catch { /* no audio here — fine */ }
+}
+
 export type ConfettiSize = 'pop' | 'burst' | 'big'
 
 /**
@@ -107,9 +169,10 @@ export interface StampDetail { title: string; note?: string }
  * toast otherwise.
  */
 export function submitted(toast: (message: string, type?: 'success') => void, title: string, note?: string) {
-  if (!effectsAllowed()) { toast(note ? `${title}. ${note}` : title, 'success'); return }
+  if (!effectsAllowed()) { toast(note ? `${title}. ${note}` : title, 'success'); chime('stamp'); return }
   window.dispatchEvent(new CustomEvent<StampDetail>(STAMP, { detail: { title, note } }))
   buzz(25)
+  chime('stamp')
 }
 
 export function onStamp(handler: (d: StampDetail) => void) {

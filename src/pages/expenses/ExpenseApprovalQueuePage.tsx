@@ -9,9 +9,13 @@ import { canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Pill } from '@/components/record/Record'
+import { LoadingRows } from '@/components/shared/LoadingRows'
 import { IssueChips, ProjectOrOverheadSelect } from '@/components/expenses/ExpenseFields'
 import { AGE_BUCKETS, ISSUE, ageBucket, fromProjectChoice, projectChoice, useApprovalQueue, type ApprovalQueueRow } from '@/lib/expenseQuality'
 import { CheckCircle2, Clock, Paperclip, Search, Wrench, X } from 'lucide-react'
+import { chime, confetti, effectsAllowed } from '@/lib/celebrate'
+
+const pause = (ms: number) => new Promise(r => window.setTimeout(r, ms))
 
 // Approval queue (395): everything waiting for finance, oldest first, with
 // what holds each one up. A missing project or ledger is fixed in the row,
@@ -28,6 +32,8 @@ export default function ExpenseApprovalQueuePage() {
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  // Approved rows slide out before the list refreshes (row-out in index.css).
+  const [leaving, setLeaving] = useState<Set<string>>(new Set())
   const qc = useQueryClient()
   const { toast } = useToast()
 
@@ -48,18 +54,43 @@ export default function ExpenseApprovalQueuePage() {
     qc.invalidateQueries({ queryKey: ['expenses'] })
   }
 
+  // Rows go out one after another; when the last one in the queue goes,
+  // that's worth a moment — the queue is clear, not "N approved".
+  async function afterApproved(ids: string[]) {
+    const motion = effectsAllowed()
+    if (motion) await pause(520)
+    const cleared = ids.length > 0 && ids.length >= rows.length
+    refresh()
+    setLeaving(new Set())
+    if (cleared) {
+      confetti('big')
+      chime('fanfare')
+      toast('🎉 Queue cleared — nothing is waiting for finance', 'success')
+    } else if (ids.length) {
+      chime('success')
+    }
+  }
+
   async function approveMany(list: ApprovalQueueRow[]) {
     setBulkBusy(true)
-    let ok = 0
+    const motion = effectsAllowed()
+    const done: string[] = []
     for (const r of list) {
       const { error } = await supabase.from('expenses').update({ approval_status: 'finance_approved' }).eq('id', r.id)
-      if (error) toast(`${r.expense_code ?? 'Expense'}: ${error.message}`, 'error')
-      else ok++
+      if (error) { toast(`${r.expense_code ?? 'Expense'}: ${error.message}`, 'error'); continue }
+      done.push(r.id)
+      setLeaving(prev => new Set(prev).add(r.id))
+      if (motion) await pause(120)
     }
     setBulkBusy(false)
     setPicked(new Set())
-    refresh()
-    if (ok) toast(`${ok} approved for payment`, 'success')
+    if (done.length && done.length < rows.length) toast(`${done.length} approved for payment`, 'success')
+    await afterApproved(done)
+  }
+
+  function approvedOne(id: string) {
+    setLeaving(prev => new Set(prev).add(id))
+    void afterApproved([id])
   }
 
   return (
@@ -96,7 +127,7 @@ export default function ExpenseApprovalQueuePage() {
         )}
       </div>
 
-      {isLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading…</p> : groups.length === 0 ? (
+      {isLoading ? <LoadingRows rows={5} /> : groups.length === 0 ? (
         <p className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Nothing waiting here.</p>
       ) : groups.map(g => (
         <section key={g.key} className="space-y-2">
@@ -107,6 +138,7 @@ export default function ExpenseApprovalQueuePage() {
           <div className="divide-y rounded-xl border bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
             {g.rows.map(r => (
               <QueueRow key={r.id} row={r} canApprove={canApprove} onDone={refresh}
+                onApproved={() => approvedOne(r.id)} leaving={leaving.has(r.id)}
                 picked={picked.has(r.id)}
                 onPick={v => setPicked(p => { const n = new Set(p); if (v) n.add(r.id); else n.delete(r.id); return n })} />
             ))}
@@ -127,8 +159,8 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
   )
 }
 
-function QueueRow({ row: r, canApprove, onDone, picked, onPick }: {
-  row: ApprovalQueueRow; canApprove: boolean; onDone: () => void; picked: boolean; onPick: (v: boolean) => void
+function QueueRow({ row: r, canApprove, onDone, onApproved, leaving, picked, onPick }: {
+  row: ApprovalQueueRow; canApprove: boolean; onDone: () => void; onApproved: () => void; leaving: boolean; picked: boolean; onPick: (v: boolean) => void
 }) {
   const { toast } = useToast()
   const { data: categories = [] } = useCategories()
@@ -145,11 +177,12 @@ function QueueRow({ row: r, canApprove, onDone, picked, onPick }: {
     if (error) { toast(error.message, 'error'); return }
     toast(done, 'success')
     setRejecting(false)
-    onDone()
+    if (patch.approval_status === 'finance_approved') onApproved()
+    else onDone()
   }
 
   return (
-    <div className="space-y-2 px-3 py-3">
+    <div className={`space-y-2 px-3 py-3 ${leaving ? 'row-out' : ''}`}>
       <div className="flex items-start gap-3">
         {canApprove && (
           <input type="checkbox" className="mt-1" disabled={isBlocked} checked={picked && !isBlocked} onChange={e => onPick(e.target.checked)}
