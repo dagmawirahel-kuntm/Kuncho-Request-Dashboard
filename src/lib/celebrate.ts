@@ -63,6 +63,18 @@ export async function confetti(size: ConfettiSize = 'burst', from?: Element | nu
   }
 }
 
+/** A burst of one emoji — hearts for thanks received, say. */
+export async function emojiBurst(emoji: string, from?: Element | null) {
+  if (!effectsAllowed()) return
+  const { default: fire } = await import('canvas-confetti')
+  const r = from?.getBoundingClientRect()
+  const origin = r && r.width > 0
+    ? { x: (r.left + r.width / 2) / window.innerWidth, y: (r.top + r.height / 2) / window.innerHeight }
+    : { x: 0.5, y: 0.5 }
+  const shape = fire.shapeFromText({ text: emoji, scalar: 2 })
+  fire({ origin, shapes: [shape], scalar: 2, particleCount: 28, spread: 80, startVelocity: 30, gravity: 0.7, ticks: 160, flat: true, disableForReducedMotion: true, zIndex: 60 })
+}
+
 /** A short buzz on phones that support it. */
 export function buzz(pattern: number | number[] = 30) {
   if (!effectsAllowed()) return

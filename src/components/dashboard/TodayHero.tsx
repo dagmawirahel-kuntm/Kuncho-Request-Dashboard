@@ -11,6 +11,7 @@ import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
 import { useWaitingOn } from '@/lib/dashboard/waiting'
 import { useDayProgress } from '@/lib/dashboard/progress'
 import { confetti, firstTimeToday } from '@/lib/celebrate'
+import { amharicHello } from '@/lib/celebrations'
 import { useToast } from '@/contexts/ToastContext'
 import type { WidgetContext } from '@/lib/dashboard/types'
 import type { CompanyEvent, CompanyEventType } from '@/types/database'
@@ -172,7 +173,7 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
 
   const biggest = items.reduce<(typeof items)[number] | null>((b, i) => (!b || i.n > b.n ? i : b), null)
   const summary = isLoading ? null
-    : !biggest ? <>You're all caught up — <span className="font-semibold text-emerald-300">nothing is waiting on you</span>.</>
+    : !biggest ? <>You're all caught up — <span className="font-semibold text-emerald-300">nothing is waiting on you</span>. Time for a buna ☕</>
     : <>
         <span className="font-semibold text-white">{total} {total === 1 ? 'thing needs' : 'things need'} you</span>
         {items.length > 1 ? ` across ${items.length} queues` : ''}. Most are in{' '}
@@ -210,6 +211,7 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
                 <span className="text-white/30">·</span>
                 <span className="tabular-nums">{now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
               </p>
+              <p lang="am" className="mt-1 font-ethiopic text-sm font-semibold leading-none" style={{ color: GOLD }}>{amharicHello(now.getHours())}</p>
               <h1 className="mt-0.5 text-2xl font-bold tracking-tight [overflow-wrap:anywhere] sm:truncate sm:text-3xl">{hello}, {person.firstName}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/55">
                 {person.subtitle && <span className="truncate">{person.subtitle}</span>}

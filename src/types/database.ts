@@ -120,6 +120,10 @@ export interface Staff {
    *  usually the name of the person whose account is actually used. */
   bank_account_note: string | null
   starting_date: string | null
+  /** Date of birth (migration 402). Only day and month ever reach colleagues. */
+  birth_date?: string | null
+  /** false keeps the birthday out of Team pulse (402). */
+  birthday_public?: boolean
   /** The day the person left (migration 353); on or before today, status is terminated. */
   termination_date: string | null
   /** When the employment contract runs to. */

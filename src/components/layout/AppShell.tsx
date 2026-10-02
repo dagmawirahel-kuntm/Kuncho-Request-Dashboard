@@ -12,6 +12,7 @@ import { SubmitStampHost } from '@/components/shared/SubmitStamp'
 import { MyExpenseWatcher } from '@/components/shared/MyExpenseWatcher'
 import { confetti, useFunEffects } from '@/lib/celebrate'
 import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
+import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
@@ -295,6 +296,7 @@ export function AppShell() {
           {season?.greeting && LANDING_PATHS.has(location.pathname) && (
             <div className="print:hidden"><SeasonalGreeting moment={season} /></div>
           )}
+          {LANDING_PATHS.has(location.pathname) && <CelebrationsBar skipHoliday={!!season?.greeting} />}
           <div key={location.pathname} className="animate-fade-in">
             <AtmosphereContext.Provider value={slot}>
               <Outlet />

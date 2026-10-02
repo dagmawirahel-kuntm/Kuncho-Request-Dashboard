@@ -219,7 +219,7 @@ export function WaitingOnYou({ ctx }: WidgetProps) {
           <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
             <span className="rounded-full bg-emerald-50 p-2.5 text-emerald-500 dark:bg-emerald-900/25"><CheckCheck className="h-5 w-5" /></span>
             <p className="text-sm font-medium text-slate-700 dark:text-slate-200">You're all caught up</p>
-            <p className="text-xs text-slate-400">Nothing is waiting on you right now.</p>
+            <p className="text-xs text-slate-400">Nothing is waiting on you right now — a good moment for a buna ☕</p>
           </div>
         ) : (
           <ul className="space-y-2 px-3 pb-3">

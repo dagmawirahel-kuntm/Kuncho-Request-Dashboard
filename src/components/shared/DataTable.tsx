@@ -520,7 +520,18 @@ export function DataTable<TData extends { id: string }>({
               {(groups ? groups.length === 0 : table.getRowModel().rows.length === 0) ? (
                 <tr>
                   <td colSpan={visibleHeaderCount} className="px-4 py-12 text-center text-slate-400 dark:text-slate-500">
-                    No records found
+                    {globalFilter.trim() ? (
+                      <>
+                        <span className="mb-1 block text-2xl" aria-hidden>🔍</span>
+                        Nothing matches “{globalFilter.trim()}”.{' '}
+                        <button type="button" onClick={() => setGlobalFilter('')} className="font-medium text-brand underline-offset-2 hover:underline">Clear the search</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="mb-1 block text-2xl" aria-hidden>📭</span>
+                        Nothing here yet.
+                      </>
+                    )}
                   </td>
                 </tr>
               ) : groups ? (

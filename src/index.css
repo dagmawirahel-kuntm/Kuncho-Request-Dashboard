@@ -392,6 +392,36 @@ html.theme-transition *::after {
 }
 .no-fun-effects .flame-flicker { animation: none; }
 
+/* Balloons for a birthday or work anniversary, rising past the page;
+   petals drifting down inside a holiday card. Both are mounted only when
+   effects are allowed. */
+@keyframes balloon-rise {
+  0%   { transform: translate(0, 0) rotate(-4deg); opacity: 0; }
+  8%   { opacity: 1; }
+  50%  { transform: translate(18px, -55vh) rotate(5deg); }
+  100% { transform: translate(-12px, -118vh) rotate(-3deg); opacity: 1; }
+}
+.balloon { animation: balloon-rise var(--dur, 6s) cubic-bezier(.35, .1, .5, 1) var(--delay, 0s) both; }
+.balloon-string { transform-origin: top center; }
+@keyframes petal-fall {
+  0%   { transform: translate(0, -24px) rotate(0); opacity: 0; }
+  10%  { opacity: .9; }
+  100% { transform: translate(var(--drift, 30px), 140px) rotate(320deg); opacity: 0; }
+}
+.petal { animation: petal-fall var(--dur, 5s) linear var(--delay, 0s) infinite; }
+@keyframes recap-reveal {
+  0%   { opacity: 0; transform: translateY(18px) rotateX(70deg) scale(.92); }
+  60%  { opacity: 1; transform: translateY(-3px) rotateX(-6deg) scale(1.02); }
+  100% { opacity: 1; transform: none; }
+}
+.recap-tile { animation: recap-reveal 520ms cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0s) both; }
+@media (prefers-reduced-motion: reduce) {
+  .balloon, .petal { display: none; }
+  .recap-tile { animation: none; }
+}
+.no-fun-effects .balloon, .no-fun-effects .petal { display: none; }
+.no-fun-effects .recap-tile { animation: none; }
+
 /* ── Client world (components/clientWorld) ───────────────────────────────
    A client's pages are painted in the colours of its logo. The colours
    arrive as --w1..--w3 (accents) and --wd1/--wd2 (dark, for white text);
