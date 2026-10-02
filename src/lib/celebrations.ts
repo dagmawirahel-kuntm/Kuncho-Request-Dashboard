@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 
-// What there is to celebrate today (migration 402). Every call fails
+// What there is to celebrate today (migration 406). Every call fails
 // quietly until that migration is run: the hooks return nothing and the
 // cards simply don't appear.
 

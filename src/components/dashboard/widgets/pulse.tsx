@@ -13,7 +13,7 @@ import { emojiBurst } from '@/lib/celebrate'
 // ── Team pulse ────────────────────────────────────────────────────────────
 // What's happening with the people around you: announcements (company
 // calendar), thanks colleagues send each other, work anniversaries
-// (migration 380) and birthdays (402). Until those migrations are run,
+// (migration 380) and birthdays (406). Until those migrations are run,
 // thanks, anniversaries and birthdays are simply absent and the widget
 // shows announcements alone. Today's birthdays and anniversaries get a
 // one-tap wish, which is sent as a thank-you.

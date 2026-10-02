@@ -197,7 +197,7 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
       day_rate: payBasis === 'daily' ? form.day_rate ?? null : null,
     }
     if (isEdit) delete payload.bank_account // accounts are kept in staff_bank_accounts once the person exists
-    // Birthday columns arrive with migration 402: send them only when there
+    // Birthday columns arrive with migration 406: send them only when there
     // is a birthday to keep, so saving staff still works before it is run.
     if (!payload.birth_date && !record?.birth_date) { delete payload.birth_date; delete payload.birthday_public }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

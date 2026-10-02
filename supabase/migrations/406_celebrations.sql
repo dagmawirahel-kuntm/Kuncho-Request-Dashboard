@@ -1,4 +1,4 @@
--- 402 — Celebrations: birthdays, your own good news, and the month recap
+-- 406 — Celebrations: birthdays, your own good news, and the month recap
 --
 -- The app's "fun effects" (lib/celebrate.ts) need a little from the
 -- database to celebrate the right people on the right day:
