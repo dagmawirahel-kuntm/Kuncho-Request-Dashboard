@@ -210,6 +210,30 @@ export function isSunday(isoDate: string) {
   return new Date(isoDate + 'T00:00:00').getDay() === 0
 }
 
+/**
+ * Working days in a row checked in on time (present, or out on work),
+ * counting back from today. Sundays, public holidays, approved leave and
+ * excused days are stepped over, not counted and not breaking it. Today
+ * still blank doesn't break it either — the day isn't over. Anything else
+ * (late, half day, absent, a working day with nothing recorded) ends it.
+ */
+export function onTimeStreak(
+  rows: Pick<AttendanceRow, 'work_date' | 'status'>[],
+  today: string,
+  isOff: (date: string) => boolean,
+  from: string,
+) {
+  const byDate = new Map(rows.map(r => [r.work_date, r.status]))
+  let n = 0
+  for (const d of daysBetween(from, today).reverse()) {
+    const status = byDate.get(d)
+    if (status === 'present' || status === 'field') { n++; continue }
+    if (status === 'excused' || (!status && (isOff(d) || d === today))) continue
+    break
+  }
+  return n
+}
+
 // ── Data ─────────────────────────────────────────────────────────────
 export function useAttendancePeople() {
   return useQuery({

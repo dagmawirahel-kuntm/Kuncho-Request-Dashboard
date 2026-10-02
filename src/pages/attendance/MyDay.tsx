@@ -1,15 +1,25 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { LogIn, LogOut, MapPin, Clock, Utensils } from 'lucide-react'
+import { LogIn, LogOut, MapPin, Clock, Utensils, Flame } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import {
   STATUS, PM_STATUS, dayCredit, PLACES, ATTENDANCE_KEYS, addisToday, addisTime, hoursWorked, fmtHours, isSunday, usualPlace,
-  ecMonthOf, ecMonthRange, ecMonthLabel, daysBetween, useAttendance, useAttendanceSettings, useUserNames,
+  ecMonthOf, ecMonthRange, ecMonthLabel, daysBetween, onTimeStreak, useAttendance, useAttendanceSettings, useUserNames,
   type AttendancePerson,
 } from '@/lib/attendance'
 import { useHolidays, useTeamLeave, leaveLabel } from '@/lib/leave'
 import { toEthiopian } from '@/lib/ethiopianCalendar'
+import { buzz, confetti } from '@/lib/celebrate'
+
+// How far back the on-time streak looks.
+const STREAK_DAYS = 90
+
+function daysBefore(isoDate: string, n: number) {
+  const d = new Date(isoDate + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() - n)
+  return d.toISOString().slice(0, 10)
+}
 
 function getPosition(): Promise<{ lat: number; lng: number } | null> {
   if (!('geolocation' in navigator)) return Promise.resolve(null)
@@ -39,14 +49,22 @@ export function MyDay({ me }: { me: AttendancePerson }) {
   const [shareLocation, setShareLocation] = useState(true)
   const [busy, setBusy] = useState(false)
 
+  // The on-time streak — yours alone, shown only to you.
+  const streakFrom = daysBefore(today, STREAK_DAYS)
+  const { data: recent = [] } = useAttendance(streakFrom, today, me.staff_id)
+  const { data: recentLeave = [] } = useTeamLeave(streakFrom, today)
+
   const todayRow = rows.find(r => r.work_date === today)
   const holidaySet = useMemo(() => new Set(holidays.map(h => h.holiday_date)), [holidays])
   const days = daysBetween(start, end).filter(d => d <= today)
   const myLeave = leave.filter(l => l.staff_id === me.staff_id && l.status === 'approved')
   const worked = rows.reduce((n, r) => n + dayCredit(r), 0)
   const late = rows.filter(r => r.status === 'late').length
+  const away = recentLeave.filter(l => l.staff_id === me.staff_id && l.status === 'approved')
+  const streak = onTimeStreak(recent, today, d => isSunday(d) || holidaySet.has(d) || away.some(l => d >= l.start_date && d <= l.end_date), streakFrom)
 
-  async function checkIn() {
+  async function checkIn(e: React.MouseEvent<HTMLButtonElement>) {
+    const btn = e.currentTarget
     setBusy(true)
     const pos = shareLocation ? await getPosition() : null
     const { error } = await supabase.rpc('attendance_check_in', { p_place: place, p_project: null, p_lat: pos?.lat ?? null, p_lng: pos?.lng ?? null })
@@ -54,6 +72,8 @@ export function MyDay({ me }: { me: AttendancePerson }) {
     if (error) { toast(error.message, 'error'); return }
     for (const k of ATTENDANCE_KEYS) qc.invalidateQueries({ queryKey: k })
     toast('Checked in', 'success')
+    buzz([20, 40, 20])
+    confetti('pop', btn)
   }
 
   async function backFromLunch() {
@@ -92,6 +112,12 @@ export function MyDay({ me }: { me: AttendancePerson }) {
               <span className={`mr-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS[todayRow.status]?.cell}`}>{STATUS[todayRow.status]?.label}</span>
               {todayRow.source === 'register' ? `recorded by ${names?.get(todayRow.recorded_by ?? '') ?? 'your supervisor'}` : 'you checked in'}
               {todayRow.pm_status && <> · after lunch: <b>{PM_STATUS[todayRow.pm_status]?.label}</b>{todayRow.pm_at ? ` ${addisTime(todayRow.pm_at)}` : ''}</>}
+            </p>
+          )}
+          {streak >= 2 && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <Flame className="flame-flicker h-3.5 w-3.5 text-[#D4AF37]" />
+              <span><b className="tabular-nums">{streak}</b> working days in a row on time</span>
             </p>
           )}
           {settings && <p className="mt-1 text-[11px] text-slate-400"><Clock className="inline h-3 w-3 -mt-0.5" /> Day starts {settings.day_starts.slice(0, 5)} · back from lunch by {settings.lunch_ends?.slice(0, 5)} · {settings.late_after_minutes} min grace · ends {settings.day_ends.slice(0, 5)}</p>}

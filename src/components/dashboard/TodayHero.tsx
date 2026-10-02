@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, CalendarDays, CheckSquare, Clock, Flame, Megaphone, Moon, Search, Sun, Sunrise, User } from 'lucide-react'
@@ -10,10 +10,13 @@ import { SeasonalEventIcon } from '@/components/seasonal/MeskelArt'
 import { QUICK_ACTIONS } from '@/lib/dashboard/quickActions'
 import { useWaitingOn } from '@/lib/dashboard/waiting'
 import { useDayProgress } from '@/lib/dashboard/progress'
+import { confetti, firstTimeToday } from '@/lib/celebrate'
+import { useToast } from '@/contexts/ToastContext'
 import type { WidgetContext } from '@/lib/dashboard/types'
 import type { CompanyEvent, CompanyEventType } from '@/types/database'
 
 const GOLD = '#D4AF37'
+const STREAK_LANDMARKS = [5, 10, 20, 50, 100]
 
 function partOfDay(now: Date) {
   const h = now.getHours()
@@ -150,6 +153,22 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
   const progress = useDayProgress(ctx?.userId ?? null, isLoading ? null : total)
   const dept = ctx?.department ?? null
   const deptColor = getDeptColor(dept)
+  const ring = useRef<HTMLDivElement>(null)
+  const { toast } = useToast()
+
+  // Queue cleared to zero after real work today (not just an empty day):
+  // confetti from the ring, once a day. A streak landmark gets the big one.
+  useEffect(() => {
+    if (!progress || progress.waiting !== 0 || progress.cleared === 0) return
+    const landmark = STREAK_LANDMARKS.includes(progress.streak) ? progress.streak : null
+    if (landmark && firstTimeToday(`streak-${landmark}`)) {
+      firstTimeToday('queue-zero')
+      confetti('big', ring.current)
+      toast(`🔥 ${landmark}-day streak! You've cleared your queue ${landmark} working days in a row.`, 'success')
+    } else if (firstTimeToday('queue-zero')) {
+      confetti('burst', ring.current)
+    }
+  }, [progress, toast])
 
   const biggest = items.reduce<(typeof items)[number] | null>((b, i) => (!b || i.n > b.n ? i : b), null)
   const summary = isLoading ? null
@@ -163,7 +182,7 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
       </>
   const streak = progress && progress.streak >= 2 ? (
     <span className="ml-1 inline-flex items-center gap-0.5 whitespace-nowrap">
-      You're on a <Flame className="h-3.5 w-3.5" style={{ color: GOLD }} /><span className="font-semibold" style={{ color: GOLD }}>{progress.streak}-day</span> clear-queue streak.
+      You're on a <Flame className="flame-flicker h-3.5 w-3.5" style={{ color: GOLD }} /><span className="font-semibold" style={{ color: GOLD }}>{progress.streak}-day</span> clear-queue streak.
     </span>
   ) : null
 
@@ -200,7 +219,7 @@ export function TodayHero({ ctx, person }: { ctx: WidgetContext | null; person: 
                 )}
               </div>
             </div>
-            {progress && <div className="hidden sm:block"><ProgressRing cleared={progress.cleared} waiting={progress.waiting} /></div>}
+            {progress && <div ref={ring} className="hidden sm:block"><ProgressRing cleared={progress.cleared} waiting={progress.waiting} /></div>}
           </div>
 
           <p className="mt-4 min-h-[1.5rem] text-sm text-white/70 sm:text-base">

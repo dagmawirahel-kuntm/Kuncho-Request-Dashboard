@@ -11,6 +11,7 @@ import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import type { Expense, ExpenseInsert, Order, OrderItem, VendorReceiptFacilitation, Property, CpoBond, SubcontractorEngagement, SourcingBundleDiscountKind } from '@/types/database'
 import { useVendors, useCategories, useStaffDirectory, useSubCategories, useAccounts, useVendorReceiptFacilitations, useTransfers, useLocations, useUserProfiles, useSubcontractorEngagements, useProperties, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
+import { submitted } from '@/lib/celebrate'
 import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -653,7 +654,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     dropRecordCache(qc, 'expense', 'pr-for-expense', 'pr-line-for-expense', 'vrf-for-expense', 'bundle-for-expense', 'property-for-expense', 'expense-linked-orders', 'expense-linked-batch-payments', 'expense-linked-cash-advances', 'expense-fuel-vehicle', 'expense-linked-source', 'expense-transport-job', 'default-expense-category')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
-    toast(isEdit ? 'Expense updated' : 'Expense created', 'success')
+    if (isEdit) toast('Expense updated', 'success')
+    else submitted(toast, 'Expense submitted', 'Now waiting for approval. Track it under Approvals')
     navigate(returnTo)
   }
 

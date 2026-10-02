@@ -8,6 +8,9 @@ import { NAV_LAYOUTS, useNavData, useNavLayout, type NavLayout } from './navStat
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
+import { SubmitStampHost } from '@/components/shared/SubmitStamp'
+import { MyExpenseWatcher } from '@/components/shared/MyExpenseWatcher'
+import { confetti, useFunEffects } from '@/lib/celebrate'
 import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
@@ -15,7 +18,26 @@ import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { AtmosphereContext } from '@/components/clientWorld/atmosphereSlot'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings, PanelLeft, PanelLeftDashed, PanelTop, Check } from 'lucide-react'
+import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings, PanelLeft, PanelLeftDashed, PanelTop, Check, Sparkles } from 'lucide-react'
+
+// Confetti, the submit stamp and the phone buzz (lib/celebrate). Saved per
+// browser, like the theme; a pop of confetti says it's back on.
+function FunEffectsToggle() {
+  const [on, setOn] = useFunEffects()
+  // CSS-only touches (the streak flame) read this class.
+  useEffect(() => { document.documentElement.classList.toggle('no-fun-effects', !on) }, [on])
+  return (
+    <button
+      type="button"
+      onClick={e => { const btn = e.currentTarget; setOn(!on); if (!on) confetti('pop', btn) }}
+      title={on ? 'Fun effects: on (click to turn off)' : 'Fun effects: off (click to turn on)'}
+      aria-pressed={on}
+      className={`rounded-md p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 ${on ? 'text-[#a57d1c] dark:text-[#D4AF37]' : 'text-slate-400 dark:text-slate-500'}`}
+    >
+      <Sparkles className="h-4 w-4" />
+    </button>
+  )
+}
 
 function FiscalYearControl() {
   const { periods, current, value, setValue, canToggle } = useFiscalYear()
@@ -241,6 +263,7 @@ export function AppShell() {
             >
               {theme === 'light' ? <Moon className="h-4 w-4" /> : theme === 'dark' ? <Gem className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
+            <FunEffectsToggle />
             <NotificationsBell />
             {role && (
               <span className={`hidden rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize sm:inline ${roleBadgeColors[role] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
@@ -281,6 +304,8 @@ export function AppShell() {
       </div>
     </div>
     <PagePalette nav={nav} />
+    <SubmitStampHost />
+    <MyExpenseWatcher />
     </>
   )
 }

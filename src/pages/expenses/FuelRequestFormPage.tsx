@@ -9,6 +9,7 @@ import { ReceiptFields, type ReceiptValue } from '@/components/expenses/ExpenseF
 import { useVendors } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { submitted } from '@/lib/celebrate'
 import { Fuel } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -155,7 +156,7 @@ export default function FuelRequestFormPage() {
     qc.invalidateQueries({ queryKey: ['vehicle-month-costs', vehicleId] })
     qc.invalidateQueries({ queryKey: ['vehicle-last-odometer', vehicleId] })
     qc.invalidateQueries({ queryKey: ['logistics-dashboard-fuel'] })
-    toast('Fuel request submitted', 'success')
+    submitted(toast, 'Fuel request submitted', 'Now waiting for approval')
     navigate(`/logistics/vehicles/${vehicleId}`)
   }
 
