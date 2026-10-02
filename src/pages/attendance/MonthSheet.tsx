@@ -11,7 +11,7 @@ import {
   STATUSES, STATUS, ATTENDANCE_KEYS, addisToday, addisTime, hoursWorked, fmtHours, isSunday, lockFor, usualPlace,
   ecMonthOf, ecMonthRange, ecMonthLabel, shiftEcMonth, daysBetween,
   useAttendance, useAttendanceLocks, useUserNames,
-  describeChange, addisDateTime,
+  describeChange, addisDateTime, dayCredit, PM_STATUS,
   type AttendancePerson, type AttendanceRow, type AttendanceLogRow, type EcMonth,
 } from '@/lib/attendance'
 import { toEthiopian } from '@/lib/ethiopianCalendar'
@@ -56,8 +56,9 @@ export function MonthSheet({ people, canLock }: { people: AttendancePerson[]; ca
       if (d > today) break
       const r = cell.get(`${p.staff_id}|${d}`)
       if (r) {
-        worked += STATUS[r.status]?.worked ?? 0
+        worked += dayCredit(r)
         if (r.status === 'late') late++
+        if (r.pm_status === 'late') late++
         if (r.status === 'absent') absent++
         if (r.status === 'excused') excused++
         hours += hoursWorked(r) ?? 0
@@ -87,7 +88,7 @@ export function MonthSheet({ people, canLock }: { people: AttendancePerson[]; ca
       const t = totals(p)
       return [p.employee_name, p.role ?? '', p.staff_type ?? '', ...days.map(d => {
         const r = cell.get(`${p.staff_id}|${d}`)
-        if (r) return STATUS[r.status]?.code ?? ''
+        if (r) return (STATUS[r.status]?.code ?? '') + (r.pm_status ? '/' + (PM_STATUS[r.pm_status]?.code ?? '') : '')
         if (leaveOn(p.staff_id, d)) return 'LV'
         if (holidaySet.has(d)) return 'H'
         if (isSunday(d)) return '-'
@@ -162,13 +163,21 @@ export function MonthSheet({ people, canLock }: { people: AttendancePerson[]; ca
                     const off = !workingDay(d)
                     const future = d > today
                     const s = r ? STATUS[r.status] : null
+                    const pm = r?.pm_status ? PM_STATUS[r.pm_status] : null
+                    // Split when the after-lunch mark differs from the morning one.
+                    const split = !!(s && pm && pm.code !== s.code)
                     const missing = !r && !lv && !off && !future
                     return (
                       <td key={d} className={`p-0.5 text-center ${off ? 'bg-slate-50 dark:bg-slate-900/30' : ''}`}>
                         <button type="button" disabled={future} onClick={() => setOpen({ p, date: d })}
-                          title={r ? `${s?.label}${r.check_in_at ? ` · in ${addisTime(r.check_in_at)}` : ''}${r.check_out_at ? ` · out ${addisTime(r.check_out_at)}` : ''}` : lv ? `${leaveLabel(lv.leave_type)} leave` : holidaySet.get(d) ?? ''}
-                          className={`h-6 w-6 rounded text-[10px] font-semibold ${s ? s.cell : lv ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300' : missing ? 'border border-dashed border-amber-300! text-amber-500' : 'text-slate-300'} ${r?.source === 'self' ? 'ring-1 ring-inset ring-emerald-500/40' : ''}`}>
-                          {s ? s.code : lv ? 'LV' : off ? '' : future ? '' : '?'}
+                          title={r ? `Morning: ${s?.label}${r.check_in_at ? ` ${addisTime(r.check_in_at)}` : ''}${pm ? ` · after lunch: ${pm.label}` : ''}${r.check_out_at ? ` · out ${addisTime(r.check_out_at)}` : ''}${r.from_paper ? ' · from paper' : ''}` : lv ? `${leaveLabel(lv.leave_type)} leave` : holidaySet.get(d) ?? ''}
+                          className={`relative h-6 w-6 overflow-hidden rounded align-middle text-[10px] font-semibold ${s && !split ? s.cell : lv ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300' : missing ? 'border border-dashed border-amber-300! text-amber-500' : 'text-slate-300'} ${r?.source === 'self' ? 'ring-1 ring-inset ring-emerald-500/40' : ''}`}>
+                          {split ? (
+                            <>
+                              <span className={`absolute inset-y-0 left-0 flex w-1/2 items-center justify-center ${s!.cell}`}>{s!.code}</span>
+                              <span className={`absolute inset-y-0 right-0 flex w-1/2 items-center justify-center ${pm!.cell}`}>{pm!.code}</span>
+                            </>
+                          ) : s ? s.code : lv ? 'LV' : off ? '' : future ? '' : '?'}
                         </button>
                       </td>
                     )
@@ -191,6 +200,7 @@ export function MonthSheet({ people, canLock }: { people: AttendancePerson[]; ca
         <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-5 items-center justify-center rounded text-[9px] bg-sky-50 text-sky-600">LV</span>Approved leave</span>
         <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded border border-dashed border-amber-300 text-[9px] text-amber-500">?</span>Not marked</span>
         <span className="inline-flex items-center gap-1"><span className="h-4 w-4 rounded ring-1 ring-inset ring-emerald-500/40" />Checked in themselves</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 overflow-hidden rounded text-[8px] font-semibold"><span className="w-1/2 bg-emerald-100 text-emerald-800 text-center">P</span><span className="w-1/2 bg-red-100 text-red-800 text-center">A</span></span>Morning / after lunch differ</span>
         <span>Top row: Ethiopian day · below it: Gregorian day</span>
       </div>
 
