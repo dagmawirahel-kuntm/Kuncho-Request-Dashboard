@@ -36,7 +36,7 @@ COMMENT ON COLUMN staff.birthday_public IS 'false: the birthday is not shown to 
 -- This year's (and next year's) occurrence of a yearly date; 29 Feb lands
 -- on 28 Feb in other years, as in team_milestones (380).
 CREATE OR REPLACE FUNCTION public.yearly_occurrence(p_date date, p_on date, p_plus int)
-RETURNS date LANGUAGE sql IMMUTABLE AS $function$
+RETURNS date LANGUAGE sql IMMUTABLE SET search_path TO 'public' AS $function$
   SELECT (p_date + make_interval(years => (extract(year FROM p_on)::int - extract(year FROM p_date)::int) + p_plus))::date
 $function$;
 
