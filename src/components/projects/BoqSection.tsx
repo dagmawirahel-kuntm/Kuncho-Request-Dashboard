@@ -7,12 +7,12 @@ import { useToast } from '@/contexts/ToastContext'
 import { useMyStaffId } from '@/hooks/useMyStaff'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ImportBoqModal } from './ImportBoqModal'
-import { BoqItemFormModal } from './BoqItemFormModal'
-import { RequestChangeOrderModal } from './RequestChangeOrderModal'
+import { BoqSheet } from './BoqSheet'
+import { BoqStart } from './BoqStart'
 import { BoqVersionHistoryModal } from './BoqVersionHistoryModal'
 import { downloadCsv } from '@/lib/csvExport'
-import type { Boq, BoqItem, BoqTreeRow, BoqFlatRow, BoqProcurementSpecRow } from '@/types/database'
-import { FileText, Upload, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Lock, AlertTriangle, ListTree, FileEdit, History, Table2, PackageSearch, Download } from 'lucide-react'
+import type { Boq, BoqTreeRow, BoqFlatRow, BoqProcurementSpecRow } from '@/types/database'
+import { FileText, Upload, Lock, AlertTriangle, ListTree, FileEdit, History, Table2, PackageSearch, Download } from 'lucide-react'
 
 interface Props {
   projectId: string
@@ -26,11 +26,9 @@ export function BoqSection({ projectId, projectName }: Props) {
   const qc = useQueryClient()
 
   const [showImport, setShowImport] = useState(false)
-  const [addingUnder, setAddingUnder] = useState<string | null | 'root'>(null) // parent_item_id, or 'root'
-  const [editingItem, setEditingItem] = useState<BoqItem | null>(null)
   const [approving, setApproving] = useState(false)
   const [creatingManually, setCreatingManually] = useState(false)
-  const [showRequestCO, setShowRequestCO] = useState(false)
+  const [proposing, setProposing] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [viewMode, setViewMode] = useState<'tree' | 'flat' | 'procurement'>('tree')
 
@@ -98,6 +96,8 @@ export function BoqSection({ projectId, projectName }: Props) {
     // moments later recorded no BOQ at all — which silently zeroed the
     // whole physical-progress chain (see migration 235).
     qc.invalidateQueries({ queryKey: ['project-approved-boq', projectId] })
+    qc.invalidateQueries({ queryKey: ['project-boq-status'] })
+    qc.invalidateQueries({ queryKey: ['project-boq-schedule-link', projectId] })
   }
 
   async function handleCreateManually() {
@@ -115,7 +115,8 @@ export function BoqSection({ projectId, projectName }: Props) {
 
   async function handleApprove() {
     if (!boq || !myStaff?.id) return
-    if (!window.confirm('Approve this BOQ? Once approved, items can only be revised via a change order.')) return
+    const unpriced = tree.filter(t => (t.node_type === 'line_item' && (!Number(t.quantity) || !Number(t.unit_rate_etb))) || (t.node_type === 'lump_sum' && !Number(t.total_etb))).length
+    if (!window.confirm(`${unpriced ? `${unpriced} line${unpriced === 1 ? ' has' : 's have'} no quantity, rate or amount yet.\n\n` : ''}Approve this BOQ? After approval, changes go through a change order — edit the sheet and send it for approval.`)) return
     setApproving(true)
     const { error } = await supabase.from('boqs').update({
       status: 'approved', approved_at: new Date().toISOString(), approved_by_staff_id: myStaff.id,
@@ -124,37 +125,6 @@ export function BoqSection({ projectId, projectName }: Props) {
     if (error) { toast(error.message, 'error'); return }
     invalidateAll()
     toast('BOQ approved', 'success')
-  }
-
-  async function handleDelete(item: BoqTreeRow) {
-    const hasChildren = tree.some(t => t.parent_item_id === item.id)
-    if (hasChildren) { toast('Delete or move child items first', 'error'); return }
-    if (!window.confirm(`Delete "${item.name}"?`)) return
-    const { error } = await supabase.from('boq_items').delete().eq('id', item.id)
-    if (error) { toast(error.message, 'error'); return }
-    invalidateAll()
-    toast('Item deleted', 'success')
-  }
-
-  async function handleMove(item: BoqTreeRow, direction: 'up' | 'down') {
-    const siblings = tree
-      .filter(t => t.parent_item_id === item.parent_item_id)
-      .sort((a, b) => a.display_order - b.display_order)
-    const idx = siblings.findIndex(s => s.id === item.id)
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-    if (swapIdx < 0 || swapIdx >= siblings.length) return
-    const other = siblings[swapIdx]
-    const [{ error: e1 }, { error: e2 }] = await Promise.all([
-      supabase.from('boq_items').update({ display_order: other.display_order }).eq('id', item.id),
-      supabase.from('boq_items').update({ display_order: item.display_order }).eq('id', other.id),
-    ])
-    if (e1 || e2) { toast((e1 ?? e2)!.message, 'error'); return }
-    invalidateAll()
-  }
-
-  function nextDisplayOrderFor(parentItemId: string | null): number {
-    const siblings = tree.filter(t => t.parent_item_id === parentItemId)
-    return siblings.length > 0 ? Math.max(...siblings.map(s => s.display_order)) + 1 : 1
   }
 
   if (boqLoading) {
@@ -187,35 +157,25 @@ export function BoqSection({ projectId, projectName }: Props) {
                 </button>
               </>
             )}
-            {canRequestCO && (
-              <button onClick={() => setShowRequestCO(true)}
+            {canRequestCO && !proposing && (
+              <button onClick={() => { setViewMode('tree'); setProposing(true) }}
                 className="flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90">
-                <FileEdit className="h-3.5 w-3.5" /> Request Change Order
+                <FileEdit className="h-3.5 w-3.5" /> Change the BOQ
               </button>
             )}
           </div>
         )}
       </div>
 
-      {!boq && (
-        <div className="rounded-md border border-dashed dark:border-slate-600 p-6 text-center space-y-3">
+      {!boq && (canCreate ? (
+        <BoqStart projectId={projectId} projectName={projectName} onCreated={invalidateAll}
+          onImportFile={() => setShowImport(true)} onBlank={handleCreateManually} creatingBlank={creatingManually} />
+      ) : (
+        <div className="rounded-md border border-dashed dark:border-slate-600 p-6 text-center">
           <p className="text-sm text-slate-500 dark:text-slate-400">No BOQ yet for this project.</p>
-          {canCreate ? (
-            <div className="flex items-center justify-center gap-2">
-              <button onClick={() => setShowImport(true)}
-                className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-                <Upload className="h-4 w-4" /> Import from Excel
-              </button>
-              <button onClick={handleCreateManually} disabled={creatingManually}
-                className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">
-                <ListTree className="h-4 w-4" /> {creatingManually ? 'Creating…' : 'Create Manually'}
-              </button>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400">Only a PM, admin, or contributor role can build one.</p>
-          )}
+          <p className="text-xs text-slate-400">A project manager, admin, design, finance or procurement can start one.</p>
         </div>
-      )}
+      ))}
 
       {boq && (
         <>
@@ -227,15 +187,17 @@ export function BoqSection({ projectId, projectName }: Props) {
           </div>
 
           {boq.status === 'approved' && (
-            <div className="rounded-md bg-slate-50 dark:bg-slate-700/30 border dark:border-slate-700 p-3 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                This BOQ is approved and read-only. Revisions go through a change order.
+            <div className={`rounded-md border p-3 flex items-start gap-2 ${proposing ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20' : 'bg-slate-50 dark:bg-slate-700/30 dark:border-slate-700'}`}>
+              <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${proposing ? 'text-amber-600' : 'text-slate-400'}`} />
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {proposing
+                  ? 'Change quantities, rates or lines below. Nothing is saved until the change is approved — the bar at the bottom shows the difference and who has to approve it.'
+                  : <>This BOQ is approved.{canRequestCO && <> To change it, press <b>Change the BOQ</b>, edit the sheet, and send it for approval.</>}</>}
               </p>
             </div>
           )}
 
-          {boq.status === 'approved' && (
+          {boq.status === 'approved' && !proposing && (
             <div className="flex items-center rounded-md border dark:border-slate-600 overflow-hidden w-fit">
               <button onClick={() => setViewMode('tree')}
                 className={`flex items-center gap-1 px-2 py-1 text-xs ${viewMode === 'tree' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
@@ -252,12 +214,6 @@ export function BoqSection({ projectId, projectName }: Props) {
             </div>
           )}
 
-          {canManage && viewMode === 'tree' && (
-            <button onClick={() => setAddingUnder('root')}
-              className="flex items-center gap-1 text-xs font-medium text-brand hover:underline">
-              <Plus className="h-3.5 w-3.5" /> Add Root Section
-            </button>
-          )}
 
           {viewMode === 'flat' && (
             <div className="space-y-2">
@@ -347,53 +303,10 @@ export function BoqSection({ projectId, projectName }: Props) {
             </div>
           )}
 
-          {viewMode === 'tree' && (tree.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">No items yet.</p>
-          ) : (
-            <div className="overflow-x-auto -mx-1">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-slate-400 dark:text-slate-500 border-b dark:border-slate-700">
-                    <th className="py-1.5 px-1 font-medium">Name</th>
-                    <th className="py-1.5 px-1 font-medium">Unit</th>
-                    <th className="py-1.5 px-1 font-medium text-right">Qty</th>
-                    <th className="py-1.5 px-1 font-medium text-right">Rate</th>
-                    <th className="py-1.5 px-1 font-medium text-right">Total</th>
-                    <th className="py-1.5 px-1 font-medium text-right">Weight</th>
-                    <th className="py-1.5 px-1 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y dark:divide-slate-700">
-                  {tree.map(item => (
-                    <tr key={item.id}>
-                      <td className="py-1.5 px-1 text-slate-700 dark:text-slate-200" style={{ paddingLeft: `${4 + (item.depth - 1) * 16}px` }}>
-                        <span className={item.node_type === 'section' ? 'font-semibold' : ''}>{item.name}</span>
-                        {item.is_priced_elsewhere && <span className="ml-1.5 text-[10px] text-amber-600 dark:text-amber-400">priced elsewhere</span>}
-                      </td>
-                      <td className="py-1.5 px-1 text-slate-500 dark:text-slate-400">{item.unit ?? '—'}</td>
-                      <td className="py-1.5 px-1 text-right text-slate-500 dark:text-slate-400">{item.quantity ?? '—'}</td>
-                      <td className="py-1.5 px-1 text-right text-slate-500 dark:text-slate-400">{item.unit_rate_etb != null ? formatCurrency(item.unit_rate_etb) : '—'}</td>
-                      <td className="py-1.5 px-1 text-right text-slate-700 dark:text-slate-200">{item.node_type === 'section' ? '—' : formatCurrency(item.total_etb)}</td>
-                      <td className="py-1.5 px-1 text-right text-slate-400">{item.node_type === 'section' ? '—' : `${item.weight_pct.toFixed(1)}%`}</td>
-                      <td className="py-1.5 px-1">
-                        {canManage && (
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => handleMove(item, 'up')} title="Move up" className="text-slate-400 hover:text-brand"><ChevronUp className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => handleMove(item, 'down')} title="Move down" className="text-slate-400 hover:text-brand"><ChevronDown className="h-3.5 w-3.5" /></button>
-                            {item.node_type === 'section' && (
-                              <button onClick={() => setAddingUnder(item.id)} title="Add child" className="text-slate-400 hover:text-brand"><Plus className="h-3.5 w-3.5" /></button>
-                            )}
-                            <button onClick={() => setEditingItem(item as unknown as BoqItem)} title="Edit" className="text-slate-400 hover:text-brand"><Pencil className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => handleDelete(item)} title="Delete" className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+          {viewMode === 'tree' && (
+            <BoqSheet boqId={boq.id} tree={tree} onChanged={invalidateAll}
+              mode={canManage ? 'edit' : proposing ? 'propose' : 'view'} onCancelProposal={() => setProposing(false)} />
+          )}
         </>
       )}
 
@@ -404,37 +317,6 @@ export function BoqSection({ projectId, projectName }: Props) {
           replaceBoqId={boq && (boq.status === 'draft' || boq.status === 'internal_review') ? boq.id : null}
           onClose={() => setShowImport(false)}
           onImported={() => invalidateAll()}
-        />
-      )}
-
-      {addingUnder !== null && boq && (
-        <BoqItemFormModal
-          boqId={boq.id}
-          parentItemId={addingUnder === 'root' ? null : addingUnder}
-          item={null}
-          nextDisplayOrder={nextDisplayOrderFor(addingUnder === 'root' ? null : addingUnder)}
-          onClose={() => setAddingUnder(null)}
-          onSaved={invalidateAll}
-        />
-      )}
-
-      {editingItem && boq && (
-        <BoqItemFormModal
-          boqId={boq.id}
-          parentItemId={editingItem.parent_item_id}
-          item={editingItem}
-          nextDisplayOrder={editingItem.display_order}
-          onClose={() => setEditingItem(null)}
-          onSaved={invalidateAll}
-        />
-      )}
-
-      {showRequestCO && boq && (
-        <RequestChangeOrderModal
-          boqId={boq.id}
-          tree={tree}
-          onClose={() => setShowRequestCO(false)}
-          onSubmitted={invalidateAll}
         />
       )}
 

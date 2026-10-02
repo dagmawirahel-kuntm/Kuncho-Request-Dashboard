@@ -3,6 +3,7 @@ import { dropRecordCache } from '@/lib/queryCache'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useProjectBoqStatus } from '@/lib/boq'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Segmented } from '@/components/shared/Segmented'
 import { StarRating } from '@/components/shared/StarRating'
@@ -137,6 +138,7 @@ function WorkOrderFormBody({ id, record, items: savedItems }: { id?: string; rec
     retry: false,
   })
   const [boqOpen, setBoqOpen] = useState(false)
+  const { data: boqStatus } = useProjectBoqStatus(form.project_id)
   const [boqSearch, setBoqSearch] = useState('')
   const [boqPicked, setBoqPicked] = useState<Set<string>>(new Set())
   const boqGroups = useMemo(() => {
@@ -314,6 +316,12 @@ function WorkOrderFormBody({ id, record, items: savedItems }: { id?: string; rec
                   </button>
                 )}
               </div>
+              {form.project_id && boqStatus && boqStatus.boq_status !== 'approved' && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                  {boqStatus.boq_status === 'none' ? 'This project has no BOQ, so these parts can\'t be checked against what was agreed.' : 'This project\'s BOQ is still a draft — once it is approved its lines can be picked here.'}{' '}
+                  <Link to={`/projects/${form.project_id}?tab=boq`} className="font-medium underline">{boqStatus.boq_status === 'none' ? 'Start the BOQ' : 'Open the BOQ'}</Link>
+                </p>
+              )}
             </div>
 
             {boqOpen && (
