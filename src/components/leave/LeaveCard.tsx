@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Check, FileWarning, Pencil, Trash2, UserRound, X } from 'lucide-react'
+import { AlertTriangle, Check, FileText, FileWarning, Pencil, Printer, Trash2, UserRound, X } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { LEAVE_TONE, LEAVE_TYPE, ROUTING_LABEL, ecLabel, ecTypedToGregorian, leaveLabel, looksEthiopian } from '@/lib/leave'
+import { LEAVE_TONE, LEAVE_TYPE, ROUTING_LABEL, STATUS_MEANING, ecLabel, ecTypedToGregorian, fmtDays, leaveLabel, looksEthiopian } from '@/lib/leave'
 import { formatDateGC } from '@/lib/utils'
 import type { LeaveRequest } from '@/types/database'
 
@@ -14,13 +14,14 @@ function range(a: string, b: string) {
 
 // One leave request: who, what, when (both calendars), how many days,
 // who covers, and the actions the viewer may take.
-export function LeaveCard({ r, showName = true, onDecide, onFixDates, onWithdraw, onDelete, editHref }: {
+export function LeaveCard({ r, showName = true, onDecide, onFixDates, onWithdraw, onDelete, onPrintSlip, editHref }: {
   r: LeaveCardRow
   showName?: boolean
   onDecide?: (status: 'approved' | 'rejected', note: string) => Promise<void> | void
   onFixDates?: (start: string, end: string) => void
   onWithdraw?: () => void
   onDelete?: () => void
+  onPrintSlip?: () => void
   editHref?: string
 }) {
   const [noting, setNoting] = useState<null | 'approved' | 'rejected'>(null)
@@ -38,11 +39,12 @@ export function LeaveCard({ r, showName = true, onDecide, onFixDates, onWithdraw
               ? <Link to={`/staff/${r.staff_id}`} className="text-sm font-semibold text-slate-800 dark:text-slate-100 hover:text-brand">{r.staff_name}</Link>
               : <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Staff member</span>)}
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${LEAVE_TONE[r.leave_type] ?? LEAVE_TONE.other}`}>{leaveLabel(r.leave_type)}</span>
-            <StatusBadge status={r.status} />
+            <span title={STATUS_MEANING[r.status]}><StatusBadge status={r.status} /></span>
+            {r.from_paper && <span title="Typed in by HR from a signed paper form" className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300"><FileText className="h-3 w-3" />Paper{r.paper_ref ? ` · ${r.paper_ref}` : ''}</span>}
           </div>
           <p className="text-sm text-slate-700 dark:text-slate-200">
             {range(r.start_date, r.end_date)}
-            {r.days != null && <span className="text-slate-500"> · <b className="tabular-nums">{r.days}</b> {info?.counts === 'calendar' ? 'day' : 'working day'}{r.days === 1 ? '' : 's'}</span>}
+            {r.days != null && <span className="text-slate-500"> · <b className="tabular-nums">{fmtDays(r.days)}</b> {info?.counts === 'calendar' ? 'day' : 'working day'}{r.days === 1 ? '' : 's'}</span>}
           </p>
           <p className="text-[11px] text-slate-400">{ecLabel(r.start_date)}{r.end_date !== r.start_date ? ` – ${ecLabel(r.end_date)}` : ''} E.C.</p>
           {(r.cover_name || r.reason || r.handover_note) && (
@@ -67,6 +69,7 @@ export function LeaveCard({ r, showName = true, onDecide, onFixDates, onWithdraw
             </>
           )}
           {onWithdraw && r.status === 'pending' && <button onClick={onWithdraw} className="text-xs text-red-500 hover:underline">Withdraw</button>}
+          {onPrintSlip && <button onClick={onPrintSlip} aria-label="Print decision slip" title="Print the decision slip for the employee" className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700"><Printer className="h-3.5 w-3.5" /></button>}
           {editHref && <Link to={editHref} aria-label="Edit" title="Edit" className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700"><Pencil className="h-3.5 w-3.5" /></Link>}
           {onDelete && <button onClick={onDelete} aria-label="Delete" title="Delete" className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><Trash2 className="h-3.5 w-3.5" /></button>}
         </div>

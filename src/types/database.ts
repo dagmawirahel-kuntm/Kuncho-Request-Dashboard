@@ -2622,6 +2622,10 @@ export interface LeaveRequest {
   handover_note: string | null
   certificate_received: boolean
   decision_note: string | null
+  // Migration 404: a paper form HR typed in, and its reference.
+  from_paper?: boolean
+  paper_ref?: string | null
+  entered_by?: string | null
   created_at: string
 }
 

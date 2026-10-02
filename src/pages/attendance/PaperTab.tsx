@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Printer, Save, FileText, Info } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight, Printer, Save, FileText, Info, Camera, Check, Eye, Inbox, AlertTriangle } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { Segmented } from '@/components/shared/Segmented'
@@ -43,6 +44,19 @@ function shift(date: string, days: number) {
 }
 const ecShort = (d: string) => { const e = toEthiopian(d); return `${e.day} ${ETHIOPIAN_MONTHS[e.month - 1].slice(0, 4)}` }
 
+// Every printed sheet gets a reference (group + Ethiopian date of its
+// Monday) so HR can see which have come back and been typed in.
+const GROUP_CODE: Record<string, string> = { all: 'ALL', Office: 'OFF', 'Work Shop': 'WSH', 'Leather Workshop': 'LTH', Site: 'SIT' }
+function sheetRef(group: string, week: string) {
+  const e = toEthiopian(week)
+  return `ATT-${GROUP_CODE[group] ?? 'GRP'}-${e.year}${String(e.month).padStart(2, '0')}${String(e.day).padStart(2, '0')}`
+}
+
+interface Sheet {
+  id: string; ref: string; group_name: string; week_start: string; people: number | null
+  printed_at: string; returned_at: string | null; entered_at: string | null; photo_path: string | null
+}
+
 // Paper to system, one week at a time:
 //   1. print the week's sheet — same people, same order as here;
 //   2. supervisors fill it at the morning and after-lunch roll-calls;
@@ -61,6 +75,52 @@ export function PaperTab({ people }: { people: AttendancePerson[] }) {
   const { data: holidays = [] } = useHolidays()
   const { data: locks = [] } = useAttendanceLocks()
   const holidayName = useMemo(() => new Map(holidays.map(h => [h.holiday_date, h.name])), [holidays])
+
+  const { role } = useAuth()
+  const tracksPaper = role === 'admin' || role === 'hr_officer' || role === 'operations_manager'
+  const canPhoto = role === 'admin' || role === 'hr_officer'
+  const { data: sheets = [] } = useQuery({
+    queryKey: ['attendance-sheets'],
+    enabled: tracksPaper,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('attendance_sheets').select('*').order('week_start', { ascending: false }).limit(200)
+      if (error) throw error
+      return (data ?? []) as Sheet[]
+    },
+  })
+  const weekSheets = sheets.filter(x => x.week_start === week)
+  const overdue = sheets.filter(x => x.week_start < week && !x.entered_at && shift(x.week_start, 6) < today)
+  const photoInput = useRef<HTMLInputElement>(null)
+  const [photoFor, setPhotoFor] = useState<Sheet | null>(null)
+
+  async function touchSheet(patch: Partial<Sheet> & { group_name: string }, count?: number) {
+    if (!tracksPaper) return
+    const ref = sheetRef(patch.group_name, week)
+    const found = sheets.find(x => x.ref === ref)
+    const res = found
+      ? await supabase.from('attendance_sheets').update(patch).eq('id', found.id)
+      : await supabase.from('attendance_sheets').insert([{ ref, week_start: week, people: count ?? null, ...patch }])
+    if (res.error) toast(res.error.message, 'error')
+    qc.invalidateQueries({ queryKey: ['attendance-sheets'] })
+  }
+
+  async function uploadPhoto(file: File) {
+    if (!photoFor) return
+    const path = `attendance-sheets/${photoFor.ref}-${Date.now()}.${file.name.split('.').pop() || 'jpg'}`
+    const up = await supabase.storage.from('staff-documents').upload(path, file)
+    if (up.error) { toast(up.error.message, 'error'); return }
+    await supabase.from('attendance_sheets').update({ photo_path: path, returned_at: photoFor.returned_at ?? new Date().toISOString() }).eq('id', photoFor.id)
+    qc.invalidateQueries({ queryKey: ['attendance-sheets'] })
+    toast(`Photo of ${photoFor.ref} kept`, 'success')
+    setPhotoFor(null)
+  }
+
+  async function viewPhoto(x: Sheet) {
+    if (!x.photo_path) return
+    const { data, error } = await supabase.storage.from('staff-documents').createSignedUrl(x.photo_path, 300)
+    if (error) { toast(error.message, 'error'); return }
+    window.open(data.signedUrl, '_blank')
+  }
 
   const recordable = people.filter(p => p.can_record)
   const shown = recordable.filter(p => group === 'all' || p.staff_type === group)
@@ -142,16 +202,21 @@ export function PaperTab({ people }: { people: AttendancePerson[] }) {
     }
     setSaving(false)
     for (const k of ATTENDANCE_KEYS) qc.invalidateQueries({ queryKey: k })
-    if (!failed) { setTyped({}); setReason(''); toast(`${changes.length} day${changes.length === 1 ? '' : 's'} saved from paper`, 'success') }
+    if (!failed) {
+      setTyped({}); setReason('')
+      toast(`${changes.length} day${changes.length === 1 ? '' : 's'} saved from paper`, 'success')
+      await touchSheet({ group_name: group, entered_at: new Date().toISOString(), returned_at: sheets.find(x => x.ref === sheetRef(group, week))?.returned_at ?? new Date().toISOString() }, shown.length)
+    }
   }
 
   function printSheet() {
     const w = window.open('', '_blank')
     if (!w) { toast('Allow pop-ups to print the sheet', 'error'); return }
-    w.document.write(buildSheetHtml(shown, days, groups.find(g => g.value === group)?.label ?? 'All', holidayName))
+    w.document.write(buildSheetHtml(shown, days, groups.find(g => g.value === group)?.label ?? 'All', holidayName, sheetRef(group, week)))
     w.document.close()
     w.focus()
     setTimeout(() => w.print(), 400)
+    void touchSheet({ group_name: group, people: shown.length }, shown.length)
   }
 
   return (
@@ -180,6 +245,44 @@ export function PaperTab({ people }: { people: AttendancePerson[] }) {
           <Printer className="h-3.5 w-3.5" /> Print this week's sheet
         </button>
       </div>
+
+      <input ref={photoInput} type="file" accept="image/*,application/pdf" capture="environment" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadPhoto(f) }} />
+      {tracksPaper && (overdue.length > 0 || weekSheets.length > 0) && (
+        <div className="rounded-xl border bg-white px-3 py-2.5 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-800 space-y-2">
+          {overdue.length > 0 && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5" /> Printed but not typed in yet:
+              {overdue.slice(0, 6).map(x => (
+                <button key={x.id} onClick={() => { setWeek(x.week_start); setGroup((x.group_name in GROUP_CODE ? x.group_name : 'all') as Group) }}
+                  className="rounded-full bg-amber-50 px-2 py-0.5 font-medium hover:underline dark:bg-amber-900/30">{x.ref}</button>
+              ))}
+              {overdue.length > 6 && <span>+{overdue.length - 6} more</span>}
+            </p>
+          )}
+          {weekSheets.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <span className="self-center font-medium text-slate-500">This week's sheets</span>
+              {weekSheets.map(x => (
+                <span key={x.id} className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 dark:border-slate-700">
+                  <b className="text-slate-700 dark:text-slate-200">{x.ref}</b>
+                  <span className={x.entered_at ? 'text-emerald-600' : x.returned_at ? 'text-sky-600' : 'text-slate-400'}>
+                    {x.entered_at ? 'typed in' : x.returned_at ? 'back, not typed in' : 'out with the supervisor'}
+                  </span>
+                  {!x.returned_at && (
+                    <button title="Mark returned" onClick={() => supabase.from('attendance_sheets').update({ returned_at: new Date().toISOString() }).eq('id', x.id).then(() => qc.invalidateQueries({ queryKey: ['attendance-sheets'] }))}
+                      className="rounded p-0.5 text-slate-400 hover:text-emerald-600"><Inbox className="h-3.5 w-3.5" /></button>
+                  )}
+                  {x.entered_at && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                  {canPhoto && (x.photo_path
+                    ? <button title="See the photo of the signed sheet" onClick={() => viewPhoto(x)} className="rounded p-0.5 text-slate-400 hover:text-brand"><Eye className="h-3.5 w-3.5" /></button>
+                    : <button title="Attach a photo of the signed sheet" onClick={() => { setPhotoFor(x); photoInput.current?.click() }} className="rounded p-0.5 text-slate-400 hover:text-brand"><Camera className="h-3.5 w-3.5" /></button>)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm overflow-x-auto">
         <table className="text-xs border-collapse min-w-full">
@@ -260,7 +363,7 @@ function esc(s: string) {
 // The printed roll-call sheet: one landscape page per 25 people, each
 // day split into the morning and after-lunch roll-calls, with a line for
 // the supervisor's initials and for whoever types it in.
-function buildSheetHtml(people: AttendancePerson[], days: string[], group: string, holidays: Map<string, string>) {
+function buildSheetHtml(people: AttendancePerson[], days: string[], group: string, holidays: Map<string, string>, ref: string) {
   const pages: AttendancePerson[][] = []
   for (let i = 0; i < Math.max(people.length, 1); i += 25) pages.push(people.slice(i, i + 25))
   const dayHead = days.map(d => {
@@ -272,7 +375,7 @@ function buildSheetHtml(people: AttendancePerson[], days: string[], group: strin
     <section>
       <header>
         <div><b>${COMPANY_NAME}</b><br>Daily roll-call · ${esc(group)}</div>
-        <div class="right">Week of ${formatDateGC(days[0])} (${ecShort(days[0])} ${toEthiopian(days[0]).year} E.C.)<br>Sheet ${n} of ${total}</div>
+        <div class="right"><b>${esc(ref)}</b> · Week of ${formatDateGC(days[0])} (${ecShort(days[0])} ${toEthiopian(days[0]).year} E.C.)<br>Sheet ${n} of ${total} — bring it back to HR by Monday</div>
       </header>
       <table>
         <thead><tr><th rowspan="2" class="num">#</th><th rowspan="2" class="name">Name</th>${dayHead}</tr><tr>${halfHead}</tr></thead>
