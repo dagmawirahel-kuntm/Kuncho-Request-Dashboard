@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CalendarDays, Info, Send, Users } from 'lucide-react'
+import { AlertTriangle, CalendarDays, FileText, Info, Printer, Send, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useStaffDirectory } from '@/hooks/useLookups'
@@ -9,8 +9,10 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { EcDateField } from '@/components/shared/EcDateField'
 import {
   LEAVE_TYPES, LEAVE_TYPE, LEAVE_QUERY_KEYS, countDays, endAfterWorkingDays, addDays, parseIso,
-  useHolidays, useLeaveBalances, useTeamLeave, leaveLabel,
+  useHolidays, useLeaveBalances, useTeamLeave, leaveLabel, leavePreview, fmtDays,
 } from '@/lib/leave'
+import { LeaveTypeCard, EntitlementBreakdown } from './LeaveTypeCard'
+import { printHtml, leaveFormsHtml } from '@/lib/leavePrint'
 import { formatDateGC } from '@/lib/utils'
 import type { LeaveRequest, LeaveType } from '@/types/database'
 
@@ -52,6 +54,9 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
     handover_note: record?.handover_note ?? '',
     certificate_received: record?.certificate_received ?? false,
     status: (record?.status ?? (isHr ? 'approved' : 'pending')) as 'pending' | 'approved' | 'rejected' | 'cancelled',
+    // Most staff have no login: HR types in their signed paper form.
+    from_paper: record?.from_paper ?? (isHr && !record),
+    paper_ref: record?.paper_ref ?? '',
   })
   const [daysOverride, setDaysOverride] = useState<string>('')
   const [saving, setSaving] = useState(false)
@@ -84,6 +89,15 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
   // What this request leaves of the year's annual leave.
   const counted = record?.status === 'approved' && record.leave_type === 'annual' ? record.days ?? 0 : 0
   const leftAfter = balance && form.leave_type === 'annual' && count != null ? balance.annual_left + counted - count : null
+  const effectiveDays = daysOverride.trim() ? Number(daysOverride) : count
+  const preview = datesSet ? leavePreview(form.leave_type, effectiveDays, balance, counted) : null
+
+  function printForm() {
+    const person = people.find(p => p.id === form.staff_id)
+    if (!printHtml(leaveFormsHtml([{ person: person ? { employee_name: person.employee_name, role: person.role } : null, balance }]))) {
+      toast('Allow pop-ups to print the form', 'error')
+    }
+  }
 
   function pickType(t: LeaveType) {
     set('leave_type', t)
@@ -115,6 +129,7 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
     if (!form.start_date || !form.end_date) { toast('Pick the first and last day', 'error'); return }
     if (form.end_date < form.start_date) { toast('The last day is before the first day', 'error'); return }
     if (form.leave_type === 'other' && !form.reason.trim()) { toast('Say what the leave is for', 'error'); return }
+    if (isHr && form.from_paper && !form.paper_ref.trim()) { toast('Type the form number from the paper (top right)', 'error'); return }
     if (ownClash) { toast(`Already has leave ${formatDateGC(ownClash.start_date)} – ${formatDateGC(ownClash.end_date)}`, 'error'); return }
     setSaving(true)
     const payload: Record<string, unknown> = {
@@ -131,6 +146,8 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
       payload.certificate_received = form.certificate_received
       // The database counts the days; HR may set another figure (half days).
       payload.days = daysOverride.trim() ? Number(daysOverride) : null
+      payload.from_paper = form.from_paper
+      payload.paper_ref = form.from_paper ? form.paper_ref.trim() || null : null
     } else if (!isEdit) {
       payload.status = 'pending'
     }
@@ -153,6 +170,19 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
             <Field label="Who">
               <SearchableSelect value={form.staff_id} onChange={v => set('staff_id', v)} options={staffOptions} placeholder="Pick a staff member" disabled={isEdit} />
             </Field>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input type="checkbox" className="h-4 w-4 accent-brand" checked={form.from_paper} onChange={e => set('from_paper', e.target.checked)} />
+                <FileText className="h-4 w-4 text-slate-400" /> From a signed paper form
+              </label>
+              {form.from_paper && (
+                <input value={form.paper_ref} onChange={e => set('paper_ref', e.target.value)} placeholder="Form no. e.g. LV-20190123-417"
+                  aria-label="Paper form number" className="w-56 rounded-md border px-2.5 py-1.5 text-sm dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
+              )}
+              <button type="button" onClick={printForm} className="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300">
+                <Printer className="h-3.5 w-3.5" /> {form.staff_id ? 'Print a form for this person' : 'Print a blank form'}
+              </button>
+            </div>
           </Panel>
         )}
 
@@ -167,9 +197,7 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
               </button>
             ))}
           </div>
-          <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />{typeInfo.rule}
-          </p>
+          <LeaveTypeCard type={form.leave_type} />
         </Panel>
 
         <Panel title="When">
@@ -201,6 +229,15 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
                 </div>
               )}
             </div>
+          )}
+          {preview && (
+            <ul className="mt-2 space-y-1 text-xs">
+              {preview.map((l, i) => (
+                <li key={i} className={`flex items-start gap-1.5 ${l.tone === 'red' ? 'font-medium text-red-600' : l.tone === 'amber' ? 'text-amber-700 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                  {l.tone ? <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" /> : <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400" />}{l.text}
+                </li>
+              ))}
+            </ul>
           )}
           {ownClash && (
             <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-red-600">
@@ -262,16 +299,17 @@ export function LeaveRequestForm({ mode, staffId: fixedStaffId, record, onSaved,
           {balance ? (
             <>
               <FactList facts={[
-                { label: 'Entitled', value: `${balance.entitlement} days`, hint: 'Grows by a day every two years of service' },
-                { label: 'Taken', value: `${balance.annual_taken} days` },
-                ...(balance.annual_pending ? [{ label: 'Waiting for approval', value: `${balance.annual_pending} days` }] : []),
-                { label: 'Left', value: `${balance.annual_left} days`, tone: balance.annual_left <= 0 ? 'red' as const : 'green' as const },
-                ...(leftAfter != null ? [{ label: 'Left after this', value: `${leftAfter} days`, tone: leftAfter < 0 ? 'red' as const : undefined }] : []),
+                { label: 'Entitled', value: `${fmtDays(balance.entitlement)} days` },
+                { label: 'Taken', value: `${fmtDays(balance.annual_taken)} days` },
+                ...(balance.annual_pending ? [{ label: 'Waiting for approval', value: `${fmtDays(balance.annual_pending)} days` }] : []),
+                { label: 'Left', value: `${fmtDays(balance.annual_left)} days`, tone: balance.annual_left <= 0 ? 'red' as const : 'green' as const },
+                ...(leftAfter != null ? [{ label: 'Left after this', value: `${fmtDays(leftAfter)} days`, tone: leftAfter < 0 ? 'red' as const : undefined }] : []),
               ]} />
+              <EntitlementBreakdown balance={balance} />
               {leftAfter != null && leftAfter < 0 && (
                 <p className="mt-2 text-xs text-red-600">This is more than what's left. The extra days would need to be unpaid or approved specially.</p>
               )}
-              {balance.sick_taken_12m > 0 && <p className="mt-2 text-[11px] text-slate-400">Sick leave in the last 12 months: {balance.sick_taken_12m} days</p>}
+              {balance.sick_taken_12m > 0 && <p className="mt-2 text-[11px] text-slate-400">Sick leave in the last 12 months: {fmtDays(balance.sick_taken_12m)} days</p>}
             </>
           ) : <p className="text-xs text-slate-400">{form.staff_id ? 'No balance for this person (casual workers don\'t accrue leave).' : 'Pick who the leave is for.'}</p>}
         </Panel>

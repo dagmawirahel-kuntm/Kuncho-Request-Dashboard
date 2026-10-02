@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CalendarDays, CalendarPlus, ListChecks, Plus, Scale, Search, Trash2 } from 'lucide-react'
+import { CalendarDays, CalendarPlus, ChevronDown, ChevronRight, Gavel, ListChecks, Plus, Printer, Scale, Search, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -11,11 +11,16 @@ import { Segmented } from '@/components/shared/Segmented'
 import { EcDateField } from '@/components/shared/EcDateField'
 import { LeaveCard, type LeaveCardRow } from '@/components/leave/LeaveCard'
 import { LeaveCalendar } from '@/components/leave/LeaveCalendar'
-import { LEAVE_QUERY_KEYS, addDays, ecLabel, iso, looksEthiopian, useHolidays, useLeaveBalances, type Holiday } from '@/lib/leave'
+import { LEAVE_QUERY_KEYS, addDays, ecLabel, iso, looksEthiopian, useHolidays, useLeaveBalances, useLeavePolicy, fmtDays, type Holiday, type LeaveBalance } from '@/lib/leave'
+import { EntitlementBreakdown } from '@/components/leave/LeaveTypeCard'
+import { LeavePolicyPanel } from '@/components/leave/LeavePolicyPanel'
+import { LeavePrintTab } from '@/components/leave/LeavePrintTab'
+import { decisionSlipHtml, printHtml } from '@/lib/leavePrint'
+import { useUserNames } from '@/lib/attendance'
 import { formatDateGC } from '@/lib/utils'
 import type { LeaveRequest } from '@/types/database'
 
-type Tab = 'requests' | 'calendar' | 'balances' | 'holidays'
+type Tab = 'requests' | 'calendar' | 'balances' | 'holidays' | 'rules' | 'print'
 type Filter = 'waiting' | 'upcoming' | 'away' | 'past' | 'all'
 
 // HR's leave desk: decide what's waiting, see who's off, check balances,
@@ -26,6 +31,19 @@ export default function LeaveRequestsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const canManage = role === 'hr_officer' || role === 'admin'
+  const canDecidePolicy = role === 'admin' || role === 'executive'
+  const { data: policyData } = useLeavePolicy()
+  const { data: balances = [] } = useLeaveBalances()
+  const { data: userNames } = useUserNames()
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments-lite'],
+    staleTime: 600_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('departments').select('id, name').order('sort_order')
+      if (error) throw error
+      return (data ?? []) as { id: string; name: string }[]
+    },
+  })
   const [tab, setTab] = useState<Tab>('requests')
 
   const { data: raw = [], isLoading } = useQuery({
@@ -74,6 +92,12 @@ export default function LeaveRequestsPage() {
     toast(`Dates corrected to ${formatDateGC(start)} – ${formatDateGC(end)}`, 'success')
   }
 
+  function printSlip(r: LeaveCardRow) {
+    const ok = printHtml(decisionSlipHtml(r, { employee_name: r.staff_name ?? 'Staff member' },
+      balances.find(b => b.staff_id === r.staff_id) ?? null, r.approved_by ? userNames?.get(r.approved_by) ?? null : null))
+    if (!ok) toast('Allow pop-ups to print the slip', 'error')
+  }
+
   async function remove(id: string) {
     if (!window.confirm('Delete this leave request? This cannot be undone.')) return
     const { error } = await supabase.from('leave_requests').delete().eq('id', id)
@@ -103,24 +127,28 @@ export default function LeaveRequestsPage() {
         { value: 'calendar', label: 'Calendar', icon: CalendarDays },
         { value: 'balances', label: 'Balances', icon: Scale },
         { value: 'holidays', label: 'Holidays', icon: CalendarPlus },
+        { value: 'rules', label: policyData?.policy && !policyData.policy.decided_at ? 'Rules •' : 'Rules', icon: Gavel },
+        ...(canManage ? [{ value: 'print' as Tab, label: 'Print', icon: Printer }] : []),
       ]} />
 
       {tab === 'requests' && (
         <RequestsTab rows={rows} loading={isLoading} canManage={canManage} initialQuery={params.get('q') ?? ''}
           misdatedCount={misdated.length}
-          onDecide={decide} onFixDates={fixDates} onDelete={remove} />
+          onDecide={decide} onFixDates={fixDates} onDelete={remove} onPrintSlip={canManage ? printSlip : undefined} />
       )}
       {tab === 'calendar' && (
         <LeaveCalendar holidays={holidays} linkTo={l => `/staff/${l.staff_id}`}
           leaves={rows.map(r => ({ id: r.id, staff_id: r.staff_id, name: r.staff_name ?? '—', start_date: r.start_date, end_date: r.end_date, leave_type: r.leave_type, status: r.status }))} />
       )}
-      {tab === 'balances' && <BalancesTab />}
+      {tab === 'balances' && <BalancesTab canAdjust={canManage} />}
       {tab === 'holidays' && <HolidaysTab holidays={holidays} canManage={canManage} />}
+      {tab === 'rules' && <LeavePolicyPanel canEdit={canDecidePolicy} departments={departments} />}
+      {tab === 'print' && canManage && <LeavePrintTab requests={raw} />}
     </div>
   )
 }
 
-function RequestsTab({ rows, loading, canManage, initialQuery, misdatedCount, onDecide, onFixDates, onDelete }: {
+function RequestsTab({ rows, loading, canManage, initialQuery, misdatedCount, onDecide, onFixDates, onDelete, onPrintSlip }: {
   rows: LeaveCardRow[]
   loading: boolean
   canManage: boolean
@@ -129,6 +157,7 @@ function RequestsTab({ rows, loading, canManage, initialQuery, misdatedCount, on
   onDecide: (id: string, s: 'approved' | 'rejected', note: string) => Promise<void>
   onFixDates: (id: string, start: string, end: string) => void
   onDelete: (id: string) => void
+  onPrintSlip?: (r: LeaveCardRow) => void
 }) {
   const today = iso(new Date())
   const counts: Record<Filter, number> = {
@@ -182,16 +211,20 @@ function RequestsTab({ rows, loading, canManage, initialQuery, misdatedCount, on
               onDecide={canManage ? (s, note) => onDecide(r.id, s, note) : undefined}
               onFixDates={canManage ? (s, e) => onFixDates(r.id, s, e) : undefined}
               editHref={canManage ? `/leave-requests/${r.id}/edit` : undefined}
-              onDelete={canManage ? () => onDelete(r.id) : undefined} />
+              onDelete={canManage ? () => onDelete(r.id) : undefined}
+              onPrintSlip={onPrintSlip && r.status !== 'pending' ? () => onPrintSlip(r) : undefined} />
           ))}
       </div>
     </div>
   )
 }
 
-function BalancesTab() {
+function BalancesTab({ canAdjust }: { canAdjust: boolean }) {
   const { data: balances = [], isLoading } = useLeaveBalances()
+  const { data: policyData } = useLeavePolicy()
+  const pol = policyData?.policy
   const [q, setQ] = useState('')
+  const [open, setOpen] = useState<string | null>(null)
   const shown = balances
     .filter(b => !q.trim() || b.employee_name.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => a.annual_left - b.annual_left || a.employee_name.localeCompare(b.employee_name))
@@ -201,7 +234,9 @@ function BalancesTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Annual leave for the year {year} (Hamle 1 to Sene 30). 16 working days in the first year, one more for every two years after. Casual workers aren't listed.
+          {pol?.leave_year_basis === 'anniversary' ? 'Each person’s leave year runs from their work anniversary.' : `Annual leave for the year ${year} (Hamle 1 to Sene 30).`}
+          {' '}{pol ? `${fmtDays(pol.base_days)} days, plus one for every ${pol.extra_day_every_years} years after the first` : ''}{pol?.decided_at ? ' — company policy.' : ' — legal default, waiting for a management decision (see Rules).'}
+          {' '}Click a name to see how their number is worked out.
         </p>
         <label className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
@@ -224,11 +259,15 @@ function BalancesTab() {
             {isLoading ? <tr><td colSpan={5} className="py-10 text-center text-slate-400">Loading…</td></tr>
               : shown.map(b => {
                 const pct = Math.min(100, (b.annual_taken / Math.max(1, b.entitlement)) * 100)
-                return (
+                const isOpen = open === b.staff_id
+                return [
                   <tr key={b.staff_id}>
                     <td className="px-4 py-2">
-                      <Link to={`/staff/${b.staff_id}`} className="font-medium text-slate-700 dark:text-slate-200 hover:text-brand">{b.employee_name}</Link>
+                      <button onClick={() => setOpen(isOpen ? null : b.staff_id)} className="inline-flex items-center gap-1 text-left font-medium text-slate-700 dark:text-slate-200 hover:text-brand" aria-expanded={isOpen}>
+                        {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}{b.employee_name}
+                      </button>
                       {b.on_leave_today && <span className="ml-2 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">Away</span>}
+                      {b.in_probation && <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Probation</span>}
                       {!b.starting_date && <p className="text-[10px] text-slate-400">No start date — counted as first year</p>}
                     </td>
                     <td className="px-2 py-2">
@@ -237,18 +276,75 @@ function BalancesTab() {
                           <div className={`h-full rounded-full ${b.annual_left < 0 ? 'bg-red-500' : 'bg-sky-500'}`} style={{ width: `${pct}%` }} />
                         </div>
                         <span className={`w-24 text-right text-xs tabular-nums ${b.annual_left < 0 ? 'text-red-600 font-semibold' : 'text-slate-600 dark:text-slate-300'}`}>
-                          {b.annual_left} of {b.entitlement} left
+                          {fmtDays(b.annual_left)} of {fmtDays(b.entitlement)} left
                         </span>
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-500">{b.annual_pending || '—'}</td>
-                    <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-500">{b.sick_taken_12m || '—'}</td>
-                    <td className="px-4 py-2 text-right text-xs tabular-nums text-slate-500">{b.other_taken || '—'}</td>
-                  </tr>
-                )
+                    <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-500">{b.annual_pending ? fmtDays(b.annual_pending) : '—'}</td>
+                    <td className="px-2 py-2 text-right text-xs tabular-nums text-slate-500">{b.sick_taken_12m ? fmtDays(b.sick_taken_12m) : '—'}</td>
+                    <td className="px-4 py-2 text-right text-xs tabular-nums text-slate-500">{b.other_taken + b.unpaid_taken ? fmtDays(b.other_taken + b.unpaid_taken) : '—'}</td>
+                  </tr>,
+                  isOpen && (
+                    <tr key={b.staff_id + '-x'} className="bg-slate-50/60 dark:bg-slate-900/30">
+                      <td colSpan={5} className="px-4 py-3">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div>
+                            <EntitlementBreakdown balance={b} />
+                            <Link to={`/staff/${b.staff_id}`} className="mt-2 inline-block text-xs text-brand hover:underline">Open staff record →</Link>
+                          </div>
+                          {canAdjust && <AdjustBalance b={b} />}
+                        </div>
+                      </td>
+                    </tr>
+                  ),
+                ]
               })}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+// HR's by-hand correction to one person's leave year: an opening balance
+// from the paper files, days carried by agreement, leave taken before the
+// system. Kept with a reason; shows in the breakdown as "Set by HR".
+function AdjustBalance({ b }: { b: LeaveBalance }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [days, setDays] = useState('')
+  const [reason, setReason] = useState('')
+  const { data: history = [] } = useQuery({
+    queryKey: ['leave-adjustments', b.staff_id, b.year_start],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('leave_adjustments').select('id, days, reason, created_at')
+        .eq('staff_id', b.staff_id).eq('year_start', b.year_start).order('created_at')
+      if (error) throw error
+      return (data ?? []) as { id: string; days: number; reason: string; created_at: string }[]
+    },
+  })
+  async function save() {
+    const n = Number(days)
+    if (!n || !reason.trim()) { toast('Enter the days (e.g. 3 or -2) and why', 'error'); return }
+    const { error } = await supabase.from('leave_adjustments').insert([{ staff_id: b.staff_id, year_start: b.year_start, days: n, reason: reason.trim() }])
+    if (error) { toast(error.message, 'error'); return }
+    setDays(''); setReason('')
+    for (const k of [...LEAVE_QUERY_KEYS, ['leave-adjustments']]) qc.invalidateQueries({ queryKey: k })
+    toast('Balance adjusted', 'success')
+  }
+  return (
+    <div className="rounded-md border bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800">
+      <p className="font-medium text-slate-600 dark:text-slate-300">Adjust this year</p>
+      <p className="text-[11px] text-slate-400">e.g. leave already taken before it was recorded here (−4), or days carried by agreement (+3).</p>
+      {history.map(h => (
+        <p key={h.id} className="mt-1 text-slate-600 dark:text-slate-300"><b className="tabular-nums">{h.days > 0 ? '+' : ''}{fmtDays(h.days)}</b> — {h.reason}</p>
+      ))}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <input type="number" step={0.5} value={days} onChange={e => setDays(e.target.value)} placeholder="± days" aria-label="Days"
+          className="w-20 rounded-md border px-2 py-1 dark:bg-slate-900 dark:border-slate-600 dark:text-slate-100" />
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why" aria-label="Reason"
+          className="min-w-[8rem] flex-1 rounded-md border px-2 py-1 dark:bg-slate-900 dark:border-slate-600 dark:text-slate-100" />
+        <button onClick={save} className="rounded-md bg-brand px-3 py-1 font-medium text-white">Save</button>
       </div>
     </div>
   )
