@@ -35,6 +35,30 @@ export const STATUSES: StatusInfo[] = [
 ]
 export const STATUS: Record<string, StatusInfo> = Object.fromEntries(STATUSES.map(s => [s.value, s]))
 
+// The after-lunch roll-call (migration 401). Half day doesn't apply —
+// it is already a half.
+export type PmStatus = 'present' | 'late' | 'field' | 'excused' | 'absent'
+export const PM_STATUSES: (StatusInfo & { value: PmStatus })[] = [
+  { ...STATUS.present, value: 'present', label: 'Back', hint: 'Back from lunch on time' },
+  { ...STATUS.late, value: 'late', label: 'Back late', hint: 'Back after lunch ended' },
+  { ...STATUS.field, value: 'field' },
+  { ...STATUS.excused, value: 'excused', hint: 'Left with permission' },
+  { ...STATUS.absent, value: 'absent', label: "Didn't come back", hint: 'Left without permission' },
+]
+export const PM_STATUS: Record<string, StatusInfo> = Object.fromEntries(PM_STATUSES.map(s => [s.value, s]))
+
+/**
+ * How much of a working day a record counts as. Until the after-lunch
+ * roll-call is taken the morning mark decides the whole day; once it
+ * is, each half counts half.
+ */
+export function dayCredit(r: Pick<AttendanceRow, 'status' | 'pm_status'>) {
+  if (!r.pm_status) return STATUS[r.status]?.worked ?? 0
+  const am = r.status === 'half_day' ? 0.5 : (STATUS[r.status]?.worked ?? 0) > 0 ? 0.5 : 0
+  const pm = (PM_STATUS[r.pm_status]?.worked ?? 0) > 0 ? 0.5 : 0
+  return r.status === 'half_day' ? Math.max(am, pm) : am + pm
+}
+
 export const PLACES = [
   { value: 'office', label: 'Office' },
   { value: 'workshop', label: 'Workshop' },
@@ -67,6 +91,11 @@ export interface AttendanceRow {
   project_id: string | null
   note: string | null
   source: 'self' | 'register'
+  pm_status: PmStatus | null
+  pm_at: string | null
+  pm_recorded_by: string | null
+  pm_recorded_at: string | null
+  from_paper: boolean
   in_lat: number | null
   in_lng: number | null
   out_lat: number | null
@@ -103,7 +132,7 @@ export interface AttendanceLogRow {
 }
 
 export interface AttendanceLock { id: string; start_date: string; end_date: string; label: string; locked_by: string | null; locked_at: string }
-export interface AttendanceSettings { day_starts: string; late_after_minutes: number; day_ends: string }
+export interface AttendanceSettings { day_starts: string; late_after_minutes: number; day_ends: string; lunch_ends: string }
 
 // ── Time ─────────────────────────────────────────────────────────────
 // Everything is shown in Addis Ababa time (UTC+3, no daylight saving).
@@ -224,9 +253,9 @@ export function useAttendanceSettings() {
     queryKey: ['attendance-settings'],
     staleTime: 300_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('attendance_settings').select('day_starts, late_after_minutes, day_ends').maybeSingle()
+      const { data, error } = await supabase.from('attendance_settings').select('day_starts, late_after_minutes, day_ends, lunch_ends').maybeSingle()
       if (error) throw error
-      return (data ?? { day_starts: '08:30:00', late_after_minutes: 15, day_ends: '17:30:00' }) as AttendanceSettings
+      return (data ?? { day_starts: '08:30:00', late_after_minutes: 15, day_ends: '17:30:00', lunch_ends: '13:30:00' }) as AttendanceSettings
     },
   })
 }
@@ -257,12 +286,13 @@ export function describeChange(h: AttendanceLogRow): string {
   if (h.action === 'delete') return `Deleted (was ${STATUS[h.old_row?.status ?? '']?.label ?? '—'})`
   if (h.action === 'insert') {
     const n = h.new_row
-    return `Recorded ${STATUS[n?.status ?? '']?.label ?? ''}${n?.check_in_at ? ` · in ${addisTime(n.check_in_at)}` : ''}${n?.source === 'self' ? ' (self check-in)' : ''}`
+    return `Recorded ${STATUS[n?.status ?? '']?.label ?? ''}${n?.check_in_at ? ` · in ${addisTime(n.check_in_at)}` : ''}${n?.pm_status ? ` · after lunch ${PM_STATUS[n.pm_status]?.label ?? ''}` : ''}${n?.source === 'self' ? ' (self check-in)' : ''}${n?.from_paper ? ' (from paper)' : ''}`
   }
   const o = h.old_row ?? {}, n = h.new_row ?? {}
   const parts: string[] = []
   if (o.status !== n.status) parts.push(`${STATUS[o.status ?? '']?.label ?? '—'} → ${STATUS[n.status ?? '']?.label ?? '—'}`)
   if (o.check_in_at !== n.check_in_at) parts.push(`in ${addisTime(o.check_in_at) || '—'} → ${addisTime(n.check_in_at) || '—'}`)
+  if (o.pm_status !== n.pm_status) parts.push(`after lunch ${PM_STATUS[o.pm_status ?? '']?.label ?? '—'} → ${PM_STATUS[n.pm_status ?? '']?.label ?? '—'}`)
   if (o.check_out_at !== n.check_out_at) parts.push(`out ${addisTime(o.check_out_at) || '—'} → ${addisTime(n.check_out_at) || '—'}`)
   if (o.note !== n.note) parts.push('note changed')
   if (o.place !== n.place) parts.push('place changed')

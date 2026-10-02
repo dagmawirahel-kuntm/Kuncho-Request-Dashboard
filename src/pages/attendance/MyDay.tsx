@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { LogIn, LogOut, MapPin, Clock } from 'lucide-react'
+import { LogIn, LogOut, MapPin, Clock, Utensils } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import {
-  STATUS, PLACES, ATTENDANCE_KEYS, addisToday, addisTime, hoursWorked, fmtHours, isSunday, usualPlace,
+  STATUS, PM_STATUS, dayCredit, PLACES, ATTENDANCE_KEYS, addisToday, addisTime, hoursWorked, fmtHours, isSunday, usualPlace,
   ecMonthOf, ecMonthRange, ecMonthLabel, daysBetween, useAttendance, useAttendanceSettings, useUserNames,
   type AttendancePerson,
 } from '@/lib/attendance'
@@ -43,7 +43,7 @@ export function MyDay({ me }: { me: AttendancePerson }) {
   const holidaySet = useMemo(() => new Set(holidays.map(h => h.holiday_date)), [holidays])
   const days = daysBetween(start, end).filter(d => d <= today)
   const myLeave = leave.filter(l => l.staff_id === me.staff_id && l.status === 'approved')
-  const worked = rows.reduce((n, r) => n + (STATUS[r.status]?.worked ?? 0), 0)
+  const worked = rows.reduce((n, r) => n + dayCredit(r), 0)
   const late = rows.filter(r => r.status === 'late').length
 
   async function checkIn() {
@@ -54,6 +54,15 @@ export function MyDay({ me }: { me: AttendancePerson }) {
     if (error) { toast(error.message, 'error'); return }
     for (const k of ATTENDANCE_KEYS) qc.invalidateQueries({ queryKey: k })
     toast('Checked in', 'success')
+  }
+
+  async function backFromLunch() {
+    setBusy(true)
+    const { error } = await supabase.rpc('attendance_back_from_lunch')
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    for (const k of ATTENDANCE_KEYS) qc.invalidateQueries({ queryKey: k })
+    toast('Marked back from lunch', 'success')
   }
 
   async function checkOut() {
@@ -82,9 +91,10 @@ export function MyDay({ me }: { me: AttendancePerson }) {
             <p className="text-xs text-slate-500">
               <span className={`mr-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS[todayRow.status]?.cell}`}>{STATUS[todayRow.status]?.label}</span>
               {todayRow.source === 'register' ? `recorded by ${names?.get(todayRow.recorded_by ?? '') ?? 'your supervisor'}` : 'you checked in'}
+              {todayRow.pm_status && <> · after lunch: <b>{PM_STATUS[todayRow.pm_status]?.label}</b>{todayRow.pm_at ? ` ${addisTime(todayRow.pm_at)}` : ''}</>}
             </p>
           )}
-          {settings && <p className="mt-1 text-[11px] text-slate-400"><Clock className="inline h-3 w-3 -mt-0.5" /> Day starts {settings.day_starts.slice(0, 5)} · late after {settings.late_after_minutes} min · ends {settings.day_ends.slice(0, 5)}</p>}
+          {settings && <p className="mt-1 text-[11px] text-slate-400"><Clock className="inline h-3 w-3 -mt-0.5" /> Day starts {settings.day_starts.slice(0, 5)} · back from lunch by {settings.lunch_ends?.slice(0, 5)} · {settings.late_after_minutes} min grace · ends {settings.day_ends.slice(0, 5)}</p>}
         </div>
 
         {!todayRow?.check_in_at && (isSunday(today) || holidaySet.has(today)) && (
@@ -106,9 +116,16 @@ export function MyDay({ me }: { me: AttendancePerson }) {
               <LogIn className="h-5 w-5" /> {busy ? 'Checking in…' : 'Check in'}
             </button>
           ) : !todayRow.check_out_at ? (
+            <>
+            {!todayRow.pm_status && (
+              <button onClick={backFromLunch} disabled={busy} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-emerald-600! px-5 py-4 text-base font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
+                <Utensils className="h-5 w-5" /> Back from lunch
+              </button>
+            )}
             <button onClick={checkOut} disabled={busy} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-4 text-base font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900">
               <LogOut className="h-5 w-5" /> {busy ? 'Checking out…' : 'Check out'}
             </button>
+            </>
           ) : (
             <p className="flex-1 rounded-xl bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
               In {addisTime(todayRow.check_in_at)} · out {addisTime(todayRow.check_out_at)}. Ask your supervisor if something is wrong — they can correct it with a reason.
