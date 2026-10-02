@@ -18,6 +18,7 @@ import { useTabParam } from '@/lib/useTabParam'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, RecordTabs, Stat, StatusSteps, type TabDef } from '@/components/record/Record'
 import { useStaff, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
+import { useProjectBoqStatus, boqActivityWhy } from '@/lib/boq'
 import type {
   Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
   CostGroup, BudgetVariation, BudgetCheckMode, LaborAllocation, LaborAllocationInsert, LaborAllocationStatus,
@@ -713,6 +714,7 @@ export default function ProjectWorkspacePage() {
   // Trainer hint (PR 9b): does this project have an approved BOQ, and
   // does a schedule already exist for it. Extended in PR 9c: is that
   // schedule baselined with literally nothing progress-reported yet.
+  const { data: boqStatus } = useProjectBoqStatus(id)
   const { data: projectBoqSchedule } = useQuery({
     queryKey: ['project-boq-schedule-link', id],
     queryFn: async () => {
@@ -1058,6 +1060,7 @@ export default function ProjectWorkspacePage() {
   const remaining = summary ? summary.total_budget - summary.total_actual_core - summary.total_committed_core : null
   const marginBelowBid = summary?.projected_margin_core != null && summary.bid_margin != null && summary.projected_margin_core < summary.bid_margin
 
+  const boqWhy = boqStatus ? boqActivityWhy(boqStatus) : ''
   // What needs someone's attention on this project, each with where to go.
   const attention: { key: string; text: string; tone: 'red' | 'amber'; tab?: ProjectTab }[] = [
     ...(daysLeft != null && daysLeft < 0 ? [{ key: 'late', text: `Handover was due ${formatDate(project.target_handover_date)} — ${Math.abs(daysLeft)} days overdue`, tone: 'red' as const }] : []),
@@ -1065,13 +1068,15 @@ export default function ProjectWorkspacePage() {
     ...overGroups.map(g => ({ key: `over-${g.cost_group_id}`, text: `${g.cost_group_name} is over budget by ${formatCurrency(Math.abs(g.remaining_amount))}`, tone: 'red' as const, tab: 'budget' as ProjectTab })),
     ...(pendingVariations.length ? [{ key: 'var', text: `${pendingVariations.length} budget variation${pendingVariations.length === 1 ? '' : 's'} waiting for a decision`, tone: 'amber' as const, tab: 'budget' as ProjectTab }] : []),
     ...(marginBelowBid ? [{ key: 'margin', text: `Projected margin ${(summary!.projected_margin_core! * 100).toFixed(1)}% is below the bid's ${(summary!.bid_margin! * 100).toFixed(1)}%`, tone: 'amber' as const, tab: 'budget' as ProjectTab }] : []),
+    ...(boqStatus?.needs_boq && boqStatus.boq_status === 'none' ? [{ key: 'boq', text: `No BOQ yet${boqWhy ? ` — already ${boqWhy}` : ''}. Start one from the proforma, Excel or another project.`, tone: 'red' as const, tab: 'boq' as ProjectTab }] : []),
+    ...(boqStatus && (boqStatus.boq_status === 'draft' || boqStatus.boq_status === 'internal_review') ? [{ key: 'boq-draft', text: `The BOQ is still a draft (${boqStatus.item_count} line${boqStatus.item_count === 1 ? '' : 's'}) — approve it so work can be checked against it`, tone: 'amber' as const, tab: 'boq' as ProjectTab }] : []),
     ...(awaitingDelivery.length ? [{ key: 'grn', text: `${awaitingDelivery.length} purchase order${awaitingDelivery.length === 1 ? '' : 's'} ordered, not received yet`, tone: 'amber' as const, tab: 'activity' as ProjectTab }] : []),
   ]
 
   const tabs: TabDef<ProjectTab>[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'budget', label: 'Budget', icon: Wallet, count: pendingVariations.length },
-    { id: 'boq', label: 'BOQ & Schedule', icon: Layers },
+    { id: 'boq', label: boqStatus?.needs_boq && boqStatus.boq_status === 'none' ? 'BOQ & Schedule · missing' : 'BOQ & Schedule', icon: Layers },
     { id: 'payments', label: 'Payments', icon: Banknote },
     { id: 'team', label: 'Team & work', icon: Users },
     { id: 'materials', label: 'Materials', icon: Boxes },

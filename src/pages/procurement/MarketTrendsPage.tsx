@@ -10,7 +10,8 @@ import { RequestPriceCheckModal } from '@/components/shared/RequestPriceCheckMod
 import { RecordTabs, Stat } from '@/components/record/Record'
 import { ChangeBadge, FreshnessPill, PriceRange } from '@/components/market/MarketBits'
 import { PriceDetailDrawer, type PriceTarget } from '@/components/market/PriceDetailDrawer'
-import { TrendingUp, TrendingDown, Search, Download, Copy, ArrowRight, Info } from 'lucide-react'
+import { useAllFamilyPrices, type FamilyPriceRow } from '@/lib/stockFamilies'
+import { TrendingUp, TrendingDown, Search, Download, Copy, ArrowRight, Info, Boxes } from 'lucide-react'
 
 const PROCUREMENT_ROLES = ['admin', 'executive', 'procurement_officer']
 /** Who can open stock pages (the stock route guard). */
@@ -33,6 +34,8 @@ export default function MarketTrendsPage() {
   const canOpenStock = STOCK_ROLES.includes(role ?? '')
   const { data: prices = [], isLoading } = useLatestPrices()
   const { data: freeRows = [], isLoading: freeLoading } = useFreeTextPrices()
+  const { data: familyRows = [] } = useAllFamilyPrices()
+  const familyOf = useMemo(() => new Map(familyRows.map(r => [r.stock_item_id, r])), [familyRows])
 
   const [tab, setTab] = useState<Tab>('stock')
   const [q, setQ] = useState('')
@@ -90,7 +93,7 @@ export default function MarketTrendsPage() {
       if (freshFilter.size > 0 && !(p.display_price != null && freshFilter.has(p.freshness))) return false
       if (volFilter.size > 0 && !volFilter.has(p.volatility)) return false
       if (openReqOnly && !openItemIds.has(p.stock_item_id)) return false
-      if (ql && !`${p.item_name} ${p.amharic_name ?? ''} ${p.item_code} ${p.sub_category_name ?? ''} ${p.display_vendor_name ?? ''}`.toLowerCase().includes(ql)) return false
+      if (ql && !`${familyOf.get(p.stock_item_id)?.family_name ?? ''} ${p.item_name} ${p.amharic_name ?? ''} ${p.item_code} ${p.sub_category_name ?? ''} ${p.display_vendor_name ?? ''}`.toLowerCase().includes(ql)) return false
       return true
     })
     const t = (s: string | null) => (s ? new Date(s).getTime() : 0)
@@ -106,7 +109,7 @@ export default function MarketTrendsPage() {
       }
     })
     return arr
-  }, [prices, coverage, category, freshFilter, volFilter, openReqOnly, q, sort, openItemIds])
+  }, [prices, coverage, category, freshFilter, volFilter, openReqOnly, q, sort, openItemIds, familyOf])
 
   const freeFiltered = useMemo(() => {
     const ql = q.trim().toLowerCase()
@@ -140,6 +143,11 @@ export default function MarketTrendsPage() {
     kind: 'free', anchorKey: r.anchor_key, name: r.name, unit: r.unit,
     sub: [r.is_sub_category_survey ? 'category survey' : r.sub_category_name, r.brand, r.specification].filter(Boolean).join(' · '), freshness: r.freshness,
   })
+  const openVariant = (r: FamilyPriceRow) => {
+    const p = prices.find(x => x.stock_item_id === r.stock_item_id)
+    if (p) openStock(p)
+    else setTarget({ kind: 'stock', stockItemId: r.stock_item_id, name: r.item_name, unit: r.unit, sub: r.item_code })
+  }
   const selectedStock = target?.kind === 'stock' ? prices.find(p => p.stock_item_id === target.stockItemId) : undefined
 
   return (
@@ -300,6 +308,15 @@ export default function MarketTrendsPage() {
                             {openItemIds.has(p.stock_item_id) && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" title="Price check requested" />}
                           </div>
                           <div className="max-w-[280px] truncate text-[11px] text-slate-400">{[p.item_code, p.sub_category_name ?? p.main_category].filter(Boolean).join(' · ')}</div>
+                          {familyOf.get(p.stock_item_id) && (() => {
+                            const f = familyOf.get(p.stock_item_id)!
+                            return (
+                              <div className="flex max-w-[280px] items-center gap-1 truncate text-[11px] text-violet-600 dark:text-violet-400" title="Linked as a version of one product — compare it with its siblings, not as a rise">
+                                <Boxes className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{f.variant_label ? `${f.variant_label} · ` : ''}{f.family_name}{f.family_size > 1 ? ` · ${f.family_size} versions` : ''}</span>
+                              </div>
+                            )
+                          })()}
                           {p.variant_count > 0 && (
                             <div className="max-w-[280px] truncate text-[11px] text-violet-600 dark:text-violet-400">
                               {p.latest_variant_label ?? 'no variant'} · {p.variant_count} variant{p.variant_count === 1 ? '' : 's'}
@@ -390,6 +407,7 @@ export default function MarketTrendsPage() {
 
       {target && (
         <PriceDetailDrawer target={target} onClose={() => setTarget(null)} canOpenStock={canOpenStock}
+          canMovePrices={canOpenStock} onOpenVariant={openVariant}
           actions={target.kind === 'stock' ? (
             <>
               {isProcurement && (

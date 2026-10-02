@@ -1,11 +1,13 @@
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ExternalLink, Package, X } from 'lucide-react'
+import { ArrowRightLeft, Boxes, ExternalLink, Package, X } from 'lucide-react'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { usePriceHistory, useFreeTextHistory, sourceLabel, type Freshness, type HistoryRow } from '@/hooks/useMarketPrices'
 import { useVariantPrices } from '@/hooks/useItemVariants'
 import { Pill } from '@/components/record/Record'
 import { ChangeBadge, FreshnessPill, PriceChart } from './MarketBits'
+import { useFamilyPrices, useItemFamilyId, type FamilyPriceRow } from '@/lib/stockFamilies'
+import { MovePriceDialog } from '@/components/stock/VariantDialogs'
 
 export type PriceTarget =
   | { kind: 'stock'; stockItemId: string; name: string; unit: string; sub?: string | null; freshness?: Freshness; volatility?: string | null }
@@ -18,12 +20,16 @@ const DAY = 86_400_000
  * who sold it for how much, and the purchase orders behind the prices.
  * Used by Market Trends and by the proforma's price guide.
  */
-export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = false, footer }: {
+export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = false, canMovePrices = false, onOpenVariant, footer }: {
   target: PriceTarget
   onClose: () => void
   /** Buttons at the bottom (log a verified price, request a check, use this price…). */
   actions?: ReactNode
   canOpenStock?: boolean
+  /** Procurement/stock: a price recorded against the wrong item can be moved. */
+  canMovePrices?: boolean
+  /** Open another version of the same product in the drawer. */
+  onOpenVariant?: (row: FamilyPriceRow) => void
   footer?: ReactNode
 }) {
   const stock = usePriceHistory(target.kind === 'stock' ? target.stockItemId : undefined)
@@ -40,6 +46,11 @@ export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = fal
   const { data: variants = [] } = useVariantPrices(target.kind === 'stock' ? target.stockItemId : undefined)
   const cheapestPerUnit = variants.filter(v => v.latest_price_per_base != null).sort((a, b) => Number(a.latest_price_per_base) - Number(b.latest_price_per_base))[0]
   const mixedPacks = new Set(variants.map(v => Number(v.pack_qty))).size > 1
+  const { data: familyId } = useItemFamilyId(target.kind === 'stock' ? target.stockItemId : undefined)
+  const { data: siblings = [] } = useFamilyPrices(familyId)
+  const familyBase = siblings[0]?.base_unit ?? null
+  const bestSibling = siblings.filter(r => r.price_per_base != null).length > 1 ? siblings[0] : null
+  const [moving, setMoving] = useState<HistoryRow | null>(null)
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
@@ -116,6 +127,34 @@ export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = fal
                 </div>
               )}
 
+              {siblings.length > 1 && (
+                <div className="overflow-hidden rounded-xl border border-violet-200 dark:border-violet-800/50">
+                  <div className="flex items-center gap-1.5 border-b border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-800 dark:border-violet-800/50 dark:bg-violet-900/20 dark:text-violet-200">
+                    <Boxes className="h-3.5 w-3.5" /> Other versions of {siblings[0].family_name}
+                    <span className="font-normal text-violet-600 dark:text-violet-300">— separate items, compared{familyBase ? ` per ${familyBase}` : ''}</span>
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody className="divide-y dark:divide-slate-700">
+                      {siblings.map(r => {
+                        const me = target.kind === 'stock' && r.stock_item_id === target.stockItemId
+                        return (
+                          <tr key={r.stock_item_id} className={me ? 'bg-violet-50/50 dark:bg-violet-900/10' : ''}>
+                            <td className="px-3 py-2">
+                              {me || !onOpenVariant
+                                ? <span className={`text-slate-700 dark:text-slate-200 ${me ? 'font-semibold' : ''}`}>{r.variant_label || r.item_name}{me ? ' · this one' : ''}</span>
+                                : <button onClick={() => onOpenVariant(r)} className="text-left text-brand hover:underline">{r.variant_label || r.item_name}</button>}
+                              {bestSibling?.stock_item_id === r.stock_item_id && <span className="ml-1.5"><Pill tone="green">Best per {familyBase}</Pill></span>}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums">{r.latest_price != null ? `${formatCurrency(r.latest_price)} / ${r.unit}` : '—'}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.price_per_base != null && familyBase ? `${formatCurrency(r.price_per_base)} / ${familyBase}` : ''}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <Mini label="Lowest (6 mo)" value={formatCurrency(s.min)} />
                 <Mini label="Highest (6 mo)" value={formatCurrency(s.max)} />
@@ -184,6 +223,10 @@ export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = fal
                           {h.source_reference ?? 'PO'} <ExternalLink className="h-3 w-3" />
                         </Link>
                       ) : h.source_reference ? <span className="shrink-0 font-mono text-[11px] text-slate-400">{h.source_reference}</span> : null}
+                      {canMovePrices && (
+                        <button onClick={() => setMoving(h)} title={target.kind === 'stock' ? 'Recorded against the wrong item? Move it to the right one' : 'Attach this price to a stock item'}
+                          className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700"><ArrowRightLeft className="h-3.5 w-3.5" /></button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -194,6 +237,10 @@ export function PriceDetailDrawer({ target, onClose, actions, canOpenStock = fal
         </div>
 
         {actions && <div className="flex flex-wrap gap-2 border-t p-4 dark:border-slate-700">{actions}</div>}
+        {moving && (
+          <MovePriceDialog price={moving} onClose={() => setMoving(null)}
+            fromItemId={target.kind === 'stock' ? target.stockItemId : undefined} familyItemIds={siblings.map(r => r.stock_item_id)} />
+        )}
       </div>
     </div>
   )

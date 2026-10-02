@@ -140,6 +140,8 @@ records; history (payroll, advances) hangs off them.
 | Put request lines on a vendor order | **Supply → Purchase Orders → New purchase order** → add lines from purchase requests → price them → create, then submit for approval (lines 15%+ over the request's estimate are flagged) |
 | Maintain vendors | **Supply Chain → Vendors** — profiles, documents, contracts, receipts |
 | Manage stock intake | **Supply Chain → Stock Catalog** |
+| Link sizes or versions of one product (3 L and 15 L tin, 12 mm and 18 mm MDF) | Stock item → **Variants** panel → **Link as a variant**. Each keeps its own stock; prices show side by side, per litre/kg when you give the size |
+| Fix a price recorded against the wrong item | **Market Trends** → open the item → **Every price** → ⇄ on the price → pick the right item |
 
 ---
 
@@ -162,6 +164,7 @@ records; history (payroll, advances) hangs off them.
 | Receive stock | **Supply Chain → Stock Catalog** → item → record receipt |
 | Issue stock to a project | **Supply Chain → Movement** |
 | Track tools | **Supply Chain → Tools** — checkouts, condition, returns |
+| Link sizes or versions of one product | Stock item → **Variants** panel → **Link as a variant** |
 
 ---
 

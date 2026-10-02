@@ -2190,6 +2190,10 @@ export interface StockItem {
   notes: string | null
   structure_type: BoothStructureType | null
   source_project_id: string | null
+  /** Product family this item is a version of (405). */
+  family_id?: string | null
+  variant_label?: string | null
+  pack_qty?: number | null
   created_at: string
   updated_at: string
 }
@@ -2622,6 +2626,10 @@ export interface LeaveRequest {
   handover_note: string | null
   certificate_received: boolean
   decision_note: string | null
+  // Migration 404: a paper form HR typed in, and its reference.
+  from_paper?: boolean
+  paper_ref?: string | null
+  entered_by?: string | null
   created_at: string
 }
 

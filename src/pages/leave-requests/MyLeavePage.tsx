@@ -11,7 +11,8 @@ import { Segmented } from '@/components/shared/Segmented'
 import { LeaveRequestForm } from '@/components/leave/LeaveRequestForm'
 import { LeaveCard, type LeaveCardRow } from '@/components/leave/LeaveCard'
 import { LeaveCalendar } from '@/components/leave/LeaveCalendar'
-import { LEAVE_QUERY_KEYS, addDays, iso, useHolidays, useLeaveBalances, useTeamLeave } from '@/lib/leave'
+import { LEAVE_QUERY_KEYS, addDays, iso, useHolidays, useLeaveBalances, useTeamLeave, fmtDays } from '@/lib/leave'
+import { EntitlementBreakdown } from '@/components/leave/LeaveTypeCard'
 import { formatDateGC } from '@/lib/utils'
 import type { LeaveRequest } from '@/types/database'
 
@@ -107,13 +108,19 @@ export default function MyLeavePage() {
 
       {staffId && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Stat label="Annual leave left" value={balance ? `${balance.annual_left} days` : '—'}
+          <Stat label="Annual leave left" value={balance ? `${fmtDays(balance.annual_left)} days` : '—'}
             tone={balance && balance.annual_left <= 0 ? 'red' : 'green'}
-            sub={balance ? `of ${balance.entitlement} for ${balance.year_start.slice(0, 4)}/${balance.year_end.slice(2, 4)}` : undefined} />
-          <Stat label="Waiting for approval" value={balance ? `${balance.annual_pending} days` : '—'} />
-          <Stat label="Sick, last 12 months" value={balance ? `${balance.sick_taken_12m} days` : '—'} />
+            sub={balance ? `of ${fmtDays(balance.entitlement)} for ${balance.year_start.slice(0, 4)}/${balance.year_end.slice(2, 4)}` : undefined} />
+          <Stat label="Waiting for approval" value={balance ? `${fmtDays(balance.annual_pending)} days` : '—'} />
+          <Stat label="Sick, last 12 months" value={balance ? `${fmtDays(balance.sick_taken_12m)} days` : '—'} />
           <Stat label="Next public holiday" value={nextHoliday ? formatDateGC(nextHoliday.holiday_date) : '—'} sub={nextHoliday?.name} />
         </div>
+      )}
+      {staffId && balance && (
+        <details className="rounded-xl border bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+          <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-300">How my {fmtDays(balance.entitlement)} days are worked out</summary>
+          <EntitlementBreakdown balance={balance} />
+        </details>
       )}
 
       {awaitingMe.length > 0 && (

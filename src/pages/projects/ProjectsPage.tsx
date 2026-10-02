@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Project } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill, Stat } from '@/components/record/Record'
+import { useProjectBoqStatuses, boqLabel } from '@/lib/boq'
 import { Plus, Pencil, Trash2, Search, ChevronRight, ChevronDown, Building2, User, MapPin, Briefcase, Layers } from 'lucide-react'
 
 type ProjectRow = Project & {
@@ -65,6 +66,7 @@ export default function ProjectsPage() {
   const [filter, setFilter] = useState<Filter>('active')
   const [dept, setDept] = useState<string | null>(null)
   const [showInternal, setShowInternal] = useState(false)
+  const [missingBoqOnly, setMissingBoqOnly] = useState(false)
 
   const { data = [], isLoading, error: loadError } = useQuery({
     queryKey: ['projects'],
@@ -91,6 +93,11 @@ export default function ProjectsPage() {
   })
   const budgetBy = useMemo(() => new Map(budgets.map(b => [b.project_id, b])), [budgets])
 
+  // BOQ state per project (migration 402). Hidden for roles that can't read it.
+  const { data: boqStatuses = [] } = useProjectBoqStatuses()
+  const boqBy = useMemo(() => new Map(boqStatuses.map(b => [b.project_id, b])), [boqStatuses])
+  const missingBoq = (id: string) => { const b = boqBy.get(id); return !!b && b.needs_boq && b.boq_status === 'none' }
+
   const departments = useMemo(() => {
     const m = new Map<string, number>()
     for (const p of data) if (filter === 'all' || (filter === 'active') === p.active_for_year) m.set(deptKey(p.department), (m.get(deptKey(p.department)) ?? 0) + 1)
@@ -102,9 +109,11 @@ export default function ProjectsPage() {
     return data.filter(p =>
       (filter === 'all' || (filter === 'active') === p.active_for_year) &&
       (dept == null || deptKey(p.department) === dept) &&
+      (!missingBoqOnly || missingBoq(p.id)) &&
       (!q || [p.project_name, p.department, p.staff?.employee_name, p.clients?.client_name, p.locations?.location_name]
         .some(v => (v ?? '').toLowerCase().includes(q))))
-  }, [data, filter, dept, search])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, filter, dept, search, missingBoqOnly, boqBy])
 
   const clientWork = filtered.filter(p => !p.is_internal)
   const internalWork = filtered.filter(p => p.is_internal)
@@ -124,8 +133,10 @@ export default function ProjectsPage() {
       spent: active.reduce((s, p) => s + Number(budgetBy.get(p.id)?.total_actual_with_labor ?? 0), 0),
       contract: active.reduce((s, p) => s + Number(p.contract_value ?? 0), 0),
       noManager: active.filter(p => !p.project_manager_id).length,
+      noBoq: data.filter(p => missingBoq(p.id)).length,
     }
-  }, [data, budgetBy])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, budgetBy, boqBy])
 
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete project "${name}"? This cannot be undone.`)) return
@@ -149,6 +160,11 @@ export default function ProjectsPage() {
             <Link to={`/projects/${p.id}`} onClick={e => e.stopPropagation()} className="truncate text-sm font-semibold text-slate-800 hover:text-brand dark:text-slate-100">{p.project_name}</Link>
             {p.health && <Pill tone={HEALTH_TONE[p.health]}>{p.health}</Pill>}
             {!p.active_for_year && <Pill>Inactive</Pill>}
+            {(() => {
+              const l = boqLabel(boqBy.get(p.id))
+              if (!l || l.tone === 'green') return null
+              return <Pill tone={l.tone === 'red' ? 'red' : 'amber'} title={l.tone === 'red' ? 'Active work with nothing to check it against' : 'Started, not approved yet'}>{l.text}</Pill>
+            })()}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
             {p.clients?.client_name && <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{p.clients.client_name}</span>}
@@ -203,11 +219,16 @@ export default function ProjectsPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Active client projects" value={stats.active} sub={`+ ${stats.internal} internal`} />
         <Stat label="Over budget" value={stats.over} sub={`of ${stats.withBudget} with a budget`} tone={stats.over > 0 ? 'red' : undefined} />
         <Stat label="Spent on active work" value={formatCurrency(stats.spent).replace(/\.00$/, '')} sub={stats.contract > 0 ? `against ${formatCurrency(stats.contract).replace(/\.00$/, '')} in contracts` : 'Materials, expenses and labour'} />
         <Stat label="No project manager" value={stats.noManager} sub="Active client projects" tone={stats.noManager > 0 ? 'amber' : undefined} />
+        {boqStatuses.length > 0 && (
+          <button type="button" onClick={() => setMissingBoqOnly(v => !v)} className="text-left">
+            <Stat label="Missing a BOQ" value={stats.noBoq} sub={missingBoqOnly ? 'Showing only these — tap to show all' : 'Client work with activity · tap to list'} tone={stats.noBoq > 0 ? 'red' : undefined} />
+          </button>
+        )}
       </div>
 
       {loadError && (
@@ -227,6 +248,9 @@ export default function ProjectsPage() {
             {([['active', 'Active this year'], ['inactive', 'Inactive'], ['all', 'All']] as [Filter, string][]).map(([v, l]) => (
               <button key={v} onClick={() => { setFilter(v); setDept(null) }} className={chip(filter === v)}>{l}</button>
             ))}
+            {stats.noBoq > 0 && (
+              <button onClick={() => setMissingBoqOnly(v => !v)} className={chip(missingBoqOnly)}>Missing BOQ <span className={`rounded-full px-1.5 text-[10px] ${missingBoqOnly ? 'bg-white/20' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'}`}>{stats.noBoq}</span></button>
+            )}
           </div>
         </div>
         {departments.length > 1 && (
