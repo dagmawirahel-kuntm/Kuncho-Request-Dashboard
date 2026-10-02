@@ -2186,6 +2186,10 @@ export interface StockItem {
   notes: string | null
   structure_type: BoothStructureType | null
   source_project_id: string | null
+  /** Product family this item is a version of (405). */
+  family_id?: string | null
+  variant_label?: string | null
+  pack_qty?: number | null
   created_at: string
   updated_at: string
 }
