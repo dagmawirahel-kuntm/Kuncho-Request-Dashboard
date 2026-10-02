@@ -8,6 +8,7 @@ import { fieldCls } from '@/lib/formStyles'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { ActionDialog } from '@/components/shared/ActionDialog'
+import { StockVariantsPanel } from '@/components/stock/StockVariantsPanel'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, RecordTabs, Stat, type RecordAction } from '@/components/record/Record'
 import type { StockItem, StockReceipt, StockIssue, ToolUnit, StockMainCategory, BoothStructureType } from '@/types/database'
 import {
@@ -290,6 +291,7 @@ export default function StockItemDetailPage() {
         </>}
         rail={<>
           {item.item_code && <Panel><Barcode value={item.item_code} /></Panel>}
+          <StockVariantsPanel item={item} canEdit={keeper} />
           <Panel title="Details">
             <FactList facts={[
               { label: 'Unit', value: item.unit },
