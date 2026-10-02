@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
+import { RoutePriceHint } from '@/components/transport/RoutePriceHint'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -466,6 +467,8 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           <input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
+      <RoutePriceHint jobId={id} pickupId={form.pickup_location_id} dropoffId={form.dropoff_location_id} jobType={form.job_type}
+        mode={form.transport_mode} amount={form.amount} date={form.requested_date} />
 
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />

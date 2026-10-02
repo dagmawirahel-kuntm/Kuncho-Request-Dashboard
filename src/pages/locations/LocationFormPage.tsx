@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { LocationMap } from '@/components/shared/LocationMap'
+import { PlaceSearch } from '@/components/map/PlaceSearch'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FactList, Panel, RecordHeader, RecordLayout } from '@/components/record/Record'
 import { useProjects, useVendors } from '@/hooks/useLookups'
@@ -225,6 +226,9 @@ function LocationFormBody({ id, record }: { id?: string; record?: Location }) {
                   placeholder="Or paste a Google Maps link / 9.0108, 38.7613" className={inputCls} />
                 <button type="button" onClick={applyCoordinates} disabled={!coordText.trim()} className="rounded-lg border px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200">Pin</button>
               </div>
+            </div>
+            <div className="mb-3">
+              <PlaceSearch initial={form.location_name ?? ''} onPick={h => { set('latitude', h.lat); set('longitude', h.lng); if (!form.address) set('address', h.detail.split(',').slice(0, 3).join(',')) }} />
             </div>
             <LocationMap
               height={320}
