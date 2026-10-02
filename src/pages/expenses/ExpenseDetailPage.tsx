@@ -22,6 +22,7 @@ import type { Expense } from '@/types/database'
 import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { IssueChips } from '@/components/expenses/ExpenseFields'
 import { ISSUE, type ExpenseIssue } from '@/lib/expenseQuality'
+import { ExpenseAdminActions, ExpenseAdminHistory } from '@/components/expenses/ExpenseAdminActions'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
 
@@ -763,6 +764,9 @@ export default function ExpenseDetailPage() {
             {id && prDocument && (
               <PaymentRequestActions sourceType="expense" sourceId={id} document={prDocument} />
             )}
+            {role === 'admin' && id && (
+              <ExpenseAdminActions expenseId={id} expenseCode={expense.expense_code} />
+            )}
             {canEdit && (
               <Link
                 to={`/expenses/${id}/edit`}
@@ -1044,6 +1048,8 @@ export default function ExpenseDetailPage() {
             }
           </div>
         </div>
+
+        {id && (role === 'admin' || role === 'finance' || role === 'executive') && <ExpenseAdminHistory expenseId={id} />}
 
         {/* Cash / VRF receipt evidence — no bank reference to collect for
             these payment methods, a physical receipt photo instead.

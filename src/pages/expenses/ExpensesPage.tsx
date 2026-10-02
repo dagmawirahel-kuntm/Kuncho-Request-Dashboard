@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
@@ -680,7 +680,25 @@ export default function ExpensesPage() {
     enabled: canSeeTable && activeTab === 'records',
   })
 
+  // The records table's columns are memoised once, so the role is read
+  // through a ref rather than captured from the first render.
+  const roleRef = useRef(role)
+  useEffect(() => { roleRef.current = role }, [role])
+
   async function handleDelete(id: string) {
+    // Admins delete through delete_expense (migration 403): it takes any
+    // payment back out of the books, voids payment requests and keeps a
+    // copy with the reason. Everyone else can only remove their own draft.
+    if (roleRef.current === 'admin') {
+      const reason = window.prompt('Delete this expense? Say why — the reason is kept with the record.')
+      if (!reason?.trim()) return
+      const { data, error } = await supabase.rpc('delete_expense', { p_expense_id: id, p_reason: reason.trim() })
+      if (error) { toast(error.message, 'error'); return }
+      qc.invalidateQueries({ queryKey: ['expenses'] })
+      qc.invalidateQueries({ queryKey: ['expenses-all'] })
+      toast((data as { deleted: boolean }).deleted ? 'Expense deleted' : 'Expense voided and archived — other records still refer to it', 'success')
+      return
+    }
     if (!window.confirm('Delete this expense?')) return
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) { toast(error.message, 'error'); return }
