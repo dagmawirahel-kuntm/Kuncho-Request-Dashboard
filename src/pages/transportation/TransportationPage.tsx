@@ -10,7 +10,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
 import { NEXT_STEP, OPEN_JOB_STATUSES, PAY_STAGE, payStageOf, setJobStatus } from '@/lib/transport'
-import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users } from 'lucide-react'
+import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users, Calculator } from 'lucide-react'
+import { PickupBundlesPanel } from '@/components/transport/PickupAdvice'
 
 // Chained ETA per vehicle — own_fleet jobs only, since hired/ride-hailing
 // don't compete for a resource of ours. See v_transport_vehicle_queue
@@ -411,6 +412,9 @@ export default function TransportationPage() {
           >
             My Jobs
           </button>
+          <Link to="/transportation/estimate" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Calculator className="h-4 w-4" /> Estimate a trip
+          </Link>
           <Link to="/transportation/drivers" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Users className="h-4 w-4" /> Drivers
           </Link>
@@ -425,6 +429,7 @@ export default function TransportationPage() {
       {role === 'staff' && <OwnRecordsBanner />}
       <StaleJobsPanel jobs={stale} onDone={refresh} />
       <VehicleQueuePanel />
+      <PickupBundlesPanel />
 
       {overdue.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/40 px-3 py-2 text-xs text-red-700 dark:text-red-400">

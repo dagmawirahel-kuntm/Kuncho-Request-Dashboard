@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
+import { PickupAdvice } from '@/components/transport/PickupAdvice'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -953,11 +954,14 @@ export default function PurchaseOrderPage() {
                       <Pill>{transportJob.job_status.replace('_', ' ')}</Pill>
                     </div>
                   ) : canRequestTransport && !showQueuePanel ? (
+                    <div className="space-y-2">
+                    <PickupAdvice bundleId={id} />
                     <div className="flex flex-wrap items-center gap-2">
                       <button type="button" onClick={() => setShowQueuePanel(true)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
                         <TruckIcon className="h-3.5 w-3.5" /> Queue pickup
                       </button>
                       <Link to={`/transportation/new?bundle_id=${id}`} className="text-xs text-slate-500 hover:underline">or the full transport form</Link>
+                    </div>
                     </div>
                   ) : !transportJob && <p className="text-xs text-slate-400">No transport arranged.</p>}
 
