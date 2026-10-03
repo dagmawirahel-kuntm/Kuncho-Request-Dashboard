@@ -8,14 +8,66 @@ import { NAV_LAYOUTS, useNavData, useNavLayout, type NavLayout } from './navStat
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
+import { SubmitStampHost } from '@/components/shared/SubmitStamp'
+import { MyExpenseWatcher } from '@/components/shared/MyExpenseWatcher'
+import { chime, confetti, useFunEffects, useFunSounds } from '@/lib/celebrate'
 import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
+import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { AtmosphereContext } from '@/components/clientWorld/atmosphereSlot'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings, PanelLeft, PanelLeftDashed, PanelTop, Check } from 'lucide-react'
+import { LogOut, ChevronRight, Menu, Sun, Moon, Gem, CalendarRange, Settings, PanelLeft, PanelLeftDashed, PanelTop, Check, Sparkles } from 'lucide-react'
+
+// Confetti, the submit stamp and the phone buzz, and (off unless chosen)
+// soft sounds — lib/celebrate. Both saved per browser, like the theme.
+function FunEffectsToggle() {
+  const [on, setOn] = useFunEffects()
+  const [sounds, setSounds] = useFunSounds()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  // CSS-only touches (the streak flame, balloons) read this class.
+  useEffect(() => { document.documentElement.classList.toggle('no-fun-effects', !on) }, [on])
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+  const row = 'flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700/60'
+  const pill = (v: boolean) => `relative h-5 w-9 shrink-0 rounded-full transition-colors ${v ? 'bg-[#D4AF37]' : 'bg-slate-300 dark:bg-slate-600'}`
+  const knob = (v: boolean) => `absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${v ? 'left-[18px]' : 'left-0.5'}`
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        title="Fun effects and sounds"
+        aria-haspopup="true"
+        aria-expanded={open}
+        className={`rounded-md p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 ${on ? 'text-[#a57d1c] dark:text-[#D4AF37]' : 'text-slate-400 dark:text-slate-500'}`}
+      >
+        <Sparkles className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border bg-white p-1.5 shadow-lg animate-fade-in-up dark:border-slate-700 dark:bg-slate-800">
+          <button type="button" role="switch" aria-checked={on} className={row}
+            onClick={e => { const btn = e.currentTarget; setOn(!on); if (!on) confetti('pop', btn) }}>
+            <span><span className="block font-medium">Fun effects</span><span className="block text-xs text-slate-400">Confetti, balloons, the submit stamp</span></span>
+            <span className={pill(on)}><span className={knob(on)} /></span>
+          </button>
+          <button type="button" role="switch" aria-checked={sounds} className={row}
+            onClick={() => { setSounds(!sounds); if (!sounds) window.setTimeout(() => chime('success'), 0) }}>
+            <span><span className="block font-medium">Sounds</span><span className="block text-xs text-slate-400">A soft chime when things go through</span></span>
+            <span className={pill(sounds)}><span className={knob(sounds)} /></span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function FiscalYearControl() {
   const { periods, current, value, setValue, canToggle } = useFiscalYear()
@@ -241,6 +293,7 @@ export function AppShell() {
             >
               {theme === 'light' ? <Moon className="h-4 w-4" /> : theme === 'dark' ? <Gem className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
+            <FunEffectsToggle />
             <NotificationsBell />
             {role && (
               <span className={`hidden rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize sm:inline ${roleBadgeColors[role] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
@@ -272,6 +325,7 @@ export function AppShell() {
           {season?.greeting && LANDING_PATHS.has(location.pathname) && (
             <div className="print:hidden"><SeasonalGreeting moment={season} /></div>
           )}
+          {LANDING_PATHS.has(location.pathname) && <CelebrationsBar skipHoliday={!!season?.greeting} />}
           <div key={location.pathname} className="animate-fade-in">
             <AtmosphereContext.Provider value={slot}>
               <Outlet />
@@ -281,6 +335,8 @@ export function AppShell() {
       </div>
     </div>
     <PagePalette nav={nav} />
+    <SubmitStampHost />
+    <MyExpenseWatcher />
     </>
   )
 }

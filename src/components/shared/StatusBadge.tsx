@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 type Variant = 'green' | 'red' | 'yellow' | 'blue' | 'slate' | 'orange'
@@ -62,8 +63,14 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const variant = statusVariantMap[status.toLowerCase().replace(' ', '_')] ?? 'slate'
+  // When the status changes in front of someone (an approval landing, a
+  // payment going out) the badge flips over to its new face. The flip
+  // keys on each change; the first render never flips.
+  const [shown, setShown] = useState(status)
+  const [flips, setFlips] = useState(0)
+  if (shown !== status) { setShown(status); setFlips(n => n + 1) }
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize', variantClasses[variant], className)}>
+    <span key={flips} className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize', flips > 0 && 'badge-flip', variantClasses[variant], className)}>
       {status}
     </span>
   )

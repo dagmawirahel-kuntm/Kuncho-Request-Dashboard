@@ -15,6 +15,7 @@ import { StockNameInput } from '@/components/stock/StockNameInput'
 import { UnitSelect } from '@/components/stock/UnitSelect'
 import { LinkedStockChip, DidYouMean } from '@/components/stock/StockLineLink'
 import { useToast } from '@/contexts/ToastContext'
+import { submitted } from '@/lib/celebrate'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMyWorkProjects } from '@/hooks/useMyStaff'
 import { formatDate } from '@/lib/utils'
@@ -793,7 +794,8 @@ function PurchaseRequestFormBody({
     qc.invalidateQueries({ queryKey: ['order-items', orderId] })
     qc.invalidateQueries({ queryKey: ['order-item-counts'] })
     qc.invalidateQueries({ queryKey: ['recent-order-items'] })
-    toast(isEdit ? 'Purchase request updated' : 'Purchase request created', 'success')
+    if (isEdit) toast('Purchase request updated', 'success')
+    else submitted(toast, 'Purchase request submitted', 'Procurement can see it now')
     navigate('/purchase-requests')
   }
 

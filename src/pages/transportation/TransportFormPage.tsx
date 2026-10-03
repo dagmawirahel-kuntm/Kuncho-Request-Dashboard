@@ -15,6 +15,7 @@ import type {
 import { useProjects, useLocations, useVendors, useStaff, locationPickerOptions } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { submitted } from '@/lib/celebrate'
 import { Receipt, ExternalLink, CheckCircle2 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -295,7 +296,8 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['fleet-active-jobs'] })
     if (bundleId) qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundleId] })
-    toast(isEdit ? 'Job updated' : 'Job created', 'success')
+    if (isEdit) toast('Job updated', 'success')
+    else submitted(toast, 'Transport job created', 'Logistics can see it now')
     navigate(bundleId ? `/sourcing/${bundleId}` : '/transportation')
   }
 

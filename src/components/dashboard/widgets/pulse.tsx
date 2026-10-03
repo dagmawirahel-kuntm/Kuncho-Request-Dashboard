@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Award, Cake, Megaphone, Send, Sparkles, X } from 'lucide-react'
+import { Award, Cake, Gift, Megaphone, Send, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { WidgetProps } from '@/lib/dashboard/types'
 import { ListSkeleton, WidgetCard } from '../WidgetCard'
+import { useTeamBirthdays, type TeamBirthday } from '@/lib/celebrations'
+import { emojiBurst } from '@/lib/celebrate'
 
 // ── Team pulse ────────────────────────────────────────────────────────────
 // What's happening with the people around you: announcements (company
-// calendar), thanks colleagues send each other, and work anniversaries
-// (migration 380). Until that migration is run, thanks and anniversaries
-// are simply absent and the widget shows announcements alone.
+// calendar), thanks colleagues send each other, work anniversaries
+// (migration 380) and birthdays (406). Until those migrations are run,
+// thanks, anniversaries and birthdays are simply absent and the widget
+// shows announcements alone. Today's birthdays and anniversaries get a
+// one-tap wish, which is sent as a thank-you.
 
 interface Kudo { id: string; from_name: string | null; to_name: string; to_department: string | null; message: string; created_at: string; mine: boolean }
 interface Milestone { staff_id: string; employee_name: string; department: string | null; years: number; anniversary: string }
@@ -22,6 +26,10 @@ type FeedItem =
   | { kind: 'announcement'; id: string; at: string; title: string; detail: string | null }
   | { kind: 'kudos'; id: string; at: string; kudo: Kudo }
   | { kind: 'milestone'; id: string; at: string; m: Milestone }
+  | { kind: 'birthday'; id: string; at: string; b: TeamBirthday }
+
+/** Who a "Send a wish" opens the thanks form for, and what it starts with. */
+interface Wish { to: string; message: string }
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -42,11 +50,11 @@ function whenLabel(at: string): string {
   return diff > 0 ? `In ${diff} days` : `${-diff}d ago`
 }
 
-function ThankForm({ onDone }: { onDone: () => void }) {
+function ThankForm({ onDone, wish }: { onDone: () => void; wish?: Wish | null }) {
   const { toast } = useToast()
   const qc = useQueryClient()
-  const [to, setTo] = useState<string | null>(null)
-  const [message, setMessage] = useState('')
+  const [to, setTo] = useState<string | null>(wish?.to ?? null)
+  const [message, setMessage] = useState(wish?.message ?? '')
   const [sending, setSending] = useState(false)
   const { data: people = [] } = useQuery({
     queryKey: ['kudos-recipients'],
@@ -65,7 +73,8 @@ function ThankForm({ onDone }: { onDone: () => void }) {
     const { error } = await supabase.from('kudos').insert({ to_staff_id: to, message: message.trim() })
     setSending(false)
     if (error) { toast(error.message, 'error'); return }
-    toast('Thanks sent 🎉', 'success')
+    toast(wish ? 'Wish sent 🎉' : 'Thanks sent 🎉', 'success')
+    emojiBurst(wish ? '🎉' : '💛')
     qc.invalidateQueries({ queryKey: ['dash', 'kudos'] })
     onDone()
   }
@@ -91,7 +100,7 @@ function ThankForm({ onDone }: { onDone: () => void }) {
           <button type="button" onClick={onDone} className="rounded-lg px-3 py-1.5 text-xs text-slate-500 hover:bg-white dark:hover:bg-slate-700">Cancel</button>
           <button type="submit" disabled={!to || !message.trim() || sending}
             className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50">
-            <Send className="h-3.5 w-3.5" /> {sending ? 'Sending…' : 'Send thanks'}
+            <Send className="h-3.5 w-3.5" /> {sending ? 'Sending…' : wish ? 'Send wish' : 'Send thanks'}
           </button>
         </div>
       </div>
@@ -104,6 +113,7 @@ export function TeamPulse({ ctx }: WidgetProps) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [thanking, setThanking] = useState(false)
+  const [wish, setWish] = useState<Wish | null>(null)
   const own = !!user && user.id === ctx.userId
 
   const t = today()
@@ -144,6 +154,7 @@ export function TeamPulse({ ctx }: WidgetProps) {
       return (data ?? []) as Milestone[]
     },
   })
+  const birthdays = useTeamBirthdays(7)
 
   // Thanks need migration 380; without it there's nothing to send them to.
   const thanksAvailable = kudos.isSuccess
@@ -152,7 +163,12 @@ export function TeamPulse({ ctx }: WidgetProps) {
     ...(announcements.data ?? []).map(a => ({ kind: 'announcement' as const, id: `a-${a.id}`, at: a.event_date, title: a.title, detail: a.description })),
     ...(kudos.data ?? []).map(k => ({ kind: 'kudos' as const, id: `k-${k.id}`, at: k.created_at, kudo: k })),
     ...(milestones.data ?? []).map(m => ({ kind: 'milestone' as const, id: `m-${m.staff_id}`, at: m.anniversary, m })),
+    ...(birthdays.data ?? []).map(b => ({ kind: 'birthday' as const, id: `b-${b.staff_id}`, at: b.birthday, b })),
   ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8)
+
+  // Today's birthdays and anniversaries get a one-tap wish, sent as thanks.
+  function openWish(w: Wish) { setWish(w); setThanking(true) }
+  const canWish = thanksAvailable && own
 
   async function takeBack(id: string) {
     const { error } = await supabase.from('kudos').delete().eq('id', id)
@@ -198,14 +214,40 @@ export function TeamPulse({ ctx }: WidgetProps) {
                       </button>
                     )}
                   </>
+                ) : f.kind === 'birthday' ? (
+                  <>
+                    <span className="rounded-lg bg-violet-50 p-1.5 text-violet-500 dark:bg-violet-900/25 dark:text-violet-300"><Gift className="h-4 w-4" /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-600 dark:text-slate-300">
+                        {f.b.is_me
+                          ? <>It's <span className="font-semibold text-slate-800 dark:text-slate-100">your birthday</span>{f.at === t ? ' — happy birthday! 🎂' : ' soon 🎂'}</>
+                          : <><span className="font-semibold text-slate-800 dark:text-slate-100">{f.b.employee_name}</span>'s birthday 🎂</>}
+                        {f.b.department && !f.b.is_me && <span className="text-xs text-slate-400"> · {f.b.department}</span>}
+                      </p>
+                      {canWish && !f.b.is_me && f.at === t && (
+                        <button onClick={() => openWish({ to: f.b.staff_id, message: 'መልካም ልደት! Happy birthday 🎂' })}
+                          className="mt-1 rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:bg-violet-900/25 dark:text-violet-300">
+                          🎈 Send a wish
+                        </button>
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <>
                     <span className="rounded-lg bg-pink-50 p-1.5 text-pink-500 dark:bg-pink-900/25 dark:text-pink-300"><Cake className="h-4 w-4" /></span>
-                    <p className="min-w-0 flex-1 text-sm text-slate-600 dark:text-slate-300">
-                      <span className="font-semibold text-slate-800 dark:text-slate-100">{f.m.employee_name}</span>
-                      {' '}{f.at >= t ? (f.at === t ? 'marks' : 'will mark') : 'marked'} {f.m.years} year{f.m.years === 1 ? '' : 's'} at Kuncho 🎉
-                      {f.m.department && <span className="text-xs text-slate-400"> · {f.m.department}</span>}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-600 dark:text-slate-300">
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">{f.m.employee_name}</span>
+                        {' '}{f.at >= t ? (f.at === t ? 'marks' : 'will mark') : 'marked'} {f.m.years} year{f.m.years === 1 ? '' : 's'} at Kuncho 🎉
+                        {f.m.department && <span className="text-xs text-slate-400"> · {f.m.department}</span>}
+                      </p>
+                      {canWish && f.at === t && f.m.staff_id !== ctx.staff?.id && (
+                        <button onClick={() => openWish({ to: f.m.staff_id, message: `Congratulations on ${f.m.years} year${f.m.years === 1 ? '' : 's'} at Kuncho! 🎉` })}
+                          className="mt-1 rounded-full bg-pink-50 px-2.5 py-0.5 text-[11px] font-semibold text-pink-700 hover:bg-pink-100 dark:bg-pink-900/25 dark:text-pink-300">
+                          🎉 Say congratulations
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
                 <span className="shrink-0 pt-0.5 text-[11px] text-slate-400">{whenLabel(f.at)}</span>
@@ -215,8 +257,8 @@ export function TeamPulse({ ctx }: WidgetProps) {
         )}
         {thanksAvailable && own && (
           <div className="mt-auto border-t px-3 py-3 dark:border-slate-700">
-            {thanking ? <ThankForm onDone={() => setThanking(false)} /> : (
-              <button onClick={() => setThanking(true)}
+            {thanking ? <ThankForm key={wish?.to ?? 'thanks'} wish={wish} onDone={() => { setThanking(false); setWish(null) }} /> : (
+              <button onClick={() => { setWish(null); setThanking(true) }}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-50 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30">
                 <Award className="h-3.5 w-3.5" /> Say thanks to a colleague
               </button>

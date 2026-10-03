@@ -358,6 +358,99 @@ html.theme-transition *::after {
   .vrf-motion, .vrf-motion * { animation: none !important; transition: none !important; }
 }
 
+/* ── Celebrations (lib/celebrate.ts) ────────────────────────────────────
+   The ቁ seal stamped down when something new is submitted, and the
+   streak flame's flicker. lib/celebrate skips them under reduced motion;
+   the media query below is the backstop. */
+@keyframes stamp-down {
+  0%   { opacity: 0; transform: scale(2.4) rotate(-28deg); }
+  55%  { opacity: 1; transform: scale(0.92) rotate(-10deg); }
+  70%  { transform: scale(1.04) rotate(-12deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-12deg); }
+}
+@keyframes stamp-ring {
+  0%, 50% { opacity: 0; transform: scale(0.8); }
+  60%  { opacity: .7; }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes stamp-card {
+  0%   { opacity: 0; transform: translateY(-12px) scale(.96); }
+  12%, 82% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-8px) scale(.98); }
+}
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(0); }
+  30% { transform: scale(1.12) rotate(-6deg); }
+  60% { transform: scale(.95) rotate(4deg); }
+}
+.stamp-card { animation: stamp-card 2200ms ease-out both; }
+.stamp-seal { animation: stamp-down 520ms cubic-bezier(0.2, 0.8, 0.2, 1.2) both; }
+.stamp-ring { animation: stamp-ring 900ms ease-out both; }
+.flame-flicker { animation: flame-flicker 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+@media (prefers-reduced-motion: reduce) {
+  .stamp-seal, .stamp-ring, .flame-flicker { animation: none !important; }
+}
+.no-fun-effects .flame-flicker { animation: none; }
+
+/* Balloons for a birthday or work anniversary, rising past the page;
+   petals drifting down inside a holiday card. Both are mounted only when
+   effects are allowed. */
+@keyframes balloon-rise {
+  0%   { transform: translate(0, 0) rotate(-4deg); opacity: 0; }
+  8%   { opacity: 1; }
+  50%  { transform: translate(18px, -55vh) rotate(5deg); }
+  100% { transform: translate(-12px, -118vh) rotate(-3deg); opacity: 1; }
+}
+.balloon { animation: balloon-rise var(--dur, 6s) cubic-bezier(.35, .1, .5, 1) var(--delay, 0s) both; }
+.balloon-string { transform-origin: top center; }
+@keyframes petal-fall {
+  0%   { transform: translate(0, -24px) rotate(0); opacity: 0; }
+  10%  { opacity: .9; }
+  100% { transform: translate(var(--drift, 30px), 140px) rotate(320deg); opacity: 0; }
+}
+.petal { animation: petal-fall var(--dur, 5s) linear var(--delay, 0s) infinite; }
+@keyframes recap-reveal {
+  0%   { opacity: 0; transform: translateY(18px) rotateX(70deg) scale(.92); }
+  60%  { opacity: 1; transform: translateY(-3px) rotateX(-6deg) scale(1.02); }
+  100% { opacity: 1; transform: none; }
+}
+.recap-tile { animation: recap-reveal 520ms cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0s) both; }
+@media (prefers-reduced-motion: reduce) {
+  .balloon, .petal { display: none; }
+  .recap-tile { animation: none; }
+}
+.no-fun-effects .balloon, .no-fun-effects .petal { display: none; }
+.no-fun-effects .recap-tile { animation: none; }
+
+/* A status badge flipping to its new state (StatusBadge); an approved row
+   sliding out of the queue (approval queue). */
+@keyframes badge-flip {
+  0%   { transform: perspective(200px) rotateX(90deg); opacity: .3; }
+  60%  { transform: perspective(200px) rotateX(-12deg); opacity: 1; }
+  100% { transform: none; }
+}
+.badge-flip { animation: badge-flip 480ms cubic-bezier(0.2, 0.8, 0.2, 1.1) both; }
+@keyframes row-out {
+  0%   { opacity: 1; transform: none; max-height: 400px; }
+  35%  { opacity: 1; transform: translateX(12px); background-color: rgb(220 252 231 / .9); }
+  100% { opacity: 0; transform: translateX(110%); max-height: 0; padding-top: 0; padding-bottom: 0; }
+}
+.row-out { animation: row-out 520ms cubic-bezier(.5, 0, .75, 0) both; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .badge-flip, .row-out { animation: none; }
+}
+.no-fun-effects .badge-flip, .no-fun-effects .row-out { animation: none; }
+
+/* Loading skeletons (LoadingRows): a soft light passing over the shapes. */
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.shimmer {
+  background: linear-gradient(90deg, rgb(226 232 240) 0%, rgb(241 245 249) 50%, rgb(226 232 240) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.dark .shimmer { background-image: linear-gradient(90deg, rgb(51 65 85) 0%, rgb(71 85 105) 50%, rgb(51 65 85) 100%); }
+@media (prefers-reduced-motion: reduce) { .shimmer { animation: none; } }
+
 /* ── Client world (components/clientWorld) ───────────────────────────────
    A client's pages are painted in the colours of its logo. The colours
    arrive as --w1..--w3 (accents) and --wd1/--wd2 (dark, for white text);

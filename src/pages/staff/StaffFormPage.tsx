@@ -118,7 +118,7 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
           role: record.role, management_level: record.management_level,
           monthly_salary: record.monthly_salary ?? undefined, day_rate: record.day_rate ?? undefined,
           payment_frequency: record.payment_frequency, bank_account: record.bank_account,
-          starting_date: record.starting_date, termination_date: record.termination_date, contract_end_date: record.contract_end_date ?? null,
+          starting_date: record.starting_date, birth_date: record.birth_date ?? null, birthday_public: record.birthday_public ?? true, termination_date: record.termination_date, contract_end_date: record.contract_end_date ?? null,
           phone_number: record.phone_number, email: record.email, national_id: record.national_id, experience: record.experience,
           status: record.status ?? 'active', photo_url: record.photo_url,
           id_document_url: record.id_document_url, id_document_name: record.id_document_name,
@@ -197,6 +197,9 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
       day_rate: payBasis === 'daily' ? form.day_rate ?? null : null,
     }
     if (isEdit) delete payload.bank_account // accounts are kept in staff_bank_accounts once the person exists
+    // Birthday columns arrive with migration 406: send them only when there
+    // is a birthday to keep, so saving staff still works before it is run.
+    if (!payload.birth_date && !record?.birth_date) { delete payload.birth_date; delete payload.birthday_public }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('staff').update(payload as any).eq('id', id!).select('id').single() : supabase.from('staff').insert([payload as any]).select('id').single()
     const { data, error: err } = await op
@@ -405,6 +408,17 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
           <Panel title="Dates" icon={CalendarDays}>
             <div className="space-y-3">
               <Field label="Started"><input type="date" className={inputCls} value={form.starting_date ?? ''} onChange={e => set('starting_date', e.target.value || null)} /></Field>
+              {!isCasual && (
+                <Field label="Birthday" hint="Colleagues see the day and month only — never the year">
+                  <input type="date" className={inputCls} value={form.birth_date ?? ''} onChange={e => set('birth_date', e.target.value || null)} />
+                  {form.birth_date && (
+                    <label className="mt-1.5 flex items-center gap-2 text-xs text-slate-500">
+                      <input type="checkbox" className="h-3.5 w-3.5 accent-brand" checked={form.birthday_public ?? true} onChange={e => set('birthday_public', e.target.checked)} />
+                      Show it in Team pulse so colleagues can send a wish
+                    </label>
+                  )}
+                </Field>
+              )}
               {!isCasual && (
                 <Field label="Contract ends" hint="Leave empty for an open-ended job">
                   <input type="date" className={inputCls} value={form.contract_end_date ?? ''} onChange={e => set('contract_end_date', e.target.value || null)} />
