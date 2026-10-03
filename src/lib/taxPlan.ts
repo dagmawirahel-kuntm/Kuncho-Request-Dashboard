@@ -128,3 +128,96 @@ export function shiftPeriod(y: number, m: number, by: number): { y: number; m: n
   const i = y * 12 + (m - 1) + by
   return { y: Math.floor(i / 12), m: (i % 12) + 1 }
 }
+
+// ── Trainer (migration 412) ─────────────────────────────────────────────
+
+export type StepKind = 'paperwork' | 'procurement' | 'timing' | 'pay_policy' | 'protect' | 'info' | 'advice'
+
+export interface TrainerStep {
+  tax: TaxCode
+  code: string
+  kind: StepKind
+  title: string
+  detail: string
+  /** ETB the step takes off this month's benchmark (0 for advice). */
+  amount: number
+  /** For WHT: what is at risk of becoming the company's cost. */
+  exposure?: number
+  estimate?: boolean
+  patch?: WhatIf
+  link?: string
+}
+
+export interface TrainerLevers {
+  period: { ec_year: number; ec_month: number; label: string; is_current: boolean; end: string }
+  base: Record<TaxCode, number>
+  steps: TrainerStep[]
+}
+
+export interface YearMonth {
+  ec_year: number
+  ec_month: number
+  label: string
+  state: 'done' | 'current' | 'ahead'
+  value: number
+  source: 'declared' | 'benchmark' | 'projected' | 'run rate'
+  benchmark: number
+  declared: number | null
+  goal: number | null
+}
+
+export interface YearTax {
+  code: TaxCode
+  label: string
+  done: number
+  current: number
+  ahead: number
+  projected: number
+  run_rate: number
+  months_left: number
+  goal: number | null
+  monthly_goals_total: number | null
+  needed_per_month: number | null
+  months: YearMonth[]
+}
+
+export interface TaxYear {
+  fiscal_period: { id: string; label: string; start: string; end: string; is_current: boolean }
+  current: { ec_year: number; ec_month: number }
+  taxes: YearTax[]
+  can_manage: boolean
+}
+
+export function useTaxLevers(ecYear: number | null, ecMonth: number | null, whatIf: WhatIf | null) {
+  return useQuery({
+    queryKey: ['tax-levers', ecYear, ecMonth, whatIf],
+    placeholderData: prev => prev,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('tax_plan_levers', {
+        p_ec_year: ecYear, p_ec_month: ecMonth,
+        p_what_if: whatIf && Object.keys(whatIf).length ? whatIf : null,
+      })
+      if (error) throw error
+      return data as TrainerLevers
+    },
+  })
+}
+
+export function useTaxYear() {
+  return useQuery({
+    queryKey: ['tax-year'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('tax_plan_year', { p_fiscal_period_id: null })
+      if (error) throw error
+      return data as TaxYear
+    },
+  })
+}
+
+/** Easiest first: what costs nothing, then where things are bought, then timing, then pay. */
+export const STEP_ORDER: StepKind[] = ['paperwork', 'procurement', 'timing', 'pay_policy']
+
+export const STEP_KIND_LABEL: Record<StepKind, string> = {
+  paperwork: 'Paperwork', procurement: 'Procurement', timing: 'Timing', pay_policy: 'Pay policy',
+  protect: 'Protect', info: 'Good to know', advice: 'Ask the tax officer',
+}

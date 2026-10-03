@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   ChevronLeft, ChevronRight, Target, TrendingDown, TrendingUp, AlertTriangle, Info, CheckCircle2,
-  ArrowRight, ChevronDown, FlaskConical, RotateCcw, Save, CalendarClock, Copy,
+  ArrowRight, ChevronDown, FlaskConical, RotateCcw, Save, CalendarClock, Copy, GraduationCap,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
@@ -12,8 +12,9 @@ import { formatDateGC } from '@/lib/utils'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import {
   POLICY_AREA_LABEL, shiftPeriod, useTaxPlan, useTaxPlanHistory,
-  type TaxPlan, type TaxPlanMonth, type TaxPlanSchedule, type TaxPolicy, type TaxSuggestion, type WhatIf,
+  type TaxCode, type TaxPlan, type TaxPlanMonth, type TaxPlanSchedule, type TaxPolicy, type TaxSuggestion, type WhatIf,
 } from '@/lib/taxPlan'
+import { TaxTrainer } from './TaxTrainer'
 
 const etb = (n: number | null | undefined) => n == null ? '—' : Math.round(n).toLocaleString('en-US')
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${etb(Math.abs(n))}`
@@ -32,6 +33,11 @@ const TAX_NOTE: Record<string, string> = {
 export default function TaxPlanPage() {
   const [period, setPeriod] = useState<{ y: number; m: number } | null>(null)
   const [draft, setDraft] = useState<WhatIf>({})
+  const [coachTax, setCoachTax] = useState<TaxCode | 'ALL'>('ALL')
+  const coach = (t: TaxCode) => {
+    setCoachTax(t)
+    document.getElementById('tax-trainer')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const { data: plan, isLoading, error, isFetching } = useTaxPlan(period?.y ?? null, period?.m ?? null, draft)
   const { data: history = [] } = useTaxPlanHistory()
 
@@ -66,9 +72,10 @@ export default function TaxPlanPage() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="space-y-5">
               <div className="grid gap-4 sm:grid-cols-2">
-                {plan.schedules.map(s => <TaxCard key={`${plan.period.ec_year}-${plan.period.ec_month}-${s.code}-${s.goal}`} s={s} plan={plan} />)}
+                {plan.schedules.map(s => <TaxCard key={`${plan.period.ec_year}-${plan.period.ec_month}-${s.code}-${s.goal}`} s={s} plan={plan} onCoach={() => coach(s.code)} />)}
               </div>
               {plan.can_manage && <CopyGoals plan={plan} />}
+              <TaxTrainer plan={plan} tax={coachTax} setTax={setCoachTax} onTry={patch => setDraft(d => ({ ...d, ...patch }))} />
               <Suggestions items={plan.suggestions} />
               <History rows={history} />
             </div>
@@ -132,7 +139,7 @@ function Stat({ label, value, hint }: { label: string; value: number | null; hin
   )
 }
 
-function TaxCard({ s, plan }: { s: TaxPlanSchedule; plan: TaxPlan }) {
+function TaxCard({ s, plan, onCoach }: { s: TaxPlanSchedule; plan: TaxPlan; onCoach: () => void }) {
   const [open, setOpen] = useState(false)
   const credit = s.benchmark < 0
   const over = s.goal != null && Math.max(s.benchmark, 0) > s.goal
@@ -154,9 +161,14 @@ function TaxCard({ s, plan }: { s: TaxPlanSchedule; plan: TaxPlan }) {
         <div className="text-right">{s.declared != null && <><span className="text-slate-400">Declared </span><span className="font-medium tabular-nums text-slate-700 dark:text-slate-200">{etb(s.declared)}</span></>}</div>
       </div>
       <GoalField s={s} plan={plan} over={over} />
-      <button onClick={() => setOpen(o => !o)} className="mt-3 inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-brand">
-        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} /> How it's built
-      </button>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button onClick={() => setOpen(o => !o)} className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand">
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} /> How it's built
+        </button>
+        <button onClick={onCoach} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+          <GraduationCap className="h-3.5 w-3.5" /> Coach me
+        </button>
+      </div>
       {open && (
         <ul className="mt-2 space-y-1 border-t pt-2 text-xs dark:border-slate-700">
           {s.parts.map(pt => (
