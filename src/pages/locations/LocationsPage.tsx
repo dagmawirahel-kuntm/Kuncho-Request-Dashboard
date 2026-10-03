@@ -183,7 +183,7 @@ export default function LocationsPage() {
         <section className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm dark:border-amber-800/40 dark:bg-slate-800">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2.5 dark:border-amber-800/40 dark:bg-amber-900/10">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200"><Keyboard className="h-4 w-4" /> Places people keep typing</h2>
-            <p className="text-xs text-amber-800/80 dark:text-amber-300/80">Save one, or say which saved place it is — its past transport jobs get linked</p>
+            <Link to="/locations/tidy" className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">Tidy them all up, one by one →</Link>
           </div>
           <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
             {typedWorthSaving.map(u => (

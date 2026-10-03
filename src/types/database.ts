@@ -659,7 +659,7 @@ export interface TransportVehicleQueueRow {
 }
 
 // ── Locations ────────────────────────────────────────────────────
-export type LocationKind = 'site' | 'vendor_shop' | 'office' | 'workshop' | 'warehouse' | 'client' | 'other'
+export type LocationKind = 'site' | 'vendor_shop' | 'market' | 'office' | 'workshop' | 'warehouse' | 'client' | 'other'
 
 export interface Location {
   id: string

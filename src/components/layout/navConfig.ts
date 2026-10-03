@@ -170,6 +170,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Stock', label: 'Tools', to: '/stock/tools', icon: Wrench, roles: ['admin', 'executive', 'stock_manager'] },
       { subgroup: 'Fleet', label: 'My Trips', to: '/my-trips', icon: Route, roles: ['logistics_officer'], showIfLogisticsOfficer: true },
       { subgroup: 'Fleet', label: 'Fleet & Logistics', to: '/logistics', icon: Car, animateIcon: 'car-twist-anim' },
+      { subgroup: 'Fleet', label: 'Transport Insights', to: '/logistics/insights', icon: TrendingUp },
       { subgroup: 'Fleet', label: 'Vehicle Maintenance', to: '/fleet/maintenance', icon: Wrench },
       { subgroup: 'Fleet', label: 'Traffic Penalties', to: '/fleet/penalties', icon: AlertTriangle },
     ],
