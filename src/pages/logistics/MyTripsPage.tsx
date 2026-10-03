@@ -11,8 +11,9 @@ import { LoadingRows } from '@/components/shared/LoadingRows'
 import { NEXT_STEP, OPEN_JOB_STATUSES, setJobStatus } from '@/lib/transport'
 import { PAPER_LABEL } from '@/lib/fleet'
 import type { Location, TransportJobStatus, TransportJobType } from '@/types/database'
-import { Car, Play, Check, Plus, Fuel, MapPin, ArrowRight, AlertTriangle, Phone, X, Truck, ShieldCheck } from 'lucide-react'
+import { Car, Play, Check, Plus, Fuel, MapPin, ArrowRight, AlertTriangle, Phone, X, Truck, ShieldCheck, Users } from 'lucide-react'
 import { buzz, chime, confetti, firstTimeToday } from '@/lib/celebrate'
+import { TripCrewPanel } from '@/components/transport/TripCrew'
 
 // Trips in a month worth a cheer when the driver reaches them.
 const TRIP_LANDMARKS = [10, 25, 50, 100]
@@ -63,14 +64,16 @@ export default function MyTripsPage() {
     queryFn: async () => {
       const { data: staff } = await supabase.from('staff').select('id, employee_name').eq('user_id', user!.id).maybeSingle()
       const { data: vehicle } = staff
-        ? await supabase.from('vehicles').select('id, name, plate_number, status, energy_type').eq('assigned_driver_id', staff.id).eq('active', true).maybeSingle()
+        ? await supabase.from('vehicles').select('id, name, plate_number, status, energy_type, vehicle_type').eq('assigned_driver_id', staff.id).eq('active', true).maybeSingle()
         : { data: null }
-      return { staff: staff as { id: string; employee_name: string } | null, vehicle: vehicle as { id: string; name: string; plate_number: string | null; status: string; energy_type: string } | null }
+      return { staff: staff as { id: string; employee_name: string } | null, vehicle: vehicle as { id: string; name: string; plate_number: string | null; status: string; energy_type: string; vehicle_type: string | null } | null }
     },
     enabled: !!user?.id,
   })
   const staffId = me?.staff?.id ?? null
   const vehicle = me?.vehicle ?? null
+  // A truck's trips nearly always hire a crew to load and unload (migration 415).
+  const truckId = vehicle?.vehicle_type === 'truck' ? vehicle.id : null
 
   const { data: jobs = [] } = useQuery({
     queryKey: ['my-trips', staffId, vehicle?.id],
@@ -216,14 +219,14 @@ export default function MyTripsPage() {
       {logging && <LogTrip locations={locations as Location[]} projects={projects as { id: string; project_name: string }[]} vehicleId={vehicle?.id ?? null} staffId={staffId}
         onClose={() => setLogging(false)} onSaved={() => { setLogging(false); refresh() }} />}
 
-      <Section title="On the road" empty={null} jobs={onRoad} onAdvance={advance} highlight />
-      <Section title="Up next" empty="Nothing waiting — log a trip when you go somewhere" jobs={upNext} onAdvance={advance} />
-      <Section title="Done today" empty={null} jobs={doneToday} onAdvance={advance} />
+      <Section title="On the road" empty={null} jobs={onRoad} onAdvance={advance} truckId={truckId} highlight />
+      <Section title="Up next" empty="Nothing waiting — log a trip when you go somewhere" jobs={upNext} onAdvance={advance} truckId={truckId} />
+      <Section title="Done today" empty={null} jobs={doneToday} onAdvance={advance} truckId={truckId} />
     </div>
   )
 }
 
-function Section({ title, jobs, empty, onAdvance, highlight }: { title: string; jobs: Job[]; empty: string | null; onAdvance: (j: Job, button: HTMLElement | null) => void; highlight?: boolean }) {
+function Section({ title, jobs, empty, onAdvance, highlight, truckId }: { title: string; jobs: Job[]; empty: string | null; onAdvance: (j: Job, button: HTMLElement | null) => void; highlight?: boolean; truckId: string | null }) {
   if (!jobs.length && !empty) return null
   return (
     <section>
@@ -244,6 +247,7 @@ function Section({ title, jobs, empty, onAdvance, highlight }: { title: string; 
                   </p>
                 )}
                 {j.projects?.project_name && <p className="mt-0.5 text-xs text-slate-400">{j.projects.project_name}</p>}
+                <TripCrewToggle jobId={j.id} isTruck={j.vehicle_id === truckId} />
                 <div className="mt-3 flex gap-2">
                   {step && (
                     <button onClick={e => onAdvance(j, e.currentTarget)}
@@ -330,4 +334,18 @@ function LogTrip({ locations, projects, vehicleId, staffId, onClose, onSaved }: 
       </button>
     </div>
   )
+}
+
+// Loaders hired on the spot: recorded on the trip from the phone instead of a
+// paper slip, and sent for payment from here.
+function TripCrewToggle({ jobId, isTruck }: { jobId: string; isTruck: boolean }) {
+  const [open, setOpen] = useState(false)
+  return open
+    ? <div className="mt-3"><TripCrewPanel jobId={jobId} isTruck={isTruck} compact /></div>
+    : (
+      <button type="button" onClick={() => setOpen(true)}
+        className={`mt-3 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium ${isTruck ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+        <Users className="h-4 w-4" /> {isTruck ? 'Loaders for this trip' : 'Loaders'}
+      </button>
+    )
 }

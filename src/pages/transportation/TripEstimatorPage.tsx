@@ -9,6 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { useLocations, locationPickerOptions } from '@/hooks/useLookups'
 import { roadRoute } from '@/components/map/geo'
 import { PickupBundlesPanel } from '@/components/transport/PickupAdvice'
+import { KmRates, NewGround, QuoteLog } from '@/components/transport/MarketResearch'
 import {
   CONFIDENCE, LOAD_SIZE, OPTION_CLASS, OPTION_LABEL, useTripEstimate,
   type DriverDeal, type LoadSize, type OptionEstimate, type TripEstimate,
@@ -41,6 +42,7 @@ export default function TripEstimatorPage() {
   const [pickup, setPickup] = useState<string | null>(null)
   const [dropoff, setDropoff] = useState<string | null>(null)
   const [kmTyped, setKmTyped] = useState('')
+  const [toText, setToText] = useState('')
   const [size, setSize] = useState<LoadSize>('medium')
   const [routing, setRouting] = useState(false)
   const km = kmTyped.trim() && Number(kmTyped) > 0 ? Number(kmTyped) : null
@@ -66,7 +68,8 @@ export default function TripEstimatorPage() {
   }
 
   const shown = (est?.options ?? []).filter(o => LOAD_SIZE[size].options.includes(o.option))
-  const best = shown.find(o => o.confidence === 'route' || o.confidence === 'good') ?? null
+  // On new ground nothing is a sure best deal until quotes are in.
+  const best = shown.find(o => o.confidence === 'quotes' || ((o.confidence === 'route' || o.confidence === 'good') && !est?.new_ground)) ?? null
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
@@ -96,6 +99,13 @@ export default function TripEstimatorPage() {
             <span className="text-sm text-slate-400">km</span>
           </div>
         </label>
+        {!dropoff && (
+          <label className="block md:col-span-4">
+            <span className="mb-1 block text-xs font-medium text-slate-500">Somewhere not on the list? Name it, and type its distance above</span>
+            <input value={toText} onChange={e => setToText(e.target.value)} placeholder="e.g. Adama, Bishoftu, a new site at Legetafo"
+              className="w-full rounded-md border px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+          </label>
+        )}
         <div className="md:col-span-4">
           <p className="mb-1 text-xs font-medium text-slate-500">Load</p>
           <div className="flex flex-wrap gap-1.5">
@@ -121,6 +131,7 @@ export default function TripEstimatorPage() {
         <>
           <Distance est={est} from={from?.location_name} to={to?.location_name} busy={isFetching} routing={routing}
             canRoute={!!from && !!to && from.latitude != null && to.latitude != null && est.distance_source === 'pins' && !km} onRoute={workOutRoad} />
+          {est.new_ground && <NewGround est={est} size={size} />}
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
             <section className="space-y-3">
               <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">What it would cost</h2>
@@ -129,6 +140,8 @@ export default function TripEstimatorPage() {
                 <OptionCard key={o.option} o={o} best={best?.option === o.option} km={est.km}
                   book={bookLink({ pickup, dropoff, option: o.option, amount: o.estimate, name: tripName })} />
               ))}
+              <QuoteLog key={`${pickup}-${dropoff}-${est.km}`} est={est} pickup={pickup} dropoff={dropoff} toText={toText} size={size} />
+              <KmRates est={est} />
               <OwnFleet est={est} />
             </section>
             <Drivers est={est} size={size} book={(d) => bookLink({ pickup, dropoff, option: d.option, amount: d.estimate, driver: d.driver_id, name: tripName })} />
@@ -160,7 +173,11 @@ function Distance({ est, from, to, busy, routing, canRoute, onRoute }: { est: Tr
 
 function OptionCard({ o, best, km, book }: { o: OptionEstimate; best: boolean; km: number | null; book: string }) {
   const c = CONFIDENCE[o.confidence]
-  const basis = o.confidence === 'route' ? `${o.route_jobs} trips on this same route`
+  const basis = o.confidence === 'quotes' ? `${o.quotes} quotes collected lately`
+    : o.confidence === 'per_km' ? (o.call_out != null && o.per_km_rate != null
+      ? `the km: ${o.call_out > 0 ? `${etb(o.call_out)} call-out + ` : ''}${etb(o.per_km_rate)} a km, from ${o.km_trips} trips (longest ${o.max_km} km)`
+      : `the km: ${etb(o.per_km_avg)} a km on average, from ${o.km_trips} trips (longest ${o.max_km} km)`)
+    : o.confidence === 'route' ? `${o.route_jobs} trips on this same route`
     : o.near_jobs > 0 ? `${o.near_jobs} trip${o.near_jobs === 1 ? '' : 's'} of ${o.near_km_low === o.near_km_high ? `${o.near_km_low}` : `${o.near_km_low}–${o.near_km_high}`} km`
     : `${o.jobs} trip${o.jobs === 1 ? '' : 's'}, distance not known`
   return (
@@ -173,7 +190,7 @@ function OptionCard({ o, best, km, book }: { o: OptionEstimate; best: boolean; k
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${c.cls}`}>{c.label}</span>
         </p>
         <p className="mt-0.5 text-xs text-slate-500">
-          Based on {basis}{km != null && o.estimate ? ` · ≈ ${etb(o.estimate / km)} a km` : ''}
+          Based on {basis}{km != null && o.estimate && o.confidence !== 'per_km' ? ` · ≈ ${etb(o.estimate / km)} a km` : ''}
           {o.last_price != null && o.last_date && <> · last paid {etb(o.last_price)} on {formatDate(o.last_date)}</>}
         </p>
       </div>
