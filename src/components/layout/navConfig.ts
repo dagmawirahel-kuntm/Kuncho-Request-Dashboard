@@ -205,6 +205,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Books & bank', label: 'Fixed Assets', to: '/finance/fixed-assets', icon: Archive },
       // Everything tax in one place: they all read Ethiopian periods and
       // the same rate references (migrations 301-313).
+      { subgroup: 'Tax', label: 'Tax Plan', to: '/tax-plan', icon: Target, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
       { subgroup: 'Tax', label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
       { subgroup: 'Tax', label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Tax', label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },

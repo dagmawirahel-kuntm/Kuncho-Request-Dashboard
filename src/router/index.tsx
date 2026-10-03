@@ -105,6 +105,7 @@ import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
 import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
 import TaxFilingsPage from '@/pages/tax-filings/TaxFilingsPage'
+import TaxPlanPage from '@/pages/tax-plan/TaxPlanPage'
 import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
 import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
 import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
@@ -386,6 +387,7 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} allowTaxOfficer />,
             children: [
               { path: 'tax-filings', element: <TaxFilingsPage /> },
+              { path: 'tax-plan', element: <TaxPlanPage /> },
             ],
           },
           {
