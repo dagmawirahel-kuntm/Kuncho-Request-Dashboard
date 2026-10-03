@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 // pickups from the same area that can share a trip (migration 414).
 
 export type TripOption = 'ride_hailing' | 'other' | 'lada' | 'toyota_carryon' | 'mini_isuzu' | 'isuzu' | 'unknown'
-export type Confidence = 'route' | 'good' | 'rough' | 'thin'
+export type Confidence = 'quotes' | 'route' | 'good' | 'per_km' | 'rough' | 'thin'
 
 export interface OptionEstimate {
   option: TripOption
@@ -21,6 +21,31 @@ export interface OptionEstimate {
   confidence: Confidence
   last_price: number | null
   last_date: string | null
+  /** Quotes logged lately for this route or distance (migration 415). */
+  quotes: number
+  quote_median: number | null
+  /** What a km costs: all paid ÷ all km, and split into a call-out and a rate. */
+  per_km_avg: number | null
+  call_out: number | null
+  per_km_rate: number | null
+  km_trips: number
+  max_km: number | null
+  by_km: number | null
+  /** Past anything we've done — priced by the km. */
+  beyond: boolean
+}
+
+export interface QuoteRow {
+  id: string
+  option: TripOption
+  price: number
+  km: number | null
+  quoted_at: string
+  who: string | null
+  phone: string | null
+  note: string | null
+  from: string | null
+  to: string | null
 }
 
 export interface DriverDeal {
@@ -58,6 +83,11 @@ export interface TripEstimate {
   options: OptionEstimate[]
   drivers: DriverDeal[]
   own_fleet: FleetCost[]
+  /** A place no trip has touched, or well past our longest trip. */
+  new_ground: boolean
+  new_ground_reason: string | null
+  max_km_on_record: number | null
+  quotes: QuoteRow[]
 }
 
 export function useTripEstimate(km: number | null, pickup: string | null, dropoff: string | null) {
@@ -91,8 +121,10 @@ export const LOAD_SIZE: Record<LoadSize, { label: string; hint: string; options:
 }
 
 export const CONFIDENCE: Record<Confidence, { label: string; cls: string }> = {
+  quotes: { label: 'Quotes collected', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
   route: { label: 'This route before', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
   good: { label: 'Similar trips', cls: 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' },
+  per_km: { label: 'By the km — rough', cls: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' },
   rough: { label: 'Rough', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
   thin: { label: 'Too few trips', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
 }
@@ -179,3 +211,24 @@ export function combinedJobLink(areaId: string, areaName: string, items: BundleI
   })
   return `/transportation/new?${q.toString()}`
 }
+
+// ── Loading and unloading crews on a trip (migration 415) ──────────────
+
+export interface TripCrew {
+  id: string
+  transport_request_id: string
+  stage: 'loading' | 'unloading' | 'both'
+  workers: number | null
+  basis: 'lump_sum' | 'per_person'
+  rate: number | null
+  amount: number
+  payee_name: string
+  payee_phone: string | null
+  payout_method: 'bank' | 'telebirr' | 'cash' | null
+  account_number: string | null
+  note: string | null
+  expense_id: string | null
+  created_at: string
+}
+
+export const CREW_STAGE: Record<TripCrew['stage'], string> = { loading: 'Loading', unloading: 'Unloading', both: 'Loading and unloading' }

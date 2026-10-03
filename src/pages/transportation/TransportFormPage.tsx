@@ -3,6 +3,7 @@ import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { RoutePriceHint } from '@/components/transport/RoutePriceHint'
 import { PickupAdvice } from '@/components/transport/PickupAdvice'
+import { TripCrewPanel } from '@/components/transport/TripCrew'
 import { DriverPicker } from '@/components/transport/DriverPicker'
 import { PAY_STAGE, payStageOf } from '@/lib/transport'
 import { useEffect, useMemo, useState } from 'react'
@@ -510,6 +511,9 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         <PickupAdvice bundleId={bundleId} vendorId={form.vendor_id} compact />
       )}
 
+      {isEdit && id && (
+        <TripCrewPanel jobId={id} isTruck={(vehicles as { id: string; vehicle_type?: string | null }[]).some(v => v.id === form.vehicle_id && v.vehicle_type === 'truck')} />
+      )}
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
       </Field>
