@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { RoutePriceHint } from '@/components/transport/RoutePriceHint'
+import { PickupAdvice } from '@/components/transport/PickupAdvice'
 import { DriverPicker } from '@/components/transport/DriverPicker'
 import { PAY_STAGE, payStageOf } from '@/lib/transport'
 import { useEffect, useMemo, useState } from 'react'
@@ -187,9 +188,17 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       : {
           requested_date: new Date().toISOString().slice(0, 10),
           job_type: bundleId ? 'purchase_pickup' : 'material_move',
-          transport_mode: 'own_fleet',
+          transport_mode: (searchParams.get('mode') as TransportationRequestInsert['transport_mode'] | null) ?? 'own_fleet',
           priority: 'normal',
           sourcing_bundle_id: bundleId,
+          // From the trip estimator or a combined pickup (migrations 413/414).
+          pickup_location_id: searchParams.get('pickup'),
+          dropoff_location_id: searchParams.get('dropoff'),
+          hired_vehicle_class: searchParams.get('class') as HiredVehicleClass | null,
+          hired_driver_id: searchParams.get('driver'),
+          amount: searchParams.get('amount') ? Number(searchParams.get('amount')) : undefined,
+          request_name: searchParams.get('name') ?? undefined,
+          notes: searchParams.get('notes') ?? undefined,
         }
   )
 
@@ -497,6 +506,9 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       </div>
       <RoutePriceHint jobId={id} pickupId={pickupId} dropoffId={form.dropoff_location_id} jobType={form.job_type}
         mode={form.transport_mode} amount={form.amount} date={form.requested_date} />
+      {!isEdit && form.job_type === 'purchase_pickup' && (bundleId || form.vendor_id) && !searchParams.get('notes') && (
+        <PickupAdvice bundleId={bundleId} vendorId={form.vendor_id} compact />
+      )}
 
       <Field label="Notes">
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
