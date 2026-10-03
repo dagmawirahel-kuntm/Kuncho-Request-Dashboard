@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { RoutePriceHint } from '@/components/transport/RoutePriceHint'
+import { DriverPicker } from '@/components/transport/DriverPicker'
+import { PAY_STAGE, payStageOf } from '@/lib/transport'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -16,7 +18,7 @@ import { useProjects, useLocations, useVendors, useStaff, locationPickerOptions 
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { submitted } from '@/lib/celebrate'
-import { Receipt, ExternalLink, CheckCircle2 } from 'lucide-react'
+import { Receipt, ExternalLink, CheckCircle2, Check } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -145,11 +147,11 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, expense_code, amount_etb, payment_status, paid_date')
+        .select('id, expense_code, amount_etb, payment_status, payment_state, paid_date')
         .eq('id', record!.expense_id!)
         .single()
       if (error) throw error
-      return data as { id: string; expense_code: string | null; amount_etb: number | null; payment_status: boolean; paid_date: string | null }
+      return data as { id: string; expense_code: string | null; amount_etb: number | null; payment_status: boolean; payment_state: string | null; paid_date: string | null }
     },
     enabled: !!record?.expense_id,
   })
@@ -176,6 +178,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
           dropoff_location_text: record.dropoff_location_text,
           vendor_id: record.vendor_id,
           vendor_name: record.vendor_name,
+          hired_driver_id: record.hired_driver_id ?? null,
           notes: record.notes,
           project_id: record.project_id,
           cargo_size_estimate: record.cargo_size_estimate,
@@ -233,6 +236,31 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     })
   }
 
+  // A vendor's usual place (migration 409) fills the pickup, and a
+  // project's site the drop-off — only while that end is still empty.
+  const vendorPlace = useMemo(() => new Map((vendors as { id: string; location_id?: string | null }[]).filter(v => v.location_id).map(v => [v.id, v.location_id as string])), [vendors])
+  const projectPlace = useMemo(() => new Map((projects as { id: string; location_id?: string | null }[]).filter(p => p.location_id).map(p => [p.id, p.location_id as string])), [projects])
+  const [autoFilled, setAutoFilled] = useState<{ pickup?: boolean; dropoff?: boolean }>({})
+  function setVendor(vid: string | null) {
+    setForm(f => {
+      const place = vid ? vendorPlace.get(vid) : undefined
+      if (place && !f.pickup_location_id && !f.pickup_location_text) { setAutoFilled(a => ({ ...a, pickup: true })); return { ...f, vendor_id: vid, pickup_location_id: place } }
+      return { ...f, vendor_id: vid }
+    })
+  }
+  function setProject(pid: string | null) {
+    setForm(f => {
+      const place = pid ? projectPlace.get(pid) : undefined
+      if (place && !f.dropoff_location_id && !f.dropoff_location_text) { setAutoFilled(a => ({ ...a, dropoff: true })); return { ...f, project_id: pid, dropoff_location_id: place } }
+      return { ...f, project_id: pid }
+    })
+  }
+  // A new pickup started from a purchase order shows its vendor's place
+  // until someone picks or types another (worked out, not stored, until saved).
+  const pickupId = form.pickup_location_id
+    ?? (!isEdit && !form.pickup_location_text && form.vendor_id ? vendorPlace.get(form.vendor_id) ?? null : null)
+  const pickupFromVendor = !form.pickup_location_id && !!pickupId
+
   // Typing a place that is saved — by its name or one of its other names
   // (migration 391) — picks the saved place too, so the job lands on the
   // map and in the place's history instead of staying loose text.
@@ -284,7 +312,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       return
     }
     setError(''); setSaving(true)
-    const payload = { ...form }
+    const payload = { ...form, pickup_location_id: pickupId ?? null }
     if (payload.transport_mode !== 'own_fleet') payload.vehicle_id = null
     if (payload.transport_mode !== 'hired') payload.hired_vehicle_class = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -306,26 +334,10 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   return (
     <FormPage title={isEdit ? 'Edit Transport Job' : 'New Transport Job'} backTo={backTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Create Job'} onSave={handleSave}>
 
-      {/* ── Job lifecycle (edit mode, dispatchers only) ── */}
-      {isEdit && (
-        <div className="rounded-lg border bg-slate-50 p-3 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Job status:</span>
-            <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700 capitalize">
-              {flow.label}
-            </span>
-          </div>
-          {canDispatch && flow.next.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              {flow.next.map(n => (
-                <button key={n.to} type="button" onClick={() => transition(n.to)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${n.cls}`}>
-                  {n.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* ── Where the job is (edit mode) ── */}
+      {isEdit && record && (
+        <JobTimeline record={record} paid={linkedExpense ? payStageOf(record.transport_mode, linkedExpense) : (isMoneyJob ? 'none' : 'not_needed')}
+          actions={canDispatch ? flow.next : []} onAction={transition} />
       )}
 
       <Field label="Job Name *">
@@ -396,7 +408,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
             </select>
           </Field>
           <Field label="Vendor / Transporter">
-            <SearchableSelect value={form.vendor_id ?? null} onChange={vid => set('vendor_id', vid)} options={vendorOptions} placeholder="Select if known…" />
+            <SearchableSelect value={form.vendor_id ?? null} onChange={setVendor} options={vendorOptions} placeholder="Select if known…" />
           </Field>
         </div>
       )}
@@ -410,10 +422,24 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
             placeholder={form.transport_mode === 'own_fleet' ? 'Select driver…' : 'Who runs this job…'}
           />
         </Field>
-        <Field label="Driver Name (if different / hired)">
-          <input type="text" className={inputCls} value={form.driver_name ?? ''} onChange={e => set('driver_name', e.target.value)} />
-        </Field>
+        {form.transport_mode === 'own_fleet' && (
+          <Field label="Driver name (if not on the staff list)">
+            <input type="text" className={inputCls} value={form.driver_name ?? ''} onChange={e => set('driver_name', e.target.value)} />
+          </Field>
+        )}
       </div>
+
+      {isMoneyJob && (
+        <Field label="Driver" hint="Pick a driver we know, or add a new one — their phone, plate and how they're paid are kept for next time and for paying this job.">
+          <DriverPicker driverId={form.hired_driver_id} typedName={!form.hired_driver_id ? form.driver_name : null} defaultClass={form.hired_vehicle_class}
+            onPick={d => setForm(f => ({
+              ...f,
+              hired_driver_id: d?.id ?? null,
+              driver_name: d ? d.full_name : f.driver_name,
+              hired_vehicle_class: f.hired_vehicle_class ?? ((d?.vehicle_class as HiredVehicleClass | null) ?? null),
+            }))} />
+        </Field>
+      )}
 
       <Field label="Job Duration (hours)" hint="How long this ties up the vehicle. Set it here and the job joins the fleet queue with an ETA immediately — used for own-fleet jobs.">
         <input
@@ -426,11 +452,11 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
       {/* ── Route ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="From (saved place)">
-          <SearchableSelect value={form.pickup_location_id ?? null} onChange={lid => pickLocation('pickup_location_id', lid)} options={locationOptions} placeholder="Pickup…" />
+        <Field label="From (saved place)" hint={(autoFilled.pickup && form.pickup_location_id) || pickupFromVendor ? "Filled from the vendor's usual place" : undefined}>
+          <SearchableSelect value={pickupId ?? null} onChange={lid => { setAutoFilled(a => ({ ...a, pickup: false })); pickLocation('pickup_location_id', lid) }} options={locationOptions} placeholder="Pickup…" />
         </Field>
-        <Field label="To (saved place)">
-          <SearchableSelect value={form.dropoff_location_id ?? null} onChange={lid => pickLocation('dropoff_location_id', lid)} options={locationOptions} placeholder="Dropoff…" />
+        <Field label="To (saved place)" hint={autoFilled.dropoff && form.dropoff_location_id ? "Filled from the project's site" : undefined}>
+          <SearchableSelect value={form.dropoff_location_id ?? null} onChange={lid => { setAutoFilled(a => ({ ...a, dropoff: false })); pickLocation('dropoff_location_id', lid) }} options={locationOptions} placeholder="Dropoff…" />
         </Field>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -463,13 +489,13 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Project">
-          <SearchableSelect value={form.project_id ?? null} onChange={pid => set('project_id', pid)} options={projectOptions} placeholder="Select project…" />
+          <SearchableSelect value={form.project_id ?? null} onChange={setProject} options={projectOptions} placeholder="Select project…" />
         </Field>
         <Field label={isMoneyJob ? 'Estimated Cost (ETB)' : 'Cost (ETB, if any)'}>
           <input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
         </Field>
       </div>
-      <RoutePriceHint jobId={id} pickupId={form.pickup_location_id} dropoffId={form.dropoff_location_id} jobType={form.job_type}
+      <RoutePriceHint jobId={id} pickupId={pickupId} dropoffId={form.dropoff_location_id} jobType={form.job_type}
         mode={form.transport_mode} amount={form.amount} date={form.requested_date} />
 
       <Field label="Notes">
@@ -487,8 +513,8 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
               <div className="text-sm text-slate-700">
                 <span className="font-mono text-xs font-bold text-brand mr-1.5">{linkedExpense.expense_code}</span>
                 {linkedExpense.amount_etb != null && formatCurrency(linkedExpense.amount_etb)}
-                <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${linkedExpense.payment_status ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {linkedExpense.payment_status ? 'Paid' : 'Unpaid'}
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${PAY_STAGE[payStageOf(form.transport_mode ?? 'hired', linkedExpense)].cls}`}>
+                  {PAY_STAGE[payStageOf(form.transport_mode ?? 'hired', linkedExpense)].label}
                 </span>
               </div>
               <Link to={`/expenses/${linkedExpense.id}`} className="flex items-center gap-1 text-xs text-brand hover:underline">
@@ -513,5 +539,57 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </div>
       )}
     </FormPage>
+  )
+}
+
+// Requested → assigned → on the way → delivered → paid, with when each
+// happened (assigned_at / started_at / completed_at, migration 410) and the
+// next step as a button.
+function JobTimeline({ record, paid, actions, onAction }: {
+  record: TransportationRequest
+  paid: ReturnType<typeof payStageOf>
+  actions: { to: TransportJobStatus; label: string; cls: string }[]
+  onAction: (to: TransportJobStatus) => void
+}) {
+  const cancelled = record.job_status === 'cancelled'
+  const rank: Record<TransportJobStatus, number> = { requested: 0, assigned: 1, in_progress: 2, completed: 3, cancelled: -1 }
+  const at = rank[record.job_status]
+  const when = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
+  const steps: { label: string; done: boolean; time: string | null }[] = [
+    { label: 'Requested', done: true, time: when(record.created_at) },
+    { label: 'Assigned', done: at >= 1, time: when(record.assigned_at) },
+    { label: 'On the way', done: at >= 2, time: when(record.started_at) },
+    { label: 'Delivered', done: at >= 3, time: when(record.completed_at) },
+    ...(paid === 'not_needed' ? [] : [{ label: paid === 'paid' ? 'Paid' : PAY_STAGE[paid].label, done: paid === 'paid', time: null }]),
+  ]
+  return (
+    <div className="rounded-lg border bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+      {cancelled ? (
+        <p className="text-sm font-semibold text-red-600">Cancelled</p>
+      ) : (
+        <ol className="flex items-start">
+          {steps.map((st, i) => (
+            <li key={st.label} className="flex flex-1 flex-col items-center text-center">
+              <div className="flex w-full items-center">
+                <span className={`h-0.5 flex-1 ${i === 0 ? 'opacity-0' : st.done ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${st.done ? 'bg-emerald-500 text-white' : 'border-2 border-slate-300 text-slate-400 dark:border-slate-600'}`}>
+                  {st.done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                </span>
+                <span className={`h-0.5 flex-1 ${i === steps.length - 1 ? 'opacity-0' : steps[i + 1].done ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+              </div>
+              <span className={`mt-1 text-[11px] font-medium ${st.done ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}`}>{st.label}</span>
+              {st.time && <span className="text-[10px] text-slate-400">{st.time}</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+      {actions.length > 0 && (
+        <div className="mt-3 flex flex-wrap justify-end gap-1.5 border-t pt-2 dark:border-slate-700">
+          {actions.map(n => (
+            <button key={n.to} type="button" onClick={() => onAction(n.to)} className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white ${n.cls}`}>{n.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, stageOf, useLabourSites, type LabourRequest, type RequestStage } from '@/lib/labour'
 import { ChevronRight, ClipboardCheck, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
@@ -48,6 +49,30 @@ export default function LabourHomePage() {
     },
   })
 
+  // Labour still open on jobs that are already finished (migration 408).
+  const { toast } = useToast()
+  const canBulkClose = ['admin', 'executive', 'operations_manager', 'hr_officer'].includes(role ?? '')
+  const { data: onFinished = 0, refetch: refetchFinished } = useQuery({
+    queryKey: ['labour-open-on-finished-orders'],
+    enabled: canBulkClose,
+    queryFn: async () => {
+      const { count, error } = await supabase.from('labor_requisitions').select('id, work_orders!inner(status)', { count: 'exact', head: true })
+        .eq('status', 'approved').is('closed_at', null).in('work_orders.status', ['completed', 'cancelled'])
+      if (error) throw error
+      return count ?? 0
+    },
+  })
+  const [closing, setClosing] = useState(false)
+  async function closeFinished() {
+    if (!confirm(`End the ${onFinished} labour request${onFinished === 1 ? '' : 's'} on finished jobs? Workers are released; days already recorded can still be paid.`)) return
+    setClosing(true)
+    const { data, error } = await supabase.rpc('close_labour_of_finished_orders')
+    setClosing(false)
+    if (error) { toast(error.message, 'error'); return }
+    refetchFinished()
+    toast(`${Number(data ?? 0)} labour request${Number(data) === 1 ? '' : 's'} ended`, 'success')
+  }
+
   // Everyone who isn't an approver or finance sees their own sites' requests.
   const mine = everywhere || finance ? requests : requests.filter(r => siteIds.has(r.project_id))
   const toApprove = approver ? requests.filter(r => r.status === 'pending') : []
@@ -85,6 +110,17 @@ export default function LabourHomePage() {
           {toConfirm.length > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{toConfirm.length}</span>}
         </Link>
       </div>
+
+      {canBulkClose && onFinished > 0 && (
+        <div className={`${card} flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10`}>
+          <p className="flex-1 text-sm text-amber-900 dark:text-amber-200">
+            {onFinished} labour request{onFinished === 1 ? ' is' : 's are'} still open on work orders that are already finished.
+          </p>
+          <button onClick={closeFinished} disabled={closing} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
+            {closing ? 'Ending…' : 'End them'}
+          </button>
+        </div>
+      )}
 
       {todo.length > 0 && (
         <section className={card}>

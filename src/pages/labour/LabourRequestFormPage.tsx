@@ -38,6 +38,20 @@ export default function LabourRequestFormPage() {
   const [step, setStep] = useState(0)
   const [pickedSite, setSite] = useState<string | null | undefined>(params.get('project') ?? undefined)
   const site = pickedSite === undefined ? (sites.length === 1 ? sites[0].id : null) : pickedSite
+  // The job on the site this labour is for — its cost then counts on that
+  // work order, and its workers join the order's crew (migration 408).
+  const [woId, setWoId] = useState<string | null>(params.get('work_order'))
+  const { data: siteOrders = [] } = useQuery({
+    queryKey: ['labour-site-work-orders', site],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('work_orders').select('id, title, scope_of_work, status')
+        .eq('project_id', site!).in('status', ['requested', 'in_progress']).order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as { id: string; title: string | null; scope_of_work: string | null; status: string }[]
+    },
+    enabled: !!site,
+  })
+  const workOrder = woId && siteOrders.some(o => o.id === woId) ? woId : (woId && !site ? woId : null)
   const [work, setWork] = useState('')
   const [scope, setScope] = useState('')
   const [start, setStart] = useState(isoDay(new Date()))
@@ -127,7 +141,7 @@ export default function LabourRequestFormPage() {
         is_casual_or_new: people.length > 0 || parseInt(extra) > 0,
         requested_by: profile?.id, status: 'pending',
         // Asked for from a work order: its labour counts against it.
-        work_order_id: params.get('work_order') || null,
+        work_order_id: workOrder,
       }).select('id').single()
       if (error) throw error
       for (const w of roster) {
@@ -176,6 +190,14 @@ export default function LabourRequestFormPage() {
               : sites.length === 0 ? <p className="text-sm text-amber-600">You aren't the manager or foreman of any site. Ask operations to add you to one.</p>
               : <SearchableSelect value={site} onChange={setSite} options={sites.map(s => ({ id: s.id, label: s.project_name }))} placeholder="Choose the site…" />}
           </div>
+          {site && siteOrders.length > 0 && (
+            <div>
+              <Label hint="Its labour cost then counts on that job, and the workers join its crew.">For which job? <span className="font-normal text-slate-400">(recommended)</span></Label>
+              <SearchableSelect value={workOrder} onChange={setWoId}
+                options={siteOrders.map(o => ({ id: o.id, label: o.title || (o.scope_of_work ?? 'Work order').slice(0, 60), sub: o.status === 'in_progress' ? 'in progress' : 'not started' }))}
+                placeholder="Choose the work order…" />
+            </div>
+          )}
           <div>
             <Label hint="Tap one, or type your own.">What work?</Label>
             <div className="mb-2 flex flex-wrap gap-1.5">

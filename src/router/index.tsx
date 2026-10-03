@@ -40,6 +40,7 @@ import StockToolsPage from '@/pages/stock/StockToolsPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
 import TransportFormPage from '@/pages/transportation/TransportFormPage'
 import TransportPaymentFormPage from '@/pages/transportation/TransportPaymentFormPage'
+import DriversPage from '@/pages/transportation/DriversPage'
 import StaffPage from '@/pages/staff/StaffPage'
 import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
@@ -286,6 +287,7 @@ export const router = createBrowserRouter([
           },
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'transportation/new', element: <TransportFormPage /> },
+          { path: 'transportation/drivers', element: <DriversPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
           { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },
           { path: 'logistics', element: <FleetPage /> },

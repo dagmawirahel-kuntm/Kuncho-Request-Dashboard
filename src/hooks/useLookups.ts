@@ -9,7 +9,7 @@ export function useVendors() {
     queryFn: async () => {
       const { data } = await supabase
         .from('vendors')
-        .select('id,vendor_name,bank_account,tin,phone_contact')
+        .select('id,vendor_name,bank_account,tin,phone_contact,location_id')
         .eq('active', true)
         .order('vendor_name')
       return data ?? []
@@ -24,7 +24,7 @@ export function useProjects() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('id,project_name,department')
+        .select('id,project_name,department,location_id')
         .order('project_name')
       if (error) throw error
       return data ?? []

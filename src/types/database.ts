@@ -324,6 +324,10 @@ export interface Vendor {
   requires_payment_confirmation: boolean
   active: boolean
   location: string | null
+  /** The vendor's usual place — shop or market area (migration 409). */
+  location_id?: string | null
+  location_source?: string | null
+  usual_place?: { id: string; location_name: string } | null
   address: string | null
   contact_person: string | null
   payment_terms: string | null
@@ -637,10 +641,38 @@ export interface TransportationRequest {
   cargo_size_estimate: VehicleCapacityClass | null
   expected_duration_hours: number | null
   completed_at: string | null
+  /** The hired / ride-hailing driver from the driver list (migration 410). */
+  hired_driver_id?: string | null
+  /** When the job was assigned and started — stamped by the database (410). */
+  assigned_at?: string | null
+  started_at?: string | null
   created_at: string
   updated_at: string
 }
-export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at' | 'completed_at'>
+export type TransportationRequestInsert = Omit<TransportationRequest, 'id' | 'created_at' | 'updated_at' | 'completed_at' | 'assigned_at' | 'started_at'>
+
+/** A hired or ride-hailing driver we know (migration 410). */
+export interface TransportDriver {
+  id: string
+  full_name: string
+  phone: string | null
+  plate_number: string | null
+  vehicle_class: HiredVehicleClass | string | null
+  usual_vendor_id: string | null
+  payout_method: 'bank' | 'telebirr' | 'cash' | null
+  bank_name: string | null
+  account_number: string | null
+  account_name: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  /** From v_transport_drivers. */
+  usual_vendor_name?: string | null
+  trips?: number
+  last_trip?: string | null
+  amount_on_jobs?: number
+}
 
 /** v_transport_vehicle_queue — chained ETA per vehicle, own_fleet jobs only. */
 export interface TransportVehicleQueueRow {

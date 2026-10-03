@@ -7,6 +7,7 @@ import { RecordHeader, Stat } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { BaseMap, type MapPin as Pin } from '@/components/map/BaseMap'
 import { PlaceSearch } from '@/components/map/PlaceSearch'
+import { PlaceSuggestions } from '@/components/locations/PlaceSuggestions'
 import { locationPickerOptions } from '@/hooks/useLookups'
 import { LOCATION_KINDS } from '@/lib/locations'
 import { groupTypedPlaces, matchSaved, type PlaceGroup, type TypedPlace } from '@/lib/placeGroups'
@@ -59,6 +60,8 @@ export default function LocationsTidyPage() {
         <Stat label="Saved places" value={active.length} />
         <Stat label="On the map" value={`${active.filter(l => l.latitude != null).length} of ${active.length}`} />
       </div>
+
+      <PlaceSuggestions saved={active} />
 
       {isLoading ? <p className="py-16 text-center text-sm text-slate-400">Loading…</p> : !current ? (
         <div className="rounded-xl border bg-white p-10 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
