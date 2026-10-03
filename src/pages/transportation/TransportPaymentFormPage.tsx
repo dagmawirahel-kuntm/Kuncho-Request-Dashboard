@@ -42,14 +42,15 @@ export default function TransportPaymentFormPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transportation_requests')
-        .select('id, request_name, amount, project_id, vendor_id, vendor_name, transport_mode, hired_vehicle_class, pickup_location_text, dropoff_location_text')
+        .select('id, request_name, amount, project_id, vendor_id, vendor_name, transport_mode, hired_vehicle_class, pickup_location_text, dropoff_location_text, driver:transport_drivers(full_name, phone, payout_method, bank_name, account_number, account_name)')
         .eq('id', id!)
         .single()
       if (error) throw error
-      return data as {
+      return data as unknown as {
         id: string; request_name: string | null; amount: number | null; project_id: string | null
         vendor_id: string | null; vendor_name: string | null; transport_mode: string; hired_vehicle_class: string | null
         pickup_location_text: string | null; dropoff_location_text: string | null
+        driver: { full_name: string; phone: string | null; payout_method: 'bank' | 'telebirr' | 'cash' | null; bank_name: string | null; account_number: string | null; account_name: string | null } | null
       }
     },
     enabled: !!id,
@@ -61,6 +62,9 @@ export default function TransportPaymentFormPage() {
   const [amount, setAmount] = useState('')
   const [vendorId, setVendorId] = useState<string | null>(null)
   const [vendorName, setVendorName] = useState('')
+  // The account the money goes to when the payee isn't a saved vendor —
+  // the job's driver's, from the driver list (migration 410).
+  const [payAccount, setPayAccount] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [receipt, setReceipt] = useState<ReceiptValue>({ receipt_url: null, receipt_name: null, receipt_is_vat: null, receipt_no: null, receipt_vat_amount: null })
   // The job's project when it has one; otherwise asked here (395).
@@ -73,8 +77,16 @@ export default function TransportPaymentFormPage() {
   useEffect(() => {
     if (!job || prefilled) return
     setAmount(job.amount != null ? String(job.amount) : '')
-    setVendorId(job.vendor_id)
-    setVendorName(job.vendor_name ?? '')
+    if (job.driver) {
+      // A hired driver is paid for the trip — not the supplier whose goods
+      // they carried.
+      setVendorId(null)
+      setVendorName(job.driver.full_name)
+      setPayAccount(job.driver.payout_method === 'cash' ? '' : [job.driver.payout_method === 'telebirr' ? 'telebirr' : job.driver.bank_name, job.driver.account_number].filter(Boolean).join(' '))
+    } else {
+      setVendorId(job.vendor_id)
+      setVendorName(job.vendor_name ?? '')
+    }
     setPrefilled(true)
   }, [job, prefilled])
 
@@ -102,6 +114,8 @@ export default function TransportPaymentFormPage() {
       ...(job.project_id ? { project_id: job.project_id } : fromProjectChoice(projectPick)),
       vendor_id: vendorId,
       vendors_name: vendorId ? null : (vendorName || null),
+      vendors_bank_account: vendorId ? null : (payAccount.trim() || null),
+      ...(job.driver?.payout_method === 'cash' && !vendorId ? { payment_method: 'cash' } : {}),
       ...receipt,
       receipt_is_vat: receipt.receipt_url ? receipt.receipt_is_vat : null,
       notes: notes || null,
@@ -162,9 +176,18 @@ export default function TransportPaymentFormPage() {
       </Field>
 
       {!vendorId && (
-        <Field label="Recipient name (if not in the list)">
-          <input type="text" className={inputCls} value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="e.g. Driver name or ride-hailing service" />
-        </Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Recipient name (if not in the list)">
+            <input type="text" className={inputCls} value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="e.g. Driver name or ride-hailing service" />
+          </Field>
+          <Field label="Pay to account">
+            <input type="text" className={inputCls} value={payAccount} onChange={e => setPayAccount(e.target.value)}
+              placeholder={job.driver?.payout_method === 'cash' ? 'Paid in cash' : 'Bank or telebirr number'} />
+          </Field>
+        </div>
+      )}
+      {job.driver && !vendorId && (
+        <p className="-mt-2 text-[11px] text-slate-400">From the driver list{job.driver.phone ? ` · ${job.driver.phone}` : ''}{job.driver.account_name ? ` · account in the name of ${job.driver.account_name}` : ''}.</p>
       )}
 
       {!job.project_id && (

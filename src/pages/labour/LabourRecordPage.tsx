@@ -41,6 +41,22 @@ export default function LabourRecordPage() {
     },
   })
 
+  // Which job each request is for, shown on its group (migration 408).
+  const reqIds = useMemo(() => [...new Set(rows.map(r => r.labor_requisition_id))].sort(), [rows])
+  const { data: jobOf = {} } = useQuery({
+    queryKey: ['labour-request-jobs', reqIds.join(',')],
+    enabled: reqIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labor_requisitions').select('id, work_orders(id, title, scope_of_work)').in('id', reqIds)
+      if (error) throw error
+      const m: Record<string, { id: string; label: string }> = {}
+      for (const r of (data ?? []) as unknown as { id: string; work_orders: { id: string; title: string | null; scope_of_work: string | null } | null }[]) {
+        if (r.work_orders) m[r.id] = { id: r.work_orders.id, label: r.work_orders.title || (r.work_orders.scope_of_work ?? 'Work order').slice(0, 50) }
+      }
+      return m
+    },
+  })
+
   const [drafts, setDrafts] = useState<Record<string, Record<string, Draft>>>({})
   const sheetKey = `${site}|${date}`
   const draftOf = (r: Row): Draft => drafts[sheetKey]?.[key(r)] ?? {
@@ -125,7 +141,10 @@ export default function LabourRecordPage() {
             return (
               <section key={r0.labor_requisition_id} className="overflow-hidden rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800">
                 <Link to={`/labour/${r0.labor_requisition_id}`} className="flex items-baseline justify-between gap-2 border-b bg-slate-50 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900/40">
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">{r0.role_needed}</span>
+                  <span className="min-w-0">
+                    <span className="font-semibold text-slate-800 dark:text-slate-100">{r0.role_needed}</span>
+                    {jobOf[r0.labor_requisition_id] && <span className="block truncate text-xs font-normal text-slate-500">for {jobOf[r0.labor_requisition_id].label}</span>}
+                  </span>
                   <span className="text-xs text-slate-500">
                     {r0.payment_basis === 'per_day' ? 'hours · 8 = a day' : r0.payment_basis === 'per_volume' ? `${r0.volume_unit ?? 'units'} done today` : `${Number(r0.percent_so_far)}% done before today`}
                   </span>

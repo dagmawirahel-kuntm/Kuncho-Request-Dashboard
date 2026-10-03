@@ -9,8 +9,8 @@ import type { TransportationRequest, TransportJobStatus, TransportJobType, Trans
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
-import { NEXT_STEP, OPEN_JOB_STATUSES, setJobStatus } from '@/lib/transport'
-import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight } from 'lucide-react'
+import { NEXT_STEP, OPEN_JOB_STATUSES, PAY_STAGE, payStageOf, setJobStatus } from '@/lib/transport'
+import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users } from 'lucide-react'
 
 // Chained ETA per vehicle — own_fleet jobs only, since hired/ride-hailing
 // don't compete for a resource of ours. See v_transport_vehicle_queue
@@ -79,7 +79,8 @@ function VehicleQueuePanel() {
 
 type JobRow = TransportationRequest & {
   projects: { project_name: string } | null
-  expenses: { item_service_description: string | null; payment_status: boolean } | null
+  expenses: { item_service_description: string | null; payment_status: boolean; payment_state: string | null } | null
+  driver: { full_name: string; phone: string | null; plate_number: string | null } | null
   pickup: { location_name: string } | null
   dropoff: { location_name: string } | null
   vendors: { vendor_name: string } | null
@@ -110,17 +111,6 @@ const MODE_LABEL: Record<TransportMode, string> = {
 
 const transportQuickFilters: QuickFilter[] = [
   {
-    columnId: 'job_status',
-    label: 'Status',
-    options: [
-      { label: 'Requested', value: 'requested' },
-      { label: 'Assigned', value: 'assigned' },
-      { label: 'In Progress', value: 'in_progress' },
-      { label: 'Completed', value: 'completed' },
-      { label: 'Cancelled', value: 'cancelled' },
-    ],
-  },
-  {
     columnId: 'transport_mode',
     label: 'Mode',
     options: [
@@ -130,6 +120,25 @@ const transportQuickFilters: QuickFilter[] = [
     ],
   },
 ]
+
+// Where a job is, in the words a dispatcher uses. "To pay" is a hired or
+// ride-hailing job that is delivered but not paid yet.
+type Stage = 'all' | 'dispatch' | 'road' | 'pay' | 'done' | 'cancelled'
+const STAGES: { key: Stage; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'dispatch', label: 'To dispatch' },
+  { key: 'road', label: 'On the road' },
+  { key: 'pay', label: 'Delivered — to pay' },
+  { key: 'done', label: 'Done' },
+  { key: 'cancelled', label: 'Cancelled' },
+]
+function stageOf(j: JobRow): Exclude<Stage, 'all'> {
+  if (j.job_status === 'cancelled') return 'cancelled'
+  if (j.job_status === 'requested') return 'dispatch'
+  if (j.job_status === 'assigned' || j.job_status === 'in_progress') return 'road'
+  const pay = payStageOf(j.transport_mode, j.expenses)
+  return pay === 'paid' || pay === 'not_needed' ? 'done' : 'pay'
+}
 
 const STALE_DAYS = 14
 
@@ -215,7 +224,8 @@ export default function TransportationPage() {
         .from('transportation_requests')
         .select(`*,
           projects(project_name),
-          expenses(item_service_description, payment_status),
+          expenses(item_service_description, payment_status, payment_state),
+          driver:transport_drivers(full_name, phone, plate_number),
           pickup:locations!pickup_location_id(location_name),
           dropoff:locations!dropoff_location_id(location_name),
           vendors(vendor_name),
@@ -245,7 +255,7 @@ export default function TransportationPage() {
   })
 
   // "My Jobs": jobs whose assigned staff record belongs to the current user
-  const filtered = useMemo(() => {
+  const mine = useMemo(() => {
     if (!myJobsOnly) return data
     const email = user?.email?.toLowerCase() ?? ''
     return data.filter(j => {
@@ -253,6 +263,13 @@ export default function TransportationPage() {
       return a && (a.user_id === user?.id || (a.email ?? '').toLowerCase() === email)
     })
   }, [data, myJobsOnly, user])
+  const [stage, setStage] = useState<Stage>('all')
+  const stageCount = useMemo(() => {
+    const c: Record<Stage, number> = { all: mine.length, dispatch: 0, road: 0, pay: 0, done: 0, cancelled: 0 }
+    for (const j of mine) c[stageOf(j)]++
+    return c
+  }, [mine])
+  const filtered = useMemo(() => stage === 'all' ? mine : mine.filter(j => stageOf(j) === stage), [mine, stage])
 
   async function advance(job: JobRow) {
     const step = NEXT_STEP[job.job_status]
@@ -324,10 +341,22 @@ export default function TransportationPage() {
       ),
     },
     {
-      id: 'assigned', header: 'Assigned',
-      cell: ({ row }) => row.original.assigned
-        ? <span className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300"><User className="h-3 w-3 text-slate-400" />{row.original.assigned.employee_name}</span>
-        : <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>,
+      id: 'driver', header: 'Driver',
+      cell: ({ row }) => {
+        const d = row.original.driver
+        if (d) return (
+          <div className="text-xs">
+            <span className="flex items-center gap-1 text-slate-700 dark:text-slate-200"><User className="h-3 w-3 text-slate-400" />{d.full_name}</span>
+            <span className="text-[10px] text-slate-400">
+              {d.phone ? <a href={`tel:${d.phone}`} className="inline-flex items-center gap-0.5 text-brand hover:underline"><Phone className="h-2.5 w-2.5" />{d.phone}</a> : null}
+              {d.phone && d.plate_number ? ' · ' : ''}{d.plate_number}
+            </span>
+          </div>
+        )
+        if (row.original.assigned) return <span className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300"><User className="h-3 w-3 text-slate-400" />{row.original.assigned.employee_name}</span>
+        if (row.original.driver_name) return <span className="text-xs text-slate-500" title="Typed, not from the driver list">{row.original.driver_name}</span>
+        return <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+      },
     },
     {
       id: 'route', header: 'Route',
@@ -343,17 +372,11 @@ export default function TransportationPage() {
     {
       id: 'paid', header: 'Payment',
       cell: ({ row }) => {
-        // Payment derives from the linked, finance-gated expense — the old
-        // free-standing "Paid" checkbox is gone.
-        if (row.original.expenses) {
-          return row.original.expenses.payment_status
-            ? <span className="rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">Paid</span>
-            : <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Unpaid</span>
-        }
-        if (row.original.transport_mode === 'own_fleet') {
-          return <span className="text-[10px] text-slate-400">n/a</span>
-        }
-        return <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">No expense</span>
+        // Payment follows the linked expense through approval, sending and
+        // the bank — not a tick on the job.
+        const st = payStageOf(row.original.transport_mode, row.original.expenses)
+        if (st === 'not_needed') return <span className="text-[10px] text-slate-400">n/a</span>
+        return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${PAY_STAGE[st].cls}`}>{PAY_STAGE[st].label}</span>
       },
     },
     { id: 'project', header: 'Project', cell: ({ row }) => row.original.projects?.project_name ?? '—' },
@@ -388,6 +411,9 @@ export default function TransportationPage() {
           >
             My Jobs
           </button>
+          <Link to="/transportation/drivers" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
+            <Users className="h-4 w-4" /> Drivers
+          </Link>
           <Link to="/logistics" className="rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
             Fleet
           </Link>
@@ -415,6 +441,16 @@ export default function TransportationPage() {
           </span>
         </div>
       )}
+
+      <div className="flex gap-1 overflow-x-auto rounded-xl border bg-white p-1 dark:border-slate-700 dark:bg-slate-800" role="tablist">
+        {STAGES.map(t => (
+          <button key={t.key} role="tab" aria-selected={stage === t.key} onClick={() => setStage(t.key)}
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${stage === t.key ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+            {t.label}
+            <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${stage === t.key ? 'bg-white/20' : t.key === 'pay' && stageCount.pay > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-700'}`}>{stageCount[t.key]}</span>
+          </button>
+        ))}
+      </div>
 
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={filtered} searchPlaceholder="Search jobs…" persistKey="transportation" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="transportation_requests" queryKeys={['transportation']} quickFilters={transportQuickFilters} />}
     </div>

@@ -55,6 +55,7 @@ export interface LabourRequest {
   work_order_id: string | null
   projects?: { project_name: string } | null
   vendors?: { vendor_name: string } | null
+  work_orders?: { id: string; title: string | null; scope_of_work: string | null; status: string } | null
 }
 
 export type RequestStage = 'waiting' | 'active' | 'ended' | 'declined'

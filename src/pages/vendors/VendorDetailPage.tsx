@@ -79,7 +79,7 @@ export default function VendorDetailPage() {
   const { data: vendor, isLoading } = useQuery<Vendor>({
     queryKey: ['vendor', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('vendors').select('*').eq('id', id!).single()
+      const { data, error } = await supabase.from('vendors').select('*, usual_place:locations!vendors_location_id_fkey(id, location_name)').eq('id', id!).single()
       if (error) throw error
       return data as Vendor
     },
@@ -376,11 +376,12 @@ export default function VendorDetailPage() {
               ]} />
             </Panel>
             <Panel title="Contact">
-              {vendor.contact_person || vendor.phone_contact || vendor.email || vendor.address || vendor.website || vendor.location ? (
+              {vendor.contact_person || vendor.phone_contact || vendor.email || vendor.address || vendor.website || vendor.location || vendor.usual_place ? (
                 <FactList facts={[
                   ...(vendor.contact_person ? [{ label: 'Person', value: vendor.contact_person }] : []),
                   ...(vendor.phone_contact ? [{ label: 'Phone', value: <a href={`tel:${vendor.phone_contact}`} className="text-brand hover:underline inline-flex items-center gap-1"><Phone className="h-3 w-3" />{vendor.phone_contact}</a> }] : []),
                   ...(vendor.email ? [{ label: 'Email', value: <a href={`mailto:${vendor.email}`} className="text-brand hover:underline inline-flex items-center gap-1"><Mail className="h-3 w-3" />{vendor.email}</a> }] : []),
+                  ...(vendor.usual_place ? [{ label: 'Usually at', value: vendor.usual_place.location_name, hint: vendor.location_source ?? undefined }] : []),
                   ...(vendor.location ? [{ label: 'Location', value: vendor.location }] : []),
                   ...(vendor.address ? [{ label: 'Address', value: vendor.address }] : []),
                   ...(vendor.website ? [{ label: 'Website', value: <a href={vendor.website} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline inline-flex items-center gap-1"><Globe className="h-3 w-3" />Open <ExternalLink className="h-3 w-3" /></a> }] : []),

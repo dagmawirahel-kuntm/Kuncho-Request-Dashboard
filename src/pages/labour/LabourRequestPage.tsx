@@ -61,7 +61,7 @@ export default function LabourRequestPage() {
     queryKey: ['labour-request', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('labor_requisitions')
-        .select('*, projects(project_name), vendors:gang_leader_vendor_id(vendor_name)').eq('id', id!).single()
+        .select('*, projects(project_name), vendors:gang_leader_vendor_id(vendor_name), work_orders(id, title, scope_of_work, status)').eq('id', id!).single()
       if (error) throw error
       return data as LabourRequest
     },
@@ -225,6 +225,7 @@ export default function LabourRequestPage() {
         </div>
         <h1 className="mt-2 text-xl font-bold text-slate-800 dark:text-slate-100">{req.role_needed}{req.headcount > 1 ? ` × ${req.headcount}` : ''}</h1>
         <p className="text-sm text-slate-500">{req.projects?.project_name ?? '—'}{req.site_location ? ` · ${req.site_location}` : ''}</p>
+        <JobLink req={req} canManage={canManage} />
         {req.scope_of_work && <p className="mt-2 whitespace-pre-line text-sm text-slate-700 dark:text-slate-300">{req.scope_of_work}</p>}
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
           <div><dt className="text-xs text-slate-400">Dates</dt><dd>{req.start_date ? dayLabel(req.start_date) : '—'} → {req.end_date ? dayLabel(req.end_date) : 'open'}</dd></div>
@@ -427,5 +428,51 @@ export default function LabourRequestPage() {
         </div>
       )}
     </div>
+  )
+}
+
+// The work order this labour is for. Linking one counts the labour on that
+// job and brings the workers onto its crew (migration 408).
+function JobLink({ req, canManage }: { req: LabourRequest; canManage: boolean }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [picking, setPicking] = useState(false)
+  const { data: orders = [] } = useQuery({
+    queryKey: ['labour-site-work-orders', req.project_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('work_orders').select('id, title, scope_of_work, status')
+        .eq('project_id', req.project_id).in('status', ['requested', 'in_progress']).order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as { id: string; title: string | null; scope_of_work: string | null; status: string }[]
+    },
+    enabled: picking,
+  })
+  async function link(woId: string | null) {
+    if (!woId) return
+    const { error } = await supabase.from('labor_requisitions').update({ work_order_id: woId }).eq('id', req.id)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Linked to the job — its workers are on the crew now', 'success')
+    setPicking(false)
+    qc.invalidateQueries({ queryKey: ['labour-request', req.id] })
+  }
+  const wo = req.work_orders
+  if (wo) {
+    return (
+      <Link to={`/work-orders/${wo.id}`} className="mt-1 inline-flex items-center gap-1 text-sm text-brand hover:underline">
+        Job: {wo.title || (wo.scope_of_work ?? 'Work order').slice(0, 60)}
+      </Link>
+    )
+  }
+  if (!canManage) return <p className="mt-1 text-xs text-slate-400">Not linked to a work order</p>
+  return picking ? (
+    <div className="mt-2 max-w-sm">
+      <SearchableSelect value={null} onChange={link}
+        options={orders.map(o => ({ id: o.id, label: o.title || (o.scope_of_work ?? 'Work order').slice(0, 60), sub: o.status === 'in_progress' ? 'in progress' : 'not started' }))}
+        placeholder={orders.length ? 'Choose the job…' : 'No open work orders on this site'} />
+    </div>
+  ) : (
+    <button onClick={() => setPicking(true)} className="mt-1 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400">
+      Not linked to a work order — link it
+    </button>
   )
 }

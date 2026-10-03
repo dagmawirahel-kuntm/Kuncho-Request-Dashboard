@@ -33,6 +33,23 @@ export interface WorkOrderBoardRow {
   days_lost?: number
   /** The target date pushed by days_lost. */
   adjusted_due_date?: string | null
+  /** Labour estimate from the order's requests (408). */
+  labour_estimate?: number
+  /** People with labour logged on the order, old log and new entries. */
+  workers_logged?: number
+}
+
+/** Attendance logged on the order before the labour screens (408). */
+export interface WorkOrderLabourHistoryRow {
+  work_order_id: string
+  staff_id: string
+  worker_name: string | null
+  days: number
+  first_day: string
+  last_day: string
+  cost: number
+  drafted_for_pay: number
+  paid_under_other_order: number
 }
 
 export interface WorkOrderLabourRow {

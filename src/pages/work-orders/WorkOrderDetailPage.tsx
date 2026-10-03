@@ -144,7 +144,7 @@ export default function WorkOrderDetailPage() {
               <>{formatDate(wo.target_completion_date)} <span className="text-xs text-slate-400">{daysRemainingLabel(wo.target_completion_date, wo.status)}</span></>
             )}
           </dd></div>
-          <div><dt className="text-xs text-slate-400">Labour</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(Number(board?.labour_cost ?? 0) + Number(cost?.labor_cost ?? 0))}</dd></div>
+          <div><dt className="text-xs text-slate-400">Labour</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(Number(board?.labour_cost ?? cost?.labor_cost ?? 0))}</dd></div>
           <div><dt className="text-xs text-slate-400">Materials</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(cost?.materials_cost ?? 0)}</dd></div>
         </dl>
         {wo.scope_of_work && wo.scope_of_work !== wo.title && <p className="mt-3 whitespace-pre-line border-t pt-3 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">{wo.scope_of_work}</p>}
