@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -48,6 +48,7 @@ export default function SubcontractFormPage() {
 function SubcontractFormPageBody({ id, record }: { id?: string; record?: SubcontractorEngagement }) {
   const isEdit = !!id
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: vendors = [] } = useVendors()
@@ -68,7 +69,7 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
         status: record.status,
         notes: record.notes,
       }
-      : { status: 'drafting', percent_complete: 0 }
+      : { status: 'drafting', percent_complete: 0, vendor_id: params.get('vendor') ?? undefined, project_id: params.get('project') ?? undefined }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -83,16 +84,17 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
     setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit
-      ? supabase.from('subcontractor_engagements').update(form as any).eq('id', id!)
-      : supabase.from('subcontractor_engagements').insert([form as any])
-    const { error: err } = await op
+      ? supabase.from('subcontractor_engagements').update(form as any).eq('id', id!).select('id').single()
+      : supabase.from('subcontractor_engagements').insert([form as any]).select('id').single()
+    const { data: saved, error: err } = await op
     setSaving(false)
     if (err) { setError(err.message); toast(err.message, 'error'); return }
     dropRecordCache(qc, 'subcontractor-engagement')
     qc.invalidateQueries({ queryKey: ['subcontractor-engagements'] })
+    qc.invalidateQueries({ queryKey: ['subcontract-board'] })
     if (isEdit) qc.invalidateQueries({ queryKey: ['subcontractor-engagement', id] })
     toast(isEdit ? 'Engagement updated' : 'Engagement created', 'success')
-    navigate('/subcontracts')
+    navigate(saved?.id ? `/subcontracts/${saved.id}` : '/subcontracts')
   }
 
   return (
@@ -121,7 +123,7 @@ function SubcontractFormPageBody({ id, record }: { id?: string; record?: Subcont
         </Field>
         <Field label="Status">
           <select className={inputCls} value={form.status ?? 'drafting'} onChange={e => set('status', e.target.value as SubcontractorEngagementStatus)}>
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === 'drafting' ? 'Drafting — price or dates not agreed yet' : s === 'agreed' ? 'Agreed — not started' : s.replace('_', ' ')}</option>)}
           </select>
         </Field>
       </div>

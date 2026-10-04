@@ -105,7 +105,7 @@ export const navGroups: NavGroup[] = [
       // Matches sdr_pm_read/sdr_exec_all on site_daily_reports — finance
       // has no read grant on that table, so it's left off here.
       { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager'] },
-      { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager'] },
+      { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager', 'procurement_officer'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'technician'] },
       { label: 'Design Packages', to: '/design', icon: PenTool },
       // Three queues, one per approval step: the PM's, finance's, then the
