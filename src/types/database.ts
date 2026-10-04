@@ -3526,6 +3526,29 @@ export interface SiteDailyReport {
   submitted_at: string | null
   created_at: string
   updated_at: string
+  // Migration 421
+  site_status: 'working' | 'partial' | 'no_work'
+  no_work_reason: 'rain' | 'holiday' | 'waiting_materials' | 'waiting_client' | 'no_labour' | 'payment' | 'access' | 'other' | null
+  on_site_from: string | null
+  on_site_to: string | null
+  work_items: { work_order_id: string; label: string; progress_before: number | null; progress_after: number | null; note: string }[]
+  subcontractor_headcount: number | null
+  idle_hours: number | null
+  idle_reason: string | null
+  blocked: boolean | null
+  blocker_causes: string[]
+  blocker_notes: string | null
+  delay_days: number | null
+  client_visit: boolean | null
+  client_visit_notes: string | null
+  variation_instructed: boolean | null
+  variation_notes: string | null
+  toolbox_talk: boolean | null
+  ppe_compliance: 'all' | 'most' | 'few' | null
+  quality_issues: string | null
+  equipment_issues: string | null
+  materials_needed_soon: string | null
+  office_needs: string | null
 }
 
 // ── Fixed Asset Register ─────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
+import type { NudgeSummary } from '@/lib/siteReports'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -46,7 +47,7 @@ export function NotificationsBell() {
   const { data } = useQuery({
     queryKey: ['notifications', myStaffId],
     queryFn: async () => {
-      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents, vrfToConfirm] = await Promise.all([
+      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents, vrfToConfirm, siteReports] = await Promise.all([
         supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('transportation_requests').select('*', { count: 'exact', head: true }).eq('payment_status', false),
@@ -59,13 +60,21 @@ export function NotificationsBell() {
         // VRF payments sent and awaiting confirmation — relevant to the
         // badge holder, but a harmless global count for everyone else.
         supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_state', 'sent').eq('payment_method', 'vrf'),
+        // Daily site reports not in: on sites this viewer manages, and on
+        // sites where they are the foreman (migration 421).
+        supabase.rpc('site_report_nudge_summary'),
       ])
+      const sr = (siteReports.data ?? null) as NudgeSummary | null
+      const pmDays = (sr?.as_pm ?? []).reduce((n, s) => n + s.dates.length, 0)
+      const myDays = (sr?.as_foreman ?? []).reduce((n, s) => n + s.days.length, 0)
       // "Flagged for review" — this is a passive, global badge anyone can
       // see, not a targeted alert to finance. Never describe it as
       // "finance was notified" in copy. The personal-messages item below
       // is the one genuine exception — it IS addressed to this viewer.
       const items: NotificationItem[] = [
         { label: 'Messages for you', count: personalEvents.count ?? 0, to: '/calendar' },
+        { label: 'Daily site reports not in on your sites', count: pmDays, to: '/site-foreman/reports' },
+        { label: 'Daily site reports you owe', count: myDays, to: '/site-foreman/daily-report' },
         { label: 'Unpaid expenses', count: expenses.count ?? 0, to: '/expenses' },
         { label: 'Pending orders', count: orders.count ?? 0, to: '/orders' },
         { label: 'Pending transportation requests', count: transport.count ?? 0, to: '/transportation' },
