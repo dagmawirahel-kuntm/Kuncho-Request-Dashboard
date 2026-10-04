@@ -11,6 +11,8 @@ import type { SourcingBundle, SourcingBundleStatus } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, Truck, Search, ChevronRight, TrendingUp, CalendarClock } from 'lucide-react'
+import { canSeePoVatGoal, usePoVatGoal, usePoVatToggle } from '@/lib/poVatGoal'
+import { PoVatChip, PoVatSummary, PoVatToggle } from '@/components/purchasing/PoVatGoal'
 
 type BundleRow = SourcingBundle & { vendors: { vendor_name: string } | null }
 
@@ -62,6 +64,14 @@ export default function PurchaseOrdersPage() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<SourcingBundleStatus | 'all' | 'open'>('open')
   const [vendor, setVendor] = useState<string | null>(null)
+
+  // Admin toggle: what each PO could do for the month's saved VAT goal.
+  const vatAllowed = canSeePoVatGoal(role)
+  const [vatOn, setVatOn] = usePoVatToggle()
+  const [vatPeriod, setVatPeriod] = useState<{ y: number; m: number } | null>(null)
+  const showVat = vatAllowed && vatOn
+  const { data: vatGoal, isFetching: vatLoading } = usePoVatGoal(showVat, vatPeriod)
+  const vatById = useMemo(() => new Map((vatGoal?.pos ?? []).map(p => [p.id, p])), [vatGoal])
 
   const { data: bundles = [], isLoading } = useQuery({
     queryKey: ['sourcing-bundles'],
@@ -166,11 +176,16 @@ export default function PurchaseOrdersPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Purchase orders</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Lines from purchase requests, grouped by vendor into orders</p>
         </div>
-        <Link to="/sourcing/new"
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New purchase order
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {vatAllowed && <PoVatToggle on={vatOn} onChange={setVatOn} />}
+          <Link to="/sourcing/new"
+            className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New purchase order
+          </Link>
+        </div>
       </div>
+
+      {showVat && <PoVatSummary data={vatGoal} loading={vatLoading} onPick={setVatPeriod} />}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Awaiting finance" value={stats.awaiting} sub={stats.awaitingValue > 0 ? formatCurrency(stats.awaitingValue) : 'Nothing waiting'} tone={stats.awaiting > 0 ? 'amber' : undefined} />
@@ -253,6 +268,9 @@ export default function PurchaseOrdersPage() {
                           )}
                           <DueDate date={b.expected_delivery_date} status={b.status} />
                         </div>
+                        {showVat && vatGoal && vatById.has(b.id) && (
+                          <div className="mt-1"><PoVatChip e={vatById.get(b.id)} period={vatGoal.period} /></div>
+                        )}
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">

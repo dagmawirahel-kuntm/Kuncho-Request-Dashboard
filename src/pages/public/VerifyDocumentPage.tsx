@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { AlertTriangle, BadgeCheck, Printer, XCircle } from 'lucide-react'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 interface Verified {
   doc_type: string; doc_number: string | null; version: number; latest_version: number | null
@@ -79,7 +80,7 @@ export default function VerifyDocumentPage() {
               </div>
               {data.html && (
                 <div className="overflow-hidden rounded-xl border bg-white shadow">
-                  <iframe ref={frame} srcDoc={data.html} title="Document" sandbox="allow-same-origin allow-modals" className="h-[80vh] w-full border-0" />
+                  <DocumentFrame ref={frame} html={data.html} title="Document" sandbox="allow-same-origin allow-modals" className="h-[80vh]" />
                 </div>
               )}
             </>

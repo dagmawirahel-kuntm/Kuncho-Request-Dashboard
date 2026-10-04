@@ -26,6 +26,7 @@ import {
   type LaborPaymentRequestInput,
 } from '@/lib/laborPaymentRequestDocument'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 type SavedPr = {
   id: string
@@ -216,7 +217,7 @@ export function PaymentRequestActions({
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
           <div
-            className="w-full max-w-5xl h-[92vh] flex flex-col rounded-xl bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 overflow-hidden"
+            className="w-full max-w-5xl h-[92vh] supports-[height:100dvh]:h-[92dvh] flex flex-col rounded-xl bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
@@ -239,12 +240,7 @@ export function PaymentRequestActions({
 
             {/* Preview */}
             <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-900">
-              <iframe
-                ref={frameRef}
-                srcDoc={html}
-                title="Payment Request preview"
-                className="w-full h-full border-0 bg-white"
-              />
+              <DocumentFrame ref={frameRef} html={html} title="Payment Request preview" />
             </div>
 
             {/* Prior versions — a re-issue supersedes rather than replaces,

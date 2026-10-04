@@ -14,6 +14,7 @@ import { ActionDialog } from '@/components/shared/ActionDialog'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/components/record/Record'
 import type { ProformaStatus } from '@/types/database'
 import { DEFAULT_DISCOUNT_LIMIT, discountLabel, discountPercent, type DiscountKind } from '@/lib/discount'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 interface PF {
   id: string; proforma_number: string | null; client_id: string; project_id: string | null; opportunity_id: string | null
@@ -285,7 +286,7 @@ export default function ProformaDetailPage() {
       <RecordLayout
         main={
           <div className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-700" style={{ height: 'min(1000px, calc(100vh - 220px))', minHeight: 520 }}>
-            <iframe srcDoc={preview} title="Proforma" className="h-full w-full border-0" />
+            <DocumentFrame html={preview} title="Proforma" />
           </div>
         }
         rail={

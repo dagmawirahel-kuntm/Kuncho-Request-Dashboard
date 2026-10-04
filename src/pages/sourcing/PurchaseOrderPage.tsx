@@ -26,6 +26,8 @@ import {
 import { PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 import { PickupAdvice } from '@/components/transport/PickupAdvice'
+import { canSeePoVatGoal, usePoVatGoal, usePoVatToggle } from '@/lib/poVatGoal'
+import { PoVatPanel } from '@/components/purchasing/PoVatGoal'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -234,6 +236,10 @@ export default function PurchaseOrderPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const { role, profile } = useAuth()
+  // Admin toggle (shared with the PO list): this PO's effect on the month's VAT goal.
+  const vatAllowed = canSeePoVatGoal(role)
+  const [vatOn, setVatOn] = usePoVatToggle()
+  const { data: vatGoal } = usePoVatGoal(vatAllowed && vatOn, null)
 
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
@@ -944,6 +950,14 @@ export default function PurchaseOrderPage() {
                 <p className="mt-2 text-xs text-slate-400">A GRN can be recorded once this purchase order is marked ordered.</p>
               )}
             </Panel>
+            {vatAllowed && id && (vatOn
+              ? <PoVatPanel data={vatGoal} poId={id} onHide={() => setVatOn(false)} />
+              : (
+                <button type="button" onClick={() => setVatOn(true)}
+                  className="w-full rounded-xl border border-dashed px-4 py-2.5 text-left text-xs font-medium text-slate-500 hover:border-brand hover:text-brand dark:border-slate-600 dark:text-slate-400">
+                  Show what this PO could do for the VAT goal
+                </button>
+              ))}
 
             {(status === 'ordered' || status === 'fulfilled' || transportJob || showQueuePanel) && (
               <Panel title="Delivery" icon={TruckIcon}>

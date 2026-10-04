@@ -15,6 +15,7 @@ import { DEFAULT_DISCOUNT_LIMIT, discountLabel, discountedTotals, type DiscountK
 import type { Client } from '@/types/database'
 import { ProformaSources } from './ProformaSources'
 import { ProformaPriceGuide } from './ProformaPriceGuide'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 type LineItem = DraftLine
 
@@ -624,7 +625,7 @@ export default function ProformaInvoicePage() {
         <div className="hidden lg:block w-[460px] flex-shrink-0 sticky top-0">
           <p className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 text-center font-semibold">Live Preview</p>
           <div className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-lg bg-white" style={{ height: 'min(710px, calc(100vh - 155px))' }}>
-            <iframe srcDoc={previewDoc} className="w-full h-full border-0" title="Proforma Invoice Preview" />
+            <DocumentFrame html={previewDoc} title="Proforma Invoice Preview" />
           </div>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-2">Updates live as you type · save to get the numbered copy with its QR check</p>
         </div>

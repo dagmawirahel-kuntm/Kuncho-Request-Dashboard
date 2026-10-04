@@ -14,6 +14,7 @@ import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
 import { printHtml } from '@/lib/documents/issue'
 import { DocumentActions } from '@/components/documents/DocumentActions'
 import type { Client, ClientPaymentRequest, PaymentMilestoneKind } from '@/types/database'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 const inputCls =
   'w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:text-slate-100 disabled:opacity-70'
@@ -603,7 +604,7 @@ function PaymentRequestBody({ clientId, lookups }: { clientId: string; lookups: 
         <div className="hidden lg:block w-[460px] flex-shrink-0 sticky top-0">
           <p className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 text-center font-semibold">Live Preview</p>
           <div className="rounded-xl overflow-hidden border dark:border-slate-700 shadow-lg bg-white" style={{ height: 'min(710px, calc(100vh - 155px))' }}>
-            <iframe ref={previewRef} srcDoc={previewDoc} className="w-full h-full border-0" title="Payment Request Preview" />
+            <DocumentFrame ref={previewRef} html={previewDoc} title="Payment Request Preview" />
           </div>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-2">Updates live as you type · Print button prints this view</p>
         </div>
