@@ -13,6 +13,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Plus, Pencil, Trash2, Truck, Search, ChevronRight, TrendingUp, CalendarClock } from 'lucide-react'
 import { canSeePoVatGoal, usePoVatGoal, usePoVatToggle } from '@/lib/poVatGoal'
 import { PoVatChip, PoVatSummary, PoVatToggle } from '@/components/purchasing/PoVatGoal'
+import { useTaxImpact } from '@/lib/taxImpact'
+import { TaxTag } from '@/components/tax/TaxTag'
 
 type BundleRow = SourcingBundle & { vendors: { vendor_name: string } | null }
 
@@ -72,6 +74,8 @@ export default function PurchaseOrdersPage() {
   const showVat = vatAllowed && vatOn
   const { data: vatGoal, isFetching: vatLoading } = usePoVatGoal(showVat, vatPeriod)
   const vatById = useMemo(() => new Map((vatGoal?.pos ?? []).map(p => [p.id, p])), [vatGoal])
+  // The PO wears the same T-tag as the expense raised from it (migration 423).
+  const { data: impact, byPo: impactByPo } = useTaxImpact()
 
   const { data: bundles = [], isLoading } = useQuery({
     queryKey: ['sourcing-bundles'],
@@ -252,6 +256,7 @@ export default function PurchaseOrdersPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <TaxTag item={impactByPo.get(b.id)} periodLabel={impact?.period.label} />
                           <span className="whitespace-nowrap font-mono text-xs font-semibold text-brand">{b.bundle_code}</span>
                           <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{b._vendor || 'No vendor yet'}</span>
                           <Pill tone={st.tone}>{st.label}</Pill>

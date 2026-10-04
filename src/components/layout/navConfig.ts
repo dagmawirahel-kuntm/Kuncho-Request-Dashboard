@@ -207,6 +207,8 @@ export const navGroups: NavGroup[] = [
       // Everything tax in one place: they all read Ethiopian periods and
       // the same rate references (migrations 301-313).
       { subgroup: 'Tax', label: 'Tax Plan', to: '/tax-plan', icon: Target, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
+      // Open expenses and POs ranked by how much VAT they bring this month (migration 423).
+      { subgroup: 'Tax', label: 'Tax Impact', to: '/tax-impact', icon: Tag, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
       { subgroup: 'Tax', label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
       { subgroup: 'Tax', label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Tax', label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },

@@ -15,6 +15,8 @@ import {
   DollarSign, FileText, Building2, FolderKanban, Tag, Wallet,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { TaxImpactNote } from '@/components/tax/TaxImpactBanners'
+import { useRefreshTaxImpact, useTaxImpact } from '@/lib/taxImpact'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
@@ -65,6 +67,9 @@ export default function ExpenseDetailPage() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  // Approving or rejecting changes the tax-impact ranking (migration 423).
+  const { allowed: impactAllowed } = useTaxImpact(false)
+  const refreshImpact = useRefreshTaxImpact()
 
   const [rejecting, setRejecting] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
@@ -673,6 +678,7 @@ export default function ExpenseDetailPage() {
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['expense-detail', id] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
+    if (impactAllowed) void refreshImpact()
     toast('Approval updated', 'success')
     setRejecting(false)
     setRejectionReason('')
@@ -808,6 +814,8 @@ export default function ExpenseDetailPage() {
         )}
 
         <TrainerHintBanner entityType="expense" entityId={expense.id} hint={expenseHint} />
+
+        <TaxImpactNote id={expense.id} />
 
         {/* Hero card */}
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>

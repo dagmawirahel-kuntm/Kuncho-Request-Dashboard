@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import type { NudgeSummary } from '@/lib/siteReports'
+import { canSeeTaxImpact, type TaxImpact } from '@/lib/taxImpact'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -16,7 +17,8 @@ export function NotificationsBell() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, role, profile } = useAuth()
+  const taxReader = canSeeTaxImpact(role, profile?.is_tax_officer)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -45,9 +47,9 @@ export function NotificationsBell() {
   })
 
   const { data } = useQuery({
-    queryKey: ['notifications', myStaffId],
+    queryKey: ['notifications', myStaffId, taxReader],
     queryFn: async () => {
-      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents, vrfToConfirm, siteReports] = await Promise.all([
+      const [expenses, orders, transport, payroll, emergency, overBudget, personalEvents, vrfToConfirm, siteReports, taxImpact] = await Promise.all([
         supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('payment_status', false),
         supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('transportation_requests').select('*', { count: 'exact', head: true }).eq('payment_status', false),
@@ -63,10 +65,15 @@ export function NotificationsBell() {
         // Daily site reports not in: on sites this viewer manages, and on
         // sites where they are the foreman (migration 421).
         supabase.rpc('site_report_nudge_summary'),
+        // High tax impact (migration 423): new escalations not yet seen, and overdue items.
+        taxReader ? supabase.rpc('tax_impact_items') : Promise.resolve({ data: null }),
       ])
       const sr = (siteReports.data ?? null) as NudgeSummary | null
       const pmDays = (sr?.as_pm ?? []).reduce((n, s) => n + s.dates.length, 0)
       const myDays = (sr?.as_foreman ?? []).reduce((n, s) => n + s.days.length, 0)
+      const ti = (taxImpact.data ?? null) as TaxImpact | null
+      const tiSeen = new Set(ti?.seen ?? [])
+      const tiCount = (ti?.items ?? []).filter(i => (i.escalated && !tiSeen.has(i.id)) || i.overdue).length
       // "Flagged for review" — this is a passive, global badge anyone can
       // see, not a targeted alert to finance. Never describe it as
       // "finance was notified" in copy. The personal-messages item below
@@ -75,6 +82,7 @@ export function NotificationsBell() {
         { label: 'Messages for you', count: personalEvents.count ?? 0, to: '/calendar' },
         { label: 'Daily site reports not in on your sites', count: pmDays, to: '/site-foreman/reports' },
         { label: 'Daily site reports you owe', count: myDays, to: '/site-foreman/daily-report' },
+        { label: 'High tax impact: escalated or overdue', count: tiCount, to: '/tax-impact' },
         { label: 'Unpaid expenses', count: expenses.count ?? 0, to: '/expenses' },
         { label: 'Pending orders', count: orders.count ?? 0, to: '/orders' },
         { label: 'Pending transportation requests', count: transport.count ?? 0, to: '/transportation' },
