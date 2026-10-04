@@ -1773,7 +1773,19 @@ export interface VatPositionRow {
   /** Flagged purchases whose receipt is not yet tax-reviewed (317). */
   input_vat_pending_review: number
   pending_review_count: number
+  /** Of those: a receipt is captured and going through review (417). */
+  input_vat_in_review: number
+  in_review_count: number
+  /** Of those: flagged, nothing captured yet (417). */
+  input_vat_needs_receipt: number
+  needs_receipt_count: number
+  /** Net if every flagged purchase in the period were claimed. */
+  net_vat_if_all_claimed: number
+  is_current: boolean
 }
+
+/** Where a purchase stands on its way to an input VAT claim (417). */
+export type InputVatStage = 'unflagged' | 'needs_receipt' | 'in_review' | 'claimed' | 'rejected' | 'not_vat'
 
 export type InputVatCopyStatus = 'not_uploaded' | 'uploaded' | 'not_available'
 
@@ -1803,8 +1815,10 @@ export interface InputVatRow {
   receipt_status: string | null
   copy_status: InputVatCopyStatus
   copy_status_set: boolean
+  /** Tax-reviewed receipt and not marked "no VAT" — what the return claims (417). */
   claimable: boolean
   notes: string | null
+  stage: InputVatStage
 }
 
 // v_sale_wht (310) — the single WHT rule, per sale.
