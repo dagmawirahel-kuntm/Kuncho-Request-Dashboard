@@ -15,6 +15,8 @@ import {
   type TaxCode, type TaxPlan, type TaxPlanMonth, type TaxPlanSchedule, type TaxPolicy, type TaxSuggestion, type WhatIf,
 } from '@/lib/taxPlan'
 import { TaxTrainer } from './TaxTrainer'
+import { TaxForecast } from './TaxForecast'
+import { useTabParam } from '@/lib/useTabParam'
 
 const etb = (n: number | null | undefined) => n == null ? '—' : Math.round(n).toLocaleString('en-US')
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${etb(Math.abs(n))}`
@@ -30,7 +32,10 @@ const TAX_NOTE: Record<string, string> = {
 // Management's goal for each tax this month, the benchmark the books point
 // to with the tax policies applied, and what was recorded, declared and
 // paid (migration 411). Policies can be tried here before they're saved.
+const VIEWS = ['month', 'forecast'] as const
+
 export default function TaxPlanPage() {
+  const [view, setView] = useTabParam(VIEWS, 'month')
   const [period, setPeriod] = useState<{ y: number; m: number } | null>(null)
   const [draft, setDraft] = useState<WhatIf>({})
   const [coachTax, setCoachTax] = useState<TaxCode | 'ALL'>('ALL')
@@ -54,7 +59,7 @@ export default function TaxPlanPage() {
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">Tax plan</h1>
           <p className="text-sm text-slate-500">The goal for each month, what the books say it will come to, and the policies that move it.</p>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
+        {view === 'month' && <div className="flex items-center gap-1 rounded-lg border bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
           <button onClick={() => go(-1)} disabled={!p} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" aria-label="Previous month"><ChevronLeft className="h-4 w-4" /></button>
           <div className="min-w-[9.5rem] px-2 text-center">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{p?.label ?? '…'}</p>
@@ -62,10 +67,19 @@ export default function TaxPlanPage() {
           </div>
           <button onClick={() => go(1)} disabled={!p} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" aria-label="Next month"><ChevronRight className="h-4 w-4" /></button>
           {p && !p.is_current && <button onClick={() => setPeriod(null)} className="ml-1 rounded-md bg-brand/10 px-2 py-1 text-xs font-medium text-brand">This month</button>}
-        </div>
+        </div>}
       </header>
 
-      {isLoading || !plan ? <div className={`${card} h-40 animate-pulse`} /> : (
+      <div className="flex gap-1 border-b dark:border-slate-700">
+        {VIEWS.map(v => (
+          <button key={v} onClick={() => setView(v)} aria-current={view === v}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${view === v ? 'border-brand text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+            {v === 'month' ? 'One month' : 'Forecast and goals'}
+          </button>
+        ))}
+      </div>
+
+      {view === 'forecast' ? <TaxForecast /> : isLoading || !plan ? <div className={`${card} h-40 animate-pulse`} /> : (
         <>
           {trying && <TryingBar plan={plan} draft={draft} onReset={() => setDraft({})} onSaved={() => setDraft({})} />}
           <Headline plan={plan} busy={isFetching} />
