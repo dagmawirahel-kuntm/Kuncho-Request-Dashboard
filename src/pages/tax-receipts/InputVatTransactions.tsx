@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { ecPeriodLabel } from '@/lib/ethiopianCalendar'
-import type { InputVatRow, InputVatCopyStatus } from '@/types/database'
+import type { InputVatRow, InputVatCopyStatus, InputVatStage } from '@/types/database'
 import { Camera, CheckSquare, ChevronDown } from 'lucide-react'
 import { InputVatExpenseDetail } from './InputVatExpenseDetail'
 
@@ -15,12 +15,13 @@ import { InputVatExpenseDetail } from './InputVatExpenseDetail'
  *
  * Each paid purchase can be flagged as carrying input VAT, given the month
  * whose VAT return claims it, and given a receipt-copy status. What the
- * return actually claims is still only tax-reviewed receipts (the three-step
- * rule from migration 156); this table is where the gap between "should
- * claim" and "can claim" is worked down.
+ * return claims is the purchases whose receipt has passed tax review (the
+ * three-step rule from migration 156) and that are not marked "no VAT"
+ * (417). Each row carries its stage on that way; this table is where the
+ * gap between "should claim" and "can claim" is worked down.
  */
 
-type Filter = 'unflagged' | 'flagged' | 'no_vat' | 'all'
+export type StageFilter = InputVatStage | 'all'
 type Sort = 'newest' | 'vat'
 
 // Grades by the VAT a purchase carries, so the biggest claims get their
@@ -49,11 +50,26 @@ const COPY_LABEL: Record<InputVatCopyStatus, string> = {
   not_available: 'Not available',
 }
 
+// In the order a purchase moves through them.
+const STAGES: { stage: InputVatStage; label: string; hint: string; cls: string }[] = [
+  { stage: 'unflagged',     label: 'Needs flagging', hint: 'Nobody has said yet whether this purchase carries VAT',
+    cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
+  { stage: 'needs_receipt', label: 'Needs receipt',  hint: 'Carries VAT, but no receipt has been captured',
+    cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+  { stage: 'in_review',     label: 'In review',      hint: 'Receipt captured; waiting for verification or tax review',
+    cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' },
+  { stage: 'claimed',       label: 'Claimed',        hint: 'Receipt tax-reviewed; the return claims this VAT',
+    cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+  { stage: 'rejected',      label: 'Rejected',       hint: 'The receipt was rejected in review; capture it again',
+    cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+  { stage: 'not_vat',       label: 'No VAT',         hint: 'Marked as carrying no input VAT',
+    cls: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400' },
+]
+const STAGE = Object.fromEntries(STAGES.map(s => [s.stage, s])) as Record<InputVatStage, typeof STAGES[number]>
+
 const REVIEW_LABEL: Record<string, string> = {
   pending_verification: 'Awaiting verification',
   verified: 'Awaiting tax review',
-  tax_reviewed: 'Tax reviewed',
-  rejected: 'Rejected',
 }
 
 // The declaration month can move later, never earlier (the database refuses
@@ -71,14 +87,18 @@ function declarationOptions(y: number, m: number): { key: string; label: string;
 
 const selectCls = 'rounded border border-slate-200 bg-white px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-brand disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
-export function InputVatTransactions() {
+export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod = 'all' }: {
+  initialStage?: StageFilter
+  /** `${ec_year}-${ec_month}` of the return, or 'all'. */
+  initialPeriod?: string
+} = {}) {
   const { role, profile } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const canEdit = !!profile?.is_tax_officer || role === 'admin' || role === 'finance' || role === 'procurement_officer'
 
-  const [filter, setFilter] = useState<Filter>('unflagged')
-  const [period, setPeriod] = useState<string>('all')
+  const [filter, setFilter] = useState<StageFilter>(initialStage)
+  const [period, setPeriod] = useState<string>(initialPeriod)
   const [grade, setGrade] = useState<Grade | 'all'>('all')
   const [sort, setSort] = useState<Sort>('newest')
   const [busy, setBusy] = useState<string | null>(null)
@@ -106,11 +126,9 @@ export function InputVatTransactions() {
     })
   }, [rows])
 
+  const inPeriod = rows.filter(r => period === 'all' || `${r.declare_ec_year}-${r.declare_ec_month}` === period)
   const visible = rows.filter(r =>
-    (filter === 'all'
-      || (filter === 'unflagged' && r.vat_applicable == null)
-      || (filter === 'flagged' && r.vat_applicable === true)
-      || (filter === 'no_vat' && r.vat_applicable === false))
+    (filter === 'all' || r.stage === filter)
     && (period === 'all' || `${r.declare_ec_year}-${r.declare_ec_month}` === period)
     && (grade === 'all' || gradeOf(r.vat_amount).grade === grade))
   if (sort === 'vat') visible.sort((a, b) => Number(b.vat_amount ?? 0) - Number(a.vat_amount ?? 0))
@@ -129,17 +147,14 @@ export function InputVatTransactions() {
   function toggleAll() {
     setSelected(allPicked ? new Set() : new Set(visible.map(r => r.expense_id)))
   }
-  const gradeCounts = Object.fromEntries(GRADES.map(g => [g.grade, rows.filter(r => gradeOf(r.vat_amount).grade === g.grade)])) as Record<Grade, InputVatRow[]>
+  const gradeCounts = Object.fromEntries(GRADES.map(g => [g.grade, inPeriod.filter(r => gradeOf(r.vat_amount).grade === g.grade)])) as Record<Grade, InputVatRow[]>
 
-  const flagged = rows.filter(r => r.vat_applicable)
-  const flaggedVat = flagged.reduce((s, r) => s + Number(r.vat_amount ?? 0), 0)
-  const claimableVat = flagged.filter(r => r.claimable).reduce((s, r) => s + Number(r.vat_amount ?? 0), 0)
-  const counts = {
-    unflagged: rows.filter(r => r.vat_applicable == null).length,
-    flagged: flagged.length,
-    no_vat: rows.filter(r => r.vat_applicable === false).length,
-    all: rows.length,
-  }
+  // Counts and totals follow the return-month filter, so the chips read as
+  // "this return's purchases, by stage".
+  const sumVat = (list: InputVatRow[]) => list.reduce((s, r) => s + Number(r.vat_amount ?? 0), 0)
+  const byStage = Object.fromEntries(STAGES.map(s => [s.stage, inPeriod.filter(r => r.stage === s.stage)])) as Record<InputVatStage, InputVatRow[]>
+  const claimedVat = sumVat(byStage.claimed)
+  const toClaimVat = sumVat(byStage.in_review) + sumVat(byStage.needs_receipt) + sumVat(byStage.rejected)
 
   // Upsert only the field that changed; the view derives everything else.
   async function save(r: InputVatRow, patch: Record<string, unknown>, done: string) {
@@ -177,31 +192,37 @@ export function InputVatTransactions() {
         <div>
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Input VAT — Purchases</p>
           <p className="text-xs text-slate-400">
-            Flag each paid purchase that carries VAT, choose the return that claims it, and track whether a copy of its receipt is in the system.
-            Only receipts the Tax Officer has reviewed are claimed.
+            Flag each paid purchase that carries VAT, capture its receipt, and choose the return that claims it.
+            The VAT is claimed once the receipt passes tax review.
           </p>
         </div>
         <div className="flex gap-4 text-right text-xs">
           <div>
-            <p className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(flaggedVat)}</p>
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">flagged</p>
+            <p className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(claimedVat)}</p>
+            <p className="text-[10px] uppercase tracking-wide text-slate-400">claimed</p>
           </div>
           <div>
-            <p className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(claimableVat)}</p>
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">claimable</p>
+            <p className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">{formatCurrency(toClaimVat)}</p>
+            <p className="text-[10px] uppercase tracking-wide text-slate-400">still to claim</p>
           </div>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b px-5 py-2 dark:border-slate-700">
-        {(['unflagged', 'flagged', 'no_vat', 'all'] as Filter[]).map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${filter === f
+        {STAGES.map(s => (
+          <button key={s.stage} onClick={() => setFilter(s.stage)} title={s.hint}
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${filter === s.stage
               ? 'bg-brand text-white'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'}`}>
-            {f === 'unflagged' ? 'Needs flagging' : f === 'flagged' ? 'Carries VAT' : f === 'no_vat' ? 'No VAT' : 'All'} ({counts[f]})
+            {s.label} ({byStage[s.stage].length})
           </button>
         ))}
+        <button onClick={() => setFilter('all')}
+          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${filter === 'all'
+            ? 'bg-brand text-white'
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'}`}>
+          All ({inPeriod.length})
+        </button>
         <select value={sort} onChange={e => setSort(e.target.value as Sort)} className={`${selectCls} ml-auto`}>
           <option value="newest">Newest first</option>
           <option value="vat">Biggest VAT first</option>
@@ -282,7 +303,7 @@ export function InputVatTransactions() {
                 <th className="px-3 py-2 text-left font-semibold">Input VAT?</th>
                 <th className="px-3 py-2 text-left font-semibold">Declare in</th>
                 <th className="px-3 py-2 text-left font-semibold">Receipt copy</th>
-                <th className="px-3 py-2 text-left font-semibold">Review</th>
+                <th className="px-3 py-2 text-left font-semibold">Stage</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-slate-700">
@@ -357,19 +378,19 @@ export function InputVatTransactions() {
                       </select>
                     </td>
                     <td className="px-3 py-2">
-                      {r.receipt_status ? (
-                        <span className={r.claimable ? 'font-medium text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}>
-                          {REVIEW_LABEL[r.receipt_status] ?? r.receipt_status}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span title={STAGE[r.stage].hint}
+                          className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${STAGE[r.stage].cls}`}>
+                          {r.stage === 'in_review' && r.receipt_status ? REVIEW_LABEL[r.receipt_status] ?? STAGE.in_review.label : STAGE[r.stage].label}
                         </span>
-                      ) : r.vat_applicable ? (
-                        <Link
-                          to={`/tax-receipts/new?expense_id=${r.expense_id}${r.vendor_id ? `&vendor_id=${r.vendor_id}` : ''}${r.project_id ? `&project_id=${r.project_id}` : ''}`}
-                          className="inline-flex items-center gap-1 rounded bg-brand px-2 py-1 text-[11px] font-medium text-white hover:bg-brand/90">
-                          <Camera className="h-3 w-3" /> Capture
-                        </Link>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
+                        {(r.stage === 'needs_receipt' || r.stage === 'rejected') && (
+                          <Link
+                            to={`/tax-receipts/new?expense_id=${r.expense_id}${r.vendor_id ? `&vendor_id=${r.vendor_id}` : ''}${r.project_id ? `&project_id=${r.project_id}` : ''}`}
+                            className="inline-flex items-center gap-1 rounded bg-brand px-2 py-0.5 text-[11px] font-medium text-white hover:bg-brand/90">
+                            <Camera className="h-3 w-3" /> {r.stage === 'rejected' ? 'Recapture' : 'Capture'}
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {open === r.expense_id && (
