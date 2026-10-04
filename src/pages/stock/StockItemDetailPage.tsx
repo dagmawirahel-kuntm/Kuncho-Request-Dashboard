@@ -141,6 +141,7 @@ export default function StockItemDetailPage() {
     setReversing(null); setReason('')
     for (const k of ['stock-receipts', 'stock-issues']) qc.invalidateQueries({ queryKey: [k, id] })
     qc.invalidateQueries({ queryKey: ['stock-levels'] })
+    qc.invalidateQueries({ queryKey: ['stock-catalog'] })
     qc.invalidateQueries({ queryKey: ['stock-item-brief', id] })
   }
 

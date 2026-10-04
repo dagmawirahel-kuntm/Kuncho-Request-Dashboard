@@ -96,7 +96,7 @@ export default function StockPendingSetupPage() {
     setSaving(false)
     setPicked(new Set())
     setEdits(e => { const n = { ...e }; for (const id of ids) delete n[id]; return n })
-    for (const k of ['stock-items-pending-setup', 'stock-items-pending-usage', 'stock-items', 'stock-levels']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['stock-items-pending-setup', 'stock-items-pending-usage', 'stock-items', 'stock-levels', 'stock-catalog']) qc.invalidateQueries({ queryKey: [k] })
     if (ok) toast(`${ok} item${ok === 1 ? '' : 's'} set up — now offered from stock`, 'success')
     if (failed.length) toast(`${failed.length} failed — ${failed[0]}`, 'error')
   }

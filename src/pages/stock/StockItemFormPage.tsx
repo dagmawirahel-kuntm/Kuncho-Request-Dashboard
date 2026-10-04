@@ -150,6 +150,7 @@ function StockItemFormBody({ id, record }: { id?: string; record?: StockItem }) 
     setSaving(false)
     dropRecordCache(qc, 'stock-item')
     qc.invalidateQueries({ queryKey: ['stock-items'] })
+    qc.invalidateQueries({ queryKey: ['stock-catalog'] })
     toast(isEdit ? 'Stock item updated' : 'Stock item created', 'success')
     navigate('/stock')
   }
