@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDateTime, formatDateGC } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { PaymentRequestRecord } from '@/types/database'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 /** The stored row plus the bank it names, which lives on accounts. */
 type PrRecord = PaymentRequestRecord & { bank: { account_name: string } | null }
@@ -265,12 +266,7 @@ export default function PaymentRequestDetailPage() {
 
       {/* The archived document, exactly as issued. */}
       <div className="rounded-xl border dark:border-slate-700 bg-white overflow-hidden" style={{ height: '80vh' }}>
-        <iframe
-          id="pr-archive-frame"
-          srcDoc={pr.document_html}
-          title={`Payment Request ${pr.request_code ?? ''}`}
-          className="w-full h-full border-0"
-        />
+        <DocumentFrame id="pr-archive-frame" html={pr.document_html} title={`Payment Request ${pr.request_code ?? ''}`} />
       </div>
     </div>
   )

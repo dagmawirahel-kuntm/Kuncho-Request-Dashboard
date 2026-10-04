@@ -7,6 +7,7 @@ import { documentBaseCss, renderCenteredLetterhead, companyName, esc } from '@/l
 import { useCompanyProfile } from '@/lib/companyProfile'
 import type { Vendor, SourcingBundle, SourcingBundleItem, Expense } from '@/types/database'
 import { ArrowLeft, Printer, FileText } from 'lucide-react'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand text-slate-800 dark:text-slate-100 transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -501,12 +502,8 @@ export default function VendorContractPage() {
               <Printer className="h-3 w-3" /> Print / PDF
             </button>
           </div>
-          <iframe
-            ref={previewRef}
-            srcDoc={previewDoc}
-            className="w-full h-full rounded-xl border dark:border-slate-600 bg-white shadow-sm"
-            title="Contract preview"
-          />
+          <DocumentFrame ref={previewRef} html={previewDoc} title="Contract preview"
+            className="h-[calc(100%-1.75rem)] rounded-xl border shadow-sm dark:border-slate-600" />
         </div>
       </div>
     </div>

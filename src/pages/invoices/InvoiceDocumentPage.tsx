@@ -9,6 +9,7 @@ import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
 import { buildInvoiceHtml, type InvoiceDocInput } from '@/lib/documents/invoiceDocument'
 import { DocumentActions } from '@/components/documents/DocumentActions'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/record/Record'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 interface SaleRow {
   id: string; invoice_number: string | null; date: string | null; due_date: string | null; amount: number | null
@@ -113,7 +114,7 @@ export default function InvoiceDocumentPage() {
       <RecordLayout
         main={
           <div className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-700" style={{ height: 'min(1000px, calc(100vh - 220px))', minHeight: 520 }}>
-            <iframe srcDoc={preview} title="Invoice" className="h-full w-full border-0" />
+            <DocumentFrame html={preview} title="Invoice" />
           </div>
         }
         rail={

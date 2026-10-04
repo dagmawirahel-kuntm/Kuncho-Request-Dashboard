@@ -9,6 +9,7 @@ import { useCompanyProfile, useCompanySignoff, imageToDataUrl } from '@/lib/comp
 import { documentBaseCss, renderLetterhead, renderBankAccounts, renderSignoff, renderFooter, renderParty, renderWords, bi, setDocumentProfile, docDate, docProfile, DOCUMENT_GRADIENTS,
   DEFAULT_PROFILE, type CompanyProfile, type CompanySignoff, type BankAccountLine } from '@/lib/documentTheme'
 import { Panel } from '@/components/record/Record'
+import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 /**
  * Who we are on paper (migration 368): the name, TIN, VAT registration,
@@ -213,7 +214,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
         <div className="xl:sticky xl:top-4 xl:self-start">
           <p className="mb-2 text-center text-[10px] font-semibold uppercase tracking-widest text-slate-400">Preview</p>
           <div className="overflow-hidden rounded-xl border bg-white shadow-lg dark:border-slate-700" style={{ height: 520 }}>
-            <iframe srcDoc={preview} title="Letterhead preview" className="h-full w-full border-0" />
+            <DocumentFrame html={preview} title="Letterhead preview" />
           </div>
         </div>
       </div>
