@@ -518,6 +518,9 @@ export const router = createBrowserRouter([
               { path: 'site-foreman/hse', element: <HseLogPage /> },
               { path: 'site-foreman/work-orders', element: <WorkOrdersOnMySitesPage /> },
               { path: 'site-foreman/projects', element: <MyProjectsPage /> },
+              // Reports viewer: RLS scopes it (sdr_pm_read = the project's
+              // manager whatever their app role, sdr_exec_all = admin/exec).
+              { path: 'site-foreman/reports', element: <SiteDailyReportsViewerPage /> },
             ],
           },
           {
@@ -527,15 +530,6 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
             children: [
               { path: 'finance/site-petty-cash-requests', element: <FinanceSitePettyCashQueuePage /> },
-            ],
-          },
-          {
-            // Matches sdr_pm_read/sdr_exec_all — the only two roles RLS on
-            // site_daily_reports actually grants read access to besides the
-            // foreman's own rows.
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
-            children: [
-              { path: 'site-foreman/reports', element: <SiteDailyReportsViewerPage /> },
             ],
           },
           {

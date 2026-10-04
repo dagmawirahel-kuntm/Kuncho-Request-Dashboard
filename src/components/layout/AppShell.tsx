@@ -15,6 +15,7 @@ import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
 import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
+import { SiteReportNudges } from '@/components/site-reports/PmSiteReportNudge'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { AtmosphereContext } from '@/components/clientWorld/atmosphereSlot'
@@ -326,6 +327,7 @@ export function AppShell() {
             <div className="print:hidden"><SeasonalGreeting moment={season} /></div>
           )}
           {LANDING_PATHS.has(location.pathname) && <CelebrationsBar skipHoliday={!!season?.greeting} />}
+          {LANDING_PATHS.has(location.pathname) && <SiteReportNudges />}
           <div key={location.pathname} className="animate-fade-in">
             <AtmosphereContext.Provider value={slot}>
               <Outlet />

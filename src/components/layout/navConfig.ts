@@ -103,8 +103,9 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager'] },
       // Matches sdr_pm_read/sdr_exec_all on site_daily_reports — finance
-      // has no read grant on that table, so it's left off here.
-      { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager'] },
+      // has no read grant on that table, so it's left off here. Anyone who
+      // manages a project sees it whatever their app role.
+      { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager'], showIfAssignedProjectManager: true },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager', 'procurement_officer'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'technician'] },
       { label: 'Design Packages', to: '/design', icon: PenTool },
