@@ -11,6 +11,8 @@ import { useAccounts } from '@/hooks/useLookups'
 import { useTabParam } from '@/lib/useTabParam'
 import { RecordHeader, RecordTabs, RecordLayout, Panel, FactList, Stat, Pill, type TabDef, type RecordAction } from '@/components/record/Record'
 import { useVendorMoney, useCanManageVendors, canVerifyVendor, CHANGE_LABEL, type VendorChange } from '@/lib/vendors'
+import type { MaterialSection, VendorItem } from '@/lib/vendorMaterials'
+import { ItemsBySection, SimilarVendors, SuppliesStrip } from '@/components/vendors/VendorMaterials'
 import {
   Pencil, Phone, Mail, Globe, FileText, Package, Shield, ExternalLink, Plus, Trash2, AlertCircle, FileBadge, ScrollText,
   Upload, Download, Eye, Loader2, PackageCheck, Receipt, ShieldCheck, ShieldAlert, LayoutGrid, Boxes, Truck, Power, GitMerge,
@@ -47,10 +49,7 @@ interface DeliveryRow {
   ordered_at: string | null; expected_delivery_date: string | null; first_received_at: string | null
   days_late: number | null; overdue: boolean; qty_received: number; qty_rejected: number; qty_damaged: number
 }
-interface ItemBoughtRow {
-  item_key: string; stock_item_id: string | null; item_name: string; unit: string | null; times_bought: number
-  total_qty: number; total_value: number; last_price: number; min_price: number; max_price: number; last_bought_on: string
-}
+type ItemBoughtRow = VendorItem
 
 function StatusBadge({ value }: { value: string }) {
   const color =
@@ -189,6 +188,7 @@ export default function VendorDetailPage() {
 
   const deliveryByBundle = useMemo(() => new Map(delivery.map(d => [d.bundle_id, d])), [delivery])
   const [busy, setBusy] = useState(false)
+  const [pickedSection, setPickedSection] = useState<MaterialSection | null>(null)
 
   if (isLoading || !vendor) return (
     <div className="flex items-center justify-center h-64 text-sm text-slate-400 dark:text-slate-500">Loading…</div>
@@ -351,7 +351,8 @@ export default function VendorDetailPage() {
             </Panel>
 
             {items.length > 0 && (
-              <Panel title="Most bought" icon={Boxes} action={<button onClick={() => setTab('items')} className="text-xs text-brand hover:underline">All {items.length}</button>} padded={false}>
+              <Panel title="Most bought" icon={Boxes} action={<button onClick={() => { setPickedSection(null); setTab('items') }} className="text-xs text-brand hover:underline">All {items.length}</button>} padded={false}>
+                <SuppliesStrip items={items} onPick={s => { setPickedSection(s); setTab('items') }} />
                 <ul className="divide-y dark:divide-slate-700">
                   {items.slice(0, 5).map(it => (
                     <li key={it.item_key} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
@@ -390,6 +391,7 @@ export default function VendorDetailPage() {
                 <p className="text-sm text-slate-400">No contact details{canManage && <> — <Link to={`/vendors/${id}/edit`} className="text-brand hover:underline">add them</Link></>}.</p>
               )}
             </Panel>
+            {items.length > 0 && <SimilarVendors vendorId={id!} limit={3} onMore={() => setTab('items')} />}
             {vendor.notes && (
               <Panel title="Notes"><p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{vendor.notes}</p></Panel>
             )}
@@ -456,36 +458,10 @@ export default function VendorDetailPage() {
       )}
 
       {tab === 'items' && (
-        <Panel title="Items bought" icon={Boxes} count={items.length} padded={false}>
-          {items.length === 0 ? <p className="py-10 text-center text-sm text-slate-400">Nothing bought from this vendor through a purchase order yet.</p> : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
-                  <tr>{['Item', 'Times', 'Quantity', 'Last price', 'Range', 'Spent', 'Last bought'].map(h => <th key={h} className={th}>{h}</th>)}</tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/60">
-                  {items.map(it => (
-                    <tr key={it.item_key}>
-                      <td className="px-4 py-2.5 max-w-[16rem]">
-                        {it.stock_item_id
-                          ? <Link to={`/stock/${it.stock_item_id}`} className="text-slate-800 dark:text-slate-100 hover:text-brand">{it.item_name}</Link>
-                          : <span className="text-slate-700 dark:text-slate-200">{it.item_name}</span>}
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums">{it.times_bought}</td>
-                      <td className="px-4 py-2.5 tabular-nums whitespace-nowrap">{Number(it.total_qty)} {it.unit ?? ''}</td>
-                      <td className="px-4 py-2.5 tabular-nums whitespace-nowrap font-medium">{formatCurrency(it.last_price)}</td>
-                      <td className="px-4 py-2.5 tabular-nums whitespace-nowrap text-slate-500">
-                        {Number(it.min_price) === Number(it.max_price) ? '—' : `${formatCurrency(it.min_price)} – ${formatCurrency(it.max_price)}`}
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums whitespace-nowrap">{formatCurrency(it.total_value)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">{formatDate(it.last_bought_on)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+        <RecordLayout
+          main={<ItemsBySection key={pickedSection ?? 'all'} items={items} initial={pickedSection} />}
+          rail={<SimilarVendors vendorId={id!} />}
+        />
       )}
 
       {tab === 'documents' && (
