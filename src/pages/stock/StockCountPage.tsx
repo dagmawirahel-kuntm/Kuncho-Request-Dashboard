@@ -79,7 +79,7 @@ export default function StockCountPage() {
     toast(data ? `${data} adjustment${data === 1 ? '' : 's'} booked` : 'Posted — everything matched', 'success')
     setConfirm(null)
     for (const k of ['stock-count', 'stock-count-lines']) qc.invalidateQueries({ queryKey: [k, id] })
-    for (const k of ['stock-counts', 'stock-levels', 'stock-items']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['stock-counts', 'stock-open-counts', 'stock-levels', 'stock-items', 'stock-catalog']) qc.invalidateQueries({ queryKey: [k] })
   }
   async function cancel() {
     setBusy(true)

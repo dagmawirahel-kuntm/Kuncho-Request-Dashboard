@@ -35,20 +35,23 @@ export default function StockIssuePage() {
   const [saving, setSaving] = useState(false)
   const { data: matches = [], isFetching } = useStockMatches(search, { limit: 8 })
 
-  // Opened from an item's page: start with that item.
-  const preset = params.get('item')
-  const { data: presetItem } = useQuery({
-    queryKey: ['stock-issue-preset', preset],
-    enabled: !!preset,
+  // Opened from an item's page (?item=) or with several picked on the stock
+  // page (?items=a,b,c): start with those items.
+  const preset = useMemo(() => [...new Set([params.get('item'), ...(params.get('items') ?? '').split(',')].filter(Boolean))] as string[], [params])
+  const { data: presetItems } = useQuery({
+    queryKey: ['stock-issue-preset', preset.join(',')],
+    enabled: preset.length > 0,
     queryFn: async () => {
-      const { data } = await supabase.from('v_stock_item_usage').select('id, item_name, item_code, unit, qty_on_hand').eq('id', preset!).maybeSingle()
-      return data as { id: string; item_name: string; item_code: string | null; unit: string; qty_on_hand: number } | null
+      const { data } = await supabase.from('v_stock_item_usage').select('id, item_name, item_code, unit, qty_on_hand').in('id', preset)
+      return (data ?? []) as { id: string; item_name: string; item_code: string | null; unit: string; qty_on_hand: number }[]
     },
   })
   const [presetUsed, setPresetUsed] = useState(false)
-  if (presetItem && !presetUsed) {
+  if (presetItems && !presetUsed) {
     setPresetUsed(true)
-    setLines([{ id: presetItem.id, name: presetItem.item_name, code: presetItem.item_code, unit: presetItem.unit, have: Number(presetItem.qty_on_hand ?? 0), qty: '' }])
+    const order = new Map(preset.map((id, i) => [id, i]))
+    setLines([...presetItems].sort((x, y) => (order.get(x.id) ?? 0) - (order.get(y.id) ?? 0))
+      .map(p => ({ id: p.id, name: p.item_name, code: p.item_code, unit: p.unit, have: Number(p.qty_on_hand ?? 0), qty: '' })))
   }
 
   function add(m: StockMatch) {
@@ -76,7 +79,7 @@ export default function StockIssuePage() {
     })
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
-    for (const k of ['stock-levels', 'stock-items', 'stock-issues', 'stock-item-brief']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['stock-levels', 'stock-items', 'stock-catalog', 'stock-issues', 'stock-item-brief']) qc.invalidateQueries({ queryKey: [k] })
     toast(`${data} item${data === 1 ? '' : 's'} issued to ${projectOptions.find(p => p.id === projectId)?.label ?? 'the project'}`, 'success')
     navigate(lines.length === 1 ? `/stock/${lines[0].id}` : '/stock')
   }
@@ -106,7 +109,12 @@ export default function StockIssuePage() {
         </div>
       </Panel>
 
-      <Panel title="Items" icon={Package} count={lines.length} padded={false}>
+      <Panel title="Items" icon={Package} count={lines.length} padded={false}
+        action={lines.some(l => !l.qty && l.have > 0) ? (
+          <button onClick={() => setLines(ls => ls.map(l => (l.qty || l.have <= 0 ? l : { ...l, qty: String(l.have) })))} className="text-xs font-medium text-brand hover:underline">
+            Fill in all that is held
+          </button>
+        ) : undefined}>
         <div className="border-b px-4 py-3 dark:border-slate-700">
           <StockNameInput value={search} onChange={setSearch} matches={matches} loading={isFetching} onPick={add}
             placeholder="Find an item to add — name or code" className={fieldCls} />
