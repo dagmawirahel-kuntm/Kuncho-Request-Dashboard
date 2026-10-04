@@ -16,6 +16,7 @@ import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
 import { SiteReportNudges } from '@/components/site-reports/PmSiteReportNudge'
+import { TaxImpactNudge } from '@/components/tax/TaxImpactBanners'
 import { FiscalYearFilter } from '@/components/shared/FiscalYearFilter'
 import { useAuth } from '@/contexts/AuthContext'
 import { AtmosphereContext } from '@/components/clientWorld/atmosphereSlot'
@@ -328,6 +329,7 @@ export function AppShell() {
           )}
           {LANDING_PATHS.has(location.pathname) && <CelebrationsBar skipHoliday={!!season?.greeting} />}
           {LANDING_PATHS.has(location.pathname) && <SiteReportNudges />}
+          {LANDING_PATHS.has(location.pathname) && <div className="mb-4 empty:hidden print:hidden"><TaxImpactNudge /></div>}
           <div key={location.pathname} className="animate-fade-in">
             <AtmosphereContext.Provider value={slot}>
               <Outlet />

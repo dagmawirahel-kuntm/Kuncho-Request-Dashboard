@@ -28,6 +28,8 @@ import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 import { PickupAdvice } from '@/components/transport/PickupAdvice'
 import { canSeePoVatGoal, usePoVatGoal, usePoVatToggle } from '@/lib/poVatGoal'
 import { PoVatPanel } from '@/components/purchasing/PoVatGoal'
+import { useTaxImpact } from '@/lib/taxImpact'
+import { TaxTag } from '@/components/tax/TaxTag'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -240,6 +242,8 @@ export default function PurchaseOrderPage() {
   const vatAllowed = canSeePoVatGoal(role)
   const [vatOn, setVatOn] = usePoVatToggle()
   const { data: vatGoal } = usePoVatGoal(vatAllowed && vatOn, null)
+  // Its T-tag, shared with the expense raised from it (migration 423).
+  const { data: impact, byPo: impactByPo } = useTaxImpact()
 
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
@@ -723,6 +727,7 @@ export default function PurchaseOrderPage() {
         code={bundle.bundle_code}
         title={vendorDisplay}
         pills={<>
+          {id && <TaxTag item={impactByPo.get(id)} periodLabel={impact?.period.label} size="md" />}
           <Pill tone={STATUS_TONE[status]}>{status === 'cancelled' ? 'Cancelled' : statusLabel}</Pill>
           {isPayInAdvance && <Pill tone="amber">Pay in advance</Pill>}
           {lateDelivery && <Pill tone="red" icon={AlertCircle}>Delivery late</Pill>}

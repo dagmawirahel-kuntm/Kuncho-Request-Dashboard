@@ -38,6 +38,7 @@ export const KIND_META: Record<string, KindMeta> = {
   labor_unfilled:       { label: 'Approved labour not placed',     action: 'Assign workers, or close the unfilled slots.', team: 'hr' },
   labor_overstay:       { label: 'Worker past requisition end',    action: 'End the allocation, or extend the requisition.', team: 'project' },
   project_no_pm:        { label: 'Project without a manager',      action: 'Assign a project manager.', team: 'management' },
+  tax_impact_stuck:     { label: 'High tax impact, waiting',     action: 'Approve or pay it before the month ends — its VAT counts in the month it is paid.', team: 'finance' },
   site_report_missing:  { label: 'Site reports not coming in',    action: 'Remind the foreman, or mark the days the site did not work.', team: 'project' },
 }
 

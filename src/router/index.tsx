@@ -107,6 +107,7 @@ import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
 import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
 import TaxFilingsPage from '@/pages/tax-filings/TaxFilingsPage'
 import TaxPlanPage from '@/pages/tax-plan/TaxPlanPage'
+import TaxImpactPage from '@/pages/tax-plan/TaxImpactPage'
 import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
 import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
 import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
@@ -390,6 +391,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'tax-filings', element: <TaxFilingsPage /> },
               { path: 'tax-plan', element: <TaxPlanPage /> },
+              { path: 'tax-impact', element: <TaxImpactPage /> },
             ],
           },
           {

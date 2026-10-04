@@ -14,6 +14,9 @@ import { IssueChips, ProjectOrOverheadSelect } from '@/components/expenses/Expen
 import { AGE_BUCKETS, ISSUE, ageBucket, fromProjectChoice, projectChoice, useApprovalQueue, type ApprovalQueueRow } from '@/lib/expenseQuality'
 import { CheckCircle2, Clock, Paperclip, Search, Wrench, X } from 'lucide-react'
 import { chime, confetti, effectsAllowed } from '@/lib/celebrate'
+import { useRefreshTaxImpact, useTaxImpact, type ImpactItem } from '@/lib/taxImpact'
+import { TaxTag } from '@/components/tax/TaxTag'
+import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxImpactBanners'
 
 const pause = (ms: number) => new Promise(r => window.setTimeout(r, ms))
 
@@ -22,6 +25,7 @@ const pause = (ms: number) => new Promise(r => window.setTimeout(r, ms))
 // then it approves.
 
 type Filter = 'all' | 'ready' | 'fix'
+type Order = 'oldest' | 'impact'
 const blocked = (r: ApprovalQueueRow) => r.issues.some(i => ISSUE[i]?.blocksApproval)
 
 export default function ExpenseApprovalQueuePage() {
@@ -29,6 +33,10 @@ export default function ExpenseApprovalQueuePage() {
   const canApprove = canApproveAsFinance(role)
   const { data: rows = [], isLoading } = useApprovalQueue()
   const [filter, setFilter] = useState<Filter>('all')
+  // Tax impact (migration 423): the same T-tags as the PO list and the payment queue.
+  const { data: impact, byId: impactById, allowed: impactAllowed } = useTaxImpact()
+  const refreshImpact = useRefreshTaxImpact()
+  const [order, setOrder] = useState<Order>('oldest')
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -41,7 +49,12 @@ export default function ExpenseApprovalQueuePage() {
   const shown = rows.filter(r =>
     (filter === 'all' || (filter === 'ready' ? !blocked(r) : blocked(r)))
     && (!needle || `${r.expense_code ?? ''} ${r.item_service_description ?? ''} ${r.payee_name ?? ''} ${r.project_name ?? ''} ${r.requested_by_name ?? ''}`.toLowerCase().includes(needle)))
-  const groups = AGE_BUCKETS.map(b => ({ ...b, rows: shown.filter(r => ageBucket(r.age_days).key === b.key) })).filter(g => g.rows.length)
+  const rankOf = (r: ApprovalQueueRow) => impactById.get(r.id)?.rank ?? Number.MAX_SAFE_INTEGER
+  const groups = order === 'impact'
+    ? [{ key: 'impact', label: 'Biggest tax impact first', tone: 'blue' as const, min: 0,
+        rows: [...shown].sort((a, b) => rankOf(a) - rankOf(b) || b.age_days - a.age_days) }].filter(g => g.rows.length)
+    : AGE_BUCKETS.map(b => ({ ...b, rows: shown.filter(r => ageBucket(r.age_days).key === b.key) })).filter(g => g.rows.length)
+  const highWaiting = rows.map(r => impactById.get(r.id)).filter((i): i is ImpactItem => !!i?.high)
 
   const total = rows.reduce((s, r) => s + Number(r.amount_etb ?? 0), 0)
   const old = rows.filter(r => r.age_days >= 15).length
@@ -52,6 +65,7 @@ export default function ExpenseApprovalQueuePage() {
     qc.invalidateQueries({ queryKey: ['expense-approval-queue'] })
     qc.invalidateQueries({ queryKey: ['expense-issues'] })
     qc.invalidateQueries({ queryKey: ['expenses'] })
+    if (impactAllowed) void refreshImpact()
   }
 
   // Rows go out one after another; when the last one in the queue goes,
@@ -107,6 +121,20 @@ export default function ExpenseApprovalQueuePage() {
         <Tile label="Ready to approve" value={String(rows.length - toFix)} />
       </div>
 
+      {impact && (
+        <>
+          <TaxImpactEscalations data={impact} queue="approve" />
+          <TaxImpactCountdown data={impact} queue="approve" />
+          {highWaiting.length > 0 && (
+            <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <span className="flex gap-1">{highWaiting.slice(0, 5).map(i => <TaxTag key={i.id} item={i} periodLabel={impact.period.label} />)}</span>
+              {highWaiting.length} high-impact expense{highWaiting.length === 1 ? '' : 's'} waiting here —
+              approving and paying {highWaiting.length === 1 ? 'it' : 'them'} this month closes {Math.round(highWaiting.reduce((s, i) => s + (i.share ?? 0), 0) * 100)}% of {impact.period.label}'s VAT gap.
+            </p>
+          )}
+        </>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {([['all', 'All'], ['ready', 'Ready'], ['fix', 'Needs fixing']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setFilter(k)}
@@ -119,6 +147,13 @@ export default function ExpenseApprovalQueuePage() {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search code, payee, project…"
             className="w-full rounded-lg border py-1.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         </div>
+        {impact && (
+          <div className="flex rounded-lg border p-0.5 text-xs dark:border-slate-600">
+            {([['oldest', 'Oldest first'], ['impact', 'Biggest tax impact']] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setOrder(k)} className={`rounded-md px-2.5 py-1 font-medium ${order === k ? 'bg-brand text-white' : 'text-slate-500'}`}>{l}</button>
+            ))}
+          </div>
+        )}
         {canApprove && pickedReady.length > 0 && (
           <button disabled={bulkBusy} onClick={() => approveMany(pickedReady)}
             className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50">
@@ -137,7 +172,7 @@ export default function ExpenseApprovalQueuePage() {
           </h2>
           <div className="divide-y rounded-xl border bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
             {g.rows.map(r => (
-              <QueueRow key={r.id} row={r} canApprove={canApprove} onDone={refresh}
+              <QueueRow key={r.id} row={r} impact={impactById.get(r.id)} period={impact?.period.label} canApprove={canApprove} onDone={refresh}
                 onApproved={() => approvedOne(r.id)} leaving={leaving.has(r.id)}
                 picked={picked.has(r.id)}
                 onPick={v => setPicked(p => { const n = new Set(p); if (v) n.add(r.id); else n.delete(r.id); return n })} />
@@ -159,8 +194,8 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
   )
 }
 
-function QueueRow({ row: r, canApprove, onDone, onApproved, leaving, picked, onPick }: {
-  row: ApprovalQueueRow; canApprove: boolean; onDone: () => void; onApproved: () => void; leaving: boolean; picked: boolean; onPick: (v: boolean) => void
+function QueueRow({ row: r, impact, period, canApprove, onDone, onApproved, leaving, picked, onPick }: {
+  row: ApprovalQueueRow; impact?: ImpactItem; period?: string; canApprove: boolean; onDone: () => void; onApproved: () => void; leaving: boolean; picked: boolean; onPick: (v: boolean) => void
 }) {
   const { toast } = useToast()
   const { data: categories = [] } = useCategories()
@@ -190,6 +225,7 @@ function QueueRow({ row: r, canApprove, onDone, onApproved, leaving, picked, onP
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <TaxTag item={impact} periodLabel={period} />
             <Link to={`/expenses/${r.id}`} className="font-mono text-xs font-bold text-brand hover:underline">{r.expense_code ?? 'Expense'}</Link>
             <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.item_service_description ?? '—'}</span>
           </div>
@@ -202,6 +238,12 @@ function QueueRow({ row: r, canApprove, onDone, onApproved, leaving, picked, onP
             {r.requested_by_name && <span>by {r.requested_by_name}</span>}
             {r.receipt_url && <a href={r.receipt_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-brand hover:underline"><Paperclip className="h-3 w-3" />Receipt</a>}
           </p>
+          {impact?.high && (
+            <p className="mt-0.5 text-[11px] font-medium text-[#1e3a5f] dark:text-sky-300">
+              {Math.round(impact.vat).toLocaleString()} VAT · {Math.round((impact.share ?? 0) * 100)}% of the VAT gap
+              {impact.escalated && impact.overtook ? ` · moved ahead of ${impact.overtook.code}` : ''}
+            </p>
+          )}
           {r.issues.length > 0 && <div className="mt-1"><IssueChips issues={r.issues} /></div>}
         </div>
         <div className="shrink-0 text-right">

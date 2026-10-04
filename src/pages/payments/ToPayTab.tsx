@@ -12,18 +12,25 @@ import type { ExpensePaymentMethod, ToPayQueueRow } from '@/types/database'
 import { PAYMENT_METHODS, ageLabel, ageTone, toSend, usePayerAndAccountOptions, useRefreshPayments } from '@/lib/payments'
 import { CreateBatchModal, PartialSplitModal, RecordAdvanceModal, WhtCell } from './PaymentModals'
 import { AlertTriangle, CheckCircle2, HandCoins, Layers, Search, Send, X } from 'lucide-react'
+import { useRefreshTaxImpact, useTaxImpact, type ImpactItem } from '@/lib/taxImpact'
+import { TaxTag } from '@/components/tax/TaxTag'
+import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxImpactBanners'
 
 // To pay: everything finance has approved, oldest first, split by how it is
 // paid — on delivery (select and send together) or in advance (each one
 // recorded on its own, because it waits on a GRN to close).
 
-type Sort = 'oldest' | 'largest'
+type Sort = 'oldest' | 'largest' | 'impact'
 
 export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRow[]; loading: boolean; canAct: boolean }) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const refresh = useRefreshPayments()
+  const refreshPayments = useRefreshPayments()
+  // Tax impact (migration 423): the same T-tags as the approval queue and the PO list.
+  const { data: impact, byId: impactById, allowed: impactAllowed } = useTaxImpact()
+  const refreshImpact = useRefreshTaxImpact()
+  const refresh = () => { refreshPayments(); if (impactAllowed) void refreshImpact() }
   const { payerOptions, accountOptions } = usePayerAndAccountOptions()
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<Sort>('oldest')
@@ -39,8 +46,11 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
   const needle = q.trim().toLowerCase()
   const shown = useMemo(() => {
     const f = rows.filter(r => !needle || `${r.vendor_name ?? ''} ${r.item_service_description ?? ''} ${r.expense_code ?? ''} ${r.project_name ?? ''}`.toLowerCase().includes(needle))
-    return sort === 'largest' ? [...f].sort((a, b) => toSend(b) - toSend(a)) : f
-  }, [rows, needle, sort])
+    const rankOf = (id: string) => impactById.get(id)?.rank ?? Number.MAX_SAFE_INTEGER
+    return sort === 'largest' ? [...f].sort((a, b) => toSend(b) - toSend(a))
+      : sort === 'impact' ? [...f].sort((a, b) => rankOf(a.id) - rankOf(b.id))
+      : f
+  }, [rows, needle, sort, impactById])
   const onDelivery = shown.filter(r => r.payment_pattern !== 'pay_in_advance')
   const inAdvance = shown.filter(r => r.payment_pattern === 'pay_in_advance')
   const picked = rows.filter(r => selected.has(r.id))
@@ -77,18 +87,25 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
             className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         </div>
         <div className="flex rounded-lg border p-0.5 text-xs dark:border-slate-600">
-          {([['oldest', 'Oldest first'], ['largest', 'Largest first']] as const).map(([k, l]) => (
+          {([['oldest', 'Oldest first'], ['largest', 'Largest first'], ...(impact ? [['impact', 'Tax impact']] as const : [])] as [Sort, string][]).map(([k, l]) => (
             <button key={k} onClick={() => setSort(k)} className={`rounded-md px-2.5 py-1 font-medium ${sort === k ? 'bg-brand text-white' : 'text-slate-500'}`}>{l}</button>
           ))}
         </div>
       </div>
+
+      {impact && (
+        <>
+          <TaxImpactCountdown data={impact} queue="pay" />
+          <TaxImpactEscalations data={impact} queue="pay" />
+        </>
+      )}
 
       <Group
         title="Pay on delivery" note="Select several and send them together, or put them in one batch wire."
         total={onDelivery.reduce((s, r) => s + toSend(r), 0)} count={onDelivery.length}
         header={canAct && onDelivery.length > 0 ? <input type="checkbox" checked={allPicked} onChange={toggleAll} className="h-4 w-4 rounded border-slate-300 text-brand" title="Select all" /> : null}>
         {onDelivery.map(r => (
-          <Row key={r.id} r={r} canAct={canAct} picked={selected.has(r.id)} onPick={() => toggle(r.id)}
+          <Row key={r.id} r={r} impact={impactById.get(r.id)} period={impact?.period.label} canAct={canAct} picked={selected.has(r.id)} onPick={() => toggle(r.id)}
             onWht={() => setWhtRow(r)} onSplit={() => setSplitting(r)} />
         ))}
       </Group>
@@ -98,7 +115,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
           title="Pay in advance" note="Paid before the goods arrive. Each is recorded on its own and closes when its GRN is in."
           total={inAdvance.reduce((s, r) => s + toSend(r), 0)} count={inAdvance.length}>
           {inAdvance.map(r => (
-            <Row key={r.id} r={r} canAct={canAct} onWht={() => setWhtRow(r)}
+            <Row key={r.id} r={r} impact={impactById.get(r.id)} period={impact?.period.label} canAct={canAct} onWht={() => setWhtRow(r)}
               action={canAct ? (
                 <button onClick={() => setAdvancing(r)} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">
                   <HandCoins className="h-3 w-3" /> Pay advance
@@ -186,8 +203,8 @@ function Group({ title, note, total, count, header, children }: {
   )
 }
 
-function Row({ r, canAct, picked, onPick, onWht, onSplit, action }: {
-  r: ToPayQueueRow; canAct: boolean; picked?: boolean; onPick?: () => void; onWht: () => void; onSplit?: () => void; action?: React.ReactNode
+function Row({ r, impact, period, canAct, picked, onPick, onWht, onSplit, action }: {
+  r: ToPayQueueRow; impact?: ImpactItem; period?: string; canAct: boolean; picked?: boolean; onPick?: () => void; onWht: () => void; onSplit?: () => void; action?: React.ReactNode
 }) {
   const send = toSend(r)
   const gross = Number(r.amount_etb ?? 0)
@@ -196,6 +213,7 @@ function Row({ r, canAct, picked, onPick, onWht, onSplit, action }: {
       {canAct && onPick && <input type="checkbox" checked={!!picked} onChange={onPick} className="mt-1 h-4 w-4 rounded border-slate-300 text-brand" />}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <TaxTag item={impact} periodLabel={period} />
           <Link to={`/expenses/${r.id}`} className="truncate font-medium text-slate-800 hover:text-brand hover:underline dark:text-slate-100">
             {r.vendor_name ?? r.item_service_description ?? r.expense_code}
           </Link>
