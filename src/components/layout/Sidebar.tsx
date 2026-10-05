@@ -7,6 +7,7 @@ import { DaisyMark } from '@/components/seasonal/MeskelArt'
 import type { NavGroup } from './navConfig'
 import { NavItemLink, SectionItems } from './NavPieces'
 import { openPagePalette, pinnedItems, useOpenSections, PINNED, type ActiveNav, type NavData, type NavLayout } from './navState'
+import { accentVars, sectionOf } from './navAccent'
 
 export function Logo({ theme, festive, onClick, showName }: { theme: Theme; festive: boolean; onClick: () => void; showName: boolean }) {
   const logoRef = useRef<HTMLSpanElement>(null)
@@ -52,7 +53,7 @@ function SearchButton() {
     <button
       type="button"
       onClick={openPagePalette}
-      className="mb-2 flex w-full items-center gap-2 rounded-md bg-white/5 px-3 py-2 text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200"
+      className="nav-search mb-2 flex w-full items-center gap-2 rounded-md bg-white/5 px-3 py-2 text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200"
     >
       <Search className="h-4 w-4 shrink-0" />
       <span className="flex-1 text-left">Jump to page…</span>
@@ -70,7 +71,7 @@ function SectionTree({ groups, active, pins, togglePin, onNavigate }: NavData & 
     <nav className="flex-1 space-y-0.5 p-3">
       <SearchButton />
       {pinned.length > 0 && (
-        <div className="mb-2">
+        <div className="mb-2" style={accentVars(PINNED)}>
           <p className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
             <Pin className="h-3 w-3" /> {PINNED}
           </p>
@@ -83,6 +84,7 @@ function SectionTree({ groups, active, pins, togglePin, onNavigate }: NavData & 
                 pinned
                 onTogglePin={togglePin}
                 onNavigate={onNavigate}
+                section={sectionOf(groups, item.to)}
               />
             ))}
           </div>
@@ -92,14 +94,15 @@ function SectionTree({ groups, active, pins, togglePin, onNavigate }: NavData & 
         const open = isOpen(group.title)
         const here = group.title === active.section
         return (
-          <div key={group.title}>
+          <div key={group.title} style={accentVars(group.title)}>
             <div className="group/section relative">
               <button
                 type="button"
                 onClick={() => toggle(group.title)}
                 aria-expanded={open}
+                data-here={here || undefined}
                 className={cn(
-                  'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-white/5',
+                  'nav-section flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-white/5',
                   here ? 'text-white font-medium' : 'text-slate-300 hover:text-white',
                 )}
               >
@@ -122,7 +125,7 @@ function SectionTree({ groups, active, pins, togglePin, onNavigate }: NavData & 
               )}
             </div>
             {open && (
-              <div className="mb-1 ml-[1.1rem] border-l border-white/10 pl-1.5">
+              <div className="nav-branch mb-1 ml-[1.1rem] border-l border-white/10 pl-1.5">
                 <SectionItems
                   items={group.items}
                   activeTo={active.to}
@@ -163,7 +166,7 @@ function Rail({ groups, active, selected, onSelect, theme, festive, onToggleThem
           type="button"
           onClick={openPagePalette}
           title="Jump to page (Ctrl K)"
-          className="mb-1 flex w-full justify-center rounded-md py-2 text-slate-400 hover:bg-white/5 hover:text-white"
+          className="nav-search mb-1 flex w-full justify-center rounded-md py-2 text-slate-400 hover:bg-white/5 hover:text-white"
         >
           <Search className="h-4 w-4" />
         </button>
@@ -177,12 +180,14 @@ function Rail({ groups, active, selected, onSelect, theme, festive, onToggleThem
               onClick={() => onSelect(e.title)}
               title={e.title}
               aria-pressed={isSelected}
+              data-here={here || undefined}
+              style={accentVars(e.title)}
               className={cn(
-                'relative flex w-full flex-col items-center gap-1 rounded-md px-0.5 py-1.5 text-[9.5px] leading-tight transition-colors',
+                'nav-rail-btn relative flex w-full flex-col items-center gap-1 rounded-md px-0.5 py-1.5 text-[9.5px] leading-tight transition-colors',
                 isSelected ? 'bg-white/10 text-white' : here ? 'text-white hover:bg-white/5' : 'text-slate-400 hover:bg-white/5 hover:text-white',
               )}
             >
-              {here && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[#D4AF37]" />}
+              {here && <span className="nav-here-bar absolute left-0 top-2 bottom-2 w-0.5 rounded-full" />}
               <e.icon className="h-[18px] w-[18px]" />
               <span className="w-full truncate text-center">{e.title.split(' ')[0]}</span>
             </button>
@@ -193,7 +198,7 @@ function Rail({ groups, active, selected, onSelect, theme, festive, onToggleThem
         type="button"
         onClick={onToggleCollapse}
         title={collapsed ? 'Expand' : 'Hide the section panel'}
-        className="flex w-full shrink-0 justify-center border-t border-white/10 py-3 text-slate-400 hover:bg-white/5 hover:text-white"
+        className="nav-collapse flex w-full shrink-0 justify-center border-t border-white/10 py-3 text-slate-400 hover:bg-white/5 hover:text-white"
       >
         {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </button>
@@ -207,9 +212,9 @@ function SectionPanel({ title, groups, active, pins, togglePin, onNavigate }: Na
   const group = groups.find(g => g.title === title)
   const items = title === PINNED ? pinnedItems(groups, pins) : group?.items ?? []
   return (
-    <div className="flex h-full w-64 flex-col bg-sidebar">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
-        <span className="truncate text-sm font-semibold text-white">{title}</span>
+    <div className="flex h-full w-64 flex-col bg-sidebar" style={accentVars(title)}>
+      <div className="nav-panel-head flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
+        <span className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-white"><span className="nav-dot" />{title}</span>
         {group?.to && (
           <Link to={group.to} onClick={onNavigate} title={`Open the ${title} page`} className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white">
             <ArrowUpRight className="h-4 w-4" />
@@ -222,7 +227,12 @@ function SectionPanel({ title, groups, active, pins, togglePin, onNavigate }: Na
             Nothing pinned yet. Hover over any page in a section and press the pin to keep it here.
           </p>
         ) : (
-          <SectionItems items={items} activeTo={active.to} pins={pins} onTogglePin={togglePin} onNavigate={onNavigate} />
+          title === PINNED
+            ? <div className="space-y-0.5">{items.map(item => (
+                <NavItemLink key={item.to} item={item} active={item.to === active.to} pinned onTogglePin={togglePin}
+                  onNavigate={onNavigate} section={sectionOf(groups, item.to)} />
+              ))}</div>
+            : <SectionItems items={items} activeTo={active.to} pins={pins} onTogglePin={togglePin} onNavigate={onNavigate} />
         )}
       </div>
     </div>
@@ -335,7 +345,7 @@ export function Sidebar({ nav: data, layout, collapsed, onToggleCollapse, mobile
               </div>
               <button
                 onClick={onToggleCollapse}
-                className="flex shrink-0 items-center justify-center gap-2 border-t border-white/10 py-3 text-slate-400 hover:bg-white/5 hover:text-white"
+                className="nav-collapse flex shrink-0 items-center justify-center gap-2 border-t border-white/10 py-3 text-slate-400 hover:bg-white/5 hover:text-white"
               >
                 <ChevronLeft className="h-4 w-4" /><span className="text-xs">Collapse</span>
               </button>
