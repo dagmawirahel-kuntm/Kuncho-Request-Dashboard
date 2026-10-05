@@ -141,6 +141,18 @@ export function dayLong(iso: string): string {
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
+/** Does this report cover that day? A summary covers covers_from…report_date (migration 427). */
+export function coversDay(r: { report_date: string; covers_from?: string | null }, day: string) {
+  return day >= (r.covers_from ?? r.report_date) && day <= r.report_date
+}
+
+/** "Mon 29 Sep" for one day, "Sat 27 – Mon 29 Sep · 3 days" for a summary. */
+export function reportDays(r: { report_date: string; covers_from?: string | null }) {
+  if (!r.covers_from || r.covers_from === r.report_date) return dayLong(r.report_date)
+  const n = Math.round((Date.parse(r.report_date) - Date.parse(r.covers_from)) / 86_400_000) + 1
+  return `${dayChip(r.covers_from)} – ${dayLong(r.report_date)} · ${n} days`
+}
+
 export function reportLink(projectId: string, date: string) {
   return `/site-foreman/daily-report?project=${projectId}&date=${date}`
 }
