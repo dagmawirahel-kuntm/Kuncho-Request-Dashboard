@@ -685,7 +685,7 @@ html.theme-transition *::after {
     color .15s ease, border-color .15s ease, opacity .15s ease, background-position .75s var(--btn-ease);
 
   /* Real buttons (not chips, tabs, toggles or the current nav item) get the sheen and the lift */
-  &:not(:where(.rounded-full, [role='radio'], [role='tab'], [aria-pressed], [aria-selected], [aria-current])) {
+  &:not(:where(.rounded-full, [role='radio'], [role='switch'], [role='tab'], [aria-pressed], [aria-selected], [aria-current])) {
     background-image:
       linear-gradient(105deg, transparent 38%, rgb(255 255 255 / .26) 50%, transparent 62%),
       linear-gradient(180deg, rgb(255 255 255 / .1), rgb(255 255 255 / 0) 62%);
@@ -888,4 +888,38 @@ button:not(:disabled):active { transform: translateY(1px); }
     animation: none !important; transform: none !important; transition-duration: 1ms !important;
   }
   .nav-item[aria-current='page']::before { animation: none; }
+}
+
+/* =============================================================================
+   NOTIFICATIONS — the bell, the full list and the live pop-ups
+   -----------------------------------------------------------------------------
+   Each notification wears the colour of the nav section it belongs to
+   (lib/notifications.ts GROUP_LOOK sets --na for light, --na-dark for dark):
+   a tinted chip, a faint wash while unread, a dot. Urgent ones get a red edge.
+   Pop-ups slide in from the right and show their time left as a thin bar
+   that pauses while hovered.
+   ============================================================================= */
+.notif-chip { color: var(--na); background: color-mix(in srgb, var(--na) 13%, transparent); }
+.dark .notif-chip { color: var(--na-dark); background: color-mix(in srgb, var(--na-dark) 16%, transparent); }
+.notif-item .notif-chip { transition: transform .3s var(--btn-spring); }
+.notif-item:hover .notif-chip { transform: scale(1.08) rotate(-6deg); }
+.notif-item[data-unread] { background: color-mix(in srgb, var(--na) 5%, transparent); }
+.notif-item[data-unread]:hover { background: color-mix(in srgb, var(--na) 9%, transparent); }
+.dark .notif-item[data-unread] { background: color-mix(in srgb, var(--na-dark) 7%, transparent); }
+.dark .notif-item[data-unread]:hover { background: color-mix(in srgb, var(--na-dark) 11%, transparent); }
+.notif-item[data-priority='high']::before {
+  content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: #dc2626;
+}
+.notif-dot { background: var(--na); box-shadow: 0 0 0 3px color-mix(in srgb, var(--na) 18%, transparent); }
+.dark .notif-dot { background: var(--na-dark); box-shadow: 0 0 0 3px color-mix(in srgb, var(--na-dark) 20%, transparent); }
+
+.notif-pop { animation: notif-in .45s var(--btn-spring); }
+.notif-pop-timer { background: var(--na); opacity: .55; animation-name: notif-timer; animation-timing-function: linear; animation-fill-mode: forwards; }
+.dark .notif-pop-timer { background: var(--na-dark); }
+.notif-pop:hover .notif-pop-timer { animation-play-state: paused; }
+@keyframes notif-in { from { opacity: 0; transform: translateX(28px) scale(.97); } }
+@keyframes notif-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .notif-pop, .notif-item .notif-chip { animation: none !important; transform: none !important; }
 }

@@ -3514,6 +3514,10 @@ export interface SiteDailyReport {
   project_id: string
   foreman_staff_id: string
   report_date: string
+  /** First day of a 2–3 day summary (migration 427); null for a single day. */
+  covers_from?: string | null
+  /** A draft replaced by a summary that covers its day. */
+  superseded_by?: string | null
   progress_percent_after: number | null
   weather: SiteReportWeather | null
   site_accessible: SiteAccessible | null

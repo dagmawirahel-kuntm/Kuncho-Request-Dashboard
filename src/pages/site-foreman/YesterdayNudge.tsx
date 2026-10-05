@@ -1,10 +1,30 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, MessageSquareQuote } from 'lucide-react'
-import { dayChip, reportLink, siteToday, useSiteReportSummary } from '@/lib/siteReports'
+import { AlertTriangle, Layers, MessageSquareQuote } from 'lucide-react'
+import { dayChip, reportLink, shiftDay, siteToday, useSiteReportSummary } from '@/lib/siteReports'
 
 // Shown above every Site Ops page: the working days on the foreman's sites
 // that still have no report (migration 421), the project manager's latest
 // reminder about them, and today's report if it is not in yet. Never blocks.
+// When two or more owed days fall within three days, it offers one summary
+// for them (migration 427).
+
+/** The latest owed days one summary (up to 3 calendar days) can cover: consecutive
+ *  owed days, stepping over a Sunday only — any other day in between may already
+ *  be reported, and a summary may not cover a day twice. */
+function summaryRun(dates: string[]): { from: string; to: string; days: number; owed: number } | null {
+  if (dates.length < 2) return null
+  const owedSet = new Set(dates)
+  const to = [...dates].sort()[dates.length - 1]
+  let from = to, owed = 1
+  for (let back = 1; back <= 2; back++) {
+    const d = shiftDay(to, -back)
+    if (owedSet.has(d)) { from = d; owed++; continue }
+    if (new Date(`${d}T00:00:00Z`).getUTCDay() === 0) continue
+    break
+  }
+  if (owed < 2) return null
+  return { from, to, days: Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1, owed }
+}
 export function SiteReportNudge() {
   const { data } = useSiteReportSummary()
   const owed = data?.as_foreman ?? []
@@ -29,6 +49,16 @@ export function SiteReportNudge() {
             </p>
           )}
           <div className="mt-1.5 ml-5 flex flex-wrap gap-1">
+            {(() => {
+              const run = summaryRun(s.days.map(d => d.date))
+              return run && (
+                <Link to={`${reportLink(s.project_id, run.to)}&days=${run.days}`}
+                  title={`One report for ${dayChip(run.from)} to ${dayChip(run.to)}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-600 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-900/30">
+                  <Layers className="h-3 w-3" /> One summary for {dayChip(run.from)}–{dayChip(run.to)}
+                </Link>
+              )
+            })()}
             {s.days.map(d => (
               <Link key={d.date} to={reportLink(s.project_id, d.date)}
                 className="rounded-full bg-amber-600 px-2.5 py-0.5 text-[11px] font-medium text-white hover:bg-amber-700">

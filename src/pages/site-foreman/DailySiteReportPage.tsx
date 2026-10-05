@@ -8,7 +8,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { SiteReportNudge } from './YesterdayNudge'
 import {
-  BLOCKER_CAUSES, NO_WORK_REASON_LABEL, PPE_LABEL, SITE_STATUS_LABEL, dayChip, dayLong, shiftDay, siteToday,
+  BLOCKER_CAUSES, NO_WORK_REASON_LABEL, PPE_LABEL, SITE_STATUS_LABEL, coversDay, dayChip, dayLong, reportDays, shiftDay, siteToday,
   useSiteReportSummary, type NoWorkReason, type PpeCompliance, type SiteStatus, type WorkItem,
 } from '@/lib/siteReports'
 import {
@@ -50,26 +50,42 @@ export default function DailySiteReportPage() {
   const projectId = draft?.project_id ?? searchParams.get('project') ?? (projects.length === 1 ? projects[0].id : null)
   const reportDate = draft?.report_date ?? searchParams.get('date') ?? today
 
-  function pick(next: { project?: string | null; date?: string }) {
+  // How many days this report covers, ending on reportDate (migration 427).
+  const askedSpan = Math.min(3, Math.max(1, Number(searchParams.get('days')) || 1))
+
+  function pick(next: { project?: string | null; date?: string; days?: number }) {
     const p = new URLSearchParams()
     const proj = next.project !== undefined ? next.project : projectId
     if (proj) p.set('project', proj)
     p.set('date', next.date ?? reportDate)
+    const days = next.days ?? askedSpan
+    if (days > 1) p.set('days', String(days))
     setSearchParams(p, { replace: true })
   }
 
   const { data: summary } = useSiteReportSummary()
   const missingHere = summary?.as_foreman.find(s => s.project_id === projectId)?.days ?? []
 
+  // This day's report: a sent one that covers it (a summary may end up to two
+  // days later), else this day's own draft unless a summary replaced it.
   const { data: existing, isFetched } = useQuery({
     queryKey: ['site-daily-report', projectId, reportDate, staff?.id],
     enabled: !!projectId && !!staff?.id,
     queryFn: async () => {
       const { data } = await supabase.from('site_daily_reports').select('*')
-        .eq('project_id', projectId!).eq('foreman_staff_id', staff!.id).eq('report_date', reportDate).maybeSingle()
-      return data as SiteDailyReport | null
+        .eq('project_id', projectId!).eq('foreman_staff_id', staff!.id)
+        .gte('report_date', reportDate).lte('report_date', shiftDay(reportDate, 2))
+      const rows = (data ?? []) as SiteDailyReport[]
+      return rows.find(r => r.submitted_at && coversDay(r, reportDate))
+        ?? rows.find(r => r.report_date === reportDate && !r.submitted_at && !r.superseded_by) ?? null
     },
   })
+  const endDate = existing?.report_date ?? reportDate
+  const span = existing
+    ? Math.round((Date.parse(existing.report_date) - Date.parse(existing.covers_from ?? existing.report_date)) / 86_400_000) + 1
+    : askedSpan
+  const coversFrom = shiftDay(endDate, -(span - 1))
+  const owedHere = missingHere.length
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -77,7 +93,7 @@ export default function DailySiteReportPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Daily Site Report</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          One report per site per working day. Headcount, materials, safety and work orders fill in from what was logged; the rest takes a few taps.
+          One report per site per working day, or one summary for up to 3 days when you could not send each evening. Headcount, materials, safety and work orders fill in from what was logged; the rest takes a few taps.
         </p>
       </div>
 
@@ -100,13 +116,38 @@ export default function DailySiteReportPage() {
             <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Amber days are still owed for this site.</p>
           )}
         </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls}>This report covers</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-lg border dark:border-slate-600" role="radiogroup" aria-label="Days this report covers">
+              {[1, 2, 3].map(n => (
+                <button key={n} type="button" role="radio" aria-checked={span === n} disabled={!!existing?.submitted_at}
+                  onClick={() => pick({ date: endDate, days: n })}
+                  className={`px-3.5 py-1.5 text-sm font-medium transition-colors disabled:cursor-default ${span === n
+                    ? 'bg-brand text-white dark:text-brand-foreground'
+                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+                  {n === 1 ? '1 day' : `${n} days`}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{reportDays({ report_date: endDate, covers_from: span > 1 ? coversFrom : null })}</span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            {span > 1
+              ? `One summary for ${dayChip(coversFrom)} to ${dayChip(endDate)}: each of these days counts as reported. Drafts you started for them are replaced when you send.`
+              : owedHere > 1
+                ? 'Owe a few days? Pick the last one and choose 2 or 3 days to send one summary.'
+                : 'Could not report for a day or two? Pick the last day and choose 2 or 3 days.'}
+          </p>
+        </div>
       </div>
 
       {projectId && staff?.id && isFetched && (
         <ReportForm
-          key={`${projectId}|${reportDate}|${existing?.id ?? 'new'}`}
+          key={`${projectId}|${endDate}|${span}|${existing?.id ?? 'new'}`}
           projectId={projectId}
-          reportDate={reportDate}
+          reportDate={endDate}
+          coversFrom={span > 1 ? coversFrom : null}
           staffId={staff.id}
           existing={existing ?? null}
         />
@@ -115,9 +156,18 @@ export default function DailySiteReportPage() {
   )
 }
 
-function ReportForm({ projectId, reportDate, staffId, existing }: {
-  projectId: string; reportDate: string; staffId: string; existing: SiteDailyReport | null
+// A summary's site status speaks of the days, not the day.
+const MULTI_STATUS_LABEL: Record<SiteStatus, string> = { working: 'Worked every day', partial: 'Some days or part days', no_work: 'No work' }
+
+function ReportForm({ projectId, reportDate, coversFrom, staffId, existing }: {
+  projectId: string; reportDate: string
+  /** First day of a 2–3 day summary; null for one day. */
+  coversFrom: string | null
+  staffId: string; existing: SiteDailyReport | null
 }) {
+  const from = coversFrom ?? reportDate
+  const multi = !!coversFrom
+  const days = multi ? Math.round((Date.parse(reportDate) - Date.parse(from)) / 86_400_000) + 1 : 1
   const { toast } = useToast()
   const qc = useQueryClient()
   const locked = !!existing?.submitted_at
@@ -167,33 +217,39 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
       return (data ?? []) as OpenWo[]
     },
   })
-  const { data: hc } = useQuery({
-    queryKey: ['sdr-headcount', projectId, reportDate],
+  // What was logged on site, over every day the report covers.
+  const { data: hcDays = [] } = useQuery({
+    queryKey: ['sdr-headcount', projectId, from, reportDate],
     queryFn: async () => {
-      const { data } = await supabase.from('v_site_report_headcount').select('*').eq('project_id', projectId).eq('report_date', reportDate).maybeSingle()
-      return data as { tier1_headcount: number; tier2_headcount: number; total_headcount: number } | null
+      const { data } = await supabase.from('v_site_report_headcount').select('*').eq('project_id', projectId).gte('report_date', from).lte('report_date', reportDate)
+      return (data ?? []) as { tier1_headcount: number; tier2_headcount: number; total_headcount: number }[]
     },
   })
+  const hc = hcDays.length ? {
+    tier1_headcount: hcDays.reduce((s, d) => s + (d.tier1_headcount ?? 0), 0),
+    tier2_headcount: hcDays.reduce((s, d) => s + (d.tier2_headcount ?? 0), 0),
+    total_headcount: hcDays.reduce((s, d) => s + (d.total_headcount ?? 0), 0),
+  } : null
   const { data: mats = [] } = useQuery({
-    queryKey: ['sdr-materials', projectId, reportDate],
+    queryKey: ['sdr-materials', projectId, from, reportDate],
     queryFn: async () => {
-      const { data } = await supabase.from('v_site_report_materials').select('*').eq('project_id', projectId).eq('report_date', reportDate)
+      const { data } = await supabase.from('v_site_report_materials').select('*').eq('project_id', projectId).gte('report_date', from).lte('report_date', reportDate)
       return (data ?? []) as { item_name: string | null; quantity: number; uom: string | null; notes: string | null }[]
     },
   })
   const { data: hse = [] } = useQuery({
-    queryKey: ['sdr-hse', projectId, reportDate],
+    queryKey: ['sdr-hse', projectId, from, reportDate],
     queryFn: async () => {
-      const { data } = await supabase.from('v_site_report_hse').select('*').eq('project_id', projectId).eq('report_date', reportDate)
+      const { data } = await supabase.from('v_site_report_hse').select('*').eq('project_id', projectId).gte('report_date', from).lte('report_date', reportDate)
       return (data ?? []) as { incident_type: string | null; severity: string | null; description: string | null }[]
     },
   })
   const { data: prev } = useQuery({
-    queryKey: ['sdr-prev', projectId, reportDate],
+    queryKey: ['sdr-prev', projectId, from],
     queryFn: async () => {
       const { data } = await supabase.from('site_daily_reports')
         .select('progress_percent_after, report_date, tomorrow_plan')
-        .eq('project_id', projectId).lt('report_date', reportDate).not('submitted_at', 'is', null)
+        .eq('project_id', projectId).lt('report_date', from).not('submitted_at', 'is', null)
         .order('report_date', { ascending: false }).limit(1).maybeSingle()
       return data as { progress_percent_after: number | null; report_date: string; tomorrow_plan: string | null } | null
     },
@@ -246,6 +302,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
       project_id: projectId,
       foreman_staff_id: staffId,
       report_date: reportDate,
+      covers_from: coversFrom,
       site_status: siteStatus,
       no_work_reason: noWork ? noWorkReason : null,
       weather,
@@ -286,14 +343,14 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
     if (error) { toast(error.message, 'error'); return }
     for (const k of ['site-daily-report', 'site-report-summary', 'site-report-gaps', 'sdr-open-wos', 'foreman-latest-report', 'site-daily-reports-viewer'])
       qc.invalidateQueries({ queryKey: [k] })
-    toast(submit ? 'Report sent to your project manager' : 'Draft saved', 'success')
+    toast(submit ? (multi ? `${days}-day summary sent to your project manager` : 'Report sent to your project manager') : 'Draft saved', 'success')
   }
 
   return (
     <fieldset disabled={locked || saving} className="min-w-0 space-y-4">
       {locked && (
         <p className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300">
-          <CheckCircle2 className="h-4 w-4 shrink-0" /> Sent {new Date(existing!.submitted_at!).toLocaleString()}. It can no longer be changed.
+          <CheckCircle2 className="h-4 w-4 shrink-0" /> {multi ? `Summary for ${reportDays({ report_date: reportDate, covers_from: from })}` : 'Report'} sent {new Date(existing!.submitted_at!).toLocaleString()}. It can no longer be changed.
         </p>
       )}
 
@@ -304,12 +361,12 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
         </div>
       )}
 
-      <Section icon={CalendarClock} title="The day on site">
-        <p className={labelCls}>Was the site working?</p>
+      <Section icon={CalendarClock} title={multi ? `The ${days} days on site` : 'The day on site'}>
+        <p className={labelCls}>{multi ? "Was the site working these days?" : "Was the site working?"}</p>
         <Segmented
           value={siteStatus}
           onChange={v => setSiteStatus(v as SiteStatus)}
-          options={(Object.keys(SITE_STATUS_LABEL) as SiteStatus[]).map(v => ({ value: v, label: SITE_STATUS_LABEL[v] }))}
+          options={(Object.keys(SITE_STATUS_LABEL) as SiteStatus[]).map(v => ({ value: v, label: multi ? MULTI_STATUS_LABEL[v] : SITE_STATUS_LABEL[v] }))}
         />
         {noWork && (
           <div className="mt-3">
@@ -393,7 +450,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
                         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
                           <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, Number(r.progress_after))}%` }} />
                         </div>
-                        <input className={`${inputCls} mt-2`} placeholder="What was done on it today?" value={r.note}
+                        <input className={`${inputCls} mt-2`} placeholder={multi ? 'What was done on it?' : 'What was done on it today?'} value={r.note}
                           onChange={ev => setItem(r.work_order_id, { note: ev.target.value })} />
                       </>
                     )}
@@ -405,7 +462,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
             )}
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_9rem]">
               <div>
-                <label className={labelCls}>What got done today?</label>
+                <label className={labelCls}>{multi ? `What got done over these ${days} days?` : 'What got done today?'}</label>
                 <textarea rows={3} className={inputCls} value={progressNotes} onChange={ev => setProgressNotes(ev.target.value)}
                   placeholder="e.g. Gypsum ceiling closed in rooms 3–4; first coat of paint in the corridor" />
               </div>
@@ -419,7 +476,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
 
           <Section icon={Users} title="People">
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              Logged on site: <b>{hc?.tier2_headcount ?? 0}</b> casual and <b>{hc?.tier1_headcount ?? 0}</b> staff · <b>{hc?.total_headcount ?? 0}</b> in all.
+              Logged on site{multi ? ` over ${days} days` : ''}: <b>{hc?.tier2_headcount ?? 0}</b> casual and <b>{hc?.tier1_headcount ?? 0}</b> staff · <b>{hc?.total_headcount ?? 0}</b> in all{multi && hc ? ` (about ${Math.round(hc.total_headcount / days)} a day)` : ''}.
             </p>
             <p className="mt-0.5 text-[11px] text-slate-400">From the attendance recorded under Record Labour.</p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -477,7 +534,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
         )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className={labelCls}>Short, wrong or damaged today</label>
+            <label className={labelCls}>{multi ? 'Short, wrong or damaged in these days' : 'Short, wrong or damaged today'}</label>
             <textarea rows={2} className={inputCls} value={materialsNotes} onChange={ev => setMaterialsNotes(ev.target.value)} />
           </div>
           <div>
@@ -557,10 +614,10 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
         </Section>
       )}
 
-      <Section icon={Clock} title="Tomorrow">
+      <Section icon={Clock} title={multi ? 'Next' : 'Tomorrow'}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className={labelCls}>What is the plan for tomorrow?</label>
+            <label className={labelCls}>{multi ? 'What is the plan for the next working day?' : 'What is the plan for tomorrow?'}</label>
             <textarea rows={3} className={inputCls} value={tomorrowPlan} onChange={ev => setTomorrowPlan(ev.target.value)} />
           </div>
           <div>
@@ -588,7 +645,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
         {!locked && photos.length < 8 && (
           <div className="mt-2">
             <FileUpload key={photos.length} bucket="documents" folder="site-report-photos" fileUrl={null} fileName={null}
-              accept="image/*" label="Add a photo of today's work"
+              accept="image/*" label={multi ? 'Add photos of the work' : "Add a photo of today's work"}
               onUpload={(url, name) => setPhotos(ps => [...ps, { url, name }])} onClear={() => {}} />
           </div>
         )}
@@ -612,7 +669,7 @@ function ReportForm({ projectId, reportDate, staffId, existing }: {
             </button>
             <button type="button" onClick={() => save(true)} disabled={!canSubmit}
               className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
-              Send report
+              {multi ? `Send ${days}-day summary` : 'Send report'}
             </button>
           </div>
         </div>

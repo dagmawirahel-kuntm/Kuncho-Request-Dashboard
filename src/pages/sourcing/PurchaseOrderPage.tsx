@@ -30,6 +30,7 @@ import { canSeePoVatGoal, usePoVatGoal, usePoVatToggle } from '@/lib/poVatGoal'
 import { PoVatPanel } from '@/components/purchasing/PoVatGoal'
 import { useTaxImpact } from '@/lib/taxImpact'
 import { TaxTag } from '@/components/tax/TaxTag'
+import { useMarkEntityRead } from '@/lib/notifications'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -234,6 +235,8 @@ function ReceivedCell({ r }: { r: BundleLineReceipt | undefined }) {
 
 export default function PurchaseOrderPage() {
   const { id } = useParams<{ id: string }>()
+  // Opening the purchase order reads its notifications.
+  useMarkEntityRead(id)
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { toast } = useToast()

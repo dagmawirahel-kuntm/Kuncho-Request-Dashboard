@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, CheckCircle2, ClipboardList, Copy, GitBranch, Layers, Percent, Receipt, ShieldAlert, ShieldCheck, ThumbsDown, Wallet } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ClipboardList, Copy, GitBranch, Layers, Percent, Receipt, ShieldAlert, ShieldCheck, ThumbsDown, TrendingUp, Wallet } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -15,6 +15,7 @@ import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/
 import type { ProformaStatus } from '@/types/database'
 import { DEFAULT_DISCOUNT_LIMIT, discountLabel, discountPercent, type DiscountKind } from '@/lib/discount'
 import { DocumentFrame } from '@/components/documents/DocumentFrame'
+import { blendedRate, inflationToCollection, pct, useInflationSettings } from '@/lib/inflation'
 
 interface PF {
   id: string; proforma_number: string | null; client_id: string; project_id: string | null; opportunity_id: string | null
@@ -25,6 +26,8 @@ interface PF {
   source_boq_id: string | null
   lines_total: number | null; discount_kind: DiscountKind | null; discount_value: number | null; discount_amount: number | null
   discount_reason: string | null; discount_set_by: string | null; discount_approved_by: string | null; discount_approved_at: string | null
+  collect_months: number | null; collect_advance_pct: number | null; collect_final_pct: number | null; collect_final_lag_months: number | null
+  inflation_rate: number | null; inflation_allowance_pct: number | null; inflation_applied: 'none' | 'spread' | 'line' | null
   clients: { client_name: string; tin: string | null; address: string | null; phone_number: string | null; email: string | null } | null
   projects: { project_name: string } | null
   opportunities: { title: string } | null
@@ -328,6 +331,8 @@ export default function ProformaDetailPage() {
               {!pf.clients?.tin && <p className="mt-2 text-xs text-amber-600">The client has no TIN on record, so none is printed. <Link to={`/clients/${pf.client_id}/edit`} className="underline">Add it</Link>.</p>}
             </Panel>
 
+            <InflationFacts pf={pf} />
+
             {versions.length > 1 && (
               <Panel title="Versions" icon={Layers} count={versions.length} padded={false}>
                 <ul className="divide-y text-sm dark:divide-slate-700">
@@ -372,5 +377,38 @@ export default function ProformaDetailPage() {
         </ActionDialog>
       )}
     </div>
+  )
+}
+
+// What the price was set for: the collection plan, the yearly rate, what the
+// price is worth when the money comes in, and the allowance (migration 426).
+// Proformas made before then are estimated with today's benchmark.
+function InflationFacts({ pf }: { pf: PF }) {
+  const { data: settings } = useInflationSettings()
+  if (!settings) return null
+  const saved = pf.collect_months != null
+  const plan = {
+    months: Number(pf.collect_months ?? settings.default_months),
+    advancePct: Number(pf.collect_advance_pct ?? 30),
+    finalPct: Number(pf.collect_final_pct ?? 10),
+    finalLagMonths: Number(pf.collect_final_lag_months ?? settings.default_final_lag_months),
+  }
+  const rate = pf.inflation_rate != null ? Number(pf.inflation_rate) : blendedRate(settings, Number(settings.default_materials_share))
+  const applied = pf.inflation_applied && pf.inflation_applied !== 'none'
+  const upPct = Number(pf.inflation_allowance_pct ?? 0)
+  const base = applied && upPct > 0 ? Number(pf.subtotal) / (1 + upPct / 100) : Number(pf.subtotal)
+  const res = inflationToCollection(base, plan, rate)
+  const progress = Math.max(0, 100 - plan.advancePct - plan.finalPct)
+  return (
+    <Panel title="Inflation to collection" icon={TrendingUp}>
+      <FactList facts={[
+        { label: 'Collected over', value: `${plan.months} months + ${plan.finalLagMonths} to the final`, hint: `${plan.advancePct}% advance · ${progress}% progress · ${plan.finalPct}% final` },
+        { label: 'Yearly rate', value: pct(rate), hint: saved ? 'set when priced' : "not set when priced: today's benchmark" },
+        { label: 'Worth when collected', value: formatCurrency(Math.round(res.worthToday)), hint: `${formatCurrency(Math.round(res.lost))} lost over ~${res.avgMonths.toFixed(1)} months`, tone: 'amber' },
+        applied
+          ? { label: 'Allowance', value: `+${upPct.toFixed(1)}% ${pf.inflation_applied === 'spread' ? 'in the prices' : 'as its own line'}`, tone: 'green' as const }
+          : { label: 'Allowance', value: 'None added', hint: `+${res.allowancePct.toFixed(1)}% would keep today's value`, tone: 'amber' as const },
+      ]} />
+    </Panel>
   )
 }
