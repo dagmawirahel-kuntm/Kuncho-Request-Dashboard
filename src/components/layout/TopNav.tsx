@@ -6,6 +6,17 @@ import type { Theme } from './AppShell'
 import { Logo } from './Sidebar'
 import { NavItemLink } from './NavPieces'
 import { openPagePalette, pinnedItems, subgroupRuns, PINNED, type NavData } from './navState'
+import { accentVars, sectionOf } from './navAccent'
+
+// A wide menu (four columns) opened from the middle of the bar can run off
+// the screen's edge: shift it back in, keeping 8px clear.
+function keepOnScreen(el: HTMLDivElement | null) {
+  if (!el) return
+  el.style.translate = ''
+  const r = el.getBoundingClientRect()
+  const shift = r.left < 8 ? 8 - r.left : r.right > window.innerWidth - 8 ? window.innerWidth - 8 - r.right : 0
+  if (shift) el.style.translate = `${shift}px 0`
+}
 
 // The top-bar layout: sections across the top, each opening a menu with its
 // subgroups side by side. Desktop only — phones keep the drawer.
@@ -51,26 +62,28 @@ export function TopNav({ nav, theme, festive, onToggleTheme }: {
           const alignRight = index > entries.length / 2
           const isPinned = entry.title === PINNED
           return (
-            <div key={entry.title} className="relative">
+            <div key={entry.title} className="relative" style={accentVars(entry.title)}>
               <button
                 type="button"
                 onClick={() => setOpen(isOpen ? null : entry.title)}
                 aria-expanded={isOpen}
                 title={entry.title}
+                data-here={here || undefined}
                 className={cn(
-                  'relative flex items-center gap-1.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+                  'nav-top-btn relative flex items-center gap-1.5 rounded-md px-2.5 py-2 text-sm transition-colors',
                   isOpen ? 'bg-white/10 text-white' : here ? 'text-white hover:bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white',
                 )}
               >
                 <entry.icon className="h-4 w-4 shrink-0" />
                 {!isPinned && <span className="hidden whitespace-nowrap xl:inline">{entry.title}</span>}
                 {!isPinned && <ChevronDown className={cn('h-3 w-3 text-slate-500 transition-transform', isOpen && 'rotate-180')} />}
-                {here && <span className="absolute inset-x-2.5 -bottom-[9px] h-0.5 rounded-full bg-[#D4AF37]" />}
+                {here && <span className="nav-here-bar absolute inset-x-2.5 -bottom-[9px] h-0.5 rounded-full" />}
               </button>
               {isOpen && (
                 <div
+                  ref={keepOnScreen}
                   className={cn(
-                    'animate-fade-in absolute top-full mt-2 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-lg border border-white/10 bg-sidebar p-3 shadow-2xl',
+                    'nav-drop absolute top-full mt-2 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-lg border border-white/10 bg-sidebar p-3 shadow-2xl',
                     alignRight ? 'right-0' : 'left-0',
                   )}
                   style={{ width: isPinned ? '16rem' : `${columns * 15}rem` }}
@@ -103,6 +116,7 @@ export function TopNav({ nav, theme, festive, onToggleTheme }: {
                               onTogglePin={togglePin}
                               dense
                               onNavigate={close}
+                              section={isPinned ? sectionOf(groups, item.to) : undefined}
                             />
                           ))}
                         </div>
@@ -118,7 +132,7 @@ export function TopNav({ nav, theme, festive, onToggleTheme }: {
       <button
         type="button"
         onClick={openPagePalette}
-        className="flex shrink-0 items-center gap-2 rounded-md bg-white/5 px-3 py-1.5 text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200"
+        className="nav-search flex shrink-0 items-center gap-2 rounded-md bg-white/5 px-3 py-1.5 text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200"
       >
         <Search className="h-4 w-4" />
         <span className="hidden 2xl:inline">Jump to page…</span>

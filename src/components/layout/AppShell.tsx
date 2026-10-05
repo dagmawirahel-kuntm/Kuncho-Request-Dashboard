@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
 import { PagePalette } from './PagePalette'
 import { NAV_LAYOUTS, useNavData, useNavLayout, type NavLayout } from './navState'
+import { accentVars } from './navAccent'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
@@ -49,7 +50,8 @@ function FunEffectsToggle() {
         title="Fun effects and sounds"
         aria-haspopup="true"
         aria-expanded={open}
-        className={`rounded-md p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 ${on ? 'text-[#a57d1c] dark:text-[#D4AF37]' : 'text-slate-400 dark:text-slate-500'}`}
+        data-motion="twinkle"
+        className={`hdr-icon rounded-md p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 ${on ? 'text-[#a57d1c] dark:text-[#D4AF37]' : 'text-slate-400 dark:text-slate-500'}`}
       >
         <Sparkles className="h-4 w-4" />
       </button>
@@ -112,7 +114,8 @@ function NavLayoutPicker({ layout, onChange }: { layout: NavLayout; onChange: (n
         onClick={() => setOpen(o => !o)}
         title="Navigation layout"
         aria-expanded={open}
-        className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+        data-motion="pop"
+        className="hdr-icon rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
       >
         <Icon className="h-4 w-4" />
       </button>
@@ -244,7 +247,7 @@ export function AppShell() {
   return (
     <>
     <AnimatedBackground />
-    <div className="relative z-10 flex h-screen overflow-hidden bg-transparent print:block print:h-auto print:overflow-visible">
+    <div className="relative z-10 flex h-screen overflow-hidden bg-transparent print:block print:h-auto print:overflow-visible" style={accentVars(nav.active.section)}>
       <Sidebar
         nav={nav}
         layout={layout}
@@ -259,21 +262,23 @@ export function AppShell() {
       <div className="relative flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
         {layout === 'top' && <TopNav nav={nav} theme={theme} festive={festive} onToggleTheme={cycleTheme} />}
         {/* Header */}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6 dark:bg-slate-800 dark:border-slate-700 print:hidden">
+        <header className="app-header relative flex h-14 shrink-0 items-center gap-3 border-b bg-white px-4 sm:px-6 dark:bg-slate-800 dark:border-slate-700 print:hidden">
           <button
             onClick={() => setMobileOpen(true)}
-            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 lg:hidden dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            aria-label="Open the menu"
+            data-motion="pop"
+            className="hdr-icon rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 lg:hidden dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
           >
             <Menu className="h-5 w-5" />
           </button>
 
           {/* Breadcrumb */}
           <nav className="hidden items-center gap-1 text-sm text-slate-500 md:flex dark:text-slate-400">
-            <NavLink to="/home" className="hover:text-slate-700 dark:hover:text-slate-200">Home</NavLink>
+            <NavLink to="/home" className="crumb-link hover:text-slate-700 dark:hover:text-slate-200">Home</NavLink>
             {segments.map((seg, i) => (
               <span key={seg} className="flex items-center gap-1">
                 <ChevronRight className="h-3.5 w-3.5" />
-                <span className={i === segments.length - 1 ? 'font-medium text-slate-800 dark:text-slate-100' : ''}>
+                <span className={i === segments.length - 1 ? 'crumb-here font-medium text-slate-800 dark:text-slate-100' : ''}>
                   {breadcrumbLabels[seg] ?? seg}
                 </span>
               </span>
@@ -291,7 +296,8 @@ export function AppShell() {
             <button
               onClick={cycleTheme}
               title={theme === 'light' ? 'Switch to dark mode' : theme === 'dark' ? 'Switch to gold theme' : 'Switch to light mode'}
-              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              data-motion="tilt"
+              className="hdr-icon rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
             >
               {theme === 'light' ? <Moon className="h-4 w-4" /> : theme === 'dark' ? <Gem className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
@@ -306,13 +312,15 @@ export function AppShell() {
             <Link
               to="/settings"
               title="Settings"
-              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              data-motion="spin"
+              className="hdr-icon rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
             >
               <Settings className="h-4 w-4" />
             </Link>
             <button
               onClick={signOut}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              data-motion="nudge"
+              className="hdr-icon flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
             >
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Sign out</span>

@@ -3,10 +3,11 @@ import { Pin, PinOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { NavItem } from './navConfig'
 import { subgroupRuns } from './navState'
+import { accentVars } from './navAccent'
 
 // One page link, with a pin toggle that shows on hover. The toggle sits
 // beside the link, not inside it, so pinning never follows the link.
-export function NavItemLink({ item, active, pinned, onTogglePin, dense = false, onNavigate }: {
+export function NavItemLink({ item, active, pinned, onTogglePin, dense = false, onNavigate, section }: {
   item: NavItem
   // Worked out once for the whole nav (useActiveNav), so only the closest
   // match lights up — /stock/counts is "Stock Counts", not also "Stock".
@@ -15,15 +16,17 @@ export function NavItemLink({ item, active, pinned, onTogglePin, dense = false, 
   onTogglePin: (to: string) => void
   dense?: boolean
   onNavigate?: () => void
+  /** Its section, when shown outside it (pinned): the item wears that section's colour. */
+  section?: string | null
 }) {
   return (
-    <div className="group/item relative">
+    <div className="group/item relative" style={section !== undefined ? accentVars(section) : undefined}>
       <NavLink
         to={item.to}
         onClick={onNavigate}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex items-center gap-2.5 rounded-md pl-3 pr-7 text-sm transition-colors',
+          'nav-item flex items-center gap-2.5 rounded-md pl-3 pr-7 text-sm',
           dense ? 'py-1.5' : 'py-2',
           active
             ? 'bg-white/10 text-white font-medium'
