@@ -10,7 +10,7 @@ import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
 import { SubmitStampHost } from '@/components/shared/SubmitStamp'
-import { MyExpenseWatcher } from '@/components/shared/MyExpenseWatcher'
+import { NotificationsLive } from '@/components/notifications/NotificationsLive'
 import { chime, confetti, useFunEffects, useFunSounds } from '@/lib/celebrate'
 import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
 import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
@@ -348,7 +348,7 @@ export function AppShell() {
     </div>
     <PagePalette nav={nav} />
     <SubmitStampHost />
-    <MyExpenseWatcher />
+    <NotificationsLive />
     </>
   )
 }

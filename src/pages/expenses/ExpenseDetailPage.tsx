@@ -25,6 +25,7 @@ import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { IssueChips } from '@/components/expenses/ExpenseFields'
 import { ISSUE, type ExpenseIssue } from '@/lib/expenseQuality'
 import { ExpenseAdminActions, ExpenseAdminHistory } from '@/components/expenses/ExpenseAdminActions'
+import { useMarkEntityRead } from '@/lib/notifications'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
 
@@ -63,6 +64,8 @@ type ExpenseWithJoins = Expense & {
 
 export default function ExpenseDetailPage() {
   const { id } = useParams<{ id: string }>()
+  // Opening the expense reads its notifications.
+  useMarkEntityRead(id)
   const { role } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
