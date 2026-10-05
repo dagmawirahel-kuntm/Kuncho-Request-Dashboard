@@ -17,8 +17,8 @@ import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { poTax } from '@/lib/poTax'
 import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
-import { ProjectOrOverheadSelect, ReceiptFields } from '@/components/expenses/ExpenseFields'
-import { expenseFormProblems, findPossibleDuplicates, fromProjectChoice, projectChoice } from '@/lib/expenseQuality'
+import { ProjectOrOverheadSelect, ReceiptFields, VatQuestion } from '@/components/expenses/ExpenseFields'
+import { expenseFormProblems, findPossibleDuplicates, fromProjectChoice, projectChoice, useReceivedLedger, vatInside } from '@/lib/expenseQuality'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'
 function Field({ label, locked, error, children }: { label: string; locked?: boolean; error?: string; children: React.ReactNode }) {
@@ -390,6 +390,8 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         wht_amount: record.wht_amount,
         is_overhead: record.is_overhead ?? false,
         receipt_is_vat: record.receipt_is_vat ?? null,
+        // Older expenses only answered on the receipt.
+        vat_included: record.vat_included ?? record.receipt_is_vat ?? null,
         receipt_no: record.receipt_no ?? null,
         receipt_vat_amount: record.receipt_vat_amount ?? null,
       }
@@ -600,6 +602,13 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   // default can't be mistaken for an edit and there's no render cascade.
   const effectiveCategoryId = form.category_id ?? defaultCategoryId ?? null
   const categoryIsDefaulted = !form.category_id && !!defaultCategoryId
+  // What the purchase order's GRN / SDN lines say the ledger is (428).
+  const { data: received } = useReceivedLedger(form.sourcing_bundle_id ?? record?.sourcing_bundle_id ?? linkedBundle?.id ?? null, id ?? null)
+  const receivedLedgerName = received?.category_id
+    ? (categories as { id: string; category_name: string }[]).find(c => c.id === received.category_id)?.category_name ?? null
+    : null
+  const ledgerSource = form.category_id === record?.category_id ? record?.category_source ?? null : null
+  const selectedVendorTin = (vendors as { id: string; tin: string | null }[]).find(v => v.id === form.vendor_id)?.tin ?? null
 
   async function handleSave(duplicateConfirmed = false) {
     setError('')
@@ -623,7 +632,11 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       // Only the chosen kind of payee is kept.
       ...(payeeMode === 'vendor' ? { paid_to_staff_id: null } : payeeMode === 'staff' ? { vendor_id: null, vendors_name: null } : { vendor_id: null, paid_to_staff_id: null }),
       receipt_available: form.receipt_url ? 'Yes' : form.receipt_available ?? null,
-      receipt_is_vat: form.receipt_url ? form.receipt_is_vat ?? null : null,
+      // The receipt follows the VAT answer when there is one (428).
+      receipt_is_vat: form.receipt_url ? (form.vat_included ?? form.receipt_is_vat ?? null) : null,
+      receipt_vat_amount: form.receipt_url && (form.vat_included ?? form.receipt_is_vat)
+        ? form.receipt_vat_amount ?? (form.amount_etb ? vatInside(Number(form.amount_etb)) : null)
+        : form.receipt_vat_amount ?? null,
     }
     if (isEdit) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -926,6 +939,17 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         </Field>
       )}
 
+      <SectionHeader title="Tax" subtitle="Whether VAT was paid decides if a receipt must be chased and the VAT claimed back." />
+      <VatQuestion
+        value={form.vat_included ?? null}
+        onChange={v => setForm(f => ({ ...f, vat_included: v, ...(v === false ? { receipt_is_vat: false } : v === true ? { receipt_is_vat: true } : {}) }))}
+        total={form.amount_etb ?? null}
+        payeeIsVendor={payeeMode === 'vendor' && !!form.vendor_id}
+        vendorTin={selectedVendorTin}
+        hasReceipt={!!form.receipt_url}
+        paid={record?.payment_state === 'paid'}
+      />
+
       <SectionHeader title="Where it goes" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label={`Project${(form.expense_type ?? 'general') === 'general' ? ' *' : ''}`} error={showErrors ? problems.project : undefined}>
@@ -936,6 +960,17 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           {categoryIsDefaulted && (
             <p className="mt-1 text-[11px] text-slate-400">
               Set automatically from this {EXPENSE_TYPE_LABEL[form.expense_type ?? 'general'] ?? 'expense'}. Change it if the posting belongs elsewhere.
+            </p>
+          )}
+          {(ledgerSource === 'grn' || ledgerSource === 'sdn') && record?.category_source_ref && (
+            <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+              From {record.category_source_ref} — what was actually received{received && received.ledgers > 1 ? ` (${received.ledgers} ledgers)` : ''}.
+            </p>
+          )}
+          {received?.category_id && received.category_id !== effectiveCategoryId && receivedLedgerName && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              Received as <b>{receivedLedgerName}</b>{received.ledgers > 1 ? ` (${received.ledgers} ledgers)` : ''} on {received.ref}.{' '}
+              <button type="button" onClick={() => set('category_id', received.category_id)} className="font-medium text-brand hover:underline">Use it</button>
             </p>
           )}
           {!effectiveCategoryId && (
@@ -969,6 +1004,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
         }}
         onChange={patch => setForm(f => ({ ...f, ...patch }))}
         total={form.amount_etb ?? null}
+        vatIncluded={form.vat_included ?? null}
       />
       {showErrors && problems.receipt_vat && <p className="text-xs text-red-600">{problems.receipt_vat}</p>}
       {!form.receipt_url && (
@@ -1143,6 +1179,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
           ...Object.values(problems),
           ...(effectiveCategoryId ? [] : ['Pick the general ledger']),
           ...(form.receipt_url ? [] : ['Add a photo of the receipt']),
+          ...(form.vat_included == null ? ['Say whether the amount includes VAT'] : []),
         ]
         return missing.length === 0 ? (
           <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 animate-fade-in dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-300">
