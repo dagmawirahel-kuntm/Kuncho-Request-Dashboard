@@ -164,3 +164,33 @@ export async function findPossibleDuplicates(f: {
   const { data } = await q
   return (data ?? []) as { id: string; expense_code: string | null; date: string; amount_etb: number; item_service_description: string | null }[]
 }
+
+// ── The ledger from what was received (migration 428) ────────────────
+export interface ReceivedLedger { category_id: string | null; ledgers: number; source: 'grn' | 'sdn' | null; ref: string | null }
+
+/**
+ * The general ledger the received lines (GRN, else a received SDN) of the
+ * expense's purchase order point to. The database writes it onto the
+ * expense when its ledger is empty or only a guess; the form shows it so
+ * a person picking by hand can see what was actually received.
+ */
+export function useReceivedLedger(bundleId: string | null | undefined, expenseId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['received-ledger', bundleId ?? null, expenseId ?? null],
+    enabled: !!bundleId || !!expenseId,
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async () => {
+      let bundle = bundleId ?? null
+      if (!bundle && expenseId) {
+        const { data } = await supabase.from('sourcing_bundles').select('id').eq('expense_id', expenseId).limit(1).maybeSingle()
+        bundle = (data as { id: string } | null)?.id ?? null
+      }
+      if (!bundle) return null
+      const { data, error } = await supabase.rpc('received_ledger', { p_bundle: bundle })
+      if (error) throw error
+      const row = ((data ?? []) as ReceivedLedger[])[0] ?? (data as ReceivedLedger | null)
+      return row && row.category_id ? row : null
+    },
+  })
+}

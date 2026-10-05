@@ -23,7 +23,7 @@ import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type { Expense } from '@/types/database'
 import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { IssueChips } from '@/components/expenses/ExpenseFields'
-import { ISSUE, type ExpenseIssue } from '@/lib/expenseQuality'
+import { ISSUE, type ExpenseIssue, vatInside } from '@/lib/expenseQuality'
 import { ExpenseAdminActions, ExpenseAdminHistory } from '@/components/expenses/ExpenseAdminActions'
 import { useMarkEntityRead } from '@/lib/notifications'
 
@@ -1034,7 +1034,12 @@ export default function ExpenseDetailPage() {
               { label: 'Vendor Bank Account',value: vendorBank,                                                                icon: null },
               { label: 'Project',            value: projectName,                                                               icon: <FolderKanban className="h-3.5 w-3.5" /> },
               { label: 'Account',            value: expense.accounts?.account_name ?? null,                                   icon: null },
-              { label: 'Category',           value: expense.categories?.category_name ?? null,                                icon: <Tag className="h-3.5 w-3.5" /> },
+              { label: 'Category',           value: expense.categories?.category_name
+                  ? expense.categories.category_name + ((expense.category_source === 'grn' || expense.category_source === 'sdn') && expense.category_source_ref ? ` — from ${expense.category_source_ref}` : '')
+                  : null,                                                                                                       icon: <Tag className="h-3.5 w-3.5" /> },
+              { label: 'VAT',                value: expense.vat_included === true
+                  ? `Included${expense.amount_etb ? ' · ' + formatCurrency(vatInside(Number(expense.amount_etb))) : ''}${expense.receipt_url ? '' : ' · receipt still to come'}`
+                  : expense.vat_included === false ? 'No VAT' : null,                                                        icon: null },
               { label: 'Sub-category',       value: expense.sub_categories?.item_name ?? null,                                icon: null },
               { label: 'Quantity / UOM',     value: expense.quantity != null ? `${expense.quantity}${expense.uom ? ' ' + expense.uom : ''}` : null, icon: null },
               { label: 'Purchase Type',      value: expense.purchase_type,                                                    icon: null },

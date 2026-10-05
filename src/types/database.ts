@@ -474,6 +474,12 @@ export interface Expense {
   receipt_is_vat?: boolean | null
   receipt_no?: string | null
   receipt_vat_amount?: number | null
+  /** "Does this amount include VAT?" — true / false / null = not sure (migration 428). */
+  vat_included?: boolean | null
+  /** Where the general ledger came from: manual, default, po, grn, sdn (428). */
+  category_source?: 'manual' | 'default' | 'po' | 'grn' | 'sdn' | null
+  /** The GRN / SDN code(s) the ledger was read from (428). */
+  category_source_ref?: string | null
   approval_status: ExpenseApprovalStatus
   rejection_reason: string | null
   manager_approved_by: string | null
