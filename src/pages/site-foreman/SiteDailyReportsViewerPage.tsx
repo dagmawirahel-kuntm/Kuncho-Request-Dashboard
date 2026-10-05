@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import {
-  BLOCKER_LABEL, NO_WORK_REASON_LABEL, PPE_LABEL, dayChip, dayLong, remindForeman, shiftDay, siteToday,
+  BLOCKER_LABEL, NO_WORK_REASON_LABEL, PPE_LABEL, coversDay, dayChip, dayLong, remindForeman, reportDays, shiftDay, siteToday,
   useActivePauses, useSiteReportGaps, type Gap,
 } from '@/lib/siteReports'
 import type { SiteDailyReport, SiteReportWeather } from '@/types/database'
@@ -44,6 +44,7 @@ export default function SiteDailyReportsViewerPage() {
       const { data, error } = await supabase
         .from('site_daily_reports')
         .select('*, projects(project_name), staff:foreman_staff_id(employee_name)')
+        .is('superseded_by', null)
         .order('report_date', { ascending: false })
         .limit(300)
       if (error) throw error
@@ -118,7 +119,7 @@ export default function SiteDailyReportsViewerPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{r.projects?.project_name ?? 'Unknown site'}</span>
-                      <span className="text-xs text-slate-400">{dayLong(r.report_date)}</span>
+                      <span className={`text-xs ${r.covers_from ? 'font-medium text-sky-700 dark:text-sky-300' : 'text-slate-400'}`}>{reportDays(r)}</span>
                       {r.submitted_at ? (
                         <span className="flex items-center gap-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3 w-3" />Sent</span>
                       ) : (
@@ -181,7 +182,7 @@ function FollowUp({ gaps, reports, pauses, projectNames }: {
       const siteGaps = gaps.filter(g => g.project_id === id)
       const strip = days.map(d => {
         let state: DayState = 'off'
-        if (reports.some(r => r.project_id === id && r.report_date === d && r.submitted_at)) state = 'sent'
+        if (reports.some(r => r.project_id === id && r.submitted_at && coversDay(r, d))) state = 'sent'
         else if (d === today) state = 'today'
         else {
           const g = siteGaps.find(x => x.report_date === d)

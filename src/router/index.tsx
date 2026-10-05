@@ -161,6 +161,8 @@ import MyLeavePage from '@/pages/leave-requests/MyLeavePage'
 import PerformanceReviewsPage from '@/pages/performance-reviews/PerformanceReviewsPage'
 import PerformanceReviewFormPage from '@/pages/performance-reviews/PerformanceReviewFormPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
+import NotificationSettingsPage from '@/pages/settings/NotificationSettingsPage'
+import NotificationsPage from '@/pages/notifications/NotificationsPage'
 import OnboardingTasksPage from '@/pages/onboarding-tasks/OnboardingTasksPage'
 import OnboardingTaskFormPage from '@/pages/onboarding-tasks/OnboardingTaskFormPage'
 import DisciplinaryRecordsPage from '@/pages/disciplinary-records/DisciplinaryRecordsPage'
@@ -241,6 +243,9 @@ export const router = createBrowserRouter([
           { path: 'attendance', element: <Navigate to="/timesheet" replace /> },
           { path: 'calendar', element: <CalendarPage /> },
           { path: 'settings', element: <SettingsPage /> },
+          // Notifications (migrations 424–425): open to everyone; RLS keeps each inbox private.
+          { path: 'settings/notifications', element: <NotificationSettingsPage /> },
+          { path: 'notifications', element: <NotificationsPage /> },
           { path: 'no-department', element: <NoDepartmentPage /> },
           { path: 'requests', element: <RequestsDashboardPage /> },
           { path: 'expenses', element: <ExpensesPage /> },

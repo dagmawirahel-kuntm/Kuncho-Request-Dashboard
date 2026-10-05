@@ -16,6 +16,8 @@ import type { Client } from '@/types/database'
 import { ProformaSources } from './ProformaSources'
 import { ProformaPriceGuide } from './ProformaPriceGuide'
 import { DocumentFrame } from '@/components/documents/DocumentFrame'
+import { InflationPanel, type InflationApplied } from '@/components/sales/InflationPanel'
+import { blendedRate, inflationToCollection, monthsBetween, useInflationSettings, type CollectPlan } from '@/lib/inflation'
 
 type LineItem = DraftLine
 
@@ -43,6 +45,8 @@ interface SourceProforma {
   template_id: string | null; source_boq_id: string | null; validity_days: number; payment_terms: string | null; notes: string | null
   scope: string | null; exclusions: string | null
   discount_kind: DiscountKind | null; discount_value: number | null; discount_reason: string | null
+  collect_months: number | null; collect_advance_pct: number | null; collect_final_pct: number | null; collect_final_lag_months: number | null
+  inflation_applied: InflationApplied | null
   items: { id: string; product_id: string | null; description: string; qty: number; unit: string | null; unit_price: number; section: string | null; sort_order: number }[]
   costs: { proforma_item_id: string; cost_per_unit: number; cost_source: string; parts: CostPart[] | null; extra: number | null }[]
 }
@@ -90,9 +94,9 @@ export default function ProformaInvoicePage() {
     queryKey: ['client-projects-lookup', id],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await supabase.from('projects').select('id, project_name').eq('client_id', id!).order('project_name')
+      const { data, error } = await supabase.from('projects').select('id, project_name, start_date, target_handover_date').eq('client_id', id!).order('project_name')
       if (error) throw error
-      return (data ?? []) as { id: string; project_name: string }[]
+      return (data ?? []) as { id: string; project_name: string; start_date: string | null; target_handover_date: string | null }[]
     },
   })
   const { data: costing = [] } = useCatalogCosting(canSeeCost)
@@ -104,7 +108,7 @@ export default function ProformaInvoicePage() {
     enabled: !!fromId,
     queryFn: async () => {
       const { data: pf, error } = await supabase.from('proformas')
-        .select('id, proforma_number, client_id, project_id, opportunity_id, template_id, source_boq_id, validity_days, payment_terms, notes, scope, exclusions, discount_kind, discount_value, discount_reason')
+        .select('id, proforma_number, client_id, project_id, opportunity_id, template_id, source_boq_id, validity_days, payment_terms, notes, scope, exclusions, discount_kind, discount_value, discount_reason, collect_months, collect_advance_pct, collect_final_pct, collect_final_lag_months, inflation_applied')
         .eq('id', fromId!).single()
       if (error) throw error
       const { data: items, error: e2 } = await supabase.from('proforma_items')
@@ -140,6 +144,12 @@ export default function ProformaInvoicePage() {
   const [saving, setSaving]     = useState(false)
   const [guideFor, setGuideFor] = useState<string | null>(null)
 
+  // Inflation to collection (migration 426): the plan the price assumes, and
+  // the allowance if one was added (with what to restore if it is taken out).
+  const { data: inflation } = useInflationSettings()
+  const [plan, setPlan] = useState<CollectPlan | null>(null)
+  const [allowance, setAllowance] = useState<{ how: InflationApplied; pct: number; prices?: Record<string, number>; lineId?: string }>({ how: 'none', pct: 0 })
+
   // Fill the form from the proforma being revised or copied, once.
   if (source && loadedFrom !== source.id) {
     setLoadedFrom(source.id)
@@ -155,6 +165,12 @@ export default function ProformaInvoicePage() {
     setDiscountKind(source.discount_kind ?? 'percent')
     setDiscountValue(Number(source.discount_value ?? 0))
     setDiscountReason(source.discount_reason ?? '')
+    if (source.collect_months != null) setPlan({
+      months: Number(source.collect_months), advancePct: Number(source.collect_advance_pct ?? DEFAULT_PLAN.advance),
+      finalPct: Number(source.collect_final_pct ?? DEFAULT_PLAN.final), finalLagMonths: Number(source.collect_final_lag_months ?? 1),
+    })
+    // An allowance already in the copied prices stays in them (and is not added twice).
+    if (source.inflation_applied && source.inflation_applied !== 'none') setAllowance({ how: source.inflation_applied, pct: 0 })
     const costFor = new Map(source.costs.map(c => [c.proforma_item_id, c]))
     setItems(withHeadings(source.items.map(i => {
       const c = costFor.get(i.id)
@@ -207,6 +223,66 @@ export default function ProformaInvoicePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, costBy])
 
+  // The plan shown: what was set here, else the project's own length, else the benchmark.
+  const project = projects.find(p => p.id === projectId)
+  const planShown: CollectPlan = plan ?? {
+    months: monthsBetween(date > (project?.start_date ?? '') ? date : project?.start_date, project?.target_handover_date)
+      ?? Number(inflation?.default_months ?? 4),
+    advancePct: DEFAULT_PLAN.advance,
+    finalPct: DEFAULT_PLAN.final,
+    finalLagMonths: Number(inflation?.default_final_lag_months ?? 1),
+  }
+  // How much of the cost is materials, from the price guide costs where lines have them.
+  const materials = useMemo(() => {
+    let mat = 0, all = 0, lines = 0
+    for (const i of items) {
+      if (i.isHeading || !i.cost?.parts.length) continue
+      const per = i.cost.perUnit
+      mat += i.qty * Math.max(0, per - (i.cost.extra ?? 0))
+      all += i.qty * per
+      lines++
+    }
+    return all > 0 ? { share: mat / all, source: `from the price guide costs on ${lines} line${lines === 1 ? '' : 's'}` } : null
+  }, [items])
+  const inflationRate = inflation ? blendedRate(inflation, materials?.share ?? Number(inflation.default_materials_share)) : null
+
+  // The panel measures the price before any allowance, so it never suggests a second one.
+  const allowanceLine = allowance.lineId ? items.find(i => i.id === allowance.lineId) : undefined
+  const priceBeforeAllowance = allowance.how === 'spread' && allowance.pct
+    ? subtotal / (1 + allowance.pct / 100)
+    : allowanceLine ? subtotal - allowanceLine.qty * allowanceLine.unitPrice : subtotal
+
+  function applyAllowance(how: 'spread' | 'line', res: { allowancePct: number; neededPrice: number }) {
+    const pctUp = Math.round(res.allowancePct * 10) / 10
+    if (how === 'spread') {
+      const prices: Record<string, number> = {}
+      setItems(p => p.map(i => {
+        if (i.isHeading) return i
+        prices[i.id] = i.unitPrice
+        return { ...i, unitPrice: Math.round(i.unitPrice * (1 + pctUp / 100) * 100) / 100 }
+      }))
+      setAllowance({ how, pct: pctUp, prices })
+    } else {
+      const lineId = crypto.randomUUID()
+      setItems(p => [...p, {
+        id: lineId, productId: null, qty: 1, unit: 'lot', unitPrice: Math.round(res.neededPrice - subtotal),
+        description: `Price escalation allowance — rising material and labour costs over the ${planShown.months}-month collection period`,
+      }])
+      setAllowance({ how, pct: pctUp, lineId })
+    }
+    toast(how === 'spread' ? `Prices raised by ${pctUp}% for inflation to collection` : 'Escalation allowance added as its own line', 'success')
+  }
+  function removeAllowance() {
+    if (allowance.how === 'spread' && allowance.prices) {
+      const before = allowance.prices
+      setItems(p => p.map(i => (before[i.id] != null ? { ...i, unitPrice: before[i.id] } : i)))
+    } else if (allowance.how === 'line' && allowance.lineId) {
+      const lid = allowance.lineId
+      setItems(p => p.filter(i => i.id !== lid))
+    }
+    setAllowance({ how: 'none', pct: 0 })
+  }
+
   const docInput = useMemo(() => {
     const sections = sectionOf(items)
     return {
@@ -255,6 +331,15 @@ export default function ProformaInvoicePage() {
         discount_value: totals.amount > 0 ? discountValue : null,
         discount_amount: totals.amount,
         discount_reason: totals.amount > 0 ? discountReason.trim() : null,
+        collect_months: planShown.months,
+        collect_advance_pct: planShown.advancePct,
+        collect_final_pct: planShown.finalPct,
+        collect_final_lag_months: planShown.finalLagMonths,
+        inflation_rate: inflationRate,
+        inflation_allowance_pct: allowance.how !== 'none' && allowance.pct
+          ? allowance.pct
+          : inflationRate != null ? Math.round(inflationToCollection(subtotal, planShown, inflationRate).allowancePct * 10) / 10 : null,
+        inflation_applied: allowance.how,
         subtotal,
         vat_amount: vat,
         total,
@@ -608,6 +693,20 @@ export default function ProformaInvoicePage() {
               <div className="flex justify-between border-t dark:border-slate-700 pt-2 font-bold text-slate-800 dark:text-slate-100 text-base"><span>Grand Total</span><span>{fmt(total)}</span></div>
             </div>
           </div>
+
+          {/* Inflation to collection (migration 426) */}
+          <InflationPanel
+            price={priceBeforeAllowance}
+            plan={planShown}
+            onPlan={setPlan}
+            materialsShare={materials?.share ?? null}
+            shareSource={materials?.source ?? 'benchmark default'}
+            applied={allowance.how}
+            appliedPct={allowance.pct || null}
+            onApply={applyAllowance}
+            onUndo={allowance.prices || allowance.lineId ? removeAllowance : undefined}
+            canEditBenchmark={canSeeCost}
+          />
         </div>
 
         {guideFor && (() => {

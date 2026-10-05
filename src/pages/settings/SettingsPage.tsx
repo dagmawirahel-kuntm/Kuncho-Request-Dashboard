@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Settings as SettingsIcon, Lightbulb } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Settings as SettingsIcon, Lightbulb, Bell, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { supabase } from '@/lib/supabase'
@@ -25,6 +26,16 @@ export default function SettingsPage() {
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Settings</h1>
       </div>
 
+      <Link to="/settings/notifications"
+        className="flex items-center gap-3 rounded-2xl border bg-white p-5 shadow-sm hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700/60">
+        <Bell className="h-4 w-4 text-sky-600" />
+        <span className="flex-1">
+          <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">Notifications</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">What reaches you, Telegram, quiet hours and the morning email.</span>
+        </span>
+        <ChevronRight className="h-4 w-4 text-slate-400" />
+      </Link>
+
       <section className="rounded-2xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Lightbulb className="h-4 w-4 text-amber-500" />
@@ -48,7 +59,7 @@ export default function SettingsPage() {
             }`}
           >
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
                 profile?.trainer_hints_enabled ?? true ? 'translate-x-[22px]' : 'translate-x-0.5'
               }`}
             />

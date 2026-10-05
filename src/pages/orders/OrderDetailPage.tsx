@@ -20,6 +20,7 @@ import {
   User, Calendar, AlertCircle, AlertTriangle, Package,
   ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList, Printer, Truck, TrendingUp,
 } from 'lucide-react'
+import { useMarkEntityRead } from '@/lib/notifications'
 
 const ITEM_S: Record<OrderItemStatus, { label: string; bg: string; border: string }> = {
   pending:                { label: 'Pending',       bg: 'text-slate-500 bg-slate-100 dark:bg-slate-700',         border: 'border-l-slate-300 dark:border-l-slate-500' },
@@ -73,6 +74,8 @@ function FulfillmentChip({ order, f }: { order: Order; f: Fulfillment }) {
 // ── Page loader ───────────────────────────────────────────────────────────────
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
+  // Opening the purchase request reads its notifications.
+  useMarkEntityRead(id)
 
   const { data: order, isLoading } = useQuery({
     queryKey: ['order', id],
