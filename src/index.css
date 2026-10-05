@@ -580,3 +580,166 @@ html.theme-transition *::after {
   .world-arrive, .world-float, .world-halo, .world-glow, .world-glint { animation: none !important; }
   .world-tilt, .world-orb, .world-wallpaper { transform: none; translate: none; transition: none; }
 }
+
+/* =============================================================================
+   BUTTONS — one colour system and one motion for every button in the app
+   -----------------------------------------------------------------------------
+   The app's ~960 buttons and button-links are written with Tailwind classes
+   page by page (bg-brand, bg-green-600, border bg-white, …), so this layer
+   recognises those classes rather than asking every page to change:
+
+     filled    bg-brand / green / emerald / red / amber / blue / sky / violet
+               → one colour per meaning, a soft top light, a lift and a light
+                 sheen on hover, a press on click, a glow in their own colour
+     outlined  .border buttons → the border warms toward the brand on hover
+     every     button → a 1px press, a clear focus ring, still when disabled
+
+   Meanings (the same action is the same colour everywhere):
+     primary  brand   save, create, send, the next step
+     success  emerald approve, confirm, mark paid
+     danger   red     reject, delete, cancel for good
+     warning  amber   act with care: advances, overrides, reminders
+     info     blue    secondary flows that start something
+   In dark and gold the brand is gold, so text on it turns dark (white on
+   gold read at 2:1).
+
+   New code can use .btn + .btn-primary|secondary|success|danger|warning|
+   info|ghost (+ .btn-sm|.btn-lg|.btn-icon), or btn() in src/lib/ui/button.ts.
+   Chips, tabs and segmented toggles (rounded-full, role=radio/tab,
+   aria-pressed/selected) keep the colours and the press but do not lift.
+   ============================================================================= */
+:root {
+  --btn-success: #047857;
+  --btn-success-hover: #065f46;
+  --btn-danger: #dc2626;
+  --btn-danger-hover: #b91c1c;
+  --btn-warning: #b45309;
+  --btn-warning-hover: #92400e;
+  --btn-info: #2563eb;
+  --btn-info-hover: #1d4ed8;
+  --btn-violet: #7c3aed;
+  --btn-violet-hover: #6d28d9;
+  --btn-ease: cubic-bezier(.2, .8, .2, 1);
+  --btn-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+.dark {
+  --btn-success: #059669;
+  --btn-success-hover: #047857;
+  --btn-danger: #dc2626;
+  --btn-danger-hover: #b91c1c;
+  --btn-warning: #d97706;
+  --btn-warning-hover: #b45309;
+  --btn-info: #3b82f6;
+  --btn-info-hover: #2563eb;
+}
+
+/* Semantic classes for new code (components layer: utilities still win) */
+@layer components {
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .375rem;
+    border-radius: var(--radius-lg); padding: .5rem .875rem;
+    font-size: .875rem; line-height: 1.25rem; font-weight: 600; white-space: nowrap;
+    border: 1px solid transparent; cursor: pointer; user-select: none;
+  }
+  .btn-sm { padding: .3125rem .625rem; font-size: .75rem; line-height: 1rem; }
+  .btn-lg { padding: .625rem 1.125rem; font-size: .9375rem; }
+  .btn-icon { padding: .5rem; }
+  .btn-primary { background-color: var(--color-brand); color: var(--color-brand-foreground); }
+  .btn-success { background-color: var(--btn-success); color: #fff; }
+  .btn-danger  { background-color: var(--btn-danger); color: #fff; }
+  .btn-warning { background-color: var(--btn-warning); color: #fff; }
+  .btn-info    { background-color: var(--btn-info); color: #fff; }
+  .btn-secondary { background-color: var(--color-card); color: var(--color-foreground); border-color: var(--color-border); }
+  .btn-ghost { background-color: transparent; color: var(--color-muted-foreground); }
+  .btn-ghost:hover { background-color: var(--color-muted); color: var(--color-foreground); }
+  .btn[aria-busy='true']::before {
+    content: ''; width: .875em; height: .875em; border-radius: 9999px;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: btn-spin .7s linear infinite;
+  }
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* ── One colour per meaning ─────────────────────────────────────────────── */
+:is(button, a, [role='button'], label):is(.bg-green-600, .bg-green-500, .bg-emerald-600, .bg-emerald-500) { background-color: var(--btn-success); --btn-tone: var(--btn-success); }
+:is(button, a, [role='button'], label):is(.bg-green-600, .bg-green-500, .bg-emerald-600, .bg-emerald-500):hover:not(:disabled) { background-color: var(--btn-success-hover); }
+:is(button, a, [role='button'], label):is(.bg-red-600, .bg-red-500) { background-color: var(--btn-danger); --btn-tone: var(--btn-danger); }
+:is(button, a, [role='button'], label):is(.bg-red-600, .bg-red-500):hover:not(:disabled) { background-color: var(--btn-danger-hover); }
+:is(button, a, [role='button'], label):is(.bg-amber-600, .bg-amber-500) { background-color: var(--btn-warning); --btn-tone: var(--btn-warning); }
+:is(button, a, [role='button'], label):is(.bg-amber-600, .bg-amber-500):hover:not(:disabled) { background-color: var(--btn-warning-hover); }
+:is(button, a, [role='button'], label):is(.bg-blue-600, .bg-sky-600) { background-color: var(--btn-info); --btn-tone: var(--btn-info); }
+:is(button, a, [role='button'], label):is(.bg-blue-600, .bg-sky-600):hover:not(:disabled) { background-color: var(--btn-info-hover); }
+:is(button, a, [role='button'], label).bg-violet-600 { --btn-tone: var(--btn-violet); }
+:is(button, a, [role='button'], label):is(.bg-brand, .btn-primary) { --btn-tone: var(--color-brand); }
+.btn-success { --btn-tone: var(--btn-success); } .btn-danger { --btn-tone: var(--btn-danger); }
+.btn-warning { --btn-tone: var(--btn-warning); } .btn-info { --btn-tone: var(--btn-info); }
+
+/* Gold brand in dark/gold: readable text on it */
+.dark :is(button, a, [role='button'], label, span).bg-brand.text-white { color: var(--color-brand-foreground); }
+
+/* ── Filled buttons: depth, glow, lift, sheen, press ───────────────────── */
+:is(button, a, [role='button'], label):is(.bg-brand, .bg-green-600, .bg-green-500, .bg-emerald-600, .bg-emerald-500, .bg-red-600, .bg-red-500, .bg-amber-600, .bg-amber-500, .bg-blue-600, .bg-sky-600, .bg-violet-600, .btn-primary, .btn-success, .btn-danger, .btn-warning, .btn-info) {
+  box-shadow: 0 1px 2px rgb(0 0 0 / .16), inset 0 1px 0 rgb(255 255 255 / .16);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / .1), rgb(255 255 255 / 0) 62%);
+  transition: transform .2s var(--btn-spring), box-shadow .2s var(--btn-ease), background-color .15s ease,
+    color .15s ease, border-color .15s ease, opacity .15s ease, background-position .75s var(--btn-ease);
+
+  /* Real buttons (not chips, tabs, toggles or the current nav item) get the sheen and the lift */
+  &:not(:where(.rounded-full, [role='radio'], [role='tab'], [aria-pressed], [aria-selected], [aria-current])) {
+    background-image:
+      linear-gradient(105deg, transparent 38%, rgb(255 255 255 / .26) 50%, transparent 62%),
+      linear-gradient(180deg, rgb(255 255 255 / .1), rgb(255 255 255 / 0) 62%);
+    background-size: 260% 100%, 100% 100%;
+    background-position: 135% 0, 0 0;
+    background-repeat: no-repeat;
+
+    &:hover:not(:where(:disabled, [aria-disabled='true'])) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--btn-tone, #000) 85%, transparent), inset 0 1px 0 rgb(255 255 255 / .2);
+      background-position: -35% 0, 0 0;
+    }
+  }
+  /* same weight as the hover above and later, so a press shows under the pointer */
+  &:active:not(:where(:disabled, [aria-disabled='true'])) {
+    transform: translateY(0) scale(.965);
+    box-shadow: 0 1px 1px rgb(0 0 0 / .2), inset 0 2px 4px rgb(0 0 0 / .14);
+    transition-duration: 70ms;
+  }
+  &:is(:disabled, [aria-disabled='true']) { box-shadow: none; background-image: none; }
+}
+
+/* ── Outlined buttons: the border warms toward the brand ──────────────── */
+:is(button, a[class*='px-'], [role='button']).border:not(:where(.border-0, .bg-brand, .btn-primary, :disabled)) {
+  transition: transform .2s var(--btn-spring), box-shadow .2s var(--btn-ease), background-color .15s ease,
+    color .15s ease, border-color .15s ease;
+  &:hover {
+    border-color: color-mix(in srgb, var(--color-brand) 42%, var(--color-border));
+    box-shadow: 0 4px 12px -6px rgb(15 23 42 / .22);
+  }
+  &:is([class*='text-red'], [class*='border-red']):hover {
+    border-color: color-mix(in srgb, var(--btn-danger) 60%, transparent);
+    box-shadow: 0 4px 12px -6px color-mix(in srgb, var(--btn-danger) 45%, transparent);
+  }
+  &:not(:where(.w-full, .rounded-full, [role='radio'], [role='tab'], [aria-pressed], [aria-current])):hover { transform: translateY(-1px); }
+  &:active {
+    transform: translateY(0) scale(.97);
+    box-shadow: inset 0 1px 3px rgb(15 23 42 / .14);
+    transition-duration: 70ms;
+  }
+}
+
+/* ── Every button: a press you can feel, a ring you can see ────────────── */
+button:not(:disabled):active { transform: translateY(1px); }
+:is(button, [role='button']):is(.p-0\.5, .p-1, .p-1\.5):not(:disabled):active { transform: scale(.88); }
+:is(button, a, [role='button']):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-brand) 75%, transparent);
+  outline-offset: 2px;
+}
+.dark :is(button, a, [role='button']):focus-visible { outline: none; }
+:is(button, [role='button']):disabled { cursor: not-allowed; }
+
+/* Calm settings: no sheen; reduced motion: nothing moves */
+.no-fun-effects :is(button, a, [role='button'], label) { background-position: 135% 0, 0 0 !important; }
+@media (prefers-reduced-motion: reduce) {
+  :is(button, a, [role='button'], label) { transform: none !important; transition-duration: 1ms !important; }
+}
