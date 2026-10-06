@@ -1832,6 +1832,10 @@ export interface InputVatRow {
   claimable: boolean
   notes: string | null
   stage: InputVatStage
+  /** A bill paid in parts has one row per paid part (migration 431). */
+  part_id?: string | null
+  part_no?: number | null
+  part_count?: number | null
 }
 
 // v_sale_wht (310) — the single WHT rule, per sale.

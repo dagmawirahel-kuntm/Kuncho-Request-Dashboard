@@ -118,6 +118,21 @@ export function useExpenseParts(expenseId: string | null | undefined) {
   })
 }
 
+/** Where each paid part's input VAT lands (migration 431): its share of the
+ *  bill's VAT, declared in the tax month the part was paid. */
+export function usePartVat(expenseId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['expense-parts-vat', expenseId],
+    enabled: !!expenseId && enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_input_vat_tracker')
+        .select('part_id, vat_amount, declare_period_label, stage').eq('expense_id', expenseId!).not('part_id', 'is', null)
+      if (error) throw error
+      return new Map((data ?? []).map(r => [r.part_id as string, r as { part_id: string; vat_amount: number | null; declare_period_label: string; stage: string }]))
+    },
+  })
+}
+
 /** Sent cash (and "other") parts waiting for someone to confirm them. */
 export function useSentCashParts(enabled = true) {
   return useQuery({
@@ -137,6 +152,7 @@ export function useRefreshParts() {
   return (expenseId?: string | null) => {
     qc.invalidateQueries({ queryKey: ['expense-parts', ...(expenseId ? [expenseId] : [])] })
     qc.invalidateQueries({ queryKey: ['expense-parts-sent-cash'] })
+    qc.invalidateQueries({ queryKey: ['expense-parts-vat'] })
     qc.invalidateQueries({ queryKey: ['expense-detail'] })
     for (const k of ['v-to-pay-queue', 'v-awaiting-bank-confirmation', 'v-recent-payments', 'expenses', 'payment-requests']) {
       qc.invalidateQueries({ queryKey: [k] })

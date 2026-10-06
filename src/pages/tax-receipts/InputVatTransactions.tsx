@@ -311,8 +311,10 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                 const opts = declarationOptions(r.default_ec_year, r.default_ec_month)
                 const disabled = !canEdit || busy === r.expense_id || busy === 'bulk'
                 const g = gradeOf(r.vat_amount)
+                // A bill paid in parts has a row per paid part (migration 431).
+                const rowKey = r.part_id ?? r.expense_id
                 return (
-                  <Fragment key={r.expense_id}>
+                  <Fragment key={rowKey}>
                   <tr className={`${r.vat_applicable === false ? 'opacity-60' : ''} ${selected.has(r.expense_id) ? 'bg-brand/5 dark:bg-brand/10' : ''}`}>
                     {canEdit && (
                       <td className="pl-4 py-2">
@@ -321,12 +323,18 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                       </td>
                     )}
                     <td className="px-4 py-2">
-                      <button type="button" onClick={() => setOpen(o => (o === r.expense_id ? null : r.expense_id))}
-                        aria-expanded={open === r.expense_id} title="Show the purchase details"
+                      <button type="button" onClick={() => setOpen(o => (o === rowKey ? null : rowKey))}
+                        aria-expanded={open === rowKey} title="Show the purchase details"
                         className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-brand dark:text-slate-200">
-                        <ChevronDown className={`h-3 w-3 transition-transform ${open === r.expense_id ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`h-3 w-3 transition-transform ${open === rowKey ? 'rotate-180' : ''}`} />
                         {r.expense_code ?? '—'}
                       </button>
+                      {r.part_id && (
+                        <span className="ml-1.5 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand"
+                          title="Paid in parts: each part's share of the VAT counts in the month it was paid">
+                          Part {r.part_no} of {r.part_count} · paid {formatDateGC(r.anchor_date)}
+                        </span>
+                      )}
                       <p className="text-[10px] text-slate-400">
                         {r.vendor_name ?? 'No vendor'}{r.vendor_tin ? ` · TIN ${r.vendor_tin}` : ' · no TIN'}
                         {' · '}{formatDateGC(r.expense_date)}
@@ -355,7 +363,7 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                     <td className="px-3 py-2">
                       <select
                         value={`${r.declare_ec_year}-${r.declare_ec_month}`}
-                        disabled={disabled || r.vat_applicable === false}
+                        disabled={disabled || r.vat_applicable === false || !!r.part_id}
                         onChange={e => {
                           const o = opts.find(x => x.key === e.target.value)!
                           // Choosing the purchase's own month clears the override.
@@ -364,7 +372,7 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                             `Declared in ${o.label}`)
                         }}
                         className={`${selectCls} ${r.declare_overridden ? 'border-amber-400 dark:border-amber-500' : ''}`}
-                        title={r.declare_overridden ? 'Moved from the purchase\'s own month' : undefined}>
+                        title={r.part_id ? 'A part payment is declared in the month it was paid' : r.declare_overridden ? 'Moved from the purchase\'s own month' : undefined}>
                         {opts.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
                       </select>
                     </td>
@@ -393,7 +401,7 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                       </div>
                     </td>
                   </tr>
-                  {open === r.expense_id && (
+                  {open === rowKey && (
                     <tr className="bg-slate-50 dark:bg-slate-900/40">
                       <td colSpan={canEdit ? 9 : 8} className="px-5 py-3">
                         <InputVatExpenseDetail row={r} />
