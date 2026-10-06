@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -7,7 +7,9 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { useVendors, useProjects } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
-import type { VendorReceiptInsert } from '@/types/database'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import { PART_KIND_LABEL, PART_STATE_LABEL } from '@/lib/expensePayments'
+import type { ExpensePaymentPart, VendorReceiptInsert } from '@/types/database'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -40,6 +42,7 @@ export default function TaxReceiptFormPage() {
 
   const [form, setForm] = useState<Partial<VendorReceiptInsert>>({
     expense_id: searchParams.get('expense_id') ?? null,
+    expense_payment_id: searchParams.get('expense_payment_id') ?? null,
     project_id: searchParams.get('project_id') ?? null,
     vendor_id:  searchParams.get('vendor_id') ?? null,
   })
@@ -47,6 +50,22 @@ export default function TaxReceiptFormPage() {
   const [error, setError] = useState('')
 
   function set(key: keyof VendorReceiptInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  // A bill paid in parts (migration 430): the vendor may issue a receipt for
+  // each payment. Naming the part makes its VAT count as printed, in the
+  // month that part is paid (migration 432).
+  const { data: parts = [] } = useQuery({
+    queryKey: ['receipt-form-parts', form.expense_id],
+    enabled: !!form.expense_id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_expense_payments')
+        .select('id, part_no, part_count, kind, label, amount_etb, state, paid_date')
+        .eq('expense_id', form.expense_id!).neq('state', 'cancelled').order('seq')
+      if (error) throw error
+      return (data ?? []) as Pick<ExpensePaymentPart, 'id' | 'part_no' | 'part_count' | 'kind' | 'label' | 'amount_etb' | 'state' | 'paid_date'>[]
+    },
+  })
+  const pickedPart = parts.find(p => p.id === form.expense_payment_id)
 
   async function handleSave() {
     if (!form.expense_id && !form.grn_id) {
@@ -78,11 +97,26 @@ export default function TaxReceiptFormPage() {
           <input type="text" className={inputCls} placeholder="As printed on the receipt…"
             value={form.receipt_no ?? ''} onChange={e => set('receipt_no', e.target.value || null)} />
         </Field>
-        <Field label="Receipt Date" hint="Determines which month this VAT falls into">
+        <Field label="Receipt Date" hint={pickedPart ? 'For a part payment the VAT falls into the month that part is paid' : 'Determines which month this VAT falls into'}>
           <input type="date" className={inputCls} value={form.receipt_date ?? ''}
             onChange={e => set('receipt_date', e.target.value || null)} />
         </Field>
       </div>
+
+      {parts.length > 0 && (
+        <Field label="Issued for" hint={pickedPart
+          ? `Counts as printed${pickedPart.state === 'paid' && pickedPart.paid_date ? `, in the month part ${pickedPart.part_no} was paid (${formatDate(pickedPart.paid_date)})` : ', once this part is paid'}.`
+          : 'A receipt for the whole bill is shared across its paid parts by size.'}>
+          <select className={inputCls} value={form.expense_payment_id ?? ''} onChange={e => set('expense_payment_id', e.target.value || null)}>
+            <option value="">The whole bill</option>
+            {parts.map(p => (
+              <option key={p.id} value={p.id}>
+                Part {p.part_no} of {p.part_count} · {p.label || PART_KIND_LABEL[p.kind]} · {formatCurrency(Number(p.amount_etb))} · {p.state === 'paid' && p.paid_date ? `paid ${formatDate(p.paid_date)}` : PART_STATE_LABEL[p.state].toLowerCase()}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Vendor">

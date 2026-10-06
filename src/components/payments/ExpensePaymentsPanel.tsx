@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CheckCircle2, HandCoins, Landmark, Layers, Receipt, RotateCcw, Undo2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
@@ -11,7 +12,7 @@ import { PaymentPlanEditor } from '@/components/payments/PaymentPlanEditor'
 import { PayPartModal } from '@/components/payments/PayPartModal'
 import { usePayerAndAccountOptions, PAYMENT_METHOD_LABEL } from '@/lib/payments'
 import {
-  PART_KIND_LABEL, PART_STATE_LABEL, WHT_MODE_LABEL, newRowKey, partDueText, savePlan, useExpenseParts, useRefreshParts,
+  PART_KIND_LABEL, PART_STATE_LABEL, WHT_MODE_LABEL, newRowKey, partDueText, savePlan, useExpenseParts, usePartVat, useRefreshParts,
   type PlanRow,
 } from '@/lib/expensePayments'
 import type { LaborPaymentRequestInput } from '@/lib/laborPaymentRequestDocument'
@@ -37,6 +38,8 @@ export interface PanelExpense {
   payment_method: string | null
   sourcing_bundle_id: string | null
   expense_type: string | null
+  vendor_id?: string | null
+  project_id?: string | null
 }
 
 const STATE_TONE: Record<string, Tone> = { paid: 'green', sent: 'blue', planned: 'slate', cancelled: 'slate' }
@@ -53,6 +56,8 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
   const refresh = useRefreshParts()
   const { payerOptions, accountOptions } = usePayerAndAccountOptions()
   const { data: allParts = [] } = useExpenseParts(expense.id)
+  // Finance and admin read the VAT tracker; the line is simply absent for others.
+  const { data: partVat } = usePartVat(expense.id, canAct && !!expense.in_parts)
   const [showReplaced, setShowReplaced] = useState(false)
   const [planning, setPlanning] = useState(false)
   const [paying, setPaying] = useState<ExpensePaymentPart | 'start' | null>(null)
@@ -197,6 +202,18 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
                   ].filter(Boolean).join(' · ')}
                   {p.legacy_entry && ' · paid before parts existed'}
                 </p>
+                {p.state === 'paid' && Number(partVat?.get(p.id)?.vat_amount ?? 0) > 0 && (
+                  <p className="mt-0.5 text-[11px] text-violet-600 dark:text-violet-300"
+                    title="Each part's share of the bill's input VAT counts in the tax month that part was paid">
+                    VAT {formatCurrency(Number(partVat!.get(p.id)!.vat_amount))} · counts in {partVat!.get(p.id)!.declare_period_label}
+                    {partVat!.get(p.id)!.stage !== 'claimed' && ' (once its receipt is tax-reviewed)'}
+                    {partVat!.get(p.id)!.stage === 'needs_receipt' && (
+                      <> · <Link
+                        to={`/tax-receipts/new?expense_id=${expense.id}&expense_payment_id=${p.id}${expense.vendor_id ? `&vendor_id=${expense.vendor_id}` : ''}${expense.project_id ? `&project_id=${expense.project_id}` : ''}`}
+                        className="font-medium underline-offset-2 hover:underline">Capture its receipt</Link></>
+                    )}
+                  </p>
+                )}
                 {p.note && <p className="mt-0.5 whitespace-pre-line text-[11px] text-slate-400">{p.note}</p>}
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   {canAct && p.state === 'planned' && approved && (

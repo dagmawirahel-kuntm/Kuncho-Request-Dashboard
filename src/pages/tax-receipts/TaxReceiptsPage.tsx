@@ -15,6 +15,8 @@ type ReceiptRow = VendorReceipt & {
   vendors: { vendor_name: string } | null
   projects: { project_name: string } | null
   expenses: { expense_code: string | null } | null
+  /** The part payment the receipt was issued for, if any (migration 432). */
+  part: { seq: number; state: string; paid_date: string | null } | null
   maker: { full_name: string } | null
   checker: { full_name: string } | null
   reviewer: { full_name: string } | null
@@ -51,7 +53,7 @@ export default function TaxReceiptsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('vendor_receipts')
-        .select('*, vendors(vendor_name), projects(project_name), expenses(expense_code), maker:user_profiles!entered_by(full_name), checker:user_profiles!verified_by(full_name), reviewer:user_profiles!reviewed_by(full_name)')
+        .select('*, vendors(vendor_name), projects(project_name), expenses(expense_code), part:expense_payments!vendor_receipts_expense_payment_id_fkey(seq, state, paid_date), maker:user_profiles!entered_by(full_name), checker:user_profiles!verified_by(full_name), reviewer:user_profiles!reviewed_by(full_name)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data as unknown as ReceiptRow[]
@@ -127,7 +129,11 @@ export default function TaxReceiptsPage() {
                       {/* The VAT return this receipt's input VAT is claimed on
                           once tax-reviewed -- same period rule as
                           v_vat_input_by_ec_period (309). Display only. */}
-                      {r.receipt_date ? ` · counts toward VAT ${taxPeriodOf(r.receipt_date)}` : ''}
+                      {/* A receipt for one part of a bill paid in parts counts in
+                          the month that part was paid (migrations 431, 432). */}
+                      {r.part
+                        ? (r.part.state === 'paid' && r.part.paid_date ? ` · part payment · counts toward VAT ${taxPeriodOf(r.part.paid_date)}` : ' · part payment · counts once that part is paid')
+                        : r.receipt_date ? ` · counts toward VAT ${taxPeriodOf(r.receipt_date)}` : ''}
                       {r.projects?.project_name ? ` · ${r.projects.project_name}` : ''}
                       {r.expenses?.expense_code ? ` · ${r.expenses.expense_code}` : ''}
                     </p>
