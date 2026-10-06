@@ -65,6 +65,15 @@ const STAGES: { stage: InputVatStage; label: string; hint: string; cls: string }
   { stage: 'not_vat',       label: 'No VAT',         hint: 'Marked as carrying no input VAT',
     cls: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400' },
 ]
+// Where a row's VAT figure comes from. A part of a bill paid in parts has
+// its own receipt (as printed) or a share of the bill's receipt/estimate.
+function vatSourceLabel(r: { vat_source: string; part_id?: string | null; part_receipt?: boolean | null }) {
+  if (r.vat_source === 'entered') return r.part_id ? 'share of the entered VAT' : 'entered'
+  if (r.part_id && r.part_receipt) return 'from its own receipt'
+  if (r.part_id) return r.vat_source === 'receipt' ? "share of the bill's receipt" : 'share, estimated'
+  return r.vat_source === 'receipt' ? 'from receipt' : 'estimated'
+}
+
 const STAGE = Object.fromEntries(STAGES.map(s => [s.stage, s])) as Record<InputVatStage, typeof STAGES[number]>
 
 const REVIEW_LABEL: Record<string, string> = {
@@ -343,7 +352,7 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                     <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(r.amount_etb)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       <p className="text-slate-700 dark:text-slate-200">{formatCurrency(r.vat_amount)}</p>
-                      <p className="text-[10px] text-slate-400">{r.vat_source === 'estimated' ? 'estimated' : r.vat_source === 'receipt' ? 'from receipt' : 'entered'}</p>
+                      <p className="text-[10px] text-slate-400">{vatSourceLabel(r)}</p>
                     </td>
                     <td className="px-3 py-2 text-center">
                       <span title={GRADE_HINT[g.grade]} className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${g.cls}`}>{g.grade}</span>
@@ -393,7 +402,7 @@ export function InputVatTransactions({ initialStage = 'unflagged', initialPeriod
                         </span>
                         {(r.stage === 'needs_receipt' || r.stage === 'rejected') && (
                           <Link
-                            to={`/tax-receipts/new?expense_id=${r.expense_id}${r.vendor_id ? `&vendor_id=${r.vendor_id}` : ''}${r.project_id ? `&project_id=${r.project_id}` : ''}`}
+                            to={`/tax-receipts/new?expense_id=${r.expense_id}${r.part_id ? `&expense_payment_id=${r.part_id}` : ''}${r.vendor_id ? `&vendor_id=${r.vendor_id}` : ''}${r.project_id ? `&project_id=${r.project_id}` : ''}`}
                             className="inline-flex items-center gap-1 rounded bg-brand px-2 py-0.5 text-[11px] font-medium text-white hover:bg-brand/90">
                             <Camera className="h-3 w-3" /> {r.stage === 'rejected' ? 'Recapture' : 'Capture'}
                           </Link>

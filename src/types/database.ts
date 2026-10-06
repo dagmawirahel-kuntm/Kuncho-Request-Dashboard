@@ -1691,6 +1691,8 @@ export type VendorReceiptStatus = 'pending_verification' | 'verified' | 'tax_rev
 export interface VendorReceipt {
   id: string
   expense_id: string | null
+  /** The part payment this receipt was issued for (migration 432). */
+  expense_payment_id?: string | null
   grn_id: string | null
   vendor_id: string | null
   project_id: string | null
@@ -1836,6 +1838,8 @@ export interface InputVatRow {
   part_id?: string | null
   part_no?: number | null
   part_count?: number | null
+  /** The part has its own receipt (migration 432), not a share of the bill's. */
+  part_receipt?: boolean | null
 }
 
 // v_sale_wht (310) — the single WHT rule, per sale.
