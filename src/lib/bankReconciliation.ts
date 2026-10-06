@@ -38,7 +38,7 @@ export interface BankLine {
 }
 
 export interface Suggestion {
-  kind: 'expense' | 'batch' | 'vrf' | 'payroll' | 'sale' | 'internal_line' | 'internal_account' | 'purchase_order'
+  kind: 'expense' | 'expense_part' | 'batch' | 'vrf' | 'payroll' | 'sale' | 'internal_line' | 'internal_account' | 'purchase_order'
   target_id: string
   label: string
   detail: string | null
@@ -97,7 +97,7 @@ export function classificationLabel(v: string | null | undefined): string {
 }
 
 export const KIND_LABEL: Record<Suggestion['kind'] | ReconciledAs, string> = {
-  expense: 'Expense', batch: 'Batch payment', vrf: 'Vendor request', payroll: 'Payroll', sale: 'Sale',
+  expense: 'Expense', expense_part: 'Part of a bill', batch: 'Batch payment', vrf: 'Vendor request', payroll: 'Payroll', sale: 'Sale',
   internal_line: 'Transfer', internal_account: 'Transfer', purchase_order: 'Purchase order',
   vrf_return: 'Vendor request return', opening_balance: 'Opening balance', internal: 'Transfer', classified: 'Explained',
 }

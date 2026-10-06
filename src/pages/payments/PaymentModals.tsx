@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -11,7 +10,7 @@ import { PAYMENT_METHODS } from '@/lib/payments'
 import { HandCoins, X } from 'lucide-react'
 
 // The payment dialogs (moved out of the old Payments page unchanged):
-// record an advance, pay part, batch, vendor credit, match to a bank line,
+// record an advance, batch, vendor credit, match to a bank line,
 // pay through a VRF — and the withholding chip on a to-pay row.
 
 // #5: record a vendor advance (pay-in-advance PO). The old flow was a blind
@@ -137,69 +136,6 @@ export function RecordAdvanceModal({
             className="flex items-center gap-1.5 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
           >
             <HandCoins className="h-3.5 w-3.5" /> {saving ? 'Recording…' : 'Record Advance'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// #5: pay part of an expense. The paid portion is retired (the original
-// becomes a paid expense at that amount) and the unpaid remainder becomes
-// a new expense back in the queue — all in one RPC so the two rows always
-// sum to the original.
-export function PartialSplitModal({
-  row, defaultPayerId, payerOptions, onClose, onDone,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}: { row: any; defaultPayerId: string | null; payerOptions: { id: string; label: string }[]; onClose: () => void; onDone: () => void }) {
-  const { toast } = useToast()
-  const full = Number(row.amount_etb ?? 0)
-  const [paid, setPaid] = useState('')
-  const [payerId, setPayerId] = useState<string | null>(defaultPayerId)
-  const [saving, setSaving] = useState(false)
-  const paidNum = parseFloat(paid)
-  const valid = !isNaN(paidNum) && paidNum > 0 && paidNum < full
-  const remainder = valid ? full - paidNum : null
-
-  async function submit() {
-    if (!valid) { toast('Enter a paid amount between 0 and the full amount', 'error'); return }
-    if (!payerId) { toast('Select who is paying this portion', 'error'); return }
-    setSaving(true)
-    // The paid portion settles now, so it needs a payer (disbursed_by) — must be
-    // an admin/finance user other than the one who finance-approved the expense.
-    const { error } = await supabase.rpc('split_expense_partial_payment', { p_expense_id: row.id, p_paid_amount: paidNum, p_disbursed_by: payerId })
-    setSaving(false)
-    if (error) { toast(error.message, 'error'); return }
-    onDone()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3" onClick={e => e.stopPropagation()}>
-        <h2 className="font-bold text-slate-800 dark:text-slate-100">Pay Part of This Expense</h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {row.vendor_name ?? row.item_service_description ?? row.expense_code} · full {formatCurrency(full)}
-        </p>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Amount paid now (ETB)</label>
-          <input type="number" min="0" step="0.01" autoFocus value={paid} onChange={e => setPaid(e.target.value)}
-            className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Who is paying this portion</label>
-          <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Select payer…" />
-          <p className="mt-1 text-[11px] text-slate-400">Must be an admin/finance user, and not the person who approved this expense.</p>
-        </div>
-        {remainder != null && (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Paid <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(paidNum)}</span> is retired ·
-            remainder <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(remainder)}</span> becomes a new expense back in the queue.
-          </p>
-        )}
-        <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-sm text-slate-600 dark:border-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Cancel</button>
-          <button onClick={submit} disabled={!valid || saving} className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50">
-            {saving ? 'Splitting…' : 'Split & Retire Paid Part'}
           </button>
         </div>
       </div>
@@ -480,7 +416,9 @@ export function MatchTransferModal({
   async function handleMatch() {
     if (!transferId) { onError('Enter a bank reference or pick a bank line'); return }
     setSaving(true)
-    const { error } = row.batch_payment_id
+    const { error } = row.part_id
+      ? await supabase.rpc('match_expense_part_to_transfer', { p_payment_id: row.part_id, p_transfer_id: transferId })
+      : row.batch_payment_id
       ? await supabase.rpc('match_batch_to_transfer', { p_batch_payment_id: row.batch_payment_id, p_transfer_id: transferId })
       : await supabase.rpc('match_expense_to_transfer', { p_expense_id: row.id, p_transfer_id: transferId })
     setSaving(false)
@@ -499,6 +437,8 @@ export function MatchTransferModal({
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {row.batch_payment_id
               ? 'This expense is part of a batch — matching applies to every expense in that batch.'
+              : row.part_id
+              ? `Matching part ${row.part_no ?? '?'} of ${row.part_count ?? '?'} (${formatCurrency(row.amount_etb ?? 0)}) to a statement line.`
               : `Matching ${formatCurrency(row.amount_etb ?? 0)} to a CBE statement line.`}
           </p>
           <div>
