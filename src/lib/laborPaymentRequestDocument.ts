@@ -110,6 +110,34 @@ export type PrStatus = 'draft' | 'issued' | 'superseded' | 'void'
  *  new expense_type's detail doesn't require touching the renderer. */
 export type PrTypeDetail = { label: string; rows: { label: string; value: string }[] }
 
+/** One part of a bill paid in parts (migration 430), as its request prints it. */
+export type PrInstallmentPart = {
+  no: number
+  label: string
+  due: string
+  amount: number
+  wht: number
+  state: string
+  /** The part's own issued request, when it has one. */
+  code: string | null
+  current: boolean
+}
+
+/** The payment-in-parts history a part's request carries. */
+export type PrInstallment = {
+  partNo: number
+  partCount: number
+  label: string
+  /** What the parts add up to: the bill less any vendor credit. */
+  billTotal: number
+  /** Sent or paid in the other parts, before this request. */
+  settledBefore: number
+  thisAmount: number
+  balanceAfter: number
+  whtMode: 'last' | 'each'
+  parts: PrInstallmentPart[]
+}
+
 export type LaborPaymentRequestInput = {
   kind: 'single' | 'batch'
   /** PRQ-… once issued; null while the document is still a preview. */
@@ -184,6 +212,10 @@ export type LaborPaymentRequestInput = {
   bankScope?: 'all' | 'bank' | 'unassigned'
   /** The bank being instructed, when bankScope is 'bank'. */
   bankLabel?: string | null
+  /** Set when this request is one part of a bill paid in parts: `total` and
+   *  `whtAmount` are then the part's, the payee is scaled to it, and the
+   *  document prints every part with the balance left after this one. */
+  installment?: PrInstallment | null
   /** True when the company holds no account at `bankLabel`, so this is an
    *  outward transfer rather than a same-bank one. Worth printing: outward
    *  transfers carry the 290-birr MT103 charge and clear on a different
@@ -325,6 +357,23 @@ export function buildPayeeLines(workers: PrWorkerLine[], opts?: { isLabor?: bool
   return Array.from(byPayee.values()).sort((a, b) => b.amount - a.amount)
 }
 
+/** What the bank is told to pay on this request. A part of a bill paid in
+ *  parts pays the payees their share of the part, not the whole bill; its
+ *  withholding is the document's own (whtAmount), so none is per payee. */
+export function payeesForRequest(input: Pick<LaborPaymentRequestInput, 'workers' | 'breakdownKind' | 'installment'>): PrPayeeLine[] {
+  const payees = buildPayeeLines(input.workers, { isLabor: input.breakdownKind !== 'line_items' })
+  const part = input.installment
+  if (!part) return payees
+  const whole = payees.reduce((s, p) => s + p.amount, 0)
+  if (whole <= 0) return payees
+  let left = part.thisAmount
+  return payees.map((p, i) => {
+    const amount = i === payees.length - 1 ? left : Math.round(p.amount * part.thisAmount / whole * 100) / 100
+    left = Math.round((left - amount) * 100) / 100
+    return { ...p, amount, wht: 0, credit: 0 }
+  })
+}
+
 export function totalHeadcount(workers: PrWorkerLine[]): number {
   return workers.reduce((sum, w) => sum + Math.max(w.gangSize ?? 1, 1), 0)
 }
@@ -418,7 +467,7 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
     fundingAccount, paymentMethod, typeDetail, accentColor, accentGradient, breakdownKind, typeLabel,
     breakdownNoun,
     whtAmount, creditApplied, creditNote,
-    bankScope, bankLabel, outwardTransfer,
+    bankScope, bankLabel, outwardTransfer, installment,
   } = input
 
   const scope = bankScope ?? 'all'
@@ -427,7 +476,7 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
 
   const isBatch = kind === 'batch'
   const isLabor = breakdownKind !== 'line_items'
-  const payees = buildPayeeLines(workers, { isLabor })
+  const payees = payeesForRequest(input)
   const heads = totalHeadcount(workers)
   const noun = breakdownNoun || 'worker'
   // What actually leaves the account. WHT is withheld from the total and
@@ -574,6 +623,7 @@ export function buildLaborPaymentRequestHtml(input: LaborPaymentRequestInput): s
   const metaLines = [
     formatDateGC(issuedOn),
     sourceCode ? `Source: ${esc(sourceCode)}` : '',
+    installment ? `<b>Part ${installment.partNo} of ${installment.partCount}</b>` : '',
     revision && revision > 1 ? `Revision ${revision}` : '',
   ].filter(Boolean)
 
@@ -655,6 +705,13 @@ td.b{font-weight:700}
    legible through it, pointer-events:none keeps it out of selection,
    and print-color-adjust stops the browser dropping it on the way to
    the printer. */
+.parts tr.cur td{background:#eef6ff;font-weight:700}
+.parts .st{display:inline-block;padding:0 6px;border-radius:8px;font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#f1f5f9;color:#475569}
+.parts .st.paid{background:#dcfce7;color:#166534}.parts .st.sent{background:#e0f2fe;color:#075985}
+.partsum{display:flex;flex-wrap:wrap;gap:8px;margin-top:7px}
+.partsum div{flex:1 1 120px;border:1px solid #e6eaf0;border-radius:5px;padding:6px 10px}
+.partsum .k{font-size:7pt;color:#9aa5b1;text-transform:uppercase;letter-spacing:.09em}
+.partsum .v{font-weight:800;font-size:10pt}
 .stamp{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%) rotate(-22deg);
   font-size:62pt;font-weight:900;letter-spacing:6px;opacity:.17;pointer-events:none;
   white-space:nowrap;z-index:5;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -698,6 +755,28 @@ ${typeDetail ? `
   </div>
 </div>` : ''}
 
+${installment ? `
+<h2>Payment in Parts <span class="count">— this is part ${installment.partNo} of ${installment.partCount}${installment.label ? ` · ${esc(installment.label)}` : ''}</span></h2>
+<table class="parts">
+  <thead><tr><th>Part</th><th>Due</th><th class="r">Amount</th><th class="r">WHT</th><th>Status</th></tr></thead>
+  <tbody>${installment.parts.map(p => `<tr${p.current ? ' class="cur"' : ''}>
+  <td class="nowrap">${p.no}. ${esc(p.label)}${p.current ? ' <span class="pill">this request</span>' : ''}</td>
+  <td>${esc(p.due) || '—'}</td>
+  <td class="r nowrap">${money(p.amount)}</td>
+  <td class="r nowrap">${p.wht > 0.005 ? money(p.wht) : '—'}</td>
+  <td><span class="st ${esc(p.state)}">${esc(p.state)}</span>${p.code ? `<div class="sub mono">${esc(p.code)}</div>` : ''}</td>
+</tr>`).join('')}</tbody>
+</table>
+<div class="partsum">
+  <div><div class="k">Bill</div><div class="v">${money(installment.billTotal)}</div></div>
+  <div><div class="k">Paid or sent before</div><div class="v">${money(installment.settledBefore)}</div></div>
+  <div><div class="k">This request</div><div class="v">${money(installment.thisAmount)}</div></div>
+  <div><div class="k">Balance after</div><div class="v">${money(installment.balanceAfter)}</div></div>
+</div>
+<div class="note"><b>Withholding:</b> ${installment.whtMode === 'each'
+    ? 'each part carries its share of the withholding, in proportion to its size.'
+    : 'all of it is taken from the last part; the earlier parts go out in full.'}</div>` : ''}
+
 <h2>Disbursement Schedule <span class="count">— ${payees.length} payee${payees.length === 1 ? '' : 's'}</span></h2>
 ${routingNote}
 <table>
@@ -719,7 +798,7 @@ ${payeeMismatch ? `<div class="alert"><b>Check required.</b> The disbursement sc
 
 <h2>${isLabor
     ? `${esc(noun.charAt(0).toUpperCase() + noun.slice(1))} Breakdown <span class="count">— ${heads} ${esc(noun)}${heads === 1 ? '' : 's'}</span>`
-    : `Payment Detail${workers.length > 1 ? ` <span class="count">— ${workers.length} line items</span>` : ''}`}</h2>
+    : `Payment Detail${installment ? ' <span class="count">— the whole bill</span>' : workers.length > 1 ? ` <span class="count">— ${workers.length} line items</span>` : ''}`}</h2>
 <table>
   <thead><tr>
     ${isBatch ? '<th>Draft</th>' : ''}
@@ -793,5 +872,6 @@ export function buildPaymentRequestSnapshot(input: LaborPaymentRequestInput) {
     bank_scope: input.bankScope ?? 'all',
     bank_label: input.bankLabel ?? null,
     outward_transfer: input.outwardTransfer ?? false,
+    installment: input.installment ?? null,
   }
 }

@@ -22,7 +22,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 import { amountInWords } from '@/lib/amountInWords'
 import {
-  buildLaborPaymentRequestHtml, buildPaymentRequestSnapshot, buildPayeeLines, totalHeadcount,
+  buildLaborPaymentRequestHtml, buildPaymentRequestSnapshot, payeesForRequest, totalHeadcount,
   type LaborPaymentRequestInput,
 } from '@/lib/laborPaymentRequestDocument'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -58,11 +58,15 @@ interface Props {
   /** Button text. Defaults to "Payment Request"; a payroll run's per-bank
    *  buttons name their bank, since several of them sit on one page. */
   label?: string
+  /** One part of a bill paid in parts (migration 430): the request is that
+   *  part's, with its own code and revisions. The whole-bill request and
+   *  each part's are kept apart. */
+  partId?: string | null
 }
 
 export function PaymentRequestActions({
   sourceType, sourceId, document: doc, compact,
-  bankScope = 'all', bankId = null, bankLabel = null, label,
+  bankScope = 'all', bankId = null, bankLabel = null, label, partId = null,
 }: Props) {
   const { toast } = useToast()
   const { role } = useAuth()
@@ -74,7 +78,7 @@ export function PaymentRequestActions({
   const canIssue = role === 'admin' || role === 'executive' || role === 'finance'
 
   const { data: saved = [] } = useQuery({
-    queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId],
+    queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId, partId],
     queryFn: async () => {
       const col = sourceType === 'expense'
         ? 'expense_id'
@@ -91,6 +95,7 @@ export function PaymentRequestActions({
         q = q.eq('bank_scope', bankScope)
         q = bankId ? q.eq('bank_id', bankId) : q.is('bank_id', null)
       }
+      if (sourceType === 'expense') q = partId ? q.eq('expense_payment_id', partId) : q.is('expense_payment_id', null)
       const { data, error } = await q.order('revision', { ascending: false })
       if (error) throw error
       return (data ?? []) as SavedPr[]
@@ -112,14 +117,28 @@ export function PaymentRequestActions({
   }), [doc, live])
 
   const html = useMemo(() => buildLaborPaymentRequestHtml(input), [input])
-  const payees = useMemo(
-    () => buildPayeeLines(doc.workers, { isLabor: doc.breakdownKind !== 'line_items' }),
-    [doc.workers, doc.breakdownKind],
-  )
+  const payees = useMemo(() => payeesForRequest(doc), [doc])
   const heads = useMemo(() => totalHeadcount(doc.workers), [doc.workers])
 
   const issue = useMutation({
     mutationFn: async () => {
+      if (partId) {
+        const cash = doc.total - Number(doc.whtAmount ?? 0)
+        const part = doc.installment
+        const { data, error } = await supabase.rpc('save_expense_part_request', {
+          p_payment_id: partId,
+          p_document_html: html,
+          p_snapshot: buildPaymentRequestSnapshot(input),
+          p_payee_lines: payees,
+          p_title: `${doc.typeLabel ?? 'Expense'} Payment Request — part ${part?.partNo ?? '?'} of ${part?.partCount ?? '?'}`,
+          p_total_amount: cash,
+          p_amount_in_words: amountInWords(cash),
+          p_project_names: Array.from(new Set(doc.drafts.map(d => d.projectName).filter(Boolean))),
+          p_notes: notes.trim() || null,
+        })
+        if (error) throw new Error(error.message)
+        return data as { request_code: string; revision: number }
+      }
       const { data, error } = await supabase.rpc('save_payment_request', {
         p_source_type: sourceType,
         p_source_id: sourceId,
@@ -177,8 +196,9 @@ export function PaymentRequestActions({
         'success',
       )
       setNotes('')
-      qc.invalidateQueries({ queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId] })
+      qc.invalidateQueries({ queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId, partId] })
       qc.invalidateQueries({ queryKey: ['payment-requests'] })
+      if (partId) qc.invalidateQueries({ queryKey: ['expense-parts'] })
     },
     onError: (e: Error) => toast(e.message, 'error'),
   })

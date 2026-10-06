@@ -18,6 +18,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { TaxImpactNote } from '@/components/tax/TaxImpactBanners'
 import { useRefreshTaxImpact, useTaxImpact } from '@/lib/taxImpact'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
+import { ExpensePaymentsPanel } from '@/components/payments/ExpensePaymentsPanel'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type { Expense } from '@/types/database'
@@ -770,7 +771,8 @@ export default function ExpenseDetailPage() {
                 Resubmit
               </button>
             )}
-            {id && prDocument && (
+            {/* A bill paid in parts is requested part by part, below. */}
+            {id && prDocument && !expense.in_parts && (
               <PaymentRequestActions sourceType="expense" sourceId={id} document={prDocument} />
             )}
             {role === 'admin' && id && (
@@ -1019,6 +1021,14 @@ export default function ExpenseDetailPage() {
             </div>
           </div>
         )}
+
+        <ExpensePaymentsPanel
+          expense={expense}
+          baseDocument={prDocument}
+          canAct={role === 'admin' || role === 'finance'}
+          isAdmin={role === 'admin'}
+          canIssue={canIssuePaymentRequest(role)}
+        />
 
         {/* Details grid */}
         <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">

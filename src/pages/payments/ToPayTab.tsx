@@ -10,15 +10,19 @@ import { UnverifiedVendorFlag } from '@/components/vendors/UnverifiedVendorFlag'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type { ExpensePaymentMethod, ToPayQueueRow } from '@/types/database'
 import { PAYMENT_METHODS, ageLabel, ageTone, toSend, usePayerAndAccountOptions, useRefreshPayments } from '@/lib/payments'
-import { CreateBatchModal, PartialSplitModal, RecordAdvanceModal, WhtCell } from './PaymentModals'
+import { CreateBatchModal, RecordAdvanceModal, WhtCell } from './PaymentModals'
+import { PayPartModal } from '@/components/payments/PayPartModal'
+import { PART_KIND_LABEL, WHT_MODE_LABEL } from '@/lib/expensePayments'
+import { formatDate } from '@/lib/utils'
 import { AlertTriangle, CheckCircle2, HandCoins, Layers, Search, Send, X } from 'lucide-react'
 import { useRefreshTaxImpact, useTaxImpact, type ImpactItem } from '@/lib/taxImpact'
 import { TaxTag } from '@/components/tax/TaxTag'
 import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxImpactBanners'
 
 // To pay: everything finance has approved, oldest first, split by how it is
-// paid — on delivery (select and send together) or in advance (each one
-// recorded on its own, because it waits on a GRN to close).
+// paid — on delivery (select and send together), in advance (each one
+// recorded on its own, because it waits on a GRN to close), or in parts
+// (migration 430: the row is the bill's next part, paid on its own).
 
 type Sort = 'oldest' | 'largest' | 'impact'
 
@@ -41,6 +45,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
   const [batchOpen, setBatchOpen] = useState(false)
   const [advancing, setAdvancing] = useState<ToPayQueueRow | null>(null)
   const [splitting, setSplitting] = useState<ToPayQueueRow | null>(null)
+  const [payingPart, setPayingPart] = useState<ToPayQueueRow | null>(null)
   const [whtRow, setWhtRow] = useState<ToPayQueueRow | null>(null)
 
   const needle = q.trim().toLowerCase()
@@ -51,8 +56,9 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
       : sort === 'impact' ? [...f].sort((a, b) => rankOf(a.id) - rankOf(b.id))
       : f
   }, [rows, needle, sort, impactById])
-  const onDelivery = shown.filter(r => r.payment_pattern !== 'pay_in_advance')
-  const inAdvance = shown.filter(r => r.payment_pattern === 'pay_in_advance')
+  const inParts = shown.filter(r => r.in_parts)
+  const onDelivery = shown.filter(r => !r.in_parts && r.payment_pattern !== 'pay_in_advance')
+  const inAdvance = shown.filter(r => !r.in_parts && r.payment_pattern === 'pay_in_advance')
   const picked = rows.filter(r => selected.has(r.id))
   const pickedTotal = picked.reduce((s, r) => s + toSend(r), 0)
   const selfApproved = payerId ? picked.filter(r => r.finance_approved_by === payerId) : []
@@ -110,6 +116,25 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
         ))}
       </Group>
 
+      {inParts.length > 0 && (
+        <Group
+          title="Paid in parts" note="Approved once as a whole; each row is the bill's next part, paid on its own."
+          total={inParts.reduce((s, r) => s + toSend(r), 0)} count={inParts.length}>
+          {inParts.map(r => {
+            const waitsForGrn = r.part_due_on === 'delivery' && !r.part_due_by
+            return (
+              <Row key={r.id} r={r} impact={impactById.get(r.id)} period={impact?.period.label} canAct={canAct} onWht={() => setWhtRow(r)}
+                action={canAct ? (
+                  <button onClick={() => setPayingPart(r)} disabled={waitsForGrn} title={waitsForGrn ? 'Due on delivery — record the GRN first' : undefined}
+                    className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50">
+                    <HandCoins className="h-3 w-3" /> Pay part {r.part_no}
+                  </button>
+                ) : null} />
+            )
+          })}
+        </Group>
+      )}
+
       {inAdvance.length > 0 && (
         <Group
           title="Pay in advance" note="Paid before the goods arrive. Each is recorded on its own and closes when its GRN is in."
@@ -156,8 +181,25 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
       )}
 
       {splitting && (
-        <PartialSplitModal row={splitting} defaultPayerId={payerId} payerOptions={payerOptions} onClose={() => setSplitting(null)}
-          onDone={() => { setSplitting(null); refresh(); toast('Part paid — the rest stays in the queue', 'success') }} />
+        <PayPartModal
+          target={{ kind: 'start', expenseId: splitting.id, payable: Number(splitting.amount_etb ?? 0) - Number(splitting.credit_applied_etb ?? 0), wht: Number(splitting.wht_amount ?? 0) }}
+          title="Pay part of this bill" subtitle={`${splitting.vendor_name ?? splitting.item_service_description ?? ''} · ${splitting.expense_code ?? ''}`}
+          approverId={splitting.finance_approved_by} defaultPayerId={payerId} defaultAccountId={null} defaultMethod={method}
+          payerOptions={payerOptions} accountOptions={accountOptions}
+          onClose={() => setSplitting(null)}
+          onDone={() => { setSplitting(null); refresh(); toast('Part sent — the rest stays in the queue as the final part', 'success') }} />
+      )}
+      {payingPart && payingPart.part_id && (
+        <PayPartModal
+          target={{ kind: 'part', partId: payingPart.part_id, partNo: payingPart.part_no ?? 1, partCount: payingPart.part_count ?? 1,
+            partKind: payingPart.part_kind ?? 'installment', label: payingPart.part_label, amount: Number(payingPart.part_amount ?? 0),
+            wht: Number(payingPart.part_wht ?? 0), whtMode: payingPart.wht_mode ?? 'last' }}
+          title={`Pay part ${payingPart.part_no} of ${payingPart.part_count}`}
+          subtitle={`${payingPart.vendor_name ?? payingPart.item_service_description ?? ''} · ${payingPart.expense_code ?? ''}`}
+          approverId={payingPart.finance_approved_by} defaultPayerId={payerId} defaultAccountId={null} defaultMethod={method}
+          payerOptions={payerOptions} accountOptions={accountOptions}
+          onClose={() => setPayingPart(null)}
+          onDone={() => { setPayingPart(null); refresh(); toast('Part sent — confirm it against the bank statement', 'success') }} />
       )}
       {whtRow && (
         <WithholdingModal expense={whtRow} onClose={() => setWhtRow(null)}
@@ -207,7 +249,7 @@ function Row({ r, impact, period, canAct, picked, onPick, onWht, onSplit, action
   r: ToPayQueueRow; impact?: ImpactItem; period?: string; canAct: boolean; picked?: boolean; onPick?: () => void; onWht: () => void; onSplit?: () => void; action?: React.ReactNode
 }) {
   const send = toSend(r)
-  const gross = Number(r.amount_etb ?? 0)
+  const gross = r.in_parts ? Number(r.part_amount ?? 0) : Number(r.amount_etb ?? 0)
   return (
     <li className={`flex items-start gap-3 px-4 py-3 ${picked ? 'bg-brand/5' : ''}`}>
       {canAct && onPick && <input type="checkbox" checked={!!picked} onChange={onPick} className="mt-1 h-4 w-4 rounded border-slate-300 text-brand" />}
@@ -222,8 +264,21 @@ function Row({ r, impact, period, canAct, picked, onPick, onWht, onSplit, action
         <p className="mt-0.5 truncate text-xs text-slate-500">
           {r.expense_code}{r.project_name ? ` · ${r.project_name}` : ''}{r.cost_group_name ? ` · ${r.cost_group_name}` : ''}
         </p>
+        {r.in_parts && (
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+            <span className="font-semibold text-brand">Part {r.part_no} of {r.part_count}</span>
+            <span className="text-slate-500">· {r.part_label || (r.part_kind ? PART_KIND_LABEL[r.part_kind] : '')}</span>
+            <span className={r.part_is_due ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-slate-500'}>
+              · {r.part_due_on === 'delivery' && !r.part_due_by ? 'waits for the GRN' : r.part_due_by ? (r.part_is_due ? 'due now' : `due ${formatDate(r.part_due_by)}`) : 'due now (no date set)'}
+            </span>
+            <span className="text-slate-500">· paid {formatCurrency(r.paid_to_date_etb)} of {formatCurrency(Number(r.amount_etb ?? 0) - Number(r.credit_applied_etb ?? 0))}</span>
+            {r.parts_sent > 0 && <span className="text-sky-600 dark:text-sky-400">· {r.parts_sent} sent, awaiting the bank</span>}
+          </p>
+        )}
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          <WhtCell row={r} canAct={canAct} onEdit={onWht} />
+          {r.in_parts
+            ? Number(r.part_wht ?? 0) > 0 && <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" title={WHT_MODE_LABEL[r.wht_mode].long}>WHT −{formatCurrency(r.part_wht)}</span>
+            : <WhtCell row={r} canAct={canAct} onEdit={onWht} />}
           {Number(r.credit_applied_etb ?? 0) > 0 && <Pill tone="green">−{formatCurrency(r.credit_applied_etb)} credit</Pill>}
           {canAct && onSplit && <button onClick={onSplit} className="text-[11px] font-medium text-brand hover:underline">Pay part</button>}
         </div>

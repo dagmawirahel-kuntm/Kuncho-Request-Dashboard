@@ -182,6 +182,11 @@ export default function PaymentRequestsPage() {
                           ? <Layers className="h-3 w-3 text-slate-400 flex-shrink-0" />
                           : <Receipt className="h-3 w-3 text-slate-400 flex-shrink-0" />}
                         <span className="text-xs truncate max-w-[260px]">{r.source_code ?? r.title ?? '—'}</span>
+                        {r.part_no != null && (
+                          <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand whitespace-nowrap">
+                            Part {r.part_no} of {r.part_count}
+                          </span>
+                        )}
                         {/* A split payroll run puts several rows here under
                             one payroll_record. Without the bank they are
                             indistinguishable — same code, same period, and

@@ -411,6 +411,10 @@ export interface Expense {
   payment_status: boolean
   requested: boolean
   partially_paid: boolean
+  /** Paid in parts (migration 430): its payments are rows of expense_payments. */
+  in_parts?: boolean
+  paid_to_date_etb?: number
+  wht_mode?: ExpenseWhtMode
   bank_ref: string | null
   purchase_type: string | null
   date: string | null
@@ -1531,6 +1535,9 @@ export interface SourcingBundle {
   items_subtotal_etb: number
   discount_etb: number
   total_value: number
+  /** Payment plan in percent (migration 430); null = paid in one go. */
+  payment_plan?: PoPlanPart[] | null
+  plan_wht_mode?: ExpenseWhtMode
   created_at: string
   updated_at: string
 }
@@ -1985,6 +1992,84 @@ export interface ToPayQueueRow {
   // alone ignores the credit and overstates what still needs to move.
   credit_applied_etb: number
   cash_to_send: number
+  // Payments in parts (migration 430). For a bill in parts the row is its
+  // next planned part, and cash_to_send is that part's cash.
+  in_parts: boolean
+  part_id: string | null
+  part_no: number | null
+  part_count: number | null
+  part_kind: ExpensePartKind | null
+  part_label: string | null
+  part_amount: number | null
+  part_wht: number | null
+  part_due_on: ExpensePartDueOn | null
+  part_due_by: string | null
+  part_is_due: boolean | null
+  paid_to_date_etb: number
+  balance_etb: number
+  parts_sent: number
+  wht_mode: ExpenseWhtMode
+}
+
+/** One part of a purchase order's payment plan, in percent of the bill. */
+export interface PoPlanPart { pct: number; kind: ExpensePartKind; due_on: ExpensePartDueOn; days?: number | null; label?: string | null }
+
+export type ExpensePartKind = 'advance' | 'installment' | 'on_delivery' | 'final' | 'retention'
+export type ExpensePartDueOn = 'now' | 'date' | 'delivery'
+export type ExpensePartState = 'planned' | 'sent' | 'paid' | 'cancelled'
+/** Withholding on a bill in parts: all from the last part, or a share from each. */
+export type ExpenseWhtMode = 'last' | 'each'
+
+/** One part of a bill paid in parts (v_expense_payments, migration 430). */
+export interface ExpensePaymentPart {
+  id: string
+  expense_id: string
+  seq: number
+  kind: ExpensePartKind
+  label: string | null
+  amount_etb: number
+  wht_etb: number
+  cash_etb: number
+  due_on: ExpensePartDueOn
+  due_date: string | null
+  due_days: number | null
+  state: ExpensePartState
+  payment_method: ExpensePaymentMethod | null
+  account_id: string | null
+  account_name: string | null
+  disbursed_by: string | null
+  disbursed_by_name: string | null
+  bank_ref: string | null
+  transfer_id: string | null
+  transfer_id_code: string | null
+  sent_at: string | null
+  paid_date: string | null
+  confirmed_by: string | null
+  legacy_entry: boolean
+  note: string | null
+  created_at: string
+  part_no: number
+  part_count: number
+  paid_before: number
+  expense_code: string | null
+  item_service_description: string | null
+  vendor_id: string | null
+  vendor_name: string | null
+  project_id: string | null
+  project_name: string | null
+  sourcing_bundle_id: string | null
+  bundle_code: string | null
+  expense_amount: number | null
+  expense_payable: number
+  expense_wht: number | null
+  expense_wht_mode: ExpenseWhtMode
+  expense_paid_to_date: number
+  finance_approved_by: string | null
+  approval_status: string
+  grn_date: string | null
+  due_by: string | null
+  is_due: boolean
+  prq: { id: string; code: string | null; revision: number } | null
 }
 
 export interface OpenVendorAdvanceRow {
@@ -2083,6 +2168,10 @@ export interface AwaitingBankConfirmationRow {
   payment_state_changed_at: string | null
   days_waiting: number | null
   batch_payment_id: string | null
+  // A sent part of a bill paid in parts (migration 430); id is its expense.
+  part_id: string | null
+  part_no: number | null
+  part_count: number | null
 }
 
 // Per-account statement reconciliation state (migration 232) — feeds
@@ -2101,6 +2190,10 @@ export interface MatchableRow {
   id: string
   amount_etb: number | null
   batch_payment_id: string | null
+  /** Set when the row is one part of a bill paid in parts. */
+  part_id?: string | null
+  part_no?: number | null
+  part_count?: number | null
 }
 
 export interface RecentPaymentRow {
@@ -3101,6 +3194,10 @@ export interface PaymentRequestRow {
   bank_name: string | null
   /** The VRF a Vendor Receipt Payment Request authorises (migration 328). */
   vrf_id: string | null
+  /** Set when the request is for one part of a bill paid in parts (migration 430). */
+  expense_payment_id?: string | null
+  part_no?: number | null
+  part_count?: number | null
 }
 
 /** How a payroll run's Payment Requests are split. See migration 300. */

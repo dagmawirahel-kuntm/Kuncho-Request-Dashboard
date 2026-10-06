@@ -31,6 +31,10 @@ import { PoVatPanel } from '@/components/purchasing/PoVatGoal'
 import { useTaxImpact } from '@/lib/taxImpact'
 import { TaxTag } from '@/components/tax/TaxTag'
 import { useMarkEntityRead } from '@/lib/notifications'
+import { ExpensePaymentsPanel } from '@/components/payments/ExpensePaymentsPanel'
+import { PaymentPlanEditor } from '@/components/payments/PaymentPlanEditor'
+import { PART_KIND_LABEL, WHT_MODE_LABEL, newRowKey, savePoPlan } from '@/lib/expensePayments'
+import type { ExpenseWhtMode, PoPlanPart } from '@/types/database'
 
 const CARGO_SIZES: { value: VehicleCapacityClass; label: string }[] = [
   { value: 'motorbike', label: 'Motorbike load' },
@@ -62,6 +66,8 @@ type BundleDetail = {
   discount_etb: number
   items_subtotal_etb: number
   payment_pattern: SourcingBundlePaymentPattern
+  payment_plan: PoPlanPart[] | null
+  plan_wht_mode: ExpenseWhtMode
   created_at: string
   closed_short_at: string | null
   closed_short_reason: string | null
@@ -71,6 +77,9 @@ type BundleDetail = {
   expenses: {
     id: string; expense_code: string | null; item_service_description: string | null; amount_etb: number | null
     approval_status: string; payment_state: string
+    in_parts: boolean; paid_to_date_etb: number; wht_mode: ExpenseWhtMode; credit_applied_etb: number | null
+    wht_amount: number | null; finance_approved_by: string | null; account_id: string | null; payment_method: string | null
+    sourcing_bundle_id: string | null; expense_type: string | null
   } | null
   sourcing_bundle_items: {
     id: string
@@ -252,6 +261,7 @@ export default function PurchaseOrderPage() {
   const [showRejectPanel, setShowRejectPanel] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [closingAdvance, setClosingAdvance] = useState(false)
+  const [planOpen, setPlanOpen] = useState(false)
   const { data: signoff } = useCompanySignoff()
   useCompanyProfile()
 
@@ -315,7 +325,9 @@ export default function PurchaseOrderPage() {
           vendors(vendor_name, wth_eligible, tin, phone_contact),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
-          expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state),
+          expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state,
+            in_parts, paid_to_date_etb, wht_mode, credit_applied_etb, wht_amount, finance_approved_by, account_id, payment_method,
+            sourcing_bundle_id, expense_type),
           sourcing_bundle_items(
             *,
             order_items(
@@ -909,6 +921,17 @@ export default function PurchaseOrderPage() {
               </div>
             </Panel>
 
+            {/* Payments in parts (migration 430): the bill's parts as they go out. */}
+            {bundle.expenses && (isAdmin || isFinance || bundle.expenses.in_parts) && (
+              <ExpensePaymentsPanel
+                expense={bundle.expenses}
+                baseDocument={null}
+                canAct={isAdmin || isFinance}
+                isAdmin={isAdmin}
+                canIssue={false}
+              />
+            )}
+
             {Object.keys(projectAllocations).length > 1 && (
               <Panel title="Split by project" icon={Building2}>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -1099,6 +1122,50 @@ export default function PurchaseOrderPage() {
               </Panel>
             )}
 
+            {status !== 'cancelled' && (isAdmin || isManager || isFinance || isProcurement) && (
+              <Panel title="Payment plan" icon={Receipt}>
+                {bundle.payment_plan?.length ? (
+                  <ol className="space-y-1 text-sm">
+                    {bundle.payment_plan.map((p, i) => (
+                      <li key={i} className="flex items-baseline justify-between gap-2">
+                        <span className="text-slate-700 dark:text-slate-200">
+                          <b className="tabular-nums">{p.pct}%</b> {p.label || PART_KIND_LABEL[p.kind]}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {p.due_on === 'delivery' ? (p.days ? `${p.days} days after delivery` : 'on delivery') : 'when ordered'}
+                        </span>
+                      </li>
+                    ))}
+                    <li className="pt-1 text-[11px] text-slate-500">WHT {WHT_MODE_LABEL[bundle.plan_wht_mode].short.toLowerCase()}. Approved once as a whole.</li>
+                  </ol>
+                ) : (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Paid in one go, {isPayInAdvance ? 'in advance' : 'on delivery'}.</p>
+                )}
+                {(isAdmin || isFinance || isProcurement) && (
+                  <button onClick={() => setPlanOpen(true)} className="mt-2 text-xs font-semibold text-brand hover:underline">
+                    {bundle.payment_plan?.length ? 'Change the plan' : 'Pay in parts instead'}
+                  </button>
+                )}
+              </Panel>
+            )}
+            {planOpen && (
+              <PaymentPlanEditor mode="po" title={`Payment plan · ${bundle.bundle_code}`} total={grossTotal} wht={whtAmount}
+                allowDelivery initialWhtMode={bundle.plan_wht_mode ?? 'last'}
+                initialRows={bundle.payment_plan?.map(p => ({ key: newRowKey(), value: p.pct, kind: p.kind, due_on: p.due_on, due_date: null, days: p.days ?? null, label: p.label ?? '' }))}
+                canClear={!!bundle.payment_plan?.length}
+                onSave={async (rows, mode) => {
+                  await savePoPlan(bundle.id, rows, mode); setPlanOpen(false)
+                  toast(bundle.expense_id ? 'Plan saved — the bill\'s parts follow it' : 'Plan saved — the bill takes it when it is prepared', 'success')
+                  qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] }); qc.invalidateQueries({ queryKey: ['expense-parts'] })
+                }}
+                onClear={async () => {
+                  await savePoPlan(bundle.id, null, bundle.plan_wht_mode ?? 'last'); setPlanOpen(false)
+                  toast('Back to paying in one go', 'success')
+                  qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] }); qc.invalidateQueries({ queryKey: ['expense-parts'] })
+                }}
+                onClose={() => setPlanOpen(false)} />
+            )}
+
             {['ordered', 'fulfilled'].includes(status) && (isAdmin || isManager || isFinance || isProcurement) && (
               <Panel title="Payment" icon={Receipt}>
                 {bundle.expenses ? (
@@ -1111,6 +1178,7 @@ export default function PurchaseOrderPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Pill tone={bundle.expenses.payment_state === 'paid' ? 'green' : bundle.expenses.payment_state === 'advance' ? 'amber' : bundle.expenses.approval_status === 'pending' ? 'slate' : 'blue'}>
                         {bundle.expenses.payment_state === 'paid' ? 'Paid'
+                          : bundle.expenses.in_parts ? `In parts — ${formatCurrency(bundle.expenses.paid_to_date_etb)} paid so far`
                           : bundle.expenses.payment_state === 'advance' ? 'Advance sent — awaiting GRN'
                           : bundle.expenses.payment_state === 'approved_to_pay' ? (isPayInAdvance ? 'Approved — ready to send advance' : 'Approved — ready to pay')
                           : bundle.expenses.approval_status === 'pending' ? 'Awaiting finance approval'
@@ -1159,7 +1227,7 @@ export default function PurchaseOrderPage() {
                 ...(bundle.approver ? [{ label: 'Approved by', value: bundle.approver.full_name, hint: bundle.approved_at ? formatDate(bundle.approved_at) : undefined }] : []),
                 { label: 'Created', value: formatDate(bundle.created_at) },
                 { label: 'Expected delivery', value: bundle.expected_delivery_date ? formatDate(bundle.expected_delivery_date) : '—', tone: lateDelivery ? 'red' as const : undefined },
-                { label: 'Payment', value: isPayInAdvance ? 'In advance' : 'On delivery' },
+                { label: 'Payment', value: bundle.payment_plan?.length ? `In ${bundle.payment_plan.length} parts` : isPayInAdvance ? 'In advance' : 'On delivery' },
                 { label: 'Projects', value: projectNames.length ? projectNames.join(', ') : '—' },
               ]} />
             </Panel>
