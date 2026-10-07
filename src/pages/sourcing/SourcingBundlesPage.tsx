@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { DateGroupHeader, groupByDay } from '@/components/shared/DateGroupHeader'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -94,11 +95,11 @@ export default function PurchaseOrdersPage() {
   const { data: itemRows = [] } = useQuery({
     queryKey: ['bundle-item-summary'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows((from, to) => supabase
         .from('sourcing_bundle_items')
         .select('bundle_id, unit_price_actual, order_items(unit_price_est, order_id, orders(request_code))')
-      if (error) throw error
-      return (data ?? []) as unknown as ItemRow[]
+        .order('id').range(from, to))
+      return data as unknown as ItemRow[]
     },
   })
 
