@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { formatDate } from '@/lib/utils'
 import type { Order } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
@@ -102,8 +103,8 @@ export default function PurchaseRequestsPage() {
   const { data: itemRows = [] } = useQuery({
     queryKey: ['order-item-counts'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('order_items').select('order_id, status, item_name')
-      if (error) throw error
+      const data = await fetchAllRows((from, to) => supabase.from('order_items').select('order_id, status, item_name')
+        .order('id').range(from, to))
       return data as { order_id: string; status: string; item_name: string | null }[]
     },
   })

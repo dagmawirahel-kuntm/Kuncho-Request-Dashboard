@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useChartOfAccounts, useFiscalPeriods } from '@/hooks/useLookups'
@@ -298,10 +299,10 @@ function JournalEntriesTab() {
   const { data: allLines = [] } = useQuery({
     queryKey: ['journal-lines-with-accounts'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows((from, to) => supabase
         .from('journal_lines')
         .select('*, chart_of_accounts(account_code, account_name)')
-      if (error) throw error
+        .order('id').range(from, to))
       return data as (JournalLine & { chart_of_accounts: { account_code: string; account_name: string } | null })[]
     },
     enabled: expanded.size > 0,

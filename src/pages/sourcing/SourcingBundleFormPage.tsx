@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
@@ -134,13 +135,13 @@ export default function SourcingBundleFormPage() {
   const { data: approvedOrders = [] } = useQuery({
     queryKey: ['sourceable-orders'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows((from, to) => supabase
         .from('orders')
         .select('id, request_code, order_name, project_id, approval_status, priority, required_by_date, is_new_item, projects(project_name)')
         .neq('approval_status', 'rejected')
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      return (data ?? []) as unknown as OrderRow[]
+        .order('created_at', { ascending: false }).order('id')
+        .range(from, to))
+      return data as unknown as OrderRow[]
     },
   })
 
@@ -150,12 +151,12 @@ export default function SourcingBundleFormPage() {
   const { data: openOrderItems = [] } = useQuery({
     queryKey: ['order-items-for-sourcing'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows((from, to) => supabase
         .from('order_items')
         .select('*, sub_categories(parent_category_id, categories(cost_group_id))')
         .neq('status', 'cancelled')
-      if (error) throw error
-      return (data ?? []) as unknown as OrderItemRow[]
+        .order('id').range(from, to))
+      return data as unknown as OrderItemRow[]
     },
   })
   const allOrderItems = useMemo(() => {
@@ -166,12 +167,12 @@ export default function SourcingBundleFormPage() {
   const { data: bundledItemIds = new Set<string>() } = useQuery({
     queryKey: ['bundled-order-item-ids', id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows((from, to) => supabase
         .from('sourcing_bundle_items')
         .select('order_item_id, bundle_id')
-      if (error) throw error
+        .order('id').range(from, to))
       const excludeSet = new Set<string>()
-      for (const row of data ?? []) {
+      for (const row of data) {
         // Exclude items in other bundles; items in this bundle will be in bundleItems state
         if (row.bundle_id !== id) excludeSet.add(row.order_item_id)
       }
@@ -189,13 +190,13 @@ export default function SourcingBundleFormPage() {
   const { data: stockIssuedByItem = {} } = useQuery({
     queryKey: ['stock-issued-by-order-item'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows((from, to) => supabase
         .from('stock_issues')
         .select('order_item_id, quantity')
         .not('order_item_id', 'is', null)
-      if (error) throw error
+        .order('id').range(from, to))
       const map: Record<string, number> = {}
-      for (const row of data ?? []) {
+      for (const row of data) {
         if (!row.order_item_id) continue
         map[row.order_item_id] = (map[row.order_item_id] ?? 0) + Number(row.quantity)
       }
