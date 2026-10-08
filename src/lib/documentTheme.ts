@@ -21,14 +21,26 @@ export const DOC_FONT = '"Inter", "Helvetica Neue", Arial, "Noto Sans Ethiopic",
 export const DOC_SERIF = '"Cormorant Garamond", "Noto Serif Ethiopic", Georgia, "Times New Roman", serif'
 export const DOC_ETHIOPIC = '"Noto Serif Ethiopic", "Noto Sans Ethiopic", "Nyala", "Abyssinica SIL", serif'
 
+/** A way to pay us: a bank account, or a telebirr merchant wallet, which has
+ *  a short code and an operator ID instead of an account number. Rows saved
+ *  before wallets existed have no `kind` and are bank accounts. */
 export interface BankAccountLine {
+  kind?: 'bank' | 'telebirr'
   bank: string
   account_name?: string | null
   account_number: string
   branch?: string | null
   swift?: string | null
+  /** telebirr only */
+  short_code?: string | null
+  operator_id?: string | null
   on_documents?: boolean
 }
+
+export const isWallet = (a: BankAccountLine) => a.kind === 'telebirr'
+/** A row complete enough to print: a bank with its number, or a wallet with its short code. */
+export const isPayableLine = (a: BankAccountLine) =>
+  isWallet(a) ? !!a.short_code?.trim() : !!(a.bank?.trim() && a.account_number?.trim())
 
 export interface CompanyProfile {
   legal_name: string
@@ -268,7 +280,8 @@ body{font-family:${DOC_FONT};color:${INK};font-variant-numeric:tabular-nums}
 .doc-banks .lbl .am{display:inline;margin-left:6px;letter-spacing:0;text-transform:none}
 .doc-banks table{width:100%;border-collapse:collapse;margin:0}
 .doc-banks td{padding:2px 8px 2px 0;border:none;background:none !important;font-size:9.2pt}
-.doc-banks td.acct{text-align:right;font-family:"Inter",monospace;font-weight:600;letter-spacing:.04em}
+.doc-banks td.acct{text-align:right;font-family:"Inter",monospace;font-weight:600;letter-spacing:.04em;white-space:nowrap}
+.doc-banks td.aux{white-space:nowrap}
 .doc-signoff{display:flex;justify-content:space-between;align-items:flex-end;gap:22px;margin-top:30px;break-inside:avoid}
 .doc-sign{min-width:210px;position:relative}
 .doc-sign .line{border-top:1px solid ${INK};padding-top:5px;font-size:9.2pt;margin-top:6px}
@@ -431,14 +444,21 @@ export function renderParty(p: { label: string; name: string; tin?: string | nul
 </div>`
 }
 
-/** The accounts marked "on documents" in the company profile. */
-export function renderBankAccounts(title = 'Please pay to'): string {
-  const accts = current.bank_accounts.filter(a => a.on_documents !== false && a.account_number)
+/** The accounts and telebirr wallets marked "on documents" in the company
+ *  profile. `only` limits it to one of the two. */
+export function renderBankAccounts(title = 'Please pay to', only?: 'bank' | 'telebirr'): string {
+  const accts = current.bank_accounts.filter(a => a.on_documents !== false && isPayableLine(a)
+    && (!only || (only === 'telebirr') === isWallet(a)))
   if (!accts.length) return ''
+  const am = !accts.some(isWallet) ? amOf(title)
+    : bilingual() ? (accts.every(isWallet) ? 'ቴሌብር' : 'የባንክ ሒሳብ እና ቴሌብር') : ''
+  const row = (a: BankAccountLine) => isWallet(a)
+    ? `<tr><td><b>telebirr</b> merchant</td><td>${esc(a.account_name || companyName())}</td><td class="acct">Short code ${esc(a.short_code)}</td>${a.operator_id ? `<td class="aux">Operator ID ${esc(a.operator_id)}</td>` : ''}</tr>`
+    : `<tr><td><b>${esc(a.bank)}</b>${a.branch ? `, ${esc(a.branch)}` : ''}</td><td>${esc(a.account_name || companyName())}</td><td class="acct">${esc(a.account_number)}</td>${a.swift ? `<td class="aux">SWIFT ${esc(a.swift)}</td>` : ''}</tr>`
   return `
 <div class="doc-banks">
-  <div class="lbl">${esc(title)}${amOf(title) ? `<span class="am">${esc(amOf(title))}</span>` : ''}</div>
-  <table>${accts.map(a => `<tr><td><b>${esc(a.bank)}</b>${a.branch ? `, ${esc(a.branch)}` : ''}</td><td>${esc(a.account_name || companyName())}</td><td class="acct">${esc(a.account_number)}</td>${a.swift ? `<td>SWIFT ${esc(a.swift)}</td>` : ''}</tr>`).join('')}</table>
+  <div class="lbl">${esc(title)}${am ? `<span class="am">${esc(am)}</span>` : ''}</div>
+  <table>${accts.map(row).join('')}</table>
 </div>`
 }
 

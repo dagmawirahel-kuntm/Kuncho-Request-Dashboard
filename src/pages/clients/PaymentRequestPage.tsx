@@ -124,7 +124,7 @@ ${renderParty({ label: 'To', name: p.client?.client_name ?? '—', tin: p.client
 <p>${opening}</p>
 <p>The details of the requested payment are as follows:</p>
 <table class="facts">${detailRows}</table>
-${bankRows ? `<p>We kindly request that the payment be made to our bank account as detailed below:</p><table class="facts">${bankRows}</table>` : renderBankAccounts('Please pay to')}
+${bankRows ? `<p>We kindly request that the payment be made to our bank account as detailed below:</p><table class="facts">${bankRows}</table>${renderBankAccounts('Or pay by telebirr', 'telebirr')}` : renderBankAccounts('Please pay to')}
 ${p.notes ? `<p style="font-style:italic;color:#555">${escLines(p.notes)}</p>` : ''}
 <p>We trust that the above request will receive your favourable consideration and look forward to your prompt response.</p>
 <p>Thank you for your continued partnership.</p>
