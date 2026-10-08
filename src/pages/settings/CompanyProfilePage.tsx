@@ -1,19 +1,19 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Building2, ImagePlus, Landmark, Percent, Plus, Save, Stamp, Trash2 } from 'lucide-react'
+import { Building2, ImagePlus, Landmark, Percent, Plus, Save, Smartphone, Stamp, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { fieldCls } from '@/lib/formStyles'
 import { useCompanyProfile, useCompanySignoff, imageToDataUrl } from '@/lib/companyProfile'
 import { documentBaseCss, renderLetterhead, renderBankAccounts, renderSignoff, renderFooter, renderParty, renderWords, bi, setDocumentProfile, docDate, docProfile, DOCUMENT_GRADIENTS,
-  DEFAULT_PROFILE, type CompanyProfile, type CompanySignoff, type BankAccountLine } from '@/lib/documentTheme'
+  DEFAULT_PROFILE, isPayableLine, isWallet, type CompanyProfile, type CompanySignoff, type BankAccountLine } from '@/lib/documentTheme'
 import { Panel } from '@/components/record/Record'
 import { DocumentFrame } from '@/components/documents/DocumentFrame'
 
 /**
  * Who we are on paper (migration 368): the name, TIN, VAT registration,
- * contacts, logo, bank accounts and signatory that every proforma,
+ * contacts, logo, bank accounts, telebirr wallets and signatory that every proforma,
  * invoice, payment request and purchase order carries.
  */
 export default function CompanyProfilePage() {
@@ -72,7 +72,13 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
       vat_reg_date: p.vat_reg_date || null, logo_data_url: p.logo_data_url, print_style: p.print_style,
       tagline: clean(p.tagline ?? null), bilingual_labels: p.bilingual_labels !== false,
       show_ethiopian_dates: p.show_ethiopian_dates, footer_note: clean(p.footer_note), proforma_terms: clean(p.proforma_terms),
-      bank_accounts: p.bank_accounts.filter(b => b.bank.trim() && b.account_number.trim()),
+      bank_accounts: p.bank_accounts.filter(isPayableLine).map(b => {
+        const t = (v: string | null | undefined) => (v ?? '').trim()
+        return isWallet(b)
+          ? { kind: 'telebirr' as const, bank: 'telebirr', account_number: '', short_code: t(b.short_code), operator_id: t(b.operator_id) || null,
+              account_name: t(b.account_name) || null, on_documents: b.on_documents !== false }
+          : { ...b, kind: 'bank' as const, bank: t(b.bank), account_number: t(b.account_number) }
+      }),
       ...(hasDiscountLimit && canSetDiscountLimit ? { discount_approval_percent: Math.min(100, Math.max(0, Number(p.discount_approval_percent ?? 10))) } : {}),
     }).eq('id', true)
     if (error) { setSaving(false); toast(error.message, 'error'); return }
@@ -87,7 +93,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
     toast('Saved — every document uses it from now on', 'success')
   }
 
-  const missing = [!p.tin && 'TIN', !p.vat_reg_no && 'VAT registration number', !p.phone && 'phone', !p.logo_data_url && 'logo', !p.bank_accounts.length && 'a bank account'].filter(Boolean) as string[]
+  const missing = [!p.tin && 'TIN', !p.vat_reg_no && 'VAT registration number', !p.phone && 'phone', !p.logo_data_url && 'logo', !p.bank_accounts.length && 'a bank account or telebirr wallet'].filter(Boolean) as string[]
 
   return (
     <div className="space-y-4">
@@ -175,25 +181,45 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
             </Panel>
           )}
 
-          <Panel title="Bank accounts on documents" icon={Landmark} action={
-            <button onClick={() => setP(x => ({ ...x, bank_accounts: [...x.bank_accounts, { bank: '', account_number: '', account_name: x.legal_name, on_documents: true }] }))}
-              className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"><Plus className="h-3.5 w-3.5" /> Add</button>
+          <Panel title="Bank accounts and telebirr on documents" icon={Landmark} action={
+            <div className="flex items-center gap-3">
+              <button onClick={() => setP(x => ({ ...x, bank_accounts: [...x.bank_accounts, { kind: 'bank', bank: '', account_number: '', account_name: x.legal_name, on_documents: true }] }))}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"><Plus className="h-3.5 w-3.5" /> Bank account</button>
+              <button onClick={() => setP(x => ({ ...x, bank_accounts: [...x.bank_accounts, { kind: 'telebirr', bank: 'telebirr', account_number: '', short_code: '', operator_id: '', account_name: x.legal_name, on_documents: true }] }))}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"><Plus className="h-3.5 w-3.5" /> telebirr wallet</button>
+            </div>
           }>
-            {p.bank_accounts.length === 0 ? <p className="text-sm text-slate-400">None yet. Clients see these on payment requests and invoices.</p> : (
+            {p.bank_accounts.length === 0 ? <p className="text-sm text-slate-400">None yet. Clients see these on payment requests, proformas and invoices.</p> : (
               <div className="space-y-2">
-                {p.bank_accounts.map((b, i) => (
-                  <div key={i} className="grid gap-2 rounded-lg border p-2 dark:border-slate-700 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                    <input className={fieldCls} value={b.bank} onChange={e => setBank(i, { bank: e.target.value })} placeholder="Bank, e.g. Commercial Bank of Ethiopia" aria-label="Bank" />
-                    <input className={fieldCls} value={b.account_number} onChange={e => setBank(i, { account_number: e.target.value })} placeholder="Account number" aria-label="Account number" />
-                    <input className={fieldCls} value={b.branch ?? ''} onChange={e => setBank(i, { branch: e.target.value })} placeholder="Branch (optional)" aria-label="Branch" />
+                {p.bank_accounts.map((b, i) => {
+                  const tail = (
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-1 whitespace-nowrap text-xs text-slate-500"><input type="checkbox" checked={b.on_documents !== false} onChange={e => setBank(i, { on_documents: e.target.checked })} /> On documents</label>
-                      <button onClick={() => setP(x => ({ ...x, bank_accounts: x.bank_accounts.filter((_, j) => j !== i) }))} aria-label="Remove account" className="rounded p-1 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                      <button onClick={() => setP(x => ({ ...x, bank_accounts: x.bank_accounts.filter((_, j) => j !== i) }))} aria-label={isWallet(b) ? 'Remove wallet' : 'Remove account'} className="rounded p-1 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                     </div>
-                    <input className={`${fieldCls} sm:col-span-2`} value={b.account_name ?? ''} onChange={e => setBank(i, { account_name: e.target.value })} placeholder="Account name" aria-label="Account name" />
-                    <input className={fieldCls} value={b.swift ?? ''} onChange={e => setBank(i, { swift: e.target.value })} placeholder="SWIFT (optional)" aria-label="SWIFT" />
-                  </div>
-                ))}
+                  )
+                  return isWallet(b) ? (
+                    <div key={i} className="rounded-lg border p-2 dark:border-slate-700">
+                      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300"><Smartphone className="h-3.5 w-3.5 text-brand" /> telebirr merchant wallet</p>
+                      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                        <F label="Short code *"><input className={fieldCls} value={b.short_code ?? ''} onChange={e => setBank(i, { short_code: e.target.value })} placeholder="e.g. 523456" inputMode="numeric" /></F>
+                        <F label="Operator ID"><input className={fieldCls} value={b.operator_id ?? ''} onChange={e => setBank(i, { operator_id: e.target.value })} /></F>
+                        <F label="Merchant name"><input className={fieldCls} value={b.account_name ?? ''} onChange={e => setBank(i, { account_name: e.target.value })} /></F>
+                        <div className="self-end pb-2">{tail}</div>
+                      </div>
+                      {!b.short_code?.trim() && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Needs its short code to be saved.</p>}
+                    </div>
+                  ) : (
+                    <div key={i} className="grid gap-2 rounded-lg border p-2 dark:border-slate-700 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                      <input className={fieldCls} value={b.bank} onChange={e => setBank(i, { bank: e.target.value })} placeholder="Bank, e.g. Commercial Bank of Ethiopia" aria-label="Bank" />
+                      <input className={fieldCls} value={b.account_number} onChange={e => setBank(i, { account_number: e.target.value })} placeholder="Account number" aria-label="Account number" />
+                      <input className={fieldCls} value={b.branch ?? ''} onChange={e => setBank(i, { branch: e.target.value })} placeholder="Branch (optional)" aria-label="Branch" />
+                      {tail}
+                      <input className={`${fieldCls} sm:col-span-2`} value={b.account_name ?? ''} onChange={e => setBank(i, { account_name: e.target.value })} placeholder="Account name" aria-label="Account name" />
+                      <input className={fieldCls} value={b.swift ?? ''} onChange={e => setBank(i, { swift: e.target.value })} placeholder="SWIFT (optional)" aria-label="SWIFT" />
+                    </div>
+                  )
+                })}
               </div>
             )}
           </Panel>
