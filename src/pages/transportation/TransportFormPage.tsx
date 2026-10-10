@@ -20,7 +20,7 @@ import { useProjects, useLocations, useVendors, useStaff, locationPickerOptions 
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { submitted } from '@/lib/celebrate'
-import { Receipt, ExternalLink, CheckCircle2, Check } from 'lucide-react'
+import { Receipt, ExternalLink, CheckCircle2, Check, Handshake, Send } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -59,6 +59,18 @@ const HIRED_CLASSES: { value: HiredVehicleClass; label: string }[] = [
   { value: 'other',          label: 'Other' },
 ]
 
+// Who finds the driver for a new job. Most of the time it's whoever needs the
+// truck: they agree the price with a driver upfront and record the deal here.
+type Who = 'self' | 'logistics'
+const WHO: { value: Who; icon: typeof Send; title: string; sub: string }[] = [
+  { value: 'self', icon: Handshake, title: "I've hired a driver", sub: 'Record the deal: the driver, the vehicle and the price agreed' },
+  { value: 'logistics', icon: Send, title: 'Logistics arranges it', sub: 'They send one of our drivers or hire one' },
+]
+
+// Who can see and add to the driver list (transport_drivers RLS); anyone
+// else types the driver and transport_driver_for_trip (migration 435) adds them.
+const DRIVER_LIST_ROLES = ['admin', 'executive', 'finance', 'operations_manager', 'hr_officer', 'project_manager', 'stock_manager', 'procurement_officer', 'logistics_officer']
+
 const STATUS_FLOW: Record<TransportJobStatus, { label: string; next: { to: TransportJobStatus; label: string; cls: string }[] }> = {
   requested:   { label: 'Requested',   next: [{ to: 'assigned', label: 'Assign', cls: 'bg-blue-600 hover:bg-blue-700' }, { to: 'cancelled', label: 'Cancel', cls: 'bg-red-600 hover:bg-red-700' }] },
   assigned:    { label: 'Assigned',    next: [{ to: 'in_progress', label: 'Start Job', cls: 'bg-purple-600 hover:bg-purple-700' }, { to: 'cancelled', label: 'Cancel', cls: 'bg-red-600 hover:bg-red-700' }] },
@@ -93,7 +105,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const [searchParams] = useSearchParams()
   const bundleId = searchParams.get('bundle_id')
   const { toast } = useToast()
-  const { role, profile } = useAuth()
+  const { role, profile, user } = useAuth()
   const qc = useQueryClient()
   const { data: projects = [] } = useProjects()
   const { data: locations = [] } = useLocations()
@@ -118,6 +130,12 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
   const canDispatch = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const rideHailingAllowed = canDispatch || !!profile?.is_ride_hailing_authorized
+  const canSeeDrivers = DRIVER_LIST_ROLES.includes(role ?? '') || !!profile?.is_logistics_officer
+  // Logistics, and links that already say how (the trip estimator), start
+  // from the full form; everyone else from the deal they made.
+  const [who, setWho] = useState<Who>(() => (isEdit || canDispatch || searchParams.get('mode') ? 'logistics' : 'self'))
+  const selfHire = !isEdit && who === 'self'
+  const [typedDriver, setTypedDriver] = useState({ name: '', phone: '' })
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const projectOptions  = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
@@ -189,7 +207,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       : {
           requested_date: new Date().toISOString().slice(0, 10),
           job_type: bundleId ? 'purchase_pickup' : 'material_move',
-          transport_mode: (searchParams.get('mode') as TransportationRequestInsert['transport_mode'] | null) ?? 'own_fleet',
+          transport_mode: (searchParams.get('mode') as TransportationRequestInsert['transport_mode'] | null) ?? (who === 'self' ? 'hired' : 'own_fleet'),
           priority: 'normal',
           sourcing_bundle_id: bundleId,
           // From the trip estimator or a combined pickup (migrations 413/414).
@@ -233,6 +251,15 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   }, [sourceBundle, bundlePrefilled])
 
   function set(key: keyof TransportationRequestInsert, value: unknown) { setForm(f => ({ ...f, [key]: value })) }
+
+  // A hired driver needs no fleet vehicle or dispatcher; asking logistics
+  // leaves the mode to them.
+  function pickWho(next: Who) {
+    setWho(next)
+    setForm(f => next === 'self'
+      ? { ...f, transport_mode: 'hired', vehicle_id: null, assigned_staff_id: null }
+      : { ...f, transport_mode: f.transport_mode === 'hired' ? 'own_fleet' : f.transport_mode })
+  }
 
   // Picking a pinned location auto-fills project/vendor if that place
   // is already linked to one and the job hasn't set its own yet.
@@ -294,6 +321,8 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const jobStatus: TransportJobStatus = record?.job_status ?? 'requested'
   const flow = STATUS_FLOW[jobStatus]
   const isMoneyJob = form.transport_mode === 'ride_hailing' || form.transport_mode === 'hired'
+  // Whoever hired a driver follows the trip themselves; nobody in logistics is on it.
+  const canMove = canDispatch || (!!record && record.transport_mode !== 'own_fleet' && !!user && record.requested_by_id === user.id)
 
   // The vehicle's own status follows its jobs in the database (migration 392).
   async function transition(next: TransportJobStatus) {
@@ -321,8 +350,27 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       setError('Your account is not authorized for ride-hailing — ask an admin for the badge, or pick another mode')
       return
     }
+    if (selfHire && !form.hired_driver_id && !typedDriver.name.trim()) { setError('Who is the driver? Pick one or type their name'); return }
+    if (selfHire && !(Number(form.amount) > 0)) { setError('What price did you agree with the driver?'); return }
     setError(''); setSaving(true)
-    const payload = { ...form, pickup_location_id: pickupId ?? null }
+    const payload: Record<string, unknown> = { ...form, pickup_location_id: pickupId ?? null }
+    // Who asked: it's how people find their own requests, and what lets staff save one at all.
+    if (!isEdit) payload.requested_by_id = user?.id ?? null
+    if (selfHire) {
+      let driverId = form.hired_driver_id ?? null
+      if (!driverId) {
+        const { data, error: e } = await supabase.rpc('transport_driver_for_trip', {
+          p_name: typedDriver.name.trim(), p_phone: typedDriver.phone.trim() || null, p_vclass: form.hired_vehicle_class ?? null,
+        })
+        if (e) { setSaving(false); setError(e.message); toast(e.message, 'error'); return }
+        driverId = data as string
+      }
+      // The deal is the arrangement: hired, and arranged from the start.
+      Object.assign(payload, {
+        transport_mode: 'hired', hired_driver_id: driverId, driver_name: form.driver_name || typedDriver.name.trim() || null,
+        job_status: 'assigned', assigned_at: new Date().toISOString(), assigned_staff_id: null,
+      })
+    }
     if (payload.transport_mode !== 'own_fleet') payload.vehicle_id = null
     if (payload.transport_mode !== 'hired') payload.hired_vehicle_class = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -333,8 +381,10 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     dropRecordCache(qc, 'transport-request', 'sourcing-bundle-for-transport', 'transport-linked-expense')
     qc.invalidateQueries({ queryKey: ['transportation'] })
     qc.invalidateQueries({ queryKey: ['fleet-active-jobs'] })
+    if (selfHire) qc.invalidateQueries({ queryKey: ['transport-drivers'] })
     if (bundleId) qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundleId] })
     if (isEdit) toast('Job updated', 'success')
+    else if (selfHire) submitted(toast, 'Deal recorded', 'Logistics can see it, and the cashier can pay it at the gate')
     else submitted(toast, 'Transport job created', 'Logistics can see it now')
     navigate(bundleId ? `/sourcing/${bundleId}` : '/transportation')
   }
@@ -347,7 +397,29 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       {/* ── Where the job is (edit mode) ── */}
       {isEdit && record && (
         <JobTimeline record={record} paid={linkedExpense ? payStageOf(record.transport_mode, linkedExpense) : (isMoneyJob ? 'none' : 'not_needed')}
-          actions={canDispatch ? flow.next : []} onAction={transition} />
+          actions={canMove ? flow.next : []} onAction={transition} />
+      )}
+
+      {!isEdit && (
+        <Field label="Who finds the driver?">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Who finds the driver?">
+            {WHO.map(o => {
+              const on = who === o.value
+              return (
+                <button key={o.value} type="button" role="radio" aria-checked={on} onClick={() => pickWho(o.value)}
+                  className={`flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors ${on
+                    ? 'border-brand bg-brand/5 ring-1 ring-brand'
+                    : 'hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40'}`}>
+                  <o.icon className={`mt-0.5 h-4 w-4 shrink-0 ${on ? 'text-brand' : 'text-slate-400'}`} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{o.title}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">{o.sub}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </Field>
       )}
 
       <Field label="Job Name *">
@@ -371,15 +443,17 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       </div>
 
       {/* ── Mode & vehicle ── */}
-      <Field label="Transport Mode">
-        <select className={inputCls} value={form.transport_mode ?? 'own_fleet'} onChange={e => set('transport_mode', e.target.value)}>
-          <option value="own_fleet">Own fleet (IVECO / Toyota / e-bike)</option>
-          <option value="ride_hailing" disabled={!rideHailingAllowed}>
-            Ride-hailing{!rideHailingAllowed ? ' (not authorized)' : ''}
-          </option>
-          <option value="hired">Hired third-party (when fleet is busy/offline)</option>
-        </select>
-      </Field>
+      {!selfHire && (
+        <Field label="Transport Mode">
+          <select className={inputCls} value={form.transport_mode ?? 'own_fleet'} onChange={e => set('transport_mode', e.target.value)}>
+            <option value="own_fleet">Own fleet (IVECO / Toyota / e-bike)</option>
+            <option value="ride_hailing" disabled={!rideHailingAllowed}>
+              Ride-hailing{!rideHailingAllowed ? ' (not authorized)' : ''}
+            </option>
+            <option value="hired">Hired third-party (when fleet is busy/offline)</option>
+          </select>
+        </Field>
+      )}
 
       {form.transport_mode === 'own_fleet' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -411,7 +485,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
       {form.transport_mode === 'hired' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Hired Vehicle Class">
+          <Field label={selfHire ? 'Vehicle' : 'Hired Vehicle Class'}>
             <select className={inputCls} value={form.hired_vehicle_class ?? ''} onChange={e => set('hired_vehicle_class', e.target.value || null)}>
               <option value="">— Select —</option>
               {HIRED_CLASSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -423,24 +497,35 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label={form.transport_mode === 'own_fleet' ? 'Driver' : 'Assigned Staff (logistics)'}>
-          <SearchableSelect
-            value={form.assigned_staff_id ?? null}
-            onChange={sid => form.transport_mode === 'own_fleet' ? pickDriver(sid) : set('assigned_staff_id', sid)}
-            options={form.transport_mode === 'own_fleet' ? driverOptions : staffOptions}
-            placeholder={form.transport_mode === 'own_fleet' ? 'Select driver…' : 'Who runs this job…'}
-          />
-        </Field>
-        {form.transport_mode === 'own_fleet' && (
-          <Field label="Driver name (if not on the staff list)">
-            <input type="text" className={inputCls} value={form.driver_name ?? ''} onChange={e => set('driver_name', e.target.value)} />
+      {!selfHire && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label={form.transport_mode === 'own_fleet' ? 'Driver' : 'Assigned Staff (logistics)'}>
+            <SearchableSelect
+              value={form.assigned_staff_id ?? null}
+              onChange={sid => form.transport_mode === 'own_fleet' ? pickDriver(sid) : set('assigned_staff_id', sid)}
+              options={form.transport_mode === 'own_fleet' ? driverOptions : staffOptions}
+              placeholder={form.transport_mode === 'own_fleet' ? 'Select driver…' : 'Who runs this job…'}
+            />
           </Field>
-        )}
-      </div>
+          {form.transport_mode === 'own_fleet' && (
+            <Field label="Driver name (if not on the staff list)">
+              <input type="text" className={inputCls} value={form.driver_name ?? ''} onChange={e => set('driver_name', e.target.value)} />
+            </Field>
+          )}
+        </div>
+      )}
 
-      {isMoneyJob && (
-        <Field label="Driver" hint="Pick a driver we know, or add a new one — their phone, plate and how they're paid are kept for next time and for paying this job.">
+      {isMoneyJob && (selfHire && !canSeeDrivers ? (
+        <Field label="Driver *" hint="Their name and phone are kept for next time and for paying this trip.">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input type="text" className={inputCls} placeholder="Driver's name" value={typedDriver.name}
+              onChange={e => setTypedDriver(d => ({ ...d, name: e.target.value }))} />
+            <input type="tel" inputMode="tel" className={inputCls} placeholder="Phone (09… or 07…)" value={typedDriver.phone}
+              onChange={e => setTypedDriver(d => ({ ...d, phone: e.target.value }))} />
+          </div>
+        </Field>
+      ) : (
+        <Field label={selfHire ? 'Driver *' : 'Driver'} hint="Pick a driver we know, or add a new one — their phone, plate and how they're paid are kept for next time and for paying this job.">
           <DriverPicker driverId={form.hired_driver_id} typedName={!form.hired_driver_id ? form.driver_name : null} defaultClass={form.hired_vehicle_class}
             onPick={d => setForm(f => ({
               ...f,
@@ -449,16 +534,23 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
               hired_vehicle_class: f.hired_vehicle_class ?? ((d?.vehicle_class as HiredVehicleClass | null) ?? null),
             }))} />
         </Field>
-      )}
+      ))}
 
-      <Field label="Job Duration (hours)" hint="How long this ties up the vehicle. Set it here and the job joins the fleet queue with an ETA immediately — used for own-fleet jobs.">
-        <input
-          type="number" step="0.25" min="0" className={inputCls}
-          value={form.expected_duration_minutes != null ? form.expected_duration_minutes / 60 : ''}
-          onChange={e => set('expected_duration_minutes', e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null)}
-          placeholder="e.g. 4"
-        />
-      </Field>
+      {selfHire ? (
+        <Field label="Agreed price (ETB) *" hint="What you agreed with the driver. The cashier pays it at the gate once the trip is done.">
+          <input type="number" step="0.01" min="0" inputMode="decimal" className={inputCls} value={form.amount ?? ''} placeholder="e.g. 1500"
+            onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
+        </Field>
+      ) : (
+        <Field label="Job Duration (hours)" hint="How long this ties up the vehicle. Set it here and the job joins the fleet queue with an ETA immediately — used for own-fleet jobs.">
+          <input
+            type="number" step="0.25" min="0" className={inputCls}
+            value={form.expected_duration_minutes != null ? form.expected_duration_minutes / 60 : ''}
+            onChange={e => set('expected_duration_minutes', e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null)}
+            placeholder="e.g. 4"
+          />
+        </Field>
+      )}
 
       {/* ── Route ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -501,9 +593,11 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         <Field label="Project">
           <SearchableSelect value={form.project_id ?? null} onChange={setProject} options={projectOptions} placeholder="Select project…" />
         </Field>
-        <Field label={isMoneyJob ? 'Estimated Cost (ETB)' : 'Cost (ETB, if any)'}>
-          <input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
-        </Field>
+        {!selfHire && (
+          <Field label={isMoneyJob ? 'Estimated Cost (ETB)' : 'Cost (ETB, if any)'}>
+            <input type="number" step="0.01" className={inputCls} value={form.amount ?? ''} onChange={e => set('amount', e.target.value ? parseFloat(e.target.value) : null)} />
+          </Field>
+        )}
       </div>
       <RoutePriceHint jobId={id} pickupId={pickupId} dropoffId={form.dropoff_location_id} jobType={form.job_type}
         mode={form.transport_mode} amount={form.amount} date={form.requested_date} />
