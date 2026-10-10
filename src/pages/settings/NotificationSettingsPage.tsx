@@ -248,7 +248,77 @@ export default function NotificationSettingsPage() {
       </section>
 
       {role === 'admin' && <AdminChannels />}
+      {(role === 'admin' || role === 'executive') && <SiteBotPanel />}
     </div>
+  )
+}
+
+// ── The site bot: is anyone using it? ───────────────────────────────────────
+interface BotActivity {
+  since: string
+  labour_requests: number
+  labour_requests_app: number
+  trips: number
+  crew_days: number
+  gate_payments: number
+  gate_payments_waiting: number
+  unmatched: number
+  unmatched_photos: number
+  linked_logins: number
+  linked_staff: number
+  recent_unmatched: { name: string | null; body: string | null; at: string }[]
+}
+
+function SiteBotPanel() {
+  const { data: a } = useQuery({
+    queryKey: ['bot-activity'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('bot_activity')
+      if (error) throw error
+      return data as BotActivity
+    },
+  })
+  const tiles: [string, number | undefined, string | null][] = [
+    ['Labour requests', a?.labour_requests, a ? `${a.labour_requests_app} in the app` : null],
+    ['Trucks asked for', a?.trips, null],
+    ['Days ticked', a?.crew_days, 'Who worked, by site'],
+    ['Paid at the gate', a?.gate_payments, a?.gate_payments_waiting ? `${a.gate_payments_waiting} waiting for approval` : null],
+    ['Typed, not a button', a?.unmatched, a?.unmatched_photos ? `${a.unmatched_photos} photos or files` : null],
+    ['Connected', a ? a.linked_logins + a.linked_staff : undefined, a ? `${a.linked_staff} without a login` : null],
+  ]
+  return (
+    <section className={`${card} space-y-4`}>
+      <div>
+        <h2 className={h2}><Send className="h-4 w-4 text-sky-500" /> Site bot on Telegram · this month</h2>
+        <p className={`${hint} mt-1`}>
+          What people did with the bot's buttons since {a ? new Date(a.since).toLocaleDateString([], { timeZone: 'Africa/Addis_Ababa', day: 'numeric', month: 'short' }) : '…'}. Foremen and drivers without a login are
+          connected from their staff record → Telegram.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {tiles.map(([label, n, sub]) => (
+          <div key={label} className="rounded-xl border bg-slate-50/60 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/30">
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</p>
+            <p className="text-xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{n ?? '—'}</p>
+            {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
+          </div>
+        ))}
+      </div>
+      {!!a?.recent_unmatched.length && (
+        <div>
+          <p className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Typed to the bot lately — passed to admins</p>
+          <ul className="divide-y rounded-xl border text-xs dark:divide-slate-700 dark:border-slate-700">
+            {a.recent_unmatched.map((m, i) => (
+              <li key={i} className="flex gap-3 px-3 py-2">
+                <span className="w-28 shrink-0 font-medium text-slate-700 dark:text-slate-200">{m.name ?? '—'}</span>
+                <span className="min-w-0 flex-1 break-words text-slate-600 dark:text-slate-300">{m.body}</span>
+                <span className="shrink-0 text-slate-400">{new Date(m.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -348,6 +418,20 @@ function AdminChannels() {
         <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">App address (for “Open in Kuncho” links)</span>
         <input className={input} placeholder={st?.app_url ?? window.location.origin} value={appUrl} onChange={e => setAppUrl(e.target.value)} />
       </label>
+      {/* Links only go out to a web address; anything else leaves every
+          Telegram message and email without its "Open in Kuncho" button. */}
+      {st && !/^https:\/\//.test(appUrl.trim() || st.app_url || '') && (
+        <div className="-mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          <span>“{appUrl.trim() || st.app_url || 'nothing'}” isn't a web address starting with https://, so messages go out without an “Open in Kuncho” button.</span>
+          {/^https:\/\//.test(window.location.origin) && (
+            <button type="button" disabled={busy === 'url'}
+              onClick={() => step('url', async () => { await save({ p_app_url: window.location.origin }); setAppUrl(''); toast('App address saved', 'success') })}
+              className="rounded-md bg-amber-600 px-2.5 py-1 font-semibold text-white disabled:opacity-50">
+              Use {window.location.origin}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="space-y-3 border-t pt-4 dark:border-slate-700">
         <div className="flex flex-wrap items-center gap-2">

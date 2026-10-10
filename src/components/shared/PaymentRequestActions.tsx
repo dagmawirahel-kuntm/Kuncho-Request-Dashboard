@@ -11,7 +11,7 @@
 // comes out of the printer is exactly what is previewed — and exactly
 // what gets frozen into payment_requests.document_html when it is issued.
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
@@ -62,11 +62,15 @@ interface Props {
    *  part's, with its own code and revisions. The whole-bill request and
    *  each part's are kept apart. */
   partId?: string | null
+  /** Arrived from a link that asked for the document (?prq=open|issue):
+   *  open the preview at once, and with 'issue' save it too unless one is
+   *  already issued — the cashier's voucher after a gate payment. */
+  autoOpen?: 'open' | 'issue'
 }
 
 export function PaymentRequestActions({
   sourceType, sourceId, document: doc, compact,
-  bankScope = 'all', bankId = null, bankLabel = null, label, partId = null,
+  bankScope = 'all', bankId = null, bankLabel = null, label, partId = null, autoOpen,
 }: Props) {
   const { toast } = useToast()
   const { role } = useAuth()
@@ -77,7 +81,7 @@ export function PaymentRequestActions({
 
   const canIssue = role === 'admin' || role === 'executive' || role === 'finance'
 
-  const { data: saved = [] } = useQuery({
+  const { data: saved = [], isSuccess: savedLoaded } = useQuery({
     queryKey: ['payment-requests-for-source', sourceType, sourceId, bankScope, bankId, partId],
     queryFn: async () => {
       const col = sourceType === 'expense'
@@ -202,6 +206,16 @@ export function PaymentRequestActions({
     },
     onError: (e: Error) => toast(e.message, 'error'),
   })
+
+  // Once the issued list is in — so an issued request is never issued twice.
+  const autoDone = useRef(false)
+  const issueNow = issue.mutate
+  useEffect(() => {
+    if (!autoOpen || autoDone.current || !savedLoaded) return
+    autoDone.current = true
+    setOpen(true)
+    if (autoOpen === 'issue' && canIssue && !live) issueNow()
+  }, [autoOpen, savedLoaded, canIssue, live, issueNow])
 
   // Print the iframe, not the page: the document carries its own @page
   // rules and none of the dashboard's layout.
