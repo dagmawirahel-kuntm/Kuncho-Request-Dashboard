@@ -13,6 +13,7 @@ import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import { MyAssetsSection } from '@/components/staff/MyAssetsSection'
 import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
 import { StaffTaxCostSection } from '@/components/staff/StaffTaxCostSection'
+import { StaffTelegramSection } from '@/components/staff/StaffTelegramSection'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
 import {
@@ -1087,6 +1088,7 @@ export default function StaffDetailPage() {
               <OverviewTab staff={staff} />
               <StaffBankAccountsSection staffId={staff.id} />
               <OrgPlacementSection staff={staff} />
+              <StaffTelegramSection staffId={staff.id} staffName={staff.employee_name} hasLogin={!!staff.user_id} />
               <MyAssetsSection staffId={staff.id} isOwnProfile={isOwnProfile} />
             </div>
           )}

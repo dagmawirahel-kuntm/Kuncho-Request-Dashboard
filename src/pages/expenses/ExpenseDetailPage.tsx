@@ -1,9 +1,9 @@
 import { UnverifiedVendorFlag } from '@/components/vendors/UnverifiedVendorFlag'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsFinance, canIssuePaymentRequest } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
@@ -40,6 +40,7 @@ type ExpenseWithJoins = Expense & {
   sub_categories: { item_name: string } | null
   manager_profile: { full_name: string } | null
   finance_profile: { full_name: string } | null
+  spot_profile: { full_name: string } | null
   transfers: { transfer_id_code: string | null } | null
   vendor_receipt_facilitation: { record_name: string | null } | null
   properties: { property_name: string; lease_start_date: string | null; lease_end_date: string | null } | null
@@ -65,9 +66,12 @@ type ExpenseWithJoins = Expense & {
 
 export default function ExpenseDetailPage() {
   const { id } = useParams<{ id: string }>()
+  // ?prq=open|issue — arrived for the payment request (the voucher after a gate payment).
+  const [searchParams] = useSearchParams()
+  const prqParam = searchParams.get('prq')
   // Opening the expense reads its notifications.
   useMarkEntityRead(id)
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -97,6 +101,7 @@ export default function ExpenseDetailPage() {
           sub_categories:sub_category_id ( item_name ),
           manager_profile:user_profiles!manager_approved_by ( full_name ),
           finance_profile:user_profiles!finance_approved_by ( full_name ),
+          spot_profile:user_profiles!spot_paid_by ( full_name ),
           transfers:transfer_id ( transfer_id_code ),
           vendor_receipt_facilitation:vendor_receipt_facilitation_id ( record_name ),
           properties:property_id ( property_name, lease_start_date, lease_end_date ),
@@ -773,7 +778,8 @@ export default function ExpenseDetailPage() {
             )}
             {/* A bill paid in parts is requested part by part, below. */}
             {id && prDocument && !expense.in_parts && (
-              <PaymentRequestActions sourceType="expense" sourceId={id} document={prDocument} />
+              <PaymentRequestActions sourceType="expense" sourceId={id} document={prDocument}
+                autoOpen={prqParam === 'issue' || prqParam === 'open' ? prqParam : undefined} />
             )}
             {role === 'admin' && id && (
               <ExpenseAdminActions expenseId={id} expenseCode={expense.expense_code} />
@@ -821,6 +827,32 @@ export default function ExpenseDetailPage() {
         <TrainerHintBanner entityType="expense" entityId={expense.id} hint={expenseHint} />
 
         <TaxImpactNote id={expense.id} />
+
+        {/* Paid at the gate (migration 433): the money is out; approving
+            records it as paid, by someone other than the cashier. */}
+        {expense.spot_paid_by && (
+          <div className={`rounded-xl border px-4 py-3 ${
+            expense.payment_state === 'paid'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
+              : expense.approval_status === 'rejected'
+                ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'
+                : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+          }`}>
+            <p className="text-sm font-semibold">
+              Paid at the gate {expense.spot_paid_method === 'telebirr' ? 'by telebirr' : 'in cash'} by {expense.spot_profile?.full_name ?? 'the cashier'} · {formatDateTime(expense.spot_paid_at ?? null)}
+              {expense.spot_paid_ref ? <span className="font-normal"> · ref {expense.spot_paid_ref}</span> : null}
+            </p>
+            <p className="mt-0.5 text-xs">
+              {expense.payment_state === 'paid'
+                ? 'Approved and recorded as paid.'
+                : expense.approval_status === 'rejected'
+                  ? 'Rejected — the money has already gone out, so settle it with the cashier.'
+                  : user?.id === expense.spot_paid_by
+                    ? 'You paid it, so someone else in finance approves it. Approving records it as paid.'
+                    : 'Approving it records it as paid — the cashier who paid and the person approving are two different people.'}
+            </p>
+          </div>
+        )}
 
         {/* Hero card */}
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>

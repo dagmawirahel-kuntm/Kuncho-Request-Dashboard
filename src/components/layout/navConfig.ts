@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
+  LayoutDashboard, Banknote, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -183,6 +183,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { subgroup: 'Pay', label: 'Payments', to: '/finance/payments', icon: Send, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Payment Requests', to: '/finance/payment-requests', icon: FileText, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Pay', label: 'Pay Out at the Gate', to: '/finance/pay-out', icon: Banknote, roles: ['admin', 'finance'] },
       { subgroup: 'Pay', label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Vendor Credits', to: '/finance/vendor-credits', icon: Tag, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },

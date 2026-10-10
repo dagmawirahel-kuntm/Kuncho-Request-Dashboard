@@ -40,6 +40,7 @@ import StockToolsPage from '@/pages/stock/StockToolsPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
 import TransportFormPage from '@/pages/transportation/TransportFormPage'
 import TransportPaymentFormPage from '@/pages/transportation/TransportPaymentFormPage'
+import PayOutPage from '@/pages/finance/PayOutPage'
 import DriversPage from '@/pages/transportation/DriversPage'
 import TripEstimatorPage from '@/pages/transportation/TripEstimatorPage'
 import StaffPage from '@/pages/staff/StaffPage'
@@ -470,6 +471,8 @@ export const router = createBrowserRouter([
               { path: 'transfers/:id/edit', element: <TransferFormPage /> },
               { path: 'bank-statement-import', element: <BankReconciliationPage /> },
               { path: 'cash-forecast', element: <CashForecastPage /> },
+              // The cashier paying a driver at the gate (433).
+              { path: 'finance/pay-out', element: <PayOutPage /> },
               { path: 'month-end', element: <MonthEndPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
               { path: 'clients/new', element: <ClientFormPage /> },

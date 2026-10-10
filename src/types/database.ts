@@ -510,6 +510,13 @@ export interface Expense {
    *  none — which is why anything filtering on it has to decide what to do
    *  with the unassigned rather than dropping them. */
   fiscal_period_id: string | null
+  /** Paid on the spot by a cashier (Pay out, migration 433): the payment
+   *  completes once another finance person approves it. */
+  spot_paid_by?: string | null
+  spot_paid_at?: string | null
+  spot_paid_method?: 'cash' | 'telebirr' | null
+  spot_paid_account_id?: string | null
+  spot_paid_ref?: string | null
   created_at: string
   updated_at: string
 }

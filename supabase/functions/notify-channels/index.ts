@@ -1,10 +1,15 @@
-// notify-channels: Kuncho notifications outside the app (migration 425).
+// notify-channels: Kuncho outside the app (migrations 425 and 433).
 //
-//   POST ?hook=telegram          Telegram's webhook: /start <code> links a chat
-//                                to a person, /stop unlinks. Checked with the
-//                                secret token Telegram echoes back.
-//   POST {action:"dispatch"}     from pg_cron (x-dispatch-secret): send what is
-//                                waiting for Telegram, mark it delivered.
+//   POST ?hook=telegram          Telegram's webhook, checked with the secret token
+//                                Telegram echoes back. /start <code> links a chat
+//                                to a login, or — with the connect link from a
+//                                staff record — to someone without one; /stop
+//                                unlinks. Everything else is the site bot: the
+//                                database (bot_handle) decides what to say, and
+//                                this sends it.
+//   POST {action:"dispatch"}     from pg_cron (x-dispatch-secret): notifications
+//                                waiting for Telegram, then the bot's own outbox
+//                                (approval cards, trips, edits, reminders).
 //   POST {action:"digest"}       from pg_cron: the morning email per person.
 //   POST {action:"setup_telegram" | "test_email"}   an admin, from Settings.
 //   POST {action:"dispatch_now"} any signed-in person (after "Send a test").
@@ -17,6 +22,9 @@ const SB_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const db = createClient(SB_URL, SERVICE_KEY, { auth: { persistSession: false } })
 
+// Bumped when the webhook needs different settings; dispatch re-registers it.
+const HOOK_VERSION = 2
+
 interface Config {
   app_url: string | null
   functions_url: string
@@ -27,11 +35,15 @@ interface Config {
   resend_key: string | null
 }
 interface Outgoing { id: string; chat_id: number; kind: string; title: string; body: string | null; link: string | null; priority: string }
-interface TgResult { ok: boolean; result?: { username?: string }; description?: string; error_code?: number }
-interface TgUpdate {
-  message?: { text?: string; chat?: { id?: number; type?: string }; from?: { username?: string } }
-}
+interface TgResult { ok: boolean; result?: { username?: string; message_id?: number } | boolean; description?: string; error_code?: number }
+interface TgMessage { message_id?: number; text?: string; chat?: { id?: number; type?: string }; from?: { username?: string } }
+interface TgUpdate { update_id?: number; message?: TgMessage; callback_query?: { id: string; data?: string; message?: TgMessage } }
+// A Telegram call the bot wants made. `bind` is the conversation the sent
+// message answers for; `outbox_id` marks one queued in the database.
+interface BotAction { method: string; payload: Record<string, unknown>; bind?: string; outbox_id?: number }
 interface DigestUser { user_id: string; email: string; name: string | null; items: { id: string; title: string; body: string | null; link: string | null; priority: string; created_at: string }[] }
+
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -64,71 +76,169 @@ function openUrl(cfg: Config, link: string | null) {
   return cfg.app_url.replace(/\/$/, '') + (link.startsWith('/') ? link : `/${link}`)
 }
 
+// Work that can finish after Telegram has its answer.
+function later(work: Promise<unknown>) {
+  const p = work.catch(e => console.error('background', e))
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(p)
+  else return p
+}
+
 const ICON: Record<string, string> = {
   expense: '💳', request: '📦', po: '📦', delivery: '🚚', site_report: '📝', message: '✉️',
-  leave: '🌴', float: '💵', tax: '🧾', system: '✅',
+  leave: '🌴', float: '💵', tax: '🧾', system: '✅', labour: '👷', trip: '🚚', bot: '✉️',
 }
 
 // ── Telegram ────────────────────────────────────────────────────────────────
-async function tg(cfg: Config, method: string, payload: Record<string, unknown>) {
+async function tg(cfg: Config, method: string, payload: Record<string, unknown>): Promise<TgResult> {
   if (!cfg.telegram_token) throw new Error('No Telegram bot token saved')
-  const res = await fetch(`https://api.telegram.org/bot${cfg.telegram_token}/${method}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${cfg.telegram_token}/${method}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    })
+    return await res.json().catch(() => ({ ok: false, description: `HTTP ${res.status}` })) as TgResult
+  } catch (e) {
+    return { ok: false, description: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+async function registerHook(cfg: Config, dropPending: boolean) {
+  const hook = await tg(cfg, 'setWebhook', {
+    url: `${cfg.functions_url}?hook=telegram`, secret_token: cfg.telegram_hook_secret,
+    allowed_updates: ['message', 'callback_query'], drop_pending_updates: dropPending,
   })
-  const out = await res.json().catch(() => ({ ok: false, description: `HTTP ${res.status}` }))
-  return out as TgResult
+  if (!hook.ok) return hook
+  await tg(cfg, 'setMyCommands', { commands: [
+    { command: 'menu', description: 'Workers, trucks, who worked today' },
+    { command: 'stop', description: 'Disconnect this chat from Kuncho' },
+  ] })
+  await tg(cfg, 'setMyDescription', { description: 'Kuncho on Telegram: ask for workers and trucks, tick who worked, approve labour and gate payments — and get your Kuncho notifications. Connect from Kuncho → Settings → Notifications, or with the link the office sends you.' })
+  await db.rpc('bot_hook_set_version', { p_version: HOOK_VERSION })
+  return hook
 }
 
 async function setupTelegram() {
   const cfg = await config(true)
   const me = await tg(cfg, 'getMe', {})
   if (!me.ok) return { ok: false, error: `Telegram refused the token: ${me.description ?? 'unknown error'}` }
-  const hook = await tg(cfg, 'setWebhook', {
-    url: `${cfg.functions_url}?hook=telegram`, secret_token: cfg.telegram_hook_secret,
-    allowed_updates: ['message'], drop_pending_updates: true,
-  })
+  const hook = await registerHook(cfg, true)
   if (!hook.ok) return { ok: false, error: `Could not set the webhook: ${hook.description}` }
-  await tg(cfg, 'setMyCommands', { commands: [{ command: 'stop', description: 'Stop Kuncho notifications here' }] })
-  await tg(cfg, 'setMyDescription', { description: 'Kuncho notifications: approvals, payments, deliveries and reminders, as they happen. Connect from Kuncho → Settings → Notifications.' })
-  const bot = me.result?.username ?? null
+  const bot = typeof me.result === 'object' ? me.result.username ?? null : null
   const { error } = await db.rpc('notify_service_telegram_ready', { p_bot_username: bot })
   if (error) return { ok: false, error: error.message }
   return { ok: true, bot }
 }
 
-async function onTelegramUpdate(cfg: Config, update: TgUpdate | null) {
-  const msg = update?.message
-  const chatId: number | undefined = msg?.chat?.id
-  const text: string = (msg?.text ?? '').trim()
-  if (!chatId || msg?.chat?.type !== 'private') return
-  const reply = (t: string) => tg(cfg, 'sendMessage', { chat_id: chatId, text: t, parse_mode: 'HTML' })
-
-  const start = text.match(/^\/start(?:@\w+)?(?:\s+([A-Za-z0-9]+))?$/)
-  if (start) {
-    if (!start[1]) {
-      await reply('Hi! To get your Kuncho notifications here, open <b>Kuncho → Settings → Notifications</b> and tap <b>Connect Telegram</b>.')
-      return
-    }
-    const { data: name } = await db.rpc('notify_service_telegram_link', {
-      p_code: start[1], p_chat_id: chatId, p_username: msg?.from?.username ?? null,
-    })
-    await reply(name
-      ? `✅ Connected, ${esc(String(name))}. Your Kuncho notifications will arrive here.\nSend /stop to turn them off.`
-      : 'That link has expired or was already used. Open Kuncho → Settings → Notifications and tap <b>Connect Telegram</b> again.')
-    return
-  }
-  if (/^\/stop(?:@\w+)?$/.test(text)) {
-    const { data: n } = await db.rpc('notify_service_telegram_unlink_chat', { p_chat_id: chatId })
-    await reply(n ? 'Stopped. You will not get Kuncho notifications here any more. Reconnect any time from Settings → Notifications.'
-                  : 'This chat is not connected to Kuncho.')
-    return
-  }
-  await reply('I only deliver Kuncho notifications. Manage them in Kuncho → Settings → Notifications.')
+// A webhook registered before the site bot only brought messages, not button
+// taps. The minute's dispatch puts that right on its own, once.
+let hookChecked = false
+async function healHook(cfg: Config) {
+  if (hookChecked) return
+  const { data: v } = await db.rpc('bot_hook_version')
+  if (Number(v ?? 0) >= HOOK_VERSION) { hookChecked = true; return }
+  const hook = await registerHook(cfg, false)
+  if (hook.ok) hookChecked = true
+  else console.error('webhook', hook.description)
 }
 
-async function dispatch() {
-  const cfg = await config()
-  if (!cfg.telegram_token) return { sent: 0, note: 'telegram not set up' }
+async function unlinkChat(chatId: number) {
+  const [login, staff] = await Promise.all([
+    db.rpc('notify_service_telegram_unlink_chat', { p_chat_id: chatId }),
+    db.rpc('bot_unlink_chat', { p_chat: chatId }),
+  ])
+  return Number(login.data ?? 0) + Number(staff.data ?? 0)
+}
+
+// Telegram's answer to an edit that changes nothing, or to a message that is
+// gone or too old to edit: nothing is left to do.
+const settled = (out: TgResult) =>
+  /message is not modified|message to edit not found|message can't be edited|query is too old/i.test(out.description ?? '')
+
+// Make the bot's calls in order. Sent messages are bound to their
+// conversation, so the buttons on them work; queued ones are marked done.
+async function run(cfg: Config, actions: BotAction[], queued = false) {
+  let sent = 0, failed = 0
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i]
+    const out = await tg(cfg, a.method, a.payload)
+    const ok = out.ok || settled(out)
+    const mid = typeof out.result === 'object' && out.result?.message_id ? out.result.message_id : null
+    if (a.outbox_id != null) {
+      // 400 and 403 won't change on a retry: the chat is gone, blocked, or the call is wrong.
+      const permanent = !ok && (out.error_code === 400 || out.error_code === 403)
+      await db.rpc('bot_outbox_done', {
+        p_id: a.outbox_id, p_ok: ok, p_message_id: mid,
+        p_error: ok ? null : `${permanent ? 'permanent: ' : ''}${out.description ?? `error ${out.error_code ?? '?'}`}`,
+      })
+    } else if (ok && a.bind && mid) {
+      await db.rpc('bot_bind', { p_thread: a.bind, p_message_id: mid })
+    }
+    if (ok) { sent++; continue }
+    failed++
+    console.error('telegram', a.method, out.error_code, out.description)
+    if (out.error_code === 403 && a.payload.chat_id) await unlinkChat(Number(a.payload.chat_id))
+    if (queued && out.error_code === 429) {
+      // Rate limited: hand the rest back for the next minute.
+      for (const rest of actions.slice(i + 1)) {
+        if (rest.outbox_id != null) await db.rpc('bot_outbox_done', { p_id: rest.outbox_id, p_ok: false, p_error: 'rate limited' })
+      }
+      break
+    }
+  }
+  return { sent, failed }
+}
+
+async function drainBot(cfg: Config, limit: number) {
+  const { data, error } = await db.rpc('bot_outbox_take', { p_limit: limit })
+  if (error) throw new Error(error.message)
+  const rows = (data ?? []) as BotAction[]
+  return rows.length ? await run(cfg, rows, true) : { sent: 0, failed: 0 }
+}
+
+async function handle(cfg: Config, update: TgUpdate) {
+  const { data, error } = await db.rpc('bot_handle', { p_update: update })
+  if (error) {
+    console.error('bot_handle', error.message)
+    const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id
+    if (update.callback_query) await tg(cfg, 'answerCallbackQuery', { callback_query_id: update.callback_query.id, text: 'Something went wrong — try again.', show_alert: true })
+    else if (chatId && update.message?.chat?.type === 'private') await tg(cfg, 'sendMessage', { chat_id: chatId, text: 'Something went wrong on our side — try again in a minute.' })
+    return
+  }
+  await run(cfg, (data ?? []) as BotAction[])
+}
+
+async function onTelegramUpdate(cfg: Config, update: TgUpdate | null) {
+  if (!update) return
+  const msg = update.message
+  const chatId = msg?.chat?.id
+  const text = (msg?.text ?? '').trim()
+  if (msg && chatId && msg.chat?.type === 'private') {
+    const reply = (t: string) => tg(cfg, 'sendMessage', { chat_id: chatId, text: t, parse_mode: 'HTML' })
+    const start = text.match(/^\/start(?:@\w+)?\s+([A-Za-z0-9]+)$/)
+    if (start) {
+      // A login's code from Settings, or the connect link from a staff record.
+      const username = msg.from?.username ?? null
+      const { data: login } = await db.rpc('notify_service_telegram_link', { p_code: start[1], p_chat_id: chatId, p_username: username })
+      const name = login ?? (await db.rpc('bot_link_staff', { p_code: start[1], p_chat: chatId, p_username: username })).data
+      if (!name) {
+        await reply('That link has expired or was already used. Ask the office for a new one — or, with a Kuncho login, open <b>Kuncho → Settings → Notifications</b> and tap <b>Connect Telegram</b>.')
+        return
+      }
+      await reply(`✅ Connected, ${esc(String(name))}. ${login ? 'Your Kuncho notifications will arrive here.' : 'You can ask for workers and trucks here.'}\nSend /stop to disconnect.`)
+      await handle(cfg, { ...update, message: { ...msg, text: '/menu' } })
+      return
+    }
+    if (/^\/stop(?:@\w+)?$/.test(text)) {
+      const n = await unlinkChat(chatId)
+      await reply(n ? 'Disconnected. Nothing from Kuncho will arrive here any more. Reconnect any time.'
+                    : 'This chat is not connected to Kuncho.')
+      return
+    }
+  }
+  await handle(cfg, update)
+}
+
+async function dispatchNotifications(cfg: Config) {
   const { data, error } = await db.rpc('notify_service_telegram_outbox', { p_limit: 60 })
   if (error) throw new Error(error.message)
   const rows = (data ?? []) as Outgoing[]
@@ -147,12 +257,21 @@ async function dispatch() {
     // Blocked the bot or deleted the chat: stop trying that chat.
     if (out.error_code === 403 || out.error_code === 400) {
       done.push(n.id)
-      if (out.error_code === 403) await db.rpc('notify_service_telegram_unlink_chat', { p_chat_id: n.chat_id })
+      if (out.error_code === 403) await unlinkChat(n.chat_id)
     }
     if (out.error_code === 429) break // rate limited: the next minute picks up the rest
   }
   if (done.length) await db.rpc('notify_service_mark_delivered', { p_ids: done, p_channel: 'telegram' })
   return { sent, failed, waiting: rows.length - done.length }
+}
+
+async function dispatch() {
+  const cfg = await config()
+  if (!cfg.telegram_token) return { sent: 0, note: 'telegram not set up' }
+  await healHook(cfg).catch(e => console.error('webhook', e))
+  const notes = await dispatchNotifications(cfg)
+  const bot = await drainBot(cfg, 40)
+  return { ...notes, bot }
 }
 
 // ── Email (Resend) ──────────────────────────────────────────────────────────
@@ -205,7 +324,15 @@ Deno.serve(async req => {
     if (url.searchParams.get('hook') === 'telegram') {
       const cfg = await config()
       if (!sameSecret(req.headers.get('x-telegram-bot-api-secret-token') ?? '', cfg.telegram_hook_secret)) return json({ ok: false }, 401)
-      await onTelegramUpdate(cfg, await req.json().catch(() => null))
+      // Always 200: Telegram re-sends an update it thinks failed, and a
+      // second "Send for approval" must not become a second request.
+      try {
+        await onTelegramUpdate(cfg, await req.json().catch(() => null))
+      } catch (e) {
+        console.error('update', e)
+      }
+      // Cards and messages the update queued for other people.
+      await later(drainBot(cfg, 25))
       return json({ ok: true })
     }
 
