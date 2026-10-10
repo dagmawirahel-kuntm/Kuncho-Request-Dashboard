@@ -71,6 +71,10 @@ const WHO: { value: Who; icon: typeof Send; title: string; sub: string }[] = [
 // else types the driver and transport_driver_for_trip (migration 435) adds them.
 const DRIVER_LIST_ROLES = ['admin', 'executive', 'finance', 'operations_manager', 'hr_officer', 'project_manager', 'stock_manager', 'procurement_officer', 'logistics_officer']
 
+// How a typed driver gets paid; '' = not sure, the cashier asks.
+type TypedPay = { method: '' | 'telebirr' | 'bank' | 'cash'; bank: string; account: string; name: string }
+const BANKS = ['CBE', 'Awash', 'Dashen', 'Abyssinia', 'Coopbank', 'Wegagen', 'Hibret', 'Zemen']
+
 const STATUS_FLOW: Record<TransportJobStatus, { label: string; next: { to: TransportJobStatus; label: string; cls: string }[] }> = {
   requested:   { label: 'Requested',   next: [{ to: 'assigned', label: 'Assign', cls: 'bg-blue-600 hover:bg-blue-700' }, { to: 'cancelled', label: 'Cancel', cls: 'bg-red-600 hover:bg-red-700' }] },
   assigned:    { label: 'Assigned',    next: [{ to: 'in_progress', label: 'Start Job', cls: 'bg-purple-600 hover:bg-purple-700' }, { to: 'cancelled', label: 'Cancel', cls: 'bg-red-600 hover:bg-red-700' }] },
@@ -136,6 +140,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const [who, setWho] = useState<Who>(() => (isEdit || canDispatch || searchParams.get('mode') ? 'logistics' : 'self'))
   const selfHire = !isEdit && who === 'self'
   const [typedDriver, setTypedDriver] = useState({ name: '', phone: '' })
+  const [typedPay, setTypedPay] = useState<TypedPay>({ method: '', bank: '', account: '', name: '' })
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const projectOptions  = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
@@ -352,6 +357,10 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
     }
     if (selfHire && !form.hired_driver_id && !typedDriver.name.trim()) { setError('Who is the driver? Pick one or type their name'); return }
     if (selfHire && !(Number(form.amount) > 0)) { setError('What price did you agree with the driver?'); return }
+    // The telebirr number defaults to the driver's own phone.
+    const payAccount = typedPay.method === 'telebirr' ? (typedPay.account.trim() || typedDriver.phone.trim()) : typedPay.account.trim()
+    if (selfHire && !form.hired_driver_id && typedPay.method === 'telebirr' && !payAccount) { setError('Which telebirr number do they get paid on?'); return }
+    if (selfHire && !form.hired_driver_id && typedPay.method === 'bank' && (!typedPay.bank.trim() || !payAccount)) { setError('Which bank, and what account number?'); return }
     setError(''); setSaving(true)
     const payload: Record<string, unknown> = { ...form, pickup_location_id: pickupId ?? null }
     // Who asked: it's how people find their own requests, and what lets staff save one at all.
@@ -361,6 +370,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       if (!driverId) {
         const { data, error: e } = await supabase.rpc('transport_driver_for_trip', {
           p_name: typedDriver.name.trim(), p_phone: typedDriver.phone.trim() || null, p_vclass: form.hired_vehicle_class ?? null,
+          p_pay: typedPay.method ? { method: typedPay.method, bank: typedPay.bank.trim() || null, account: payAccount || null, name: typedPay.name.trim() || null } : null,
         })
         if (e) { setSaving(false); setError(e.message); toast(e.message, 'error'); return }
         driverId = data as string
@@ -516,12 +526,39 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
       )}
 
       {isMoneyJob && (selfHire && !canSeeDrivers ? (
-        <Field label="Driver *" hint="Their name and phone are kept for next time and for paying this trip.">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <input type="text" className={inputCls} placeholder="Driver's name" value={typedDriver.name}
-              onChange={e => setTypedDriver(d => ({ ...d, name: e.target.value }))} />
-            <input type="tel" inputMode="tel" className={inputCls} placeholder="Phone (09… or 07…)" value={typedDriver.phone}
-              onChange={e => setTypedDriver(d => ({ ...d, phone: e.target.value }))} />
+        <Field label="Driver *" hint="Their name, phone and how they're paid are kept for next time and for paying this trip.">
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input type="text" className={inputCls} placeholder="Driver's name" value={typedDriver.name}
+                onChange={e => setTypedDriver(d => ({ ...d, name: e.target.value }))} />
+              <input type="tel" inputMode="tel" className={inputCls} placeholder="Phone (09… or 07…)" value={typedDriver.phone}
+                onChange={e => setTypedDriver(d => ({ ...d, phone: e.target.value }))} />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="How do they get paid?">
+              <span className="mr-1 text-xs text-slate-500">Paid by</span>
+              {([['telebirr', 'telebirr'], ['bank', 'Bank account'], ['cash', 'Cash'], ['', 'Not sure']] as const).map(([v, l]) => (
+                <button key={v || 'unsure'} type="button" role="radio" aria-checked={typedPay.method === v}
+                  onClick={() => setTypedPay(p => ({ ...p, method: v }))}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium ${typedPay.method === v
+                    ? 'border-brand bg-brand/10 text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>{l}</button>
+              ))}
+            </div>
+            {typedPay.method === 'telebirr' && (
+              <input type="tel" inputMode="tel" className={inputCls} value={typedPay.account}
+                placeholder={typedDriver.phone.trim() ? `telebirr number — leave empty to use ${typedDriver.phone.trim()}` : 'telebirr number (09…)'}
+                onChange={e => setTypedPay(p => ({ ...p, account: e.target.value }))} />
+            )}
+            {typedPay.method === 'bank' && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <input list="kuncho-banks" className={inputCls} placeholder="Bank (e.g. CBE)" value={typedPay.bank}
+                  onChange={e => setTypedPay(p => ({ ...p, bank: e.target.value }))} />
+                <datalist id="kuncho-banks">{BANKS.map(b => <option key={b} value={b} />)}</datalist>
+                <input inputMode="numeric" className={inputCls} placeholder="Account number" value={typedPay.account}
+                  onChange={e => setTypedPay(p => ({ ...p, account: e.target.value }))} />
+                <input className={inputCls} placeholder="Name on the account" value={typedPay.name}
+                  onChange={e => setTypedPay(p => ({ ...p, name: e.target.value }))} />
+              </div>
+            )}
           </div>
         </Field>
       ) : (

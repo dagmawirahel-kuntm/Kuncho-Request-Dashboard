@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, CheckCircle2, FileText, Loader2, Package, Send, Truck, UserPlus, X } from 'lucide-react'
+import { Banknote, CheckCircle2, CreditCard, FileText, Loader2, Package, Send, Truck, UserPlus, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { OVERHEAD } from '@/lib/expenseQuality'
+import { payoutLabel } from '@/lib/transport'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import { ProjectOrOverheadSelect, ReceiptFields, type ReceiptValue } from '@/components/expenses/ExpenseFields'
@@ -55,7 +56,10 @@ interface SpotRow {
   approved_by_name: string | null
   project_name: string | null
 }
-interface Driver { id: string; full_name: string; phone: string | null; plate_number: string | null }
+interface Driver {
+  id: string; full_name: string; phone: string | null; plate_number: string | null
+  payout_method: 'bank' | 'telebirr' | 'cash' | null; bank_name: string | null; account_number: string | null; account_name: string | null
+}
 interface Po { id: string; bundle_code: string | null; vendor_name: string | null; status: string; created_at: string; vendor: { vendor_name: string } | null }
 interface Account { id: string; account_name: string; account_number: string | null; type: string | null }
 
@@ -103,7 +107,7 @@ export default function PayOutPage() {
   const { data: drivers = [] } = useQuery({
     queryKey: ['transport-drivers-active'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('transport_drivers').select('id, full_name, phone, plate_number')
+      const { data, error } = await supabase.from('transport_drivers').select('id, full_name, phone, plate_number, payout_method, bank_name, account_number, account_name')
         .eq('is_active', true).order('full_name')
       if (error) throw error
       return (data ?? []) as Driver[]
@@ -152,9 +156,17 @@ export default function PayOutPage() {
     id: a.id, label: a.account_name, sub: [a.type, a.account_number].filter(Boolean).join(' · ') || undefined,
   })), [accounts])
 
+  // The driver, and how they said they get paid as the way to pay them.
+  function pickDriver(id: string | null) {
+    setDriverId(id)
+    const d = drivers.find(x => x.id === id)
+    if (d?.payout_method === 'telebirr') setMethod('telebirr')
+    else if (d?.payout_method === 'cash') setMethod('cash')
+  }
+
   function pickTrip(t: TripRow) {
     setTripId(t.id)
-    if (t.hired_driver_id) { setDriverId(t.hired_driver_id); setNewDriver(false) }
+    if (t.hired_driver_id) { pickDriver(t.hired_driver_id); setNewDriver(false) }
     if (t.amount != null && amount == null) setAmount(Number(t.amount))
   }
 
@@ -165,7 +177,9 @@ export default function PayOutPage() {
     setReceipt(emptyReceipt); setNote(''); setDone(null)
   }
 
-  const paidTo = newDriver ? driverName.trim() : (drivers.find(d => d.id === driverId)?.full_name ?? '')
+  const driver = newDriver ? null : drivers.find(d => d.id === driverId) ?? null
+  const driverPays = driver ? payoutLabel(driver) : null
+  const paidTo = newDriver ? driverName.trim() : (driver?.full_name ?? '')
   // What is still missing, in the order the form asks for it.
   const missing = (() => {
     if (forWhat === 'trip' && !trip) return 'Pick the trip being paid for'
@@ -338,7 +352,22 @@ export default function PayOutPage() {
                 <p className={`${hint} sm:col-span-2`}>Saved to the driver list, so next time they're one tap away.</p>
               </div>
             ) : (
-              <SearchableSelect value={driverId} onChange={setDriverId} options={driverOptions} placeholder="Find the driver…" />
+              <SearchableSelect value={driverId} onChange={pickDriver} options={driverOptions} placeholder="Find the driver…" />
+            )}
+            {driver && (
+              <p className={`flex flex-wrap items-center gap-1.5 text-xs ${driverPays ? 'text-slate-600 dark:text-slate-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                {driverPays
+                  ? <>Gets paid by <b className="font-semibold">{driverPays}</b>{driver.payout_method === 'bank' && driver.account_name ? ` (${driver.account_name})` : ''}</>
+                  : <>No payment details on file — ask the driver.</>}
+                <Link to="/transportation/drivers" className="text-brand hover:underline">{driverPays ? 'Change' : 'Add them'}</Link>
+              </p>
+            )}
+            {driver?.payout_method === 'bank' && (
+              <p className={hint}>
+                A gate payment is cash or telebirr. To pay this driver by bank transfer, record it as an expense
+                {trip ? <> from <Link to={`/transportation/${trip.id}/pay`} className="text-brand hover:underline">the trip</Link></> : ' from the trip'} instead.
+              </p>
             )}
           </section>
 
@@ -355,6 +384,9 @@ export default function PayOutPage() {
               <button type="button" role="radio" aria-checked={method === 'cash'} className={chip(method === 'cash')} onClick={() => setMethod('cash')}>Cash</button>
               <button type="button" role="radio" aria-checked={method === 'telebirr'} className={chip(method === 'telebirr')} onClick={() => setMethod('telebirr')}>telebirr</button>
             </div>
+            {method === 'telebirr' && driver?.payout_method === 'telebirr' && driver.account_number && (
+              <p className="text-xs text-slate-600 dark:text-slate-300">Send to <b className="font-semibold tabular-nums">{driver.account_number}</b> — their telebirr.</p>
+            )}
             {method === 'telebirr' && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div><span className={label}>Sent from</span>
