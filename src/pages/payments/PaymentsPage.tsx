@@ -20,6 +20,8 @@ import { ArrowRight, ChevronRight, FileText, HandCoins, Landmark } from 'lucide-
 //   To approve → To pay → Sent, to confirm → Paid
 // One strip shows each stage's count, amount and what's overdue; one
 // workspace is open at a time. Approving lives in the Approval Queue.
+// A bank payment is paid when its FT reference is entered (migration 442);
+// the bank statement then checks it on the bank audit.
 
 type Tab = 'pay' | 'confirm' | 'advances' | 'paperwork' | 'paid'
 const TABS: Tab[] = ['pay', 'confirm', 'advances', 'paperwork', 'paid']
@@ -30,7 +32,7 @@ export default function PaymentsPage() {
   const canAct = role === 'admin' || role === 'finance'
   const isVrfManager = useIsVrfManager()
   const [tab, setTab] = useTabParam<Tab>(TABS, 'pay')
-  const { toPay, toApprove, cash, awaitingBank, statements, recent, advances, wht } = usePaymentsData()
+  const { toPay, toApprove, cash, awaitingBank, sentBatches, statements, recent, advances, wht } = usePaymentsData()
   const { data: grns = {} } = useAdvanceGrns(advances.data ?? [])
 
   // ── Stage figures ───────────────────────────────────────────────
@@ -42,11 +44,18 @@ export default function PaymentsPage() {
   const payOld = pay.filter(r => (r.days_since_approval ?? 0) >= 14).length
   const payOldest = Math.max(0, ...pay.map(r => r.days_since_approval ?? 0))
 
-  const sentRecent = (recent.data ?? []).filter(r => r.payment_state === 'sent' && (r.payment_method === 'cash' || r.payment_method === 'vrf'))
-  const confirmCount = (awaitingBank.data?.length ?? 0) + sentRecent.length
-  const confirmAmount = (awaitingBank.data ?? []).reduce((s, r) => s + Number(r.net_payable ?? r.amount_etb ?? 0), 0)
+  // The same rows To confirm lists: a bill in a waiting batch counts once, as its batch.
+  const batches = sentBatches.data ?? []
+  const batchIds = new Set(batches.map(b => b.id))
+  const bankWaiting = (awaitingBank.data ?? []).filter(r => !r.batch_payment_id || !batchIds.has(r.batch_payment_id))
+  const sentRecent = (recent.data ?? []).filter(r => r.payment_state === 'sent'
+    && (((r.payment_method === 'cash' || r.payment_method === 'other') && !r.batch_payment_id) || r.payment_method === 'vrf'))
+  const confirmCount = bankWaiting.length + batches.length + sentRecent.length
+  const confirmAmount = bankWaiting.reduce((s, r) => s + Number(r.net_payable ?? r.amount_etb ?? 0), 0)
+    + batches.reduce((s, b) => s + Number(b.amount ?? 0), 0)
     + sentRecent.reduce((s, r) => s + Number(r.net_payable ?? r.amount_etb ?? 0), 0)
-  const confirmOldest = Math.max(0, ...(awaitingBank.data ?? []).map(r => r.days_waiting ?? 0), ...sentRecent.map(r => daysSince(r.payment_state_changed_at)))
+  const confirmOldest = Math.max(0, ...bankWaiting.map(r => r.days_waiting ?? 0), ...batches.map(b => b.days_waiting ?? 0),
+    ...sentRecent.map(r => daysSince(r.payment_state_changed_at)))
 
   const paid = (recent.data ?? []).filter(r => r.payment_state === 'paid')
 
@@ -86,11 +95,11 @@ export default function PaymentsPage() {
           tone={payOld ? 'red' : undefined} active={tab === 'pay'} onClick={() => setTab('pay')} />
         <Stage
           step="3" label="Sent, to confirm" count={confirmCount} amount={confirmAmount}
-          note={confirmCount ? `oldest ${Math.floor(confirmOldest)}d — match to the statement` : 'All confirmed'}
+          note={confirmCount ? `oldest ${Math.floor(confirmOldest)}d — add the bank reference` : 'All marked paid'}
           tone={confirmOldest >= 14 ? 'red' : confirmOldest >= 7 ? 'amber' : undefined} active={tab === 'confirm'} onClick={() => setTab('confirm')} />
         <Stage
           step="4" label="Paid this week" count={paid.length} amount={paid.reduce((s, r) => s + Number(r.net_payable ?? r.amount_etb ?? 0), 0)}
-          note="Confirmed against the bank" tone="green" active={tab === 'paid'} onClick={() => setTab('paid')} />
+          note="Each checked against the statement" tone="green" active={tab === 'paid'} onClick={() => setTab('paid')} />
       </div>
 
       {/* ── Open alongside the pipeline ─────────────────────────── */}
@@ -116,7 +125,7 @@ export default function PaymentsPage() {
       {/* ── One workspace at a time ─────────────────────────────── */}
       <div>
         {tab === 'pay' && <ToPayTab rows={pay} loading={toPay.isLoading} canAct={canAct} />}
-        {tab === 'confirm' && <ToConfirmTab awaitingBank={awaitingBank.data ?? []} recent={recent.data ?? []} canAct={canAct} isVrfManager={isVrfManager} />}
+        {tab === 'confirm' && <ToConfirmTab awaitingBank={awaitingBank.data ?? []} sentBatches={batches} recent={recent.data ?? []} canAct={canAct} isVrfManager={isVrfManager} />}
         {tab === 'advances' && <AdvancesTab advances={adv} canAct={canAct} />}
         {tab === 'paperwork' && <PaperworkTab wht={wht.data ?? []} canAct={canAct} />}
         {tab === 'paid' && <PaidTab recent={recent.data ?? []} />}

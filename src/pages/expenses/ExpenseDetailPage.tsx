@@ -20,12 +20,14 @@ import { useRefreshTaxImpact, useTaxImpact } from '@/lib/taxImpact'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import { ExpensePaymentsPanel } from '@/components/payments/ExpensePaymentsPanel'
 import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type { Expense } from '@/types/database'
 import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { IssueChips } from '@/components/expenses/ExpenseFields'
 import { ISSUE, type ExpenseIssue, vatInside } from '@/lib/expenseQuality'
 import { ExpenseAdminActions, ExpenseAdminHistory } from '@/components/expenses/ExpenseAdminActions'
+import { ExpenseQuestions } from '@/components/expenses/ExpenseQuestions'
 import { useMarkEntityRead } from '@/lib/notifications'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
@@ -854,6 +856,9 @@ export default function ExpenseDetailPage() {
           </div>
         )}
 
+        {/* Questions before approving (migration 444): whoever raised it answers here. */}
+        <ExpenseQuestions expense={expense} />
+
         {/* Hero card */}
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>
           <div className="relative px-6 py-7 overflow-hidden">
@@ -1104,6 +1109,16 @@ export default function ExpenseDetailPage() {
                 </div>
               ))
             }
+            {/* The bank's confirmation, attached when it was marked paid (442). */}
+            {expense.payment_certificate_url && (role === 'admin' || role === 'finance' || role === 'executive') && (
+              <div className="flex items-start gap-3 px-5 py-3">
+                <div className="w-40 shrink-0 pt-0.5 text-xs text-slate-500 dark:text-slate-400">Payment confirmation</div>
+                <PrivateDocLink path={expense.payment_certificate_url} bucket="finance-documents" title="Open the bank's confirmation"
+                  className="text-sm text-brand hover:underline">
+                  {expense.payment_certificate_name ?? 'Open'}
+                </PrivateDocLink>
+              </div>
+            )}
           </div>
         </div>
 

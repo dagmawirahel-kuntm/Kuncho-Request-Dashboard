@@ -2,30 +2,41 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { AccountOverview } from '@/lib/bankReconciliation'
 import { ImportStatementPanel } from './ImportStatementPanel'
 import { ReviewQueue } from './ReviewQueue'
 import { StatementsPanel } from './StatementsPanel'
+import { AuditPanel } from './AuditPanel'
+import { useBankAuditFlags } from '@/lib/bankAudit'
 import { Landmark, Lock } from 'lucide-react'
 
-type Tab = 'queue' | 'import' | 'statements'
+type Tab = 'queue' | 'audit' | 'import' | 'statements'
+const TABS: Tab[] = ['queue', 'audit', 'import', 'statements']
 
 /**
  * Bank reconciliation: import each account's statements (CSV, Excel, PDF),
  * settle every line against what it paid or brought in — or explain it —
  * and close the period at the bank's balance (migrations 344–346).
+ * The audit (440–442) is the statement as the last proof of what the
+ * payment workflow says was paid: what doesn't agree, and who paid it.
  */
 export default function BankReconciliationPage() {
   // Links from Accounts, alerts and the month-end checklist open an account
   // (?account=), a tab (?tab=) or a line (?line=).
   const [params] = useSearchParams()
+  const { role } = useAuth()
+  const canAct = role === 'admin' || role === 'finance'
   const [tab, setTab] = useState<Tab | null>(() => {
-    const t = params.get('tab')
-    return t === 'queue' || t === 'import' || t === 'statements' ? t : null
+    const t = params.get('tab') as Tab | null
+    return t && TABS.includes(t) ? t : null
   })
   const [accountId, setAccountId] = useState<string | null>(() => params.get('account'))
-  const focusLineId = params.get('line')
+  // The line the queue opens on: from a link (?line=), or a flag on the audit.
+  const [focusLineId, setFocusLineId] = useState<string | null>(() => params.get('line'))
+  const { data: flags = [] } = useBankAuditFlags()
+  const flagCount = flags.filter(f => !accountId || f.account_id === accountId).length
 
   const { data: overview = [], isLoading } = useQuery({
     queryKey: ['bank-overview'],
@@ -44,6 +55,7 @@ export default function BankReconciliationPage() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'queue', label: `To reconcile${openTotal ? ` (${withLines.filter(a => !accountId || a.account_id === accountId).reduce((s, a) => s + a.open_count, 0)})` : ''}` },
+    { id: 'audit', label: `Audit${flagCount ? ` (${flagCount})` : ''}` },
     { id: 'import', label: 'Import a statement' },
     { id: 'statements', label: 'Statements & closing' },
   ]
@@ -54,6 +66,7 @@ export default function BankReconciliationPage() {
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Bank Reconciliation</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Import each account's statement, settle every line against the payment or receipt it is — or say what it is — and close the period at the bank's balance.
+          The Audit tab shows what the bank and the payments don't agree on.
         </p>
       </div>
 
@@ -85,10 +98,10 @@ export default function BankReconciliationPage() {
         </div>
       )}
 
-      <div className="flex gap-1 border-b dark:border-slate-700">
+      <div className="flex gap-1 overflow-x-auto border-b dark:border-slate-700">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${activeTab === t.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${activeTab === t.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
             {t.label}
           </button>
         ))}
@@ -99,7 +112,12 @@ export default function BankReconciliationPage() {
         )}
       </div>
 
-      {activeTab === 'queue' && <ReviewQueue accountId={accountId} accounts={accounts} focusLineId={focusLineId} />}
+      {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} />}
+      {activeTab === 'audit' && (
+        <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'}
+          onOpenLine={lineId => { setFocusLineId(lineId); setTab('queue') }}
+          onImport={acct => { setAccountId(acct); setTab('import') }} />
+      )}
       {activeTab === 'import' && (
         <ImportStatementPanel onImported={acct => { setAccountId(acct); setTab('queue') }} />
       )}

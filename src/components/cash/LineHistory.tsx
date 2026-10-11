@@ -56,7 +56,7 @@ export function LineHistory({ lineId }: { lineId: string }) {
 
 // Undo a match or explanation, saying why. A match only unlinks the bank line:
 // the payment stays paid and waits to be matched to the right line.
-export function UndoMatch({ line, onDone }: { line: BankLine; onDone: () => void }) {
+export function UndoMatch({ line, onDone }: { line: Pick<BankLine, 'line_id' | 'reconciled_as'>; onDone: () => void }) {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')

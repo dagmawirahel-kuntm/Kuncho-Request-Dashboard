@@ -9,9 +9,10 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { UnverifiedVendorFlag } from '@/components/vendors/UnverifiedVendorFlag'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
 import type { ExpensePaymentMethod, ToPayQueueRow } from '@/types/database'
-import { PAYMENT_METHODS, ageLabel, ageTone, toSend, usePayerAndAccountOptions, useRefreshPayments } from '@/lib/payments'
-import { CreateBatchModal, RecordAdvanceModal, WhtCell } from './PaymentModals'
+import { PAYMENT_METHODS, ageLabel, ageTone, payResultText, toSend, usePayerAndAccountOptions, useRefreshPayments } from '@/lib/payments'
+import { CreateBatchModal, WhtCell } from './PaymentModals'
 import { PayPartModal } from '@/components/payments/PayPartModal'
+import { PayBillModal } from '@/components/payments/PayBillModal'
 import { PART_KIND_LABEL, WHT_MODE_LABEL } from '@/lib/expensePayments'
 import { formatDate } from '@/lib/utils'
 import { AlertTriangle, CheckCircle2, HandCoins, Layers, Search, Send, X } from 'lucide-react'
@@ -23,6 +24,8 @@ import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxIm
 // paid — on delivery (select and send together), in advance (each one
 // recorded on its own, because it waits on a GRN to close), or in parts
 // (migration 430: the row is the bill's next part, paid on its own).
+// Paying one with the FT reference from the slip marks it paid there and
+// then (migration 442); the bank statement checks it later.
 
 type Sort = 'oldest' | 'largest' | 'impact'
 
@@ -43,7 +46,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
   const [method, setMethod] = useState<ExpensePaymentMethod>('transfer')
   const [sending, setSending] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
-  const [advancing, setAdvancing] = useState<ToPayQueueRow | null>(null)
+  const [paying, setPaying] = useState<ToPayQueueRow | null>(null)
   const [splitting, setSplitting] = useState<ToPayQueueRow | null>(null)
   const [payingPart, setPayingPart] = useState<ToPayQueueRow | null>(null)
   const [whtRow, setWhtRow] = useState<ToPayQueueRow | null>(null)
@@ -76,7 +79,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
       .in('id', [...selected])
     setSending(false)
     if (error) { toast(error.message, 'error'); return }
-    toast(`${selected.size} marked as sent — confirm each against the bank statement`, 'success')
+    toast(`${selected.size} marked as sent — add each one's bank reference on To confirm`, 'success')
     setSelected(new Set())
     refresh()
   }
@@ -107,12 +110,17 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
       )}
 
       <Group
-        title="Pay on delivery" note="Select several and send them together, or put them in one batch wire."
+        title="Pay on delivery" note="Pay one with its bank reference, or select several to send together or put in one batch wire."
         total={onDelivery.reduce((s, r) => s + toSend(r), 0)} count={onDelivery.length}
         header={canAct && onDelivery.length > 0 ? <input type="checkbox" checked={allPicked} onChange={toggleAll} className="h-4 w-4 rounded border-slate-300 text-brand" title="Select all" /> : null}>
         {onDelivery.map(r => (
           <Row key={r.id} r={r} impact={impactById.get(r.id)} period={impact?.period.label} canAct={canAct} picked={selected.has(r.id)} onPick={() => toggle(r.id)}
-            onWht={() => setWhtRow(r)} onSplit={() => setSplitting(r)} />
+            onWht={() => setWhtRow(r)} onSplit={() => setSplitting(r)}
+            action={canAct ? (
+              <button onClick={() => setPaying(r)} className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand/90">
+                <HandCoins className="h-3 w-3" /> Pay
+              </button>
+            ) : null} />
         ))}
       </Group>
 
@@ -142,7 +150,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
           {inAdvance.map(r => (
             <Row key={r.id} r={r} impact={impactById.get(r.id)} period={impact?.period.label} canAct={canAct} onWht={() => setWhtRow(r)}
               action={canAct ? (
-                <button onClick={() => setAdvancing(r)} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">
+                <button onClick={() => setPaying(r)} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">
                   <HandCoins className="h-3 w-3" /> Pay advance
                 </button>
               ) : null} />
@@ -187,7 +195,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
           approverId={splitting.finance_approved_by} defaultPayerId={payerId} defaultAccountId={null} defaultMethod={method}
           payerOptions={payerOptions} accountOptions={accountOptions}
           onClose={() => setSplitting(null)}
-          onDone={() => { setSplitting(null); refresh(); toast('Part sent — the rest stays in the queue as the final part', 'success') }} />
+          onDone={(res, m) => { setSplitting(null); refresh(); toast(`${payResultText(res, m)} · the rest stays in the queue as the final part`, 'success') }} />
       )}
       {payingPart && payingPart.part_id && (
         <PayPartModal
@@ -199,7 +207,7 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
           approverId={payingPart.finance_approved_by} defaultPayerId={payerId} defaultAccountId={null} defaultMethod={method}
           payerOptions={payerOptions} accountOptions={accountOptions}
           onClose={() => setPayingPart(null)}
-          onDone={() => { setPayingPart(null); refresh(); toast('Part sent — confirm it against the bank statement', 'success') }} />
+          onDone={(res, m) => { setPayingPart(null); refresh(); toast(payResultText(res, m), 'success') }} />
       )}
       {whtRow && (
         <WithholdingModal expense={whtRow} onClose={() => setWhtRow(null)}
@@ -217,11 +225,17 @@ export default function ToPayTab({ rows, loading, canAct }: { rows: ToPayQueueRo
           }}
           onError={msg => toast(msg, 'error')} />
       )}
-      {advancing && (
-        <RecordAdvanceModal row={advancing} defaultPayerId={payerId} defaultMethod={method} payerOptions={payerOptions} accountOptions={accountOptions}
-          onClose={() => setAdvancing(null)}
-          onDone={() => { setAdvancing(null); toast('Advance paid — it closes when the GRN is recorded', 'success'); refresh() }}
-          onError={msg => toast(msg, 'error')} />
+      {paying && (
+        <PayBillModal
+          target={{ id: paying.id, title: paying.vendor_name ?? paying.item_service_description ?? paying.expense_code ?? 'Bill', code: paying.expense_code,
+            approverId: paying.finance_approved_by, advance: paying.payment_pattern === 'pay_in_advance',
+            gross: paying.amount_etb, wht: paying.wht_amount, credit: paying.credit_applied_etb }}
+          defaultPayerId={payerId} defaultMethod={method} payerOptions={payerOptions} accountOptions={accountOptions}
+          onClose={() => setPaying(null)}
+          onDone={(res, m) => {
+            setPaying(null); refresh()
+            toast(res.state === 'advance' ? `${payResultText(res, m)} · it closes when the GRN is recorded` : payResultText(res, m), 'success')
+          }} />
       )}
     </div>
   )

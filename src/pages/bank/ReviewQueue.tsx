@@ -19,7 +19,8 @@ const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focu
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   for (const k of ['bank-lines', 'bank-overview', 'bank-suggestions', 'bank-paid-without-line', 'bank-rules', 'bank-line-events', 'bank-alerts',
-    'account-control', 'expenses', 'sales', 'accounts', 'payments-dashboard']) {
+    'account-control', 'expenses', 'sales', 'accounts', 'payments-dashboard',
+    'bank-audit-flags', 'bank-audit-accounts', 'bank-audit-scorecard', 'v-payment-bank-check']) {
     qc.invalidateQueries({ queryKey: [k] })
   }
 }
