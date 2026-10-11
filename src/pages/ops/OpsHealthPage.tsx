@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import { Stat, Pill } from '@/components/record/Record'
-import { useOpsHealthItems, KIND_META, TEAM_LABEL, ageDays, type OpsItem } from '@/lib/opsHealth'
+import { useOpsHealthItems, KIND_META, TEAM_LABEL, ageDays, teamOf, type OpsItem } from '@/lib/opsHealth'
 import { Activity, Search, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, User } from 'lucide-react'
 
 // Everything that has stopped moving, in one place: purchase orders with
@@ -28,7 +28,7 @@ export default function OpsHealthPage() {
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     return items.filter(i =>
-      (!team || (KIND_META[i.kind]?.team ?? i.owner_team) === team) &&
+      (!team || teamOf(i) === team) &&
       (!mine || i.owner_user_id === profile?.id) &&
       (!urgentOnly || i.urgent) &&
       (!s || i.title.toLowerCase().includes(s) || (i.detail ?? '').toLowerCase().includes(s) || (i.owner_name ?? '').toLowerCase().includes(s)))
@@ -36,7 +36,7 @@ export default function OpsHealthPage() {
 
   const teams = useMemo(() => {
     const c = new Map<string, number>()
-    for (const i of items) { const t = KIND_META[i.kind]?.team ?? i.owner_team; c.set(t, (c.get(t) ?? 0) + 1) }
+    for (const i of items) { const t = teamOf(i); c.set(t, (c.get(t) ?? 0) + 1) }
     return [...c.entries()].sort((a, b) => b[1] - a[1])
   }, [items])
 

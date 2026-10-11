@@ -27,11 +27,17 @@ export const KIND_META: Record<string, KindMeta> = {
   sdn_unsigned:         { label: 'Site delivery not signed',       action: 'Sign for the goods on site, or tell procurement they never came.', team: 'project' },
   po_not_ordered:       { label: 'Purchase order not placed',      action: 'Approve it, or mark it ordered once the vendor has it.', team: 'procurement' },
   pr_not_sourced:       { label: 'Request lines not sourced',      action: 'Add the lines to a purchase order, issue from stock, or cancel them.', team: 'procurement' },
-  payment_unconfirmed:  { label: 'Sent, not on a bank statement',  action: 'Import the latest statement and match it, or check the transfer went.', team: 'finance' },
+  payment_unconfirmed:  { label: 'Sent, not marked paid',          action: 'Add its bank reference from the transfer slip, or confirm the cash was handed over.', team: 'finance' },
   expense_not_approved: { label: 'Expense waiting for approval',   action: 'Approve or reject it.', team: 'finance' },
   receipt_missing:      { label: 'Paid without a receipt',         action: 'Upload the receipt (or record why there is none).', team: 'finance' },
   wht_missing:          { label: 'Withholding not recorded',       action: 'Record the WHT on the expense, or note why it does not apply.', team: 'finance' },
-  bank_line_unmatched:  { label: 'Bank line not matched',          action: 'Match it to its expense, sale or transfer, or classify it.', team: 'finance' },
+  // The bank audit (migrations 440–441): the statement against the payments.
+  bank_out_unrecorded:  { label: 'Paid by the bank, not in the system', action: 'Record the expense it was, or explain the line on the bank audit.', team: 'finance' },
+  bank_in_unrecorded:   { label: 'Money in, no sale',              action: 'Record the sale it was, or explain the line on the bank audit.', team: 'finance' },
+  bank_paid_not_on_bank:{ label: 'Paid, not on the statement',     action: 'Match it to its line, or check the account and reference it was paid with.', team: 'finance' },
+  bank_amount_mismatch: { label: 'Bank amount doesn’t tie',        action: 'Check the line against what it pays: fix the payment, or undo the match.', team: 'finance' },
+  bank_duplicate_ref:   { label: 'Bank reference used twice',      action: 'Find which payment the transfer really paid and correct the other.', team: 'finance' },
+  statement_due:        { label: 'Bank statement due',             action: 'Import the latest statement for the account.', team: 'finance' },
   vendor_unverified:    { label: 'Paying an unverified vendor',    action: 'Have the other department check the bank details before paying.', team: 'finance' },
   transport_open:       { label: 'Transport job still open',       action: 'Complete it, or cancel it if it did not happen.', team: 'logistics' },
   labor_not_decided:    { label: 'Labour request not decided',     action: 'Approve or reject it.', team: 'hr' },
@@ -41,6 +47,9 @@ export const KIND_META: Record<string, KindMeta> = {
   tax_impact_stuck:     { label: 'High tax impact, waiting',     action: 'Approve or pay it before the month ends — its VAT counts in the month it is paid.', team: 'finance' },
   site_report_missing:  { label: 'Site reports not coming in',    action: 'Remind the foreman, or mark the days the site did not work.', team: 'project' },
 }
+
+/** Who owns the next step: the row says (a big bank flag goes to management), else its kind. */
+export const teamOf = (i: Pick<OpsItem, 'kind' | 'owner_team'>) => i.owner_team || KIND_META[i.kind]?.team || 'finance'
 
 export const TEAM_LABEL: Record<string, string> = {
   procurement: 'Procurement', finance: 'Finance', logistics: 'Logistics', hr: 'HR', project: 'Projects', management: 'Management',

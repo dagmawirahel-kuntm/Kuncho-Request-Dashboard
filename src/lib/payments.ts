@@ -6,6 +6,7 @@ import { useAccounts, useUserProfiles } from '@/hooks/useLookups'
 import type {
   ToPayQueueRow, AccountCashPositionRow, RecentPaymentRow, OpenVendorAdvanceRow,
   ExpensePaymentMethod, AwaitingBankConfirmationRow, AccountStatementSummaryRow,
+  SentBatchRow, PaymentBankCheckRow,
 } from '@/types/database'
 
 // The Payments page's data: one query per stage of
@@ -29,6 +30,40 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   // which draws down the credit and posts it.
   vendor_credit: 'Vendor Credit',
 }
+
+/** Paid through a bank, so marked paid with the reference from the slip (442). */
+export const isBankMethod = (m: string | null | undefined) => m === 'transfer' || m === 'cpo' || m === 'cheque' || m === 'batch_wire'
+
+/** What pay_expense / mark_payment_paid reached. */
+export interface PayResult { state: 'paid' | 'advance' | 'sent'; linked: boolean }
+
+/** The toast for a payment call, in words. */
+export function payResultText(r: PayResult, method?: string | null): string {
+  if (r.state === 'sent') {
+    if (method === 'vrf') return 'Sent — the VRF manager pays it from a settled fund'
+    return isBankMethod(method)
+      ? 'Sent — add its bank reference on To confirm to mark it paid'
+      : 'Sent — confirm it on To confirm once it is handed over'
+  }
+  const what = r.state === 'advance' ? 'Paid ahead' : 'Paid'
+  if (method && !isBankMethod(method)) return `${what} — confirmed`
+  return r.linked ? `${what} — the bank statement already shows it` : `${what} — the statement will confirm it when it is imported`
+}
+
+/** Today, as the date input wants it (local time). */
+export const todayIso = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** The bank reference from the slip, the day it went, and the confirmation, if any. */
+export interface ProofValue {
+  ref: string
+  date: string
+  proofUrl: string | null
+  proofName: string | null
+}
+export const emptyProof = (ref?: string | null): ProofValue => ({ ref: ref ?? '', date: todayIso(), proofUrl: null, proofName: null })
 
 /** What actually leaves the bank for a to-pay row: after WHT and any vendor credit. */
 export const toSend = (r: Pick<ToPayQueueRow, 'cash_to_send' | 'net_payable' | 'amount_etb'>) =>
@@ -74,6 +109,15 @@ export function usePaymentsData() {
       return (data ?? []) as AwaitingBankConfirmationRow[]
     },
   })
+  // Batches sent and waiting for their one bank reference (442).
+  const sentBatches = useQuery({
+    queryKey: ['v-sent-batches'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_sent_batches').select('*').order('sent_at')
+      if (error) throw error
+      return (data ?? []) as SentBatchRow[]
+    },
+  })
   const statements = useQuery({
     queryKey: ['v-account-statement-summary'],
     queryFn: async () => {
@@ -106,7 +150,43 @@ export function usePaymentsData() {
       return (data ?? []) as WhtToPrepareRow[]
     },
   })
-  return { toPay, toApprove, cash, awaitingBank, statements, recent, advances, wht }
+  return { toPay, toApprove, cash, awaitingBank, sentBatches, statements, recent, advances, wht }
+}
+
+/**
+ * Whether the bank statement shows each payment (v_payment_bank_check, 440),
+ * by expense id — a batch's bills share their batch's check.
+ */
+export function usePaymentBankChecks(expenseIds: string[], batchIds: string[]) {
+  const key = [...expenseIds].sort().join(',') + '|' + [...batchIds].sort().join(',')
+  return useQuery({
+    queryKey: ['v-payment-bank-check', key],
+    enabled: expenseIds.length + batchIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const cols = 'kind, id, expense_id, status, problem, line_date, statement_through, bank_ref'
+      const [byExpense, byBatch] = await Promise.all([
+        expenseIds.length
+          ? supabase.from('v_payment_bank_check').select(cols).in('expense_id', expenseIds)
+          : Promise.resolve({ data: [], error: null }),
+        batchIds.length
+          ? supabase.from('v_payment_bank_check').select(cols).eq('kind', 'batch').in('id', batchIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      if (byExpense.error) throw byExpense.error
+      if (byBatch.error) throw byBatch.error
+      type Check = Pick<PaymentBankCheckRow, 'kind' | 'id' | 'expense_id' | 'status' | 'problem' | 'line_date' | 'statement_through' | 'bank_ref'>
+      const expenses = new Map<string, Check>()
+      for (const c of (byExpense.data ?? []) as Check[]) {
+        // A bill paid in parts: the part still waiting matters most.
+        const prev = c.expense_id ? expenses.get(c.expense_id) : undefined
+        if (c.expense_id && (!prev || prev.status === 'confirmed')) expenses.set(c.expense_id, c)
+      }
+      const batches = new Map<string, Check>()
+      for (const c of (byBatch.data ?? []) as Check[]) batches.set(c.id, c)
+      return { expenses, batches }
+    },
+  })
 }
 
 /** The GRN that lets each advance close, by PO. */
@@ -160,8 +240,8 @@ export function useRefreshPayments() {
   const qc = useQueryClient()
   return () => {
     for (const k of ['v-to-pay-queue', 'expense-approval-queue-summary', 'v-account-cash-position', 'v-recent-payments',
-      'v-open-vendor-advances', 'v-awaiting-bank-confirmation', 'v-account-statement-summary', 'v-wht-receipts-to-prepare',
-      'expenses', 'expense-approval-queue']) qc.invalidateQueries({ queryKey: [k] })
+      'v-open-vendor-advances', 'v-awaiting-bank-confirmation', 'v-sent-batches', 'v-account-statement-summary', 'v-wht-receipts-to-prepare',
+      'v-payment-bank-check', 'expenses', 'expense-approval-queue']) qc.invalidateQueries({ queryKey: [k] })
   }
 }
 

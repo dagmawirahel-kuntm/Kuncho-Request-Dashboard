@@ -2,14 +2,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { ArrowLeft, Layers, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Layers, CheckCircle2, Landmark } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
 import { WithholdingModal } from '@/components/shared/WithholdingModal'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
+import { MarkPaidModal } from '@/components/payments/MarkPaidModal'
+import { payResultText, type PayResult } from '@/lib/payments'
 import { useAccounts, useUserProfiles } from '@/hooks/useLookups'
 import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { buildPayeeLines, totalHeadcount } from '@/lib/laborPaymentRequestDocument'
@@ -33,7 +36,7 @@ export default function BatchPaymentDetailPage() {
   const { role, user } = useAuth()
   const qc = useQueryClient()
   const canConfirm = role === 'admin' || role === 'finance'
-  const [confirming, setConfirming] = useState(false)
+  const [marking, setMarking] = useState(false)
   const [approving, setApproving] = useState(false)
   const [payerId, setPayerId] = useState<string | null>(null)
   const [approveAccountId, setApproveAccountId] = useState<string | null>(null)
@@ -146,14 +149,15 @@ export default function BatchPaymentDetailPage() {
     [userProfiles, approverIds, anyUnpaid, user?.id]
   )
 
-  async function handleConfirm() {
-    if (!id) return
-    setConfirming(true)
-    const { error } = await supabase.rpc('confirm_batch_payment', { p_batch_payment_id: id })
-    setConfirming(false)
-    if (error) { toast(error.message, 'error'); return }
-    toast('Batch payment confirmed as paid', 'success')
+  // One transfer, one reference: the whole batch is paid with it (442).
+  function handleMarked(res: PayResult) {
+    setMarking(false)
+    toast(payResultText(res, shared(e => e.payment_method) ?? 'batch_wire'), 'success')
     qc.invalidateQueries({ queryKey: ['batch-payment-expenses-detail', id] })
+    qc.invalidateQueries({ queryKey: ['batch-payment-detail', id] })
+    qc.invalidateQueries({ queryKey: ['v-sent-batches'] })
+    qc.invalidateQueries({ queryKey: ['v-awaiting-bank-confirmation'] })
+    qc.invalidateQueries({ queryKey: ['batch-payments'] })
   }
 
   async function handleRelease() {
@@ -317,16 +321,37 @@ export default function BatchPaymentDetailPage() {
           <div className="flex items-center gap-2">
             {canConfirm && anySent && (
               <button
-                onClick={handleConfirm}
-                disabled={confirming}
+                onClick={() => setMarking(true)}
                 className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
               >
-                <CheckCircle2 className="h-3.5 w-3.5" /> {confirming ? 'Confirming…' : 'Confirm Payment Sent'}
+                <Landmark className="h-3.5 w-3.5" /> {shared(e => e.payment_method) === 'cash' ? 'Confirm paid' : 'Mark paid'}
               </button>
             )}
             {id && <PaymentRequestActions sourceType="batch_payment" sourceId={id} document={prDocument} />}
           </div>
         </div>
+
+        {marking && (
+          <MarkPaidModal
+            target={{ kind: 'batch', id: batch.id, title: batch.payment_code ?? 'Batch payment',
+              subtitle: `${batchExpenses.length} bills`, amount: netTotal, method: shared(e => e.payment_method),
+              accountId: shared(e => e.account_id), bankRef: batch.bank_ref ?? null }}
+            accountOptions={accountOptions}
+            onClose={() => setMarking(false)} onDone={handleMarked} />
+        )}
+
+        {(batch.bank_ref || batch.paid_date) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-200">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>Paid{batch.paid_date ? ` ${formatDate(batch.paid_date)}` : ''}{batch.bank_ref ? <> · <span className="font-mono">{batch.bank_ref}</span></> : null}</span>
+            {batch.proof_url && (
+              <PrivateDocLink path={batch.proof_url} bucket="finance-documents" title="Open the bank's confirmation" className="font-medium underline-offset-2 hover:underline">
+                {batch.proof_name ?? 'Confirmation'}
+              </PrivateDocLink>
+            )}
+            <span className="ml-auto text-xs opacity-80">{batch.transfer_id ? 'On the bank statement' : 'The statement checks it when it is imported'}</span>
+          </div>
+        )}
 
         <div className="rounded-2xl overflow-hidden" style={{ background: '#1B3A5C' }}>
           <div className="px-6 py-7">

@@ -7,10 +7,10 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { btn } from '@/lib/ui/button'
 import { Pill, type Tone } from '@/components/record/Record'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
-import { MatchTransferModal } from '@/pages/payments/PaymentModals'
 import { PaymentPlanEditor } from '@/components/payments/PaymentPlanEditor'
 import { PayPartModal } from '@/components/payments/PayPartModal'
-import { usePayerAndAccountOptions, PAYMENT_METHOD_LABEL } from '@/lib/payments'
+import { MarkPaidModal } from '@/components/payments/MarkPaidModal'
+import { usePayerAndAccountOptions, PAYMENT_METHOD_LABEL, payResultText } from '@/lib/payments'
 import {
   PART_KIND_LABEL, PART_STATE_LABEL, WHT_MODE_LABEL, newRowKey, partDueText, savePlan, useExpenseParts, usePartVat, useRefreshParts,
   type PlanRow,
@@ -18,10 +18,10 @@ import {
 import type { LaborPaymentRequestInput } from '@/lib/laborPaymentRequestDocument'
 import type { ExpensePaymentMethod, ExpensePaymentPart, ExpenseWhtMode } from '@/types/database'
 
-// How a bill is being paid, part by part: what went out, what is waiting on
-// the bank, what is still planned and when it falls due — with the actions
-// for each part and its own Payment Request. A bill still paid in one go
-// shows a single "Pay in parts" entry point.
+// How a bill is being paid, part by part: what went out, what is waiting for
+// its bank reference, what is still planned and when it falls due — with the
+// actions for each part and its own Payment Request. A bill still paid in
+// one go shows a single "Pay in parts" entry point.
 
 export interface PanelExpense {
   id: string
@@ -61,7 +61,7 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
   const [showReplaced, setShowReplaced] = useState(false)
   const [planning, setPlanning] = useState(false)
   const [paying, setPaying] = useState<ExpensePaymentPart | 'start' | null>(null)
-  const [matching, setMatching] = useState<ExpensePaymentPart | null>(null)
+  const [marking, setMarking] = useState<ExpensePaymentPart | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   const parts = allParts.filter(p => p.state !== 'cancelled')
@@ -143,7 +143,7 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
             approverId={expense.finance_approved_by} defaultPayerId={null} defaultAccountId={expense.account_id}
             defaultMethod={expense.payment_method as ExpensePaymentMethod | null}
             payerOptions={payerOptions} accountOptions={accountOptions}
-            onClose={() => setPaying(null)} onDone={() => { setPaying(null); toast('Part sent — the rest stays in the queue', 'success'); refresh(expense.id) }} />
+            onClose={() => setPaying(null)} onDone={(res, m) => { setPaying(null); toast(`${payResultText(res, m)} · the rest stays in the queue`, 'success'); refresh(expense.id) }} />
         )}
       </div>
     )
@@ -221,7 +221,7 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
                   )}
                   {canAct && p.state === 'planned' && !approved && <span className="text-[11px] text-slate-400">Waits for finance approval of the bill</span>}
                   {canAct && p.state === 'sent' && bankMethod && (
-                    <button onClick={() => setMatching(p)} className={btn('info', 'sm')}><Landmark className="h-3 w-3" /> Match bank line</button>
+                    <button onClick={() => setMarking(p)} className={btn('info', 'sm')}><Landmark className="h-3 w-3" /> Mark paid</button>
                   )}
                   {canAct && p.state === 'sent' && !bankMethod && (
                     <button disabled={busy === p.id} onClick={() => run(p.id, () => supabase.rpc('confirm_expense_part_cash', { p_payment_id: p.id }), `Part ${p.part_no} confirmed paid`)}
@@ -284,14 +284,16 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
           defaultMethod={expense.payment_method as ExpensePaymentMethod | null}
           payerOptions={payerOptions} accountOptions={accountOptions}
           onClose={() => setPaying(null)}
-          onDone={() => { setPaying(null); toast('Part sent — confirm it against the bank statement', 'success'); refresh(expense.id) }} />
+          onDone={(res, m) => { setPaying(null); toast(payResultText(res, m), 'success'); refresh(expense.id) }} />
       )}
-      {matching && (
-        <MatchTransferModal
-          row={{ id: expense.id, amount_etb: Number(matching.cash_etb), batch_payment_id: null, part_id: matching.id, part_no: matching.part_no, part_count: matching.part_count }}
-          onClose={() => setMatching(null)}
-          onMatched={() => { setMatching(null); toast('Matched to the bank line — part paid', 'success'); refresh(expense.id) }}
-          onError={msg => toast(msg, 'error')} />
+      {marking && (
+        <MarkPaidModal
+          target={{ kind: 'part', id: marking.id, title: `${expense.expense_code ?? 'Bill'} · part ${marking.part_no} of ${marking.part_count}`,
+            subtitle: marking.account_name, amount: Number(marking.cash_etb), method: marking.payment_method,
+            accountId: marking.account_id ?? expense.account_id, bankRef: marking.bank_ref }}
+          accountOptions={accountOptions}
+          onClose={() => setMarking(null)}
+          onDone={res => { setMarking(null); toast(payResultText(res, marking.payment_method), 'success'); refresh(expense.id) }} />
       )}
     </div>
   )

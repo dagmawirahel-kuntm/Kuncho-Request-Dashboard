@@ -32,6 +32,7 @@ export type BatchExpense = {
   vendors_bank_account: string | null
   paid_to_staff_id: string | null
   paid_to: { employee_name: string; bank_account: string | null; bank: BankRef } | null
+  account_id?: string | null
   accounts: { account_name: string } | null
   finance_approved_by: string | null
   finance_approved_at: string | null
@@ -62,7 +63,7 @@ export const BATCH_EXPENSE_SELECT = `id, expense_code, expense_type, item_servic
   rollup_period_start, rollup_period_end, projects(project_name),
   vendor_id, vendors(vendor_name, bank_account, bank:accounts!vendors_bank_id_fkey(account_name)), vendors_name, vendors_bank_account,
   paid_to_staff_id, paid_to:staff!expenses_paid_to_staff_id_fkey(employee_name, bank_account, bank:accounts!staff_bank_id_fkey(account_name)),
-  accounts!expenses_account_id_fkey(account_name),
+  account_id, accounts!expenses_account_id_fkey(account_name),
   finance_approved_by, finance_approved_at,
   labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit, scope_of_work, site_location)`
 

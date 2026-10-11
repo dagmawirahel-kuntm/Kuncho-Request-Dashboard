@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import { HandCoins, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency } from '@/lib/utils'
+import { useToast } from '@/contexts/ToastContext'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { btn } from '@/lib/ui/button'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
-import { PAYMENT_METHODS } from '@/lib/payments'
+import { BankProofFields } from '@/components/payments/BankProofFields'
+import { PAYMENT_METHODS, emptyProof, isBankMethod, type PayResult, type ProofValue } from '@/lib/payments'
 import { PART_KIND_LABEL, WHT_MODE_LABEL } from '@/lib/expensePayments'
 import type { ExpensePartKind, ExpensePaymentMethod, ExpenseWhtMode } from '@/types/database'
 
 // Sends money against a bill: one planned part (all of it, or less — the
 // rest stays planned right after it), or, for a bill still paid in one go,
-// a first part now with the rest left as the final part. Either way the
-// payment is "sent" until the bank line is matched or the cash confirmed.
+// a first part now with the rest left as the final part. By bank with the FT
+// reference from the slip the part is paid there and then (migration 442);
+// without it, or in cash, it is "sent" until the reference is added or the
+// cash confirmed.
 
 export type PayTarget =
   | { kind: 'part'; partId: string; partNo: number; partCount: number; partKind: ExpensePartKind; label: string | null
@@ -30,7 +34,7 @@ interface Props {
   payerOptions: { id: string; label: string }[]
   accountOptions: { id: string; label: string; sub?: string }[]
   onClose: () => void
-  onDone: () => void
+  onDone: (result: PayResult, method: ExpensePaymentMethod) => void
 }
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -45,11 +49,12 @@ export function PayPartModal({
   const [method, setMethod] = useState<ExpensePaymentMethod>(defaultMethod && defaultMethod !== 'vrf' ? defaultMethod : 'transfer')
   const [accountId, setAccountId] = useState<string | null>(defaultAccountId)
   const [amount, setAmount] = useState<number | null>(target.kind === 'part' ? target.amount : null)
-  const [bankRef, setBankRef] = useState('')
+  const [proof, setProof] = useState<ProofValue>(() => emptyProof())
   const [note, setNote] = useState('')
   const [whtMode, setWhtMode] = useState<ExpenseWhtMode>('last')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const amt = Number(amount ?? 0)
   const short = target.kind === 'part' ? amt > 0 && amt < target.amount - 0.005 : true
@@ -62,29 +67,42 @@ export function PayPartModal({
   const cash = Math.max(0, amt - wht)
   const tooMuch = target.kind === 'part' ? amt > target.amount + 0.005 : amt >= target.payable - 0.005
   const selfPay = !!payerId && payerId === approverId
-  const needsAccount = ['transfer', 'cpo', 'cheque'].includes(method)
+  const needsAccount = isBankMethod(method)
+  const ref = proof.ref.trim()
+  const paysNow = needsAccount && ref.length > 0
   const valid = amt > 0 && !tooMuch && !!payerId && !selfPay && (!needsAccount || !!accountId)
 
   async function submit() {
     if (!valid) return
     setSaving(true); setError(null)
-    const { error: e } = target.kind === 'part'
+    const { data: partId, error: e } = target.kind === 'part'
       ? await supabase.rpc('pay_expense_part', {
           p_payment_id: target.partId, p_disbursed_by: payerId, p_method: method, p_account_id: accountId,
-          p_amount: amt, p_bank_ref: bankRef.trim() || null, p_note: note.trim() || null,
+          p_amount: amt, p_bank_ref: ref || null, p_note: note.trim() || null,
         })
       : await supabase.rpc('pay_expense_amount', {
           p_expense_id: target.expenseId, p_amount: amt, p_disbursed_by: payerId, p_method: method,
-          p_account_id: accountId, p_bank_ref: bankRef.trim() || null, p_note: note.trim() || null, p_wht_mode: whtMode,
+          p_account_id: accountId, p_bank_ref: ref || null, p_note: note.trim() || null, p_wht_mode: whtMode,
         })
+    if (e) { setSaving(false); setError(e.message); return }
+    if (!paysNow) { setSaving(false); onDone({ state: 'sent', linked: false }, method); return }
+    // With the reference from the slip, the part is paid there and then.
+    const { data: res, error: e2 } = await supabase.rpc('mark_payment_paid', {
+      p_kind: 'part', p_id: partId, p_bank_ref: ref, p_paid_date: proof.date,
+      p_proof_url: proof.proofUrl, p_proof_name: proof.proofName,
+    })
     setSaving(false)
-    if (e) { setError(e.message); return }
-    onDone()
+    if (e2) {
+      toast(`Sent, but not marked paid: ${e2.message} — add the reference on To confirm`, 'error')
+      onDone({ state: 'sent', linked: false }, method)
+      return
+    }
+    onDone(res as PayResult, method)
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800" onClick={e => e.stopPropagation()}>
+      <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 border-b px-5 py-3 dark:border-slate-700">
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100"><HandCoins className="h-4 w-4 text-brand" /> {title}</h2>
@@ -93,7 +111,7 @@ export function PayPartModal({
           <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="space-y-3 overflow-y-auto px-5 py-4">
           {target.kind === 'part' && (
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Part {target.partNo} of {target.partCount} · {target.label || PART_KIND_LABEL[target.partKind]} · {formatCurrency(target.amount)}
@@ -128,7 +146,7 @@ export function PayPartModal({
             <SearchableSelect value={payerId} onChange={setPayerId} options={payerOptions} placeholder="Select payer…" />
             {selfPay && <p className="mt-1 text-[11px] text-red-600">They approved this bill — someone else has to pay it.</p>}
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Method</label>
               <select value={method} onChange={e => setMethod(e.target.value as ExpensePaymentMethod)} className={inputCls}>
@@ -136,28 +154,32 @@ export function PayPartModal({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Bank reference</label>
-              <input value={bankRef} onChange={e => setBankRef(e.target.value)} placeholder="Optional" className={inputCls} />
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Paid from{needsAccount ? '' : ' (optional)'}</label>
+              <SearchableSelect value={accountId} onChange={setAccountId} options={accountOptions} placeholder="Select account…" />
             </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Paid from{needsAccount ? '' : ' (optional)'}</label>
-            <SearchableSelect value={accountId} onChange={setAccountId} options={accountOptions} placeholder="Select account…" />
-          </div>
+          {needsAccount && (
+            <BankProofFields value={proof} onChange={setProof} bank
+              refNote="With the reference it is paid now. Leave it empty if the slip isn’t to hand — it waits on To confirm." />
+          )}
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)" className={inputCls} />
 
           <div className="rounded-lg border bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40">
             <p className="text-xs text-slate-500 dark:text-slate-400">Send</p>
             <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(cash)}</p>
             {wht > 0 && <p className="text-[11px] tabular-nums text-slate-400">{formatCurrency(amt)} less WHT {formatCurrency(wht)}</p>}
-            <p className="mt-1 text-[11px] text-slate-400">It stays “sent” until the bank line is matched{method === 'cash' ? ' or the cash is confirmed' : ''}.</p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              {paysNow ? `Paid on ${formatDate(proof.date)} — the books post now and the statement checks it later.`
+                : needsAccount ? 'It stays “sent” until its bank reference is added on To confirm.'
+                : 'It stays “sent” until the cash is confirmed on To confirm.'}
+            </p>
           </div>
           {error && <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
         </div>
 
         <div className="flex justify-end gap-2 border-t px-5 py-3 dark:border-slate-700">
           <button onClick={onClose} className={btn('secondary')}>Cancel</button>
-          <button onClick={submit} disabled={!valid || saving} className={btn('primary')}>{saving ? 'Sending…' : 'Mark as sent'}</button>
+          <button onClick={submit} disabled={!valid || saving} className={btn('primary')}>{saving ? 'Saving…' : paysNow ? 'Mark paid' : 'Mark as sent'}</button>
         </div>
       </div>
     </div>

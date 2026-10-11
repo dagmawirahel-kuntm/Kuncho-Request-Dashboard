@@ -13,7 +13,8 @@ import { useTaxPeriodLabel } from '@/hooks/useTaxPeriod'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { canApproveAsExecutive, canApproveAsFinance } from '@/lib/expenseAccess'
-import { formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import { Landmark } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -29,9 +30,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
+// Money in that the statement shows and no sale accounts for (the bank
+// audit, migration 440): the sale it was, recorded from its line.
+type BankLinePrefill = {
+  line_id: string; account_id: string; value_date: string; amount: number; direction: 'debit' | 'credit'
+  reference_code: string | null; narration: string | null; transaction_type: string | null; reconciled_as: string | null
+}
+
 export default function SaleFormPage() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
+  const [searchParams] = useSearchParams()
+  const bankLineId = searchParams.get('bank_line')
   const { data: record, isLoading } = useQuery({
     queryKey: ['sale', id],
     queryFn: async () => {
@@ -41,15 +51,26 @@ export default function SaleFormPage() {
     },
     enabled: isEdit,
   })
+  const { data: bankLine, isLoading: lineLoading } = useQuery({
+    queryKey: ['bank-line-for-sale', bankLineId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_bank_line_status')
+        .select('line_id, account_id, value_date, amount, direction, reference_code, narration, transaction_type, reconciled_as')
+        .eq('line_id', bankLineId!).maybeSingle()
+      if (error) throw error
+      return data as BankLinePrefill | null
+    },
+    enabled: !isEdit && !!bankLineId,
+  })
 
-  if (isEdit && isLoading) {
+  if ((isEdit && isLoading) || (!isEdit && bankLineId && lineLoading)) {
     return <FormPage title={isEdit ? 'Edit Sale' : 'New Sale'} backTo="/sales" loading onSave={() => {}} />
   }
 
-  return <SaleFormPageBody id={id} record={record} />
+  return <SaleFormPageBody id={id} record={record} bankLine={bankLine?.direction === 'credit' ? bankLine : undefined} />
 }
 
-function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
+function SaleFormPageBody({ id, record, bankLine }: { id?: string; record?: Sale; bankLine?: BankLinePrefill }) {
   const isEdit = !!id
   const taxPeriodOf = useTaxPeriodLabel()
     const navigate = useNavigate()
@@ -106,7 +127,22 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
         contract_id: record.contract_id,
         is_final_payment: record.is_final_payment,
       }
-      : { sales_status: 'Draft', is_project_funded: true, client_id: clientId ?? undefined, is_final_payment: false }
+      : {
+        sales_status: 'Draft', is_project_funded: true, client_id: clientId ?? undefined, is_final_payment: false,
+        // From a bank line: what came in, when, where and with which
+        // reference. Saved, the line links to it and marks it paid.
+        ...(bankLine ? {
+          sales_status: 'Invoiced' as const,
+          sales_description: (bankLine.narration ?? bankLine.transaction_type ?? '').trim().slice(0, 140),
+          date: bankLine.value_date,
+          amount: Number(bankLine.amount),
+          account_id: bankLine.account_id,
+          payment_method: 'Bank Transfer',
+          bank_ref: bankLine.reference_code,
+          notes: `Recorded from the bank statement: ${formatCurrency(Number(bankLine.amount))} received ${formatDate(bankLine.value_date)}`
+            + `${bankLine.reference_code ? ` (${bankLine.reference_code})` : ''}${bankLine.narration ? ` — ${bankLine.narration}` : ''}.`,
+        } : {}),
+      }
   )
     const selectedContract = useMemo(() => clientContracts.find((c: any) => c.id === form.contract_id) ?? null, [clientContracts, form.contract_id])
     const [saving, setSaving] = useState(false)
@@ -142,16 +178,43 @@ function SaleFormPageBody({ id, record }: { id?: string; record?: Sale }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('sales').update(form as any).eq('id', id!) : supabase.from('sales').insert([form as any])
     const { error: err } = await op
+    if (err) { setSaving(false); setError(err.message); toast(err.message, 'error'); return }
+    // Recorded from a bank line: link the two now, by the line's reference.
+    let linked = false
+    if (!isEdit && bankLine) {
+      const { data } = await supabase.rpc('auto_reconcile_bank_lines', { p_import_id: null, p_account_id: bankLine.account_id })
+      linked = Number(data ?? 0) > 0
+      for (const k of ['bank-audit-flags', 'bank-audit-accounts', 'bank-lines', 'bank-overview']) qc.invalidateQueries({ queryKey: [k] })
+    }
     setSaving(false)
-    if (err) { setError(err.message); toast(err.message, 'error'); return }
     dropRecordCache(qc, 'sale')
     qc.invalidateQueries({ queryKey: ['sales'] })
-    toast(isEdit ? 'Sale updated' : 'Sale created', 'success')
-    navigate('/sales')
+    toast(isEdit ? 'Sale updated' : bankLine ? (linked ? 'Sale recorded and matched to its bank line' : 'Sale recorded — match it to the line on the bank queue') : 'Sale created', 'success')
+    navigate(bankLine ? '/bank-statement-import?tab=audit' : '/sales')
   }
 
   return (
-    <FormPage title={isEdit ? 'Edit Sale' : 'New Sale'} backTo="/sales" error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Sale'} onSave={handleSave}>
+    <FormPage title={isEdit ? 'Edit Sale' : 'New Sale'} backTo={bankLine ? '/bank-statement-import?tab=audit' : '/sales'} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Sale'} onSave={handleSave}>
+
+      {bankLine && (
+        <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-800/40 dark:bg-sky-900/20">
+          <Landmark className="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600 dark:text-sky-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">From money in that no sale accounts for</p>
+            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+              {formatCurrency(Number(bankLine.amount))} in on {formatDate(bankLine.value_date)}
+              {bankLine.reference_code && <> · <span className="font-mono">{bankLine.reference_code}</span></>}
+              {bankLine.narration && <span className="text-slate-400"> · {bankLine.narration}</span>}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+              If the client withheld tax, enter the invoice amount — what they kept back is recorded when the line is matched. Pick the client and project.
+            </p>
+            {bankLine.reconciled_as && (
+              <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">This line has been reconciled since — check it isn’t recorded already.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {isEdit && (
         <div className="rounded-lg border bg-slate-50 p-4 space-y-3">

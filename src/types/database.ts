@@ -881,6 +881,8 @@ export interface Sale {
   finance_approved_by: string | null
   finance_approved_at: string | null
   transfer_id: string | null
+  /** The bank's reference for the money in; links the sale to its statement line. */
+  bank_ref?: string | null
   /** What the bank line brought in, and what the client kept back (migration 348). */
   amount_received?: number | null
   withheld_by_client?: number | null
@@ -1974,6 +1976,11 @@ export interface BatchPayment {
   notes: string | null
   assignee_id: string | null
   transfer_id: string | null
+  // Marked paid with one bank reference for the whole wire (migration 442).
+  bank_ref?: string | null
+  paid_date?: string | null
+  proof_url?: string | null
+  proof_name?: string | null
   created_at: string
   updated_at: string
 }
@@ -2187,6 +2194,150 @@ export interface AwaitingBankConfirmationRow {
   part_id: string | null
   part_no: number | null
   part_count: number | null
+  /** The reference typed when it was sent, if any (migration 442). */
+  bank_ref?: string | null
+}
+
+// A batch sent and waiting for its bank reference (migration 442).
+export interface SentBatchRow {
+  id: string
+  payment_code: string | null
+  notes: string | null
+  assignee_id: string | null
+  assignee_name: string | null
+  bills: number
+  amount: number
+  payment_method: ExpensePaymentMethod | null
+  account_id: string | null
+  account_name: string | null
+  sent_at: string | null
+  days_waiting: number | null
+  bank_ref: string | null
+}
+
+// ── The bank audit (migrations 440–442) ───────────────────────────
+// Whether the bank statement shows each payment marked paid by bank.
+export type BankCheckStatus = 'confirmed' | 'not_checked' | 'before_statements' | 'problem'
+export type BankCheckProblem = 'amount' | 'duplicate_ref' | 'not_in_bank'
+export interface PaymentBankCheckRow {
+  kind: 'expense' | 'batch' | 'part' | 'vrf' | 'payroll'
+  id: string
+  expense_id: string | null
+  code: string | null
+  payee: string | null
+  description: string | null
+  amount: number
+  account_id: string | null
+  account_name: string | null
+  paid_on: string | null
+  payer_id: string | null
+  payer_name: string | null
+  bank_ref: string | null
+  transfer_id: string | null
+  method: string | null
+  state: string | null
+  line_id: string | null
+  line_amount: number | null
+  line_date: string | null
+  line_difference: number | null
+  statement_through: string | null
+  status: BankCheckStatus
+  problem: BankCheckProblem | null
+  link: string
+}
+
+export type BankAuditFlagKind = 'bank_not_recorded' | 'money_in_no_sale' | 'paid_not_in_bank' | 'amount_mismatch' | 'duplicate_ref'
+export type BankFlagSeverity = 'new' | 'open' | 'amber' | 'red'
+export interface BankAuditFlagRow {
+  flag_id: string
+  kind: BankAuditFlagKind
+  account_id: string | null
+  account_name: string | null
+  line_id: string | null
+  record_kind: string | null
+  record_id: string | null
+  expense_id: string | null
+  reference: string | null
+  title: string
+  detail: string | null
+  amount: number | null
+  expected: number | null
+  difference: number | null
+  ref_date: string | null
+  age_days: number | null
+  severity: BankFlagSeverity
+  big: boolean
+  payer_id: string | null
+  payer_name: string | null
+  /** Candidates, claims or what the line pays — shaped by kind. */
+  related: Record<string, unknown>[] | null
+  link: string | null
+}
+
+export interface BankAuditAccountRow {
+  account_id: string
+  account_name: string
+  role: string | null
+  first_date: string | null
+  statement_through: string | null
+  last_import_at: string | null
+  closed_through: string | null
+  line_count: number
+  open_count: number
+  /** Up to here, every payment by bank agrees with the statement. */
+  checked_through: string | null
+  statement_age_days: number | null
+  statement_due: boolean
+  statement_every_days: number
+  flags: number
+  red: number
+  amber: number
+  big: number
+  flag_amount: number
+  oldest_flag: string | null
+  confirmed_count: number
+  confirmed_amount: number
+  unchecked_count: number
+  unchecked_amount: number
+  problem_count: number
+  problem_amount: number
+}
+
+export interface BankAuditSettings {
+  id: boolean
+  new_within_days: number
+  amber_after_days: number
+  red_after_days: number
+  big_amount: number
+  grace_days: number
+  tie_tolerance: number
+  statement_every_days: number
+  updated_at: string | null
+}
+
+export interface BankChargeRule {
+  id: string
+  account_id: string | null
+  amount: number
+  label: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface BankAuditScoreRow {
+  scope: 'all' | 'account' | 'payer'
+  key: string | null
+  label: string
+  payments: number
+  amount: number
+  confirmed_count: number
+  confirmed_amount: number
+  unchecked_count: number
+  unchecked_amount: number
+  problem_count: number
+  problem_amount: number
+  before_count: number
+  before_amount: number
 }
 
 // Per-account statement reconciliation state (migration 232) — feeds
@@ -2197,18 +2348,6 @@ export interface AccountStatementSummaryRow {
   committed_lines: number
   unmatched_lines: number
   matched_lines: number
-}
-
-// The minimal shape MatchTransferModal needs — satisfied by both a
-// recent payment and an awaiting-confirmation row.
-export interface MatchableRow {
-  id: string
-  amount_etb: number | null
-  batch_payment_id: string | null
-  /** Set when the row is one part of a bill paid in parts. */
-  part_id?: string | null
-  part_no?: number | null
-  part_count?: number | null
 }
 
 export interface RecentPaymentRow {

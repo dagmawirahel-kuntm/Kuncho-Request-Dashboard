@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { canEditFinanceFields, canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { poTax } from '@/lib/poTax'
-import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart } from 'lucide-react'
+import { Lock, Package, Fuel, Truck, EyeOff, Eye, ShoppingCart, Landmark } from 'lucide-react'
 import { ProjectOrOverheadSelect, ReceiptFields, VatQuestion } from '@/components/expenses/ExpenseFields'
 import { expenseFormProblems, findPossibleDuplicates, fromProjectChoice, projectChoice, useReceivedLedger, vatInside } from '@/lib/expenseQuality'
 
@@ -65,7 +65,11 @@ export default function ExpenseFormPage() {
   const isEdit = !!id
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const returnTo: string = (location.state as { returnTo?: string })?.returnTo ?? '/expenses'
+  // A bank line the statement shows and nothing in the system accounts for
+  // (the bank audit, migration 440): record the expense it was.
+  const bankLineId = searchParams.get('bank_line')
+  const returnTo: string = (location.state as { returnTo?: string })?.returnTo
+    ?? (bankLineId ? '/bank-statement-import?tab=audit' : '/expenses')
   const prId   = searchParams.get('pr_id')
   const lineId = searchParams.get('line_id')
   const vrfId  = searchParams.get('vrf_id')
@@ -169,8 +173,24 @@ export default function ExpenseFormPage() {
     enabled: !isEdit && !!engagementId,
   })
 
+  const { data: linkedBankLine, isLoading: bankLineLoading } = useQuery({
+    queryKey: ['bank-line-for-expense', bankLineId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_bank_line_status')
+        .select('line_id, account_id, value_date, amount, direction, reference_code, narration, transaction_type, reconciled_as')
+        .eq('line_id', bankLineId!).maybeSingle()
+      if (error) throw error
+      return data as BankLinePrefill | null
+    },
+    enabled: !isEdit && !!bankLineId,
+  })
+
   if (isEdit && isLoading) {
     return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
+  }
+  // The form starts from the line, so it waits for it.
+  if (!isEdit && bankLineId && bankLineLoading) {
+    return <FormPage title="New Expense" backTo={returnTo} loading onSave={() => {}} />
   }
 
   return (
@@ -185,8 +205,14 @@ export default function ExpenseFormPage() {
       linkedProperty={linkedProperty}
       linkedCpoBond={linkedCpoBond}
       linkedEngagement={linkedEngagement}
+      linkedBankLine={linkedBankLine ?? undefined}
     />
   )
+}
+
+type BankLinePrefill = {
+  line_id: string; account_id: string; value_date: string; amount: number; direction: 'debit' | 'credit'
+  reference_code: string | null; narration: string | null; transaction_type: string | null; reconciled_as: string | null
 }
 
 type LinkedBundle = {
@@ -200,7 +226,7 @@ type LinkedBundle = {
   }[]
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty, linkedCpoBond, linkedEngagement }: {
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty, linkedCpoBond, linkedEngagement, linkedBankLine }: {
   id?: string; record?: Expense; returnTo?: string
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
@@ -208,6 +234,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   linkedProperty?: Property
   linkedCpoBond?: CpoBond
   linkedEngagement?: SubcontractorEngagement
+  linkedBankLine?: BankLinePrefill
 }) {
   const isEdit = !!id
     const navigate = useNavigate()
@@ -505,6 +532,18 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
       vendor_id: linkedEngagement.vendor_id,
       project_id: linkedEngagement.project_id,
       amount_etb: linkedEngagement.agreed_amount ?? undefined,
+    } : {}),
+    // pre-fill from a bank line nothing accounts for (the bank audit): what
+    // left the account, when, from where, with the bank's reference — which
+    // links the line to this bill once it is approved and paid with it.
+    ...(linkedBankLine && linkedBankLine.direction === 'debit' ? {
+      date: linkedBankLine.value_date,
+      amount_etb: Number(linkedBankLine.amount),
+      account_id: linkedBankLine.account_id,
+      bank_ref: linkedBankLine.reference_code ?? undefined,
+      item_service_description: (linkedBankLine.narration ?? linkedBankLine.transaction_type ?? '').trim().slice(0, 140) || undefined,
+      notes: `Recorded from the bank statement: ${formatCurrency(Number(linkedBankLine.amount))} paid ${formatDate(linkedBankLine.value_date)}`
+        + `${linkedBankLine.reference_code ? ` (${linkedBankLine.reference_code})` : ''}${linkedBankLine.narration ? ` — ${linkedBankLine.narration}` : ''}.`,
     } : {}),
   }
   )
@@ -852,6 +891,28 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
               className="text-[11px] text-purple-700 dark:text-purple-300 hover:underline mt-0.5 inline-block">
               View purchase order →
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Bank line banner — recording what the statement shows was paid */}
+      {!isEdit && linkedBankLine && (
+        <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-800/40 dark:bg-sky-900/20">
+          <Landmark className="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600 dark:text-sky-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">From a bank line nothing in the system accounts for</p>
+            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+              {formatCurrency(Number(linkedBankLine.amount))} out on {formatDate(linkedBankLine.value_date)}
+              {linkedBankLine.reference_code && <> · <span className="font-mono">{linkedBankLine.reference_code}</span></>}
+              {linkedBankLine.narration && <span className="text-slate-400"> · {linkedBankLine.narration}</span>}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+              If the line includes the bank’s transfer charge (6 or 290 birr), enter what the payee received — the charge is booked on its own.
+              It goes for approval as usual; paid with this reference, it links to the line.
+            </p>
+            {linkedBankLine.reconciled_as && (
+              <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">This line has been reconciled since — check it isn’t recorded already.</p>
+            )}
           </div>
         </div>
       )}
