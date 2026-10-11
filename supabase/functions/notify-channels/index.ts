@@ -8,8 +8,10 @@
 //                                database (bot_handle) decides what to say, and
 //                                this sends it.
 //   POST {action:"dispatch"}     from pg_cron (x-dispatch-secret): notifications
-//                                waiting for Telegram, then the bot's own outbox
-//                                (approval cards, trips, edits, reminders).
+//                                waiting for Telegram — each with its full
+//                                message, built in the database (migration
+//                                437) — then the bot's own outbox (approval
+//                                cards, trips, edits, reminders).
 //   POST {action:"digest"}       from pg_cron: the morning email per person.
 //   POST {action:"setup_telegram" | "test_email"}   an admin, from Settings.
 //   POST {action:"dispatch_now"} any signed-in person (after "Send a test").
@@ -34,7 +36,9 @@ interface Config {
   dispatch_secret: string | null
   resend_key: string | null
 }
-interface Outgoing { id: string; chat_id: number; kind: string; title: string; body: string | null; link: string | null; priority: string }
+// `text` is the full message built from the record (migration 437); without
+// it, the title and body go out as before.
+interface Outgoing { id: string; chat_id: number; kind: string; title: string; body: string | null; link: string | null; priority: string; text?: string | null }
 interface TgResult { ok: boolean; result?: { username?: string; message_id?: number } | boolean; description?: string; error_code?: number }
 interface TgMessage { message_id?: number; text?: string; chat?: { id?: number; type?: string }; from?: { username?: string } }
 interface TgUpdate { update_id?: number; message?: TgMessage; callback_query?: { id: string; data?: string; message?: TgMessage } }
@@ -246,12 +250,18 @@ async function dispatchNotifications(cfg: Config) {
   let sent = 0, failed = 0
   for (const n of rows) {
     const icon = ICON[n.kind.split('.')[0]] ?? '🔔'
-    const text = `${n.priority === 'high' ? '❗' : ''}${icon} <b>${esc(n.title)}</b>${n.body ? `\n${esc(n.body)}` : ''}`
+    const short = `${n.priority === 'high' ? '❗' : ''}${icon} <b>${esc(n.title)}</b>${n.body ? `\n${esc(n.body)}` : ''}`
     const url = openUrl(cfg, n.link)
-    const out = await tg(cfg, 'sendMessage', {
+    const send = (text: string) => tg(cfg, 'sendMessage', {
       chat_id: n.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true,
       ...(url ? { reply_markup: { inline_keyboard: [[{ text: 'Open in Kuncho', url }]] } } : {}),
     })
+    let out = await send(n.text || short)
+    // Telegram refused the full message's formatting or length: the short one still goes.
+    if (!out.ok && n.text && out.error_code === 400 && /parse entities|too long|empty/i.test(out.description ?? '')) {
+      console.error('telegram full message', n.kind, out.description)
+      out = await send(short)
+    }
     if (out.ok) { sent++; done.push(n.id); continue }
     failed++
     // Blocked the bot or deleted the chat: stop trying that chat.
