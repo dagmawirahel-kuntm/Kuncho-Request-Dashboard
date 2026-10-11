@@ -80,6 +80,31 @@ export function distLabel(m: number | null | undefined) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`
 }
 
+// Marked automatically on a check-in made on Telegram (migration 439): a point
+// picked on the map instead of read from the phone's GPS, or exactly the same
+// spot as someone else's within three minutes — one phone used for both?
+export interface AttendanceHint { k: 'map' | 'pair'; part: 'in' | 'pm' | 'out'; with?: string; secs?: number }
+const PART: Record<AttendanceHint['part'], string> = { in: '', pm: ' (back from lunch)', out: ' (leaving)' }
+
+export function hintText(h: AttendanceHint, staffNames?: Map<string, string>) {
+  return h.k === 'map'
+    ? `Picked on the map, not the phone's GPS${PART[h.part]}`
+    : `Same spot as ${staffNames?.get(h.with ?? '') ?? 'someone else'}, ${h.secs ?? 0} s apart — one phone for both?${PART[h.part]}`
+}
+
+/** A day the supervisor or the checks say needs a look. */
+export function needsLook(r: Pick<AttendanceRow, 'seen' | 'hints'> | undefined) {
+  return !!r && (r.seen === false || (r.hints ?? []).length > 0)
+}
+
+/** A log entry made on Telegram rather than by someone in Kuncho. */
+export function byTelegram(h: AttendanceLogRow) {
+  const o = h.old_row ?? {}, n = h.new_row ?? {}
+  if (h.action === 'insert') return !!n.in_via
+  return (['in_via', 'pm_via', 'out_via', 'seen', 'hints'] as const)
+    .some(k => JSON.stringify(o[k] ?? null) !== JSON.stringify(n[k] ?? null))
+}
+
 /** staff.staff_type (where they normally work) → the usual place. */
 export function usualPlace(staffType: string | null | undefined): string | null {
   switch (staffType) {
@@ -121,6 +146,17 @@ export interface AttendanceRow {
   out_via: Via | null
   out_dist_m: number | null
   out_by_staff: string | null
+  /** Migration 439: how sure the phone was of where it was (empty: picked on the map). */
+  in_acc_m: number | null
+  pm_acc_m: number | null
+  out_acc_m: number | null
+  pm_lat: number | null
+  pm_lng: number | null
+  /** What to look at, and the supervisor's check (true here, false not here). */
+  hints: AttendanceHint[]
+  seen: boolean | null
+  seen_by_staff: string | null
+  seen_at: string | null
   recorded_by: string | null
   recorded_at: string
   updated_by: string | null
@@ -153,7 +189,11 @@ export interface AttendanceLogRow {
 }
 
 export interface AttendanceLock { id: string; start_date: string; end_date: string; label: string; locked_by: string | null; locked_at: string }
-export interface AttendanceSettings { day_starts: string; late_after_minutes: number; day_ends: string; lunch_ends: string }
+export interface AttendanceSettings {
+  day_starts: string; late_after_minutes: number; day_ends: string; lunch_ends: string
+  /** Migration 439: when supervisors are asked who's really there; null is off. */
+  check_at: string | null
+}
 
 // ── Time ─────────────────────────────────────────────────────────────
 // Everything is shown in Addis Ababa time (UTC+3, no daylight saving).
@@ -298,9 +338,9 @@ export function useAttendanceSettings() {
     queryKey: ['attendance-settings'],
     staleTime: 300_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('attendance_settings').select('day_starts, late_after_minutes, day_ends, lunch_ends').maybeSingle()
+      const { data, error } = await supabase.from('attendance_settings').select('day_starts, late_after_minutes, day_ends, lunch_ends, check_at').maybeSingle()
       if (error) throw error
-      return (data ?? { day_starts: '08:30:00', late_after_minutes: 15, day_ends: '17:30:00', lunch_ends: '13:30:00' }) as AttendanceSettings
+      return (data ?? { day_starts: '08:30:00', late_after_minutes: 15, day_ends: '17:30:00', lunch_ends: '13:30:00', check_at: '09:30:00' }) as AttendanceSettings
     },
   })
 }
@@ -329,6 +369,8 @@ export interface AttendancePlace {
   longitude: number | null
   radius_m: number
   active: boolean
+  /** Migration 439: its supervisor is asked each morning who's really there. */
+  daily_check: boolean
   /** t.me link the QR code opens; null until the company bot is set up. */
   url: string | null
   in_today: number
@@ -392,7 +434,8 @@ export function describeChange(h: AttendanceLogRow): string {
   if (h.action === 'insert') {
     const n = h.new_row
     const how = n?.in_via ? ` (${VIA_LABEL[n.in_via].toLowerCase()})` : n?.source === 'self' ? ' (self check-in)' : ''
-    return `Recorded ${STATUS[n?.status ?? '']?.label ?? ''}${n?.check_in_at ? ` · in ${addisTime(n.check_in_at)}` : ''}${n?.pm_status ? ` · after lunch ${PM_STATUS[n.pm_status]?.label ?? ''}` : ''}${how}${n?.from_paper ? ' (from paper)' : ''}`
+    const marked = (n?.hints ?? []).map(x => ` · marked: ${hintText(x).toLowerCase()}`).join('')
+    return `Recorded ${STATUS[n?.status ?? '']?.label ?? ''}${n?.check_in_at ? ` · in ${addisTime(n.check_in_at)}` : ''}${n?.pm_status ? ` · after lunch ${PM_STATUS[n.pm_status]?.label ?? ''}` : ''}${how}${n?.from_paper ? ' (from paper)' : ''}${marked}`
   }
   const o = h.old_row ?? {}, n = h.new_row ?? {}
   const parts: string[] = []
@@ -403,5 +446,8 @@ export function describeChange(h: AttendanceLogRow): string {
   if (o.check_out_at !== n.check_out_at) parts.push(`out ${addisTime(o.check_out_at) || '—'} → ${addisTime(n.check_out_at) || '—'}${via(n.out_via, o.out_via)}`)
   if (o.note !== n.note) parts.push('note changed')
   if (o.place !== n.place) parts.push('place changed')
+  if (o.seen !== n.seen && n.seen != null) parts.push(n.seen ? 'supervisor saw them at work' : 'supervisor says they weren\'t there')
+  const before = new Set((o.hints ?? []).map(x => JSON.stringify(x)))
+  for (const x of n.hints ?? []) if (!before.has(JSON.stringify(x))) parts.push(`marked: ${hintText(x).toLowerCase()}`)
   return parts.join(' · ') || 'Saved with no visible change'
 }

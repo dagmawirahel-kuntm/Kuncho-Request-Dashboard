@@ -74,6 +74,9 @@ export function QrTab() {
             <p className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100"><QrCode className="h-4 w-4 text-brand" /> Check in with a QR code on Telegram</p>
             <p>Put each place's poster up where people walk in. With a smartphone they scan it, share their number once, then send their location — that moment is their check-in, with how far they were from the place. Scanning again records back from lunch and leaving.</p>
             <p>No smartphone? The supervisor or site foreman opens <b>📋 Arrivals</b> in {bot ? <b>@{bot}</b> : 'the bot'} and taps each person in as they arrive. Both show on the roll-call.</p>
+            <p>Checking in for someone else: check-ins only count from the phone number on each person's staff record; a location
+              picked on the map, or two people checking in from one phone, is marked; and each morning the supervisor confirms who's
+              really there with <b>👀 Who's here</b>. Anyone marked not here goes to HR.</p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <button type="button" className={btn} disabled={printing || !active.some(p => p.url)} onClick={() => void print(active)}>
@@ -187,6 +190,13 @@ function PlaceCard({ p, onPrint, printing, onChanged }: { p: AttendancePlace; on
           ) : (
             <p className="text-amber-700 dark:text-amber-400">No location yet, so how far people are can't be checked. Stand at the entrance and tap <b>Set location here</b>.</p>
           )}
+          <label className="flex items-start gap-1.5 text-slate-500 dark:text-slate-400"
+            title="Each working morning at the supervisor check time, whoever minds this place gets the list of people who checked themselves in, to confirm who's really there.">
+            <input type="checkbox" className="mt-0.5" checked={p.daily_check} disabled={update.isPending}
+              onChange={e => update.mutate({ patch: { daily_check: e.target.checked },
+                done: e.target.checked ? `${p.name}: the supervisor confirms who's here each morning` : `${p.name}: no morning check` })} />
+            Supervisor confirms who's here each morning
+          </label>
         </div>
       </div>
 

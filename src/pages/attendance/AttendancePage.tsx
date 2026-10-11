@@ -75,11 +75,16 @@ function RulesPanel({ onClose }: { onClose: () => void }) {
   const { data: s } = useAttendanceSettings()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const [form, setForm] = useState<{ day_starts: string; late_after_minutes: number; lunch_ends: string; day_ends: string } | null>(null)
-  const v = form ?? (s ? { day_starts: s.day_starts.slice(0, 5), late_after_minutes: s.late_after_minutes, lunch_ends: (s.lunch_ends ?? '13:30').slice(0, 5), day_ends: s.day_ends.slice(0, 5) } : null)
+  const [form, setForm] = useState<{ day_starts: string; late_after_minutes: number; lunch_ends: string; day_ends: string; check_at: string } | null>(null)
+  const v = form ?? (s ? {
+    day_starts: s.day_starts.slice(0, 5), late_after_minutes: s.late_after_minutes, lunch_ends: (s.lunch_ends ?? '13:30').slice(0, 5),
+    day_ends: s.day_ends.slice(0, 5), check_at: s.check_at?.slice(0, 5) ?? '',
+  } : null)
   if (!v) return null
   async function save() {
-    const { error } = await supabase.from('attendance_settings').update({ ...v, updated_at: new Date().toISOString() }).eq('id', true)
+    if (!v) return
+    const { error } = await supabase.from('attendance_settings')
+      .update({ ...v, check_at: v.check_at || null, updated_at: new Date().toISOString() }).eq('id', true)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['attendance-settings'] })
     toast('Rules saved', 'success'); onClose()
@@ -91,7 +96,13 @@ function RulesPanel({ onClose }: { onClose: () => void }) {
       <label className="text-xs text-slate-600 dark:text-slate-300">Late after (minutes)<br /><input type="number" min={0} max={180} className={`${cls} w-24`} value={v.late_after_minutes} onChange={e => setForm({ ...v, late_after_minutes: Number(e.target.value) })} /></label>
       <label className="text-xs text-slate-600 dark:text-slate-300">Back from lunch by<br /><input type="time" className={cls} value={v.lunch_ends} onChange={e => setForm({ ...v, lunch_ends: e.target.value })} /></label>
       <label className="text-xs text-slate-600 dark:text-slate-300">Day ends<br /><input type="time" className={cls} value={v.day_ends} onChange={e => setForm({ ...v, day_ends: e.target.value })} /></label>
-      <p className="flex-1 min-w-[12rem] text-[11px] text-slate-400">Used to mark check-ins as on time or late. Changing it doesn't touch days already recorded.</p>
+      <label className="text-xs text-slate-600 dark:text-slate-300" title="Each working morning at this time, supervisors and site foremen get the list of people who checked themselves in on Telegram, to confirm who's really there. Clear it to stop.">
+        Supervisor check at<br /><input type="time" className={cls} value={v.check_at} onChange={e => setForm({ ...v, check_at: e.target.value })} />
+      </label>
+      <p className="flex-1 min-w-[12rem] text-[11px] text-slate-400">
+        Used to mark check-ins as on time or late. Changing it doesn't touch days already recorded.
+        At the supervisor check time, whoever minds each place is asked on Telegram who's really there; clear it to stop.
+      </p>
       <button onClick={save} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white">Save rules</button>
     </div>
   )
