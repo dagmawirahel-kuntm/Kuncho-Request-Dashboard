@@ -68,6 +68,18 @@ export const PLACES = [
 ] as const
 export const PLACE_LABEL: Record<string, string> = Object.fromEntries(PLACES.map(p => [p.value, p.label]))
 
+// How a time was recorded on Telegram (migration 438): the person scanned the
+// place's QR poster, checked in from the bot's menu, or whoever minds the gate
+// tapped them in. Empty means typed in Kuncho.
+export type Via = 'qr' | 'bot' | 'gate'
+export const VIA_LABEL: Record<Via, string> = { qr: 'Scanned the QR', bot: 'On Telegram', gate: 'Tapped in at the gate' }
+
+/** '40 m' / '1.2 km'. */
+export function distLabel(m: number | null | undefined) {
+  if (m == null) return ''
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`
+}
+
 /** staff.staff_type (where they normally work) → the usual place. */
 export function usualPlace(staffType: string | null | undefined): string | null {
   switch (staffType) {
@@ -100,6 +112,15 @@ export interface AttendanceRow {
   in_lng: number | null
   out_lat: number | null
   out_lng: number | null
+  /** Migration 438: how each part of the day was recorded, and how far from the place. */
+  in_via: Via | null
+  in_dist_m: number | null
+  in_by_staff: string | null
+  pm_via: Via | null
+  pm_dist_m: number | null
+  out_via: Via | null
+  out_dist_m: number | null
+  out_by_staff: string | null
   recorded_by: string | null
   recorded_at: string
   updated_by: string | null
@@ -297,6 +318,66 @@ export function useUserNames() {
   })
 }
 
+// ── QR places (migration 438) ────────────────────────────────────────
+export interface AttendancePlace {
+  id: string
+  code: string
+  name: string
+  place: 'office' | 'workshop' | 'leather_workshop' | 'site'
+  project_id: string | null
+  latitude: number | null
+  longitude: number | null
+  radius_m: number
+  active: boolean
+  /** t.me link the QR code opens; null until the company bot is set up. */
+  url: string | null
+  in_today: number
+  expected: number
+}
+
+/** Every place with a QR poster — HR, operations, admin and executives only. */
+export function useAttendancePlaces(enabled = true) {
+  return useQuery({
+    queryKey: ['attendance-places'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('attendance_places_list')
+      if (error) throw error
+      return (data ?? []) as AttendancePlace[]
+    },
+  })
+}
+
+/** How far from each place still counts as being there, for flagging distances on the roll-call. */
+export function usePlaceRadii() {
+  return useQuery({
+    queryKey: ['attendance-place-radii'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('attendance_places').select('place, project_id, radius_m')
+      if (error) throw error
+      const rows = (data ?? []) as { place: string; project_id: string | null; radius_m: number }[]
+      return (place: string | null, projectId: string | null) =>
+        rows.find(r => r.place === place && r.project_id === projectId)?.radius_m ?? 300
+    },
+  })
+}
+
+/** Names for staff ids stamped on records (who tapped someone in at the gate). */
+export function useStaffNames(ids: string[]) {
+  const key = [...new Set(ids)].sort()
+  return useQuery({
+    queryKey: ['staff-names', key],
+    enabled: key.length > 0,
+    staleTime: 600_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('staff').select('id, employee_name').in('id', key)
+      if (error) throw error
+      return new Map(((data ?? []) as { id: string; employee_name: string }[]).map(s => [s.id, s.employee_name.trim()]))
+    },
+  })
+}
+
 export const ATTENDANCE_KEYS = [['staff-attendance'], ['attendance-log'], ['attendance-locks']]
 
 export function lockFor(date: string, locks: AttendanceLock[]) {
@@ -310,14 +391,16 @@ export function describeChange(h: AttendanceLogRow): string {
   if (h.action === 'delete') return `Deleted (was ${STATUS[h.old_row?.status ?? '']?.label ?? '—'})`
   if (h.action === 'insert') {
     const n = h.new_row
-    return `Recorded ${STATUS[n?.status ?? '']?.label ?? ''}${n?.check_in_at ? ` · in ${addisTime(n.check_in_at)}` : ''}${n?.pm_status ? ` · after lunch ${PM_STATUS[n.pm_status]?.label ?? ''}` : ''}${n?.source === 'self' ? ' (self check-in)' : ''}${n?.from_paper ? ' (from paper)' : ''}`
+    const how = n?.in_via ? ` (${VIA_LABEL[n.in_via].toLowerCase()})` : n?.source === 'self' ? ' (self check-in)' : ''
+    return `Recorded ${STATUS[n?.status ?? '']?.label ?? ''}${n?.check_in_at ? ` · in ${addisTime(n.check_in_at)}` : ''}${n?.pm_status ? ` · after lunch ${PM_STATUS[n.pm_status]?.label ?? ''}` : ''}${how}${n?.from_paper ? ' (from paper)' : ''}`
   }
   const o = h.old_row ?? {}, n = h.new_row ?? {}
   const parts: string[] = []
   if (o.status !== n.status) parts.push(`${STATUS[o.status ?? '']?.label ?? '—'} → ${STATUS[n.status ?? '']?.label ?? '—'}`)
-  if (o.check_in_at !== n.check_in_at) parts.push(`in ${addisTime(o.check_in_at) || '—'} → ${addisTime(n.check_in_at) || '—'}`)
-  if (o.pm_status !== n.pm_status) parts.push(`after lunch ${PM_STATUS[o.pm_status ?? '']?.label ?? '—'} → ${PM_STATUS[n.pm_status ?? '']?.label ?? '—'}`)
-  if (o.check_out_at !== n.check_out_at) parts.push(`out ${addisTime(o.check_out_at) || '—'} → ${addisTime(n.check_out_at) || '—'}`)
+  const via = (v: Via | null | undefined, was: Via | null | undefined) => v && v !== was ? ` (${VIA_LABEL[v].toLowerCase()})` : ''
+  if (o.check_in_at !== n.check_in_at) parts.push(`in ${addisTime(o.check_in_at) || '—'} → ${addisTime(n.check_in_at) || '—'}${via(n.in_via, o.in_via)}`)
+  if (o.pm_status !== n.pm_status) parts.push(`after lunch ${PM_STATUS[o.pm_status ?? '']?.label ?? '—'} → ${PM_STATUS[n.pm_status ?? '']?.label ?? '—'}${via(n.pm_via, o.pm_via)}`)
+  if (o.check_out_at !== n.check_out_at) parts.push(`out ${addisTime(o.check_out_at) || '—'} → ${addisTime(n.check_out_at) || '—'}${via(n.out_via, o.out_via)}`)
   if (o.note !== n.note) parts.push('note changed')
   if (o.place !== n.place) parts.push('place changed')
   return parts.join(' · ') || 'Saved with no visible change'

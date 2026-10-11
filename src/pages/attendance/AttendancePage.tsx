@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { CalendarCheck, ClipboardList, History, Sun, Settings2, FileText } from 'lucide-react'
+import { CalendarCheck, ClipboardList, History, Sun, Settings2, FileText, QrCode } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -12,12 +12,14 @@ import { RegisterTab } from './RegisterTab'
 import { MonthSheet } from './MonthSheet'
 import { ChangesTab } from './ChangesTab'
 import { PaperTab } from './PaperTab'
+import { QrTab } from './QrTab'
 
-type Tab = 'me' | 'register' | 'paper' | 'month' | 'changes'
+type Tab = 'me' | 'register' | 'paper' | 'month' | 'changes' | 'qr'
 
 // Day-to-day attendance for staff (casual workers are recorded under
 // Labour, which pays them). Everyone sees their own day; whoever looks
-// after people also gets the roll-call, the month sheet and the log.
+// after people also gets the roll-call, the month sheet and the log; HR,
+// operations and admin also print the QR posters people check in with.
 export default function AttendancePage() {
   const { role } = useAuth()
   const { data: people = [], isLoading } = useAttendancePeople()
@@ -25,14 +27,17 @@ export default function AttendancePage() {
   const recordsOthers = people.some(p => p.can_record && !p.is_me)
   const seesOthers = people.some(p => !p.is_me)
   const isHr = role === 'hr_officer' || role === 'admin'
+  // Kept in step with att_can_manage (migration 438).
+  const canQr = ['admin', 'hr_officer', 'operations_manager', 'executive'].includes(role ?? '')
   const [tab, setTab] = useState<Tab | null>(null)
-  const active: Tab = tab ?? (recordsOthers ? 'register' : seesOthers ? 'month' : 'me')
+  const active: Tab = tab ?? (recordsOthers ? 'register' : seesOthers ? 'month' : me ? 'me' : canQr ? 'qr' : 'me')
   const [rulesOpen, setRulesOpen] = useState(false)
 
   const tabs = [
     ...(me ? [{ value: 'me' as Tab, label: 'My day', icon: Sun }] : []),
     ...(recordsOthers ? [{ value: 'register' as Tab, label: 'Roll-call', icon: ClipboardList }, { value: 'paper' as Tab, label: 'From paper', icon: FileText }] : []),
     ...(seesOthers ? [{ value: 'month' as Tab, label: 'Month', icon: CalendarCheck }, { value: 'changes' as Tab, label: 'Changes', icon: History }] : []),
+    ...(canQr ? [{ value: 'qr' as Tab, label: 'QR codes', icon: QrCode }] : []),
   ]
 
   return (
@@ -47,7 +52,7 @@ export default function AttendancePage() {
       {rulesOpen && isHr && <RulesPanel onClose={() => setRulesOpen(false)} />}
 
       {isLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading…</p>
-        : people.length === 0 ? (
+        : people.length === 0 && !canQr ? (
           <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 p-8 text-center text-sm text-slate-500">
             Your login isn't linked to a staff record yet, so there's nothing to show. Ask HR to link it.
           </div>
@@ -59,6 +64,7 @@ export default function AttendancePage() {
             {active === 'paper' && <PaperTab people={people} />}
             {active === 'month' && <MonthSheet people={people.filter(p => !p.is_me || p.can_record)} canLock={isHr} />}
             {active === 'changes' && <ChangesTab people={people} />}
+            {active === 'qr' && canQr && <QrTab />}
           </>
         )}
     </div>
