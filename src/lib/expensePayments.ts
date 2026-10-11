@@ -153,6 +153,7 @@ export function useRefreshParts() {
     qc.invalidateQueries({ queryKey: ['expense-parts', ...(expenseId ? [expenseId] : [])] })
     qc.invalidateQueries({ queryKey: ['expense-parts-sent-cash'] })
     qc.invalidateQueries({ queryKey: ['expense-parts-vat'] })
+    qc.invalidateQueries({ queryKey: ['expense-part-proofs'] })
     qc.invalidateQueries({ queryKey: ['expense-detail'] })
     for (const k of ['v-to-pay-queue', 'v-awaiting-bank-confirmation', 'v-recent-payments', 'expenses', 'payment-requests']) {
       qc.invalidateQueries({ queryKey: [k] })

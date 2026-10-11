@@ -416,6 +416,9 @@ export interface Expense {
   paid_to_date_etb?: number
   wht_mode?: ExpenseWhtMode
   bank_ref: string | null
+  /** The bank's confirmation, attached when it was marked paid (migration 442). */
+  payment_certificate_url?: string | null
+  payment_certificate_name?: string | null
   purchase_type: string | null
   date: string | null
   quantity: number | null

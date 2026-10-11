@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, HandCoins, Landmark, Layers, Receipt, RotateCcw, Undo2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
@@ -7,6 +8,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { btn } from '@/lib/ui/button'
 import { Pill, type Tone } from '@/components/record/Record'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import { PaymentPlanEditor } from '@/components/payments/PaymentPlanEditor'
 import { PayPartModal } from '@/components/payments/PayPartModal'
 import { MarkPaidModal } from '@/components/payments/MarkPaidModal'
@@ -58,6 +60,17 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
   const { data: allParts = [] } = useExpenseParts(expense.id)
   // Finance and admin read the VAT tracker; the line is simply absent for others.
   const { data: partVat } = usePartVat(expense.id, canAct && !!expense.in_parts)
+  // The bank's confirmation attached to a part when it was marked paid (442).
+  const { data: proofs } = useQuery({
+    queryKey: ['expense-part-proofs', expense.id],
+    enabled: canAct && !!expense.in_parts,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('expense_payments').select('id, proof_url, proof_name')
+        .eq('expense_id', expense.id).not('proof_url', 'is', null)
+      if (error) throw error
+      return new Map((data ?? []).map(r => [r.id as string, { url: r.proof_url as string, name: r.proof_name as string | null }]))
+    },
+  })
   const [showReplaced, setShowReplaced] = useState(false)
   const [planning, setPlanning] = useState(false)
   const [paying, setPaying] = useState<ExpensePaymentPart | 'start' | null>(null)
@@ -201,6 +214,8 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
                     p.transfer_id_code ?? p.bank_ref,
                   ].filter(Boolean).join(' · ')}
                   {p.legacy_entry && ' · paid before parts existed'}
+                  {proofs?.get(p.id) && <> · <PrivateDocLink path={proofs.get(p.id)!.url} bucket="finance-documents" title="Open the bank's confirmation"
+                    className="text-brand hover:underline">{proofs.get(p.id)!.name ?? 'confirmation'}</PrivateDocLink></>}
                 </p>
                 {p.state === 'paid' && Number(partVat?.get(p.id)?.vat_amount ?? 0) > 0 && (
                   <p className="mt-0.5 text-[11px] text-violet-600 dark:text-violet-300"
