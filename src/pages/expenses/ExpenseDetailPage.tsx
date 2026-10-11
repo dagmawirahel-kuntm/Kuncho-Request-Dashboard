@@ -27,6 +27,7 @@ import { EXPENSE_TYPE_THEME } from '@/lib/expenseTypeTheme'
 import { IssueChips } from '@/components/expenses/ExpenseFields'
 import { ISSUE, type ExpenseIssue, vatInside } from '@/lib/expenseQuality'
 import { ExpenseAdminActions, ExpenseAdminHistory } from '@/components/expenses/ExpenseAdminActions'
+import { ExpenseQuestions } from '@/components/expenses/ExpenseQuestions'
 import { useMarkEntityRead } from '@/lib/notifications'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
@@ -854,6 +855,9 @@ export default function ExpenseDetailPage() {
             </p>
           </div>
         )}
+
+        {/* Questions before approving (migration 444): whoever raised it answers here. */}
+        <ExpenseQuestions expense={expense} />
 
         {/* Hero card */}
         <div className="rounded-2xl overflow-hidden" style={{ background: theme.bg }}>
