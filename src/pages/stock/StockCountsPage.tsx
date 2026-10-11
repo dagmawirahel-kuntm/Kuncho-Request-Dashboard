@@ -8,11 +8,12 @@ import { useToast } from '@/contexts/ToastContext'
 import { useStockLocations } from '@/lib/stockLocations'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { Panel, Pill } from '@/components/record/Record'
-import { ArrowLeft, ClipboardList, Plus, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ClipboardList, FileText, Plus, ChevronRight } from 'lucide-react'
 
 interface CountRow {
   id: string; code: string; warehouse_zone: string | null; status: 'counting' | 'posted' | 'cancelled'
   count_date: string; notes: string | null; started_at: string; posted_at: string | null
+  sheet_prints: number; paper_photo_path: string | null
   stock_count_lines: { counted_qty: number | null; system_qty: number }[]
 }
 
@@ -31,7 +32,7 @@ export default function StockCountsPage() {
     queryKey: ['stock-counts'],
     queryFn: async () => {
       const { data, error } = await supabase.from('stock_counts')
-        .select('id, code, warehouse_zone, status, count_date, notes, started_at, posted_at, stock_count_lines(counted_qty, system_qty)')
+        .select('id, code, warehouse_zone, status, count_date, notes, started_at, posted_at, sheet_prints, paper_photo_path, stock_count_lines(counted_qty, system_qty)')
         .order('started_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as CountRow[]
@@ -52,7 +53,7 @@ export default function StockCountsPage() {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Stock counts</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Count what is really on the shelves; the differences are booked as adjustments when the count is posted.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Count what is really on the shelves, on the screen or on a printed sheet typed in later; the differences are booked as adjustments when the count is posted.</p>
         </div>
         <button onClick={() => setStarting(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand/90">
           <Plus className="h-4 w-4" /> Start a count
@@ -74,7 +75,9 @@ export default function StockCountsPage() {
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                           <span className="font-mono">{c.code}</span> · {c.warehouse_zone ?? 'Everything'}
                         </p>
-                        <p className="text-xs text-slate-500">{formatDate(c.count_date)} · {done} of {c.stock_count_lines.length} counted{diffs ? ` · ${diffs} different` : ''}{c.notes ? ` · ${c.notes}` : ''}</p>
+                        <p className="text-xs text-slate-500">{formatDate(c.count_date)} · {done} of {c.stock_count_lines.length} counted{diffs ? ` · ${diffs} different` : ''}{c.notes ? ` · ${c.notes}` : ''}
+                          {c.sheet_prints > 0 && <span className="ml-1 inline-flex items-center gap-1 text-sky-600 dark:text-sky-400"><FileText className="h-3 w-3" />{c.paper_photo_path ? 'paper sheet kept' : c.status === 'counting' ? 'sheet out on paper' : 'counted on paper'}</span>}
+                        </p>
                       </div>
                       <Pill tone={c.status === 'counting' ? 'amber' : c.status === 'posted' ? 'green' : 'slate'}>
                         {c.status === 'counting' ? 'In progress' : c.status === 'posted' ? `Posted ${formatDate(c.posted_at)}` : 'Cancelled'}
