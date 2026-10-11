@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CheckCheck, Lock, MapPin, MessageSquare, Search, Smartphone, ClipboardList, Sun, Utensils, FileText } from 'lucide-react'
+import { CheckCheck, DoorOpen, Eye, EyeOff, Lock, MapPin, MapPinOff, MessageSquare, QrCode, Search, Send, Smartphone, ClipboardList, Sun, Users, Utensils, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { EcDateField } from '@/components/shared/EcDateField'
@@ -9,9 +9,9 @@ import { Segmented } from '@/components/shared/Segmented'
 import { useReasonPrompt } from '@/components/attendance/useReasonPrompt'
 import { useSaveDay, needsReason } from '@/components/attendance/useSaveDay'
 import {
-  STATUSES, STATUS, PM_STATUSES, PM_STATUS, PLACE_LABEL, ATTENDANCE_KEYS, addisToday, addisTime, addisTimestamp, addisDateTime, hoursWorked, fmtHours,
-  isSunday, lockFor, usualPlace, useAttendance, useAttendanceLocks, useAttendanceSettings, useUserNames,
-  type AttendancePerson, type AttendanceRow, type AttendanceStatus, type PmStatus,
+  STATUSES, STATUS, PM_STATUSES, PM_STATUS, PLACE_LABEL, ATTENDANCE_KEYS, VIA_LABEL, addisToday, addisTime, addisTimestamp, addisDateTime, hoursWorked, fmtHours,
+  distLabel, hintText, isSunday, lockFor, needsLook, usualPlace, useAttendance, useAttendanceLocks, useAttendanceSettings, usePlaceRadii, useStaffNames, useUserNames,
+  type AttendancePerson, type AttendanceRow, type AttendanceStatus, type PmStatus, type Via,
 } from '@/lib/attendance'
 import { useHolidays, useTeamLeave, leaveLabel } from '@/lib/leave'
 import { formatDateGC } from '@/lib/utils'
@@ -47,6 +47,12 @@ export function RegisterTab({ people }: { people: AttendancePerson[] }) {
   const { data: locks = [] } = useAttendanceLocks()
   const { data: settings } = useAttendanceSettings()
   const { data: names } = useUserNames()
+  const { data: radiusAt } = usePlaceRadii()
+  // Staff named on records: who tapped someone in at the gate, who checked
+  // who was there, who else checked in from the same spot.
+  const { data: tappers } = useStaffNames(rows.flatMap(r =>
+    [r.in_by_staff, r.out_by_staff, r.seen_by_staff, ...(r.hints ?? []).map(h => h.with)].filter((x): x is string => !!x)))
+  const [lookOnly, setLookOnly] = useState(false)
 
   const byStaff = useMemo(() => new Map(rows.map(r => [r.staff_id, r])), [rows])
   const leaveByStaff = useMemo(() => new Map(leave.filter(l => l.status === 'approved').map(l => [l.staff_id, l])), [leave])
@@ -62,18 +68,21 @@ export function RegisterTab({ people }: { people: AttendancePerson[] }) {
       .map(g => ({ value: g as Group, label: `${g === 'Work Shop' ? 'Workshop' : g} (${recordable.filter(p => p.staff_type === g).length})` })),
     ...(recordable.some(p => !['Office', 'Work Shop', 'Leather Workshop', 'Site'].includes(p.staff_type ?? '')) ? [{ value: 'other' as Group, label: 'Other' }] : []),
   ]
-  const shown = recordable.filter(p =>
+  const matching = recordable.filter(p =>
     (group === 'all' || (group === 'other' ? !['Office', 'Work Shop', 'Leather Workshop', 'Site'].includes(p.staff_type ?? '') : p.staff_type === group))
     && (!q.trim() || p.employee_name.toLowerCase().includes(q.trim().toLowerCase())))
+  // Days the supervisor or the checks on Telegram say need a look.
+  const lookCount = matching.filter(p => needsLook(byStaff.get(p.staff_id))).length
+  const shown = lookOnly && lookCount ? matching.filter(p => needsLook(byStaff.get(p.staff_id))) : matching
 
   const counts = session === 'am'
-    ? STATUSES.map(s => ({ ...s, n: shown.filter(p => byStaff.get(p.staff_id)?.status === s.value).length }))
-    : PM_STATUSES.map(s => ({ ...s, n: shown.filter(p => byStaff.get(p.staff_id)?.pm_status === s.value).length }))
-  const onLeave = shown.filter(p => leaveByStaff.has(p.staff_id)).length
-  const notMarked = shown.filter(p => !byStaff.has(p.staff_id) && !leaveByStaff.has(p.staff_id))
+    ? STATUSES.map(s => ({ ...s, n: matching.filter(p => byStaff.get(p.staff_id)?.status === s.value).length }))
+    : PM_STATUSES.map(s => ({ ...s, n: matching.filter(p => byStaff.get(p.staff_id)?.pm_status === s.value).length }))
+  const onLeave = matching.filter(p => leaveByStaff.has(p.staff_id)).length
+  const notMarked = matching.filter(p => !byStaff.has(p.staff_id) && !leaveByStaff.has(p.staff_id))
   // After lunch: who was in this morning and hasn't been marked back yet.
-  const pmDue = shown.filter(p => { const r = byStaff.get(p.staff_id); return r && WAS_IN.includes(r.status) && !r.pm_status })
-  const noMorning = shown.filter(p => !byStaff.has(p.staff_id) && !leaveByStaff.has(p.staff_id)).length
+  const pmDue = matching.filter(p => { const r = byStaff.get(p.staff_id); return r && WAS_IN.includes(r.status) && !r.pm_status })
+  const noMorning = matching.filter(p => !byStaff.has(p.staff_id) && !leaveByStaff.has(p.staff_id)).length
 
   // Late is judged the same way as self check-in: against the start of
   // the day in the morning, against the end of lunch after it.
@@ -153,6 +162,13 @@ export function RegisterTab({ people }: { people: AttendancePerson[] }) {
           <span key={c.value} className={`rounded-full px-2.5 py-1 font-medium ${c.cell}`}>{c.label} {c.n}</span>
         ))}
         {onLeave > 0 && <span className="rounded-full px-2.5 py-1 font-medium bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">On leave {onLeave}</span>}
+        {lookCount > 0 && (
+          <button type="button" onClick={() => setLookOnly(v => !v)} aria-pressed={lookOnly}
+            title="Marked not here by the supervisor, picked on the map, or the same spot as someone else"
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium ${lookOnly ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+            <Eye className="h-3 w-3" /> Needs a look {lookCount}{lookOnly ? ' · show all' : ''}
+          </button>
+        )}
         {session === 'am' ? (
           <span className={`rounded-full px-2.5 py-1 font-medium ${notMarked.length ? 'bg-white border text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200' : 'bg-emerald-50 text-emerald-700'}`}>
             {notMarked.length ? `Not marked ${notMarked.length}` : 'Everyone marked'}
@@ -185,24 +201,54 @@ export function RegisterTab({ people }: { people: AttendancePerson[] }) {
         )}
         {shown.map(p => (
           <PersonRow key={p.staff_id} p={p} row={byStaff.get(p.staff_id)} leaveType={leaveByStaff.get(p.staff_id)?.leave_type}
-            locked={!!lock} names={names} onMark={patch => mark(p, patch)} statusForTime={statusForTime} date={date} session={session} />
+            locked={!!lock} names={names} tappers={tappers} radiusAt={radiusAt}
+            onMark={patch => mark(p, patch)} statusForTime={statusForTime} date={date} session={session} />
         ))}
       </div>
       <p className="text-[11px] text-slate-400">
         Tap a status to record it — it saves straight away. Times are optional; typing a time works out late or on time
         ({settings ? settings.day_starts.slice(0, 5) : '08:30'} start, back from lunch by {settings?.lunch_ends?.slice(0, 5) ?? '13:30'}, {settings?.late_after_minutes ?? 15} min grace).
-        Every mark keeps who made it and when; see <b>Changes</b>.
+        Every mark keeps who made it and when; see <b>Changes</b>. Times from Telegram say how they were made — the QR poster,
+        the bot's menu or the gate list — and how far the phone was from the place; typing over one clears that. The supervisor's
+        morning check shows in green or red, and anything that looks like someone checked in for someone else in amber.
       </p>
     </div>
   )
 }
 
-function PersonRow({ p, row, leaveType, locked, names, onMark, statusForTime, date, session }: {
+// How one time of the day came from Telegram: the QR poster, the bot's
+// menu, or the gate list — and how far the phone was from the place.
+function ViaNote({ via, dist, by, radius, tappers, out }: {
+  via: Via
+  dist: number | null
+  by: string | null
+  radius: number
+  tappers: Map<string, string> | undefined
+  out?: boolean
+}) {
+  const Icon = via === 'qr' ? QrCode : via === 'bot' ? Send : DoorOpen
+  const far = dist != null && dist > radius
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Icon className="h-3 w-3" />
+      {via === 'gate' ? `Tapped ${out ? 'out' : 'in'} at the gate by ${tappers?.get(by ?? '') ?? 'the supervisor'}` : VIA_LABEL[via]}
+      {dist != null && (
+        <span className={far ? 'font-medium text-amber-600 dark:text-amber-400' : ''} title={far ? `More than ${radius} m from the place` : undefined}>
+          · {distLabel(dist)} {far ? 'away' : 'from the place'}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function PersonRow({ p, row, leaveType, locked, names, tappers, radiusAt, onMark, statusForTime, date, session }: {
   p: AttendancePerson
   row: AttendanceRow | undefined
   leaveType: string | undefined
   locked: boolean
   names: Map<string, string> | undefined
+  tappers: Map<string, string> | undefined
+  radiusAt: ((place: string | null, projectId: string | null) => number) | undefined
   onMark: (patch: Partial<AttendanceRow>) => Promise<void>
   statusForTime: (hhmm: string, from?: 'day_starts' | 'lunch_ends') => 'present' | 'late'
   date: string
@@ -221,6 +267,7 @@ function PersonRow({ p, row, leaveType, locked, names, onMark, statusForTime, da
 
   const who = row ? (row.source === 'self' ? 'Checked in themselves' : `By ${names?.get(row.recorded_by ?? '') ?? '—'}`) : null
   const when = row ? addisDateTime(row.recorded_at) : ''
+  const radius = row ? (radiusAt?.(row.place, row.project_id) ?? 300) : 300
 
   return (
     <div className={`px-4 py-2.5 ${busy ? 'opacity-60' : ''}`}>
@@ -288,18 +335,42 @@ function PersonRow({ p, row, leaveType, locked, names, onMark, statusForTime, da
       {(row || noteOpen) && (
         <div className="mt-1 md:ml-60 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
           {row && (
-            <span className="inline-flex items-center gap-1">
-              {row.source === 'self' ? <Smartphone className="h-3 w-3" /> : <ClipboardList className="h-3 w-3" />}
-              {who} · {when}
+            <span className="inline-flex flex-wrap items-center gap-1">
+              {row.in_via ? (
+                <ViaNote via={row.in_via} dist={row.in_dist_m} by={row.in_by_staff} radius={radius} tappers={tappers} />
+              ) : (
+                <>{row.source === 'self' ? <Smartphone className="h-3 w-3" /> : <ClipboardList className="h-3 w-3" />}{who}</>
+              )}
+              {' '}· {when}
               {row.updated_at && <> · changed by {names?.get(row.updated_by ?? '') ?? '—'} {addisDateTime(row.updated_at)}</>}
             </span>
           )}
           {row?.from_paper && <span className="inline-flex items-center gap-0.5 text-slate-500"><FileText className="h-3 w-3" />from paper</span>}
           {row?.pm_status && (
-            <span className={session === 'pm' ? 'text-slate-500' : ''}>
-              After lunch: {PM_STATUS[row.pm_status]?.label}{row.pm_at ? ` ${addisTime(row.pm_at)}` : ''} · by {names?.get(row.pm_recorded_by ?? '') ?? '—'} {addisDateTime(row.pm_recorded_at)}
+            <span className={`inline-flex flex-wrap items-center gap-1 ${session === 'pm' ? 'text-slate-500' : ''}`}>
+              After lunch: {PM_STATUS[row.pm_status]?.label}{row.pm_at ? ` ${addisTime(row.pm_at)}` : ''} ·{' '}
+              {row.pm_via
+                ? <ViaNote via={row.pm_via} dist={row.pm_dist_m} by={null} radius={radius} tappers={tappers} />
+                : <>by {names?.get(row.pm_recorded_by ?? '') ?? '—'} {addisDateTime(row.pm_recorded_at)}</>}
             </span>
           )}
+          {row?.out_via && row.check_out_at && (
+            <span className="inline-flex flex-wrap items-center gap-1">
+              Out {addisTime(row.check_out_at)} · <ViaNote via={row.out_via} dist={row.out_dist_m} by={row.out_by_staff} radius={radius} tappers={tappers} out />
+            </span>
+          )}
+          {row?.seen != null && (
+            <span className={`inline-flex items-center gap-1 font-medium ${row.seen ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+              {row.seen ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+              {row.seen ? 'Seen at work by' : 'Not here, says'} {tappers?.get(row.seen_by_staff ?? '') ?? 'the supervisor'}{row.seen_at ? `, ${addisTime(row.seen_at)}` : ''}
+            </span>
+          )}
+          {(row?.hints ?? []).map((h, i) => (
+            <span key={i} className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
+              {h.k === 'map' ? <MapPinOff className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+              {hintText(h, tappers)}
+            </span>
+          ))}
           {row?.in_lat != null && (
             <a href={`https://maps.google.com/?q=${row.in_lat},${row.in_lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-brand"><MapPin className="h-3 w-3" />where they checked in</a>
           )}

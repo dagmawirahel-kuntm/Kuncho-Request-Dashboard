@@ -11,7 +11,7 @@ import {
   STATUSES, STATUS, ATTENDANCE_KEYS, addisToday, addisTime, hoursWorked, fmtHours, isSunday, lockFor, usualPlace,
   ecMonthOf, ecMonthRange, ecMonthLabel, shiftEcMonth, daysBetween,
   useAttendance, useAttendanceLocks, useUserNames,
-  describeChange, addisDateTime, dayCredit, PM_STATUS,
+  describeChange, byTelegram, addisDateTime, dayCredit, PM_STATUS,
   type AttendancePerson, type AttendanceRow, type AttendanceLogRow, type EcMonth,
 } from '@/lib/attendance'
 import { toEthiopian } from '@/lib/ethiopianCalendar'
@@ -284,7 +284,7 @@ export function LogLine({ h, names, showWho }: { h: AttendanceLogRow; names: Map
       <p className="text-slate-700 dark:text-slate-200">{showWho && <b>{showWho} · </b>}{describeChange(h)}</p>
       {h.reason && h.action !== 'lock' && h.action !== 'unlock' && <p className="text-slate-500 italic">“{h.reason}”</p>}
       <p className="text-[11px] text-slate-400">
-        {names?.get(h.changed_by ?? '') ?? (h.changed_by ? 'Someone' : 'System')} · {addisDateTime(h.changed_at, true)}
+        {names?.get(h.changed_by ?? '') ?? (h.changed_by ? 'Someone' : byTelegram(h) ? 'On Telegram' : 'System')} · {addisDateTime(h.changed_at, true)}
       </p>
     </li>
   )
