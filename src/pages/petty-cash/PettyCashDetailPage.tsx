@@ -15,10 +15,10 @@ type FloatDetail = PettyCashFloat & { staff: { employee_name: string } | null; p
 
 export default function PettyCashDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { user, role } = useAuth()
+  const { user, role, isOpsManager } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canApprove = role === 'admin' || role === 'executive' || role === 'finance' || role === 'project_manager'
+  const canApprove = role === 'admin' || role === 'executive' || role === 'finance' || role === 'project_manager' || isOpsManager
 
   const { data: float, isLoading } = useQuery({
     queryKey: ['petty-cash-float', id],

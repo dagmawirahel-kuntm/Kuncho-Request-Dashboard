@@ -21,7 +21,7 @@ interface Props {
 
 export function BoqSection({ projectId, projectName }: Props) {
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const { data: myStaff } = useMyStaffId()
   const qc = useQueryClient()
 
@@ -81,11 +81,11 @@ export function BoqSection({ projectId, projectName }: Props) {
 
   const isOwnerPm = !!boq && !!myStaff?.id && myStaff.id === boq.owner_pm_staff_id
   const canManage = !!boq && (role === 'admin' || isOwnerPm) && (boq.status === 'draft' || boq.status === 'internal_review')
-  const canCreate = role === 'admin' || role === 'project_manager' || role === 'operations_manager' || role === 'design' || role === 'finance' || role === 'procurement_officer'
+  const canCreate = hasRole('admin', 'project_manager', 'operations_manager', 'design', 'finance', 'procurement_officer')
   // Matches submit_boq_change_order's own role check exactly (212/9a) --
   // not project-owner-scoped at the RLS layer, so the UI gate isn't either.
   const canRequestCO = !!boq && boq.status === 'approved' &&
-    (role === 'admin' || role === 'project_manager' || role === 'operations_manager' || role === 'design')
+    hasRole('admin', 'project_manager', 'operations_manager', 'design')
 
   function invalidateAll() {
     qc.invalidateQueries({ queryKey: ['project-boq', projectId] })

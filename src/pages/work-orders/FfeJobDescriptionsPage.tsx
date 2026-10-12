@@ -10,10 +10,10 @@ import { ChevronDown, ChevronRight, Pencil, Plus, X, EyeOff } from 'lucide-react
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 
 export default function FfeJobDescriptionsPage() {
-  const { role } = useAuth()
+  const { hasRole } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'operations_manager'
+  const canManage = hasRole('admin', 'operations_manager')
 
   // Drafts are visible by default. A framework seeded for review is
   // useless if it hides behind a checkbox nobody thinks to tick — the

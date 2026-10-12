@@ -9,6 +9,7 @@ import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
 import type { Project, ProjectCostGroupBudget, Order, LaborAllocation, WorkOrder, StockDeliveryConfirmationRow, GrnQualityStatus } from '@/types/database'
@@ -38,7 +39,7 @@ interface BudgetSummary {
 }
 
 export default function ProjectManagerViewPage() {
-  const { role } = useAuth()
+  const { role, isOpsManager } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: staff } = useMyStaffId()
@@ -46,19 +47,20 @@ export default function ProjectManagerViewPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [confirmDrafts, setConfirmDrafts] = useState<Record<string, { quantity: string; notes: string; quality: GrnQualityStatus }>>({})
 
+  // The operations manager runs every project (447): theirs are the ones
+  // active this year, not only those they're named on.
   const { data: myProjects = [], isLoading: loadingProjects } = useQuery({
-    queryKey: ['pm-view-my-projects', staffId],
+    queryKey: ['pm-view-my-projects', isOpsManager ? 'every' : staffId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('project_manager_id', staffId!)
-        .order('project_name')
+      let q = supabase.from('projects').select('*').order('project_name')
+      q = isOpsManager ? q.eq('active_for_year', true) : q.eq('project_manager_id', staffId!)
+      const { data, error } = await q
       if (error) throw error
       return data as Project[]
     },
-    enabled: !!staffId,
+    enabled: isOpsManager || !!staffId,
   })
+  const projectOptions = useMemo(() => myProjects.map(p => ({ id: p.id, label: p.project_name })), [myProjects])
 
   const activeProjectId = selectedProjectId ?? myProjects[0]?.id ?? null
   const activeProject = myProjects.find(p => p.id === activeProjectId) ?? null
@@ -202,7 +204,9 @@ export default function ProjectManagerViewPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">My Projects</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Where you're the named project manager</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {isOpsManager ? 'Every project active this year — as operations manager you run them all' : "Where you're the named project manager"}
+        </p>
       </div>
 
       <RoleViewSwitcher mode="base" role={role} />
@@ -213,7 +217,11 @@ export default function ProjectManagerViewPage() {
         <p className="py-12 text-center text-sm text-slate-400">No projects are assigned to you as project manager yet.</p>
       ) : (
         <>
-          {myProjects.length > 1 && (
+          {myProjects.length > 8 ? (
+            <div className="max-w-md">
+              <SearchableSelect value={activeProjectId} onChange={id => id && setSelectedProjectId(id)} options={projectOptions} placeholder="Pick a project…" />
+            </div>
+          ) : myProjects.length > 1 && (
             <div className="flex flex-wrap gap-2">
               {myProjects.map(p => (
                 <button

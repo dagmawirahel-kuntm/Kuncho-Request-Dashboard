@@ -109,7 +109,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
   const [searchParams] = useSearchParams()
   const bundleId = searchParams.get('bundle_id')
   const { toast } = useToast()
-  const { role, profile, user } = useAuth()
+  const { role, profile, user, hasRole } = useAuth()
   const qc = useQueryClient()
   const { data: projects = [] } = useProjects()
   const { data: locations = [] } = useLocations()
@@ -134,7 +134,7 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
 
   const canDispatch = role === 'admin' || role === 'executive' || role === 'logistics_officer' || !!profile?.is_logistics_officer
   const rideHailingAllowed = canDispatch || !!profile?.is_ride_hailing_authorized
-  const canSeeDrivers = DRIVER_LIST_ROLES.includes(role ?? '') || !!profile?.is_logistics_officer
+  const canSeeDrivers = hasRole(...DRIVER_LIST_ROLES) || !!profile?.is_logistics_officer
   // Logistics, and links that already say how (the trip estimator), start
   // from the full form; everyone else from the deal they made.
   const [who, setWho] = useState<Who>(() => (isEdit || canDispatch || searchParams.get('mode') ? 'logistics' : 'self'))

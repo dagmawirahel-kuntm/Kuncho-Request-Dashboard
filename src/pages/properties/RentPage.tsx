@@ -80,11 +80,11 @@ const PAYMENT_INTERVAL_LABEL: Record<number, string> = { 1: 'Monthly', 3: 'Quart
 const RENT_DUE_LEAD_DAYS = 14
 
 export default function RentPage() {
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const { toast } = useToast()
-  const canManage = role === 'admin' || role === 'operations_manager'
+  const canManage = hasRole('admin', 'operations_manager')
   const canDelete = role === 'admin'
-  const canRequestRent = role === 'admin' || role === 'operations_manager' || role === 'finance'
+  const canRequestRent = hasRole('admin', 'operations_manager', 'finance')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const qc = useQueryClient()
 

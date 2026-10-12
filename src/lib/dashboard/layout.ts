@@ -78,7 +78,7 @@ export function useWidgetContextFor(userId: string | null): WidgetContext | null
     enabled: !!userId,
     queryFn: async () => {
       const [{ data: profile }, { data: staffRows }] = await Promise.all([
-        supabase.from('user_profiles').select('id, role, is_vrf_manager, is_logistics_officer').eq('id', userId!).maybeSingle(),
+        supabase.from('user_profiles').select('id, role, is_vrf_manager, is_logistics_officer, is_operations_manager').eq('id', userId!).maybeSingle(),
         supabase.from('staff').select('*').eq('user_id', userId!).limit(1),
       ])
       const staff = (staffRows?.[0] ?? null) as Staff | null
@@ -92,12 +92,16 @@ export function useWidgetContextFor(userId: string | null): WidgetContext | null
           supabase.from('staff_assignments').select('role').eq('staff_id', staff.id).eq('active', true).not('project_id', 'is', null),
         ])
         department = (dept.data as { name: string } | null)?.name ?? null
-        managesProjects = (pm.count ?? 0) > 0
+        managesProjects = (pm.count ?? 0) > 0 || profile?.role === 'operations_manager' || !!profile?.is_operations_manager
         isSiteForeman = (assign.data ?? []).some(a => staff.role?.toLowerCase() === 'site_foreman' || String(a.role ?? '').toLowerCase() === 'site foreman')
       }
+      const role = (profile?.role ?? null) as UserRole | null
+      // The operations manager badge counts as the role (447).
+      const opsBadge = !!profile?.is_operations_manager && role !== 'operations_manager'
       return {
         userId: userId!,
-        role: (profile?.role ?? null) as UserRole | null,
+        role,
+        roles: role ? (opsBadge ? [role, 'operations_manager' as UserRole] : [role]) : [],
         staff, staffId: staff?.id ?? null, department, managesProjects, isSiteForeman,
         isVrfManager: !!profile?.is_vrf_manager, isLogisticsOfficer: !!profile?.is_logistics_officer,
       } satisfies WidgetContext

@@ -18,7 +18,7 @@ export interface WaitingItem {
   tone: WaitingTone
 }
 
-const is = (ctx: WidgetContext, ...roles: string[]) => ctx.role === 'admin' || (!!ctx.role && roles.includes(ctx.role))
+const is = (ctx: WidgetContext, ...roles: string[]) => ctx.role === 'admin' || ctx.roles.some(r => roles.includes(r))
 
 async function count(q: PromiseLike<{ count: number | null; error: { message: string } | null }>) {
   const { count: n, error } = await q

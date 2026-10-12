@@ -19,8 +19,8 @@ import { ArrowLeft, ChevronDown, ChevronRight, Check } from 'lucide-react'
 // kept, so the history shows progress.
 export default function StaffFfeSkillsPage() {
   const { id } = useParams<{ id: string }>()
-  const { role } = useAuth()
-  const canRate = ['admin', 'hr_officer', 'executive', 'operations_manager'].includes(role ?? '')
+  const { hasRole } = useAuth()
+  const canRate = hasRole('admin', 'hr_officer', 'executive', 'operations_manager')
 
   // v_staff_directory, not the raw `staff` table — staff is locked down
   // (salary, national_id, …), but anyone who can reach a skill-matched

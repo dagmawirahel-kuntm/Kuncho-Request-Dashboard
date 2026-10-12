@@ -533,7 +533,7 @@ function PurchaseRequestFormBody({
 }: { id?: string; record?: Order; existingItems: OrderItem[] }) {
   const isEdit = !!id
   const navigate = useNavigate()
-  const { role, profile } = useAuth()
+  const { role, profile, isOpsManager } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
 
@@ -554,7 +554,7 @@ function PurchaseRequestFormBody({
   // restriction that already holds server-side, not the restriction
   // itself.
   const { projects: managedProjects, managesAny } = useMyManagedProjects()
-  const hasCompanyWideProjectAccess = !!role && ['admin', 'executive', 'finance', 'procurement_officer'].includes(role)
+  const hasCompanyWideProjectAccess = isOpsManager || (!!role && ['admin', 'executive', 'finance', 'procurement_officer'].includes(role))
   const scopeToManaged = !hasCompanyWideProjectAccess && managesAny
   // A technician asks for the projects they work on (technician_own_orders, 388).
   const isTechnician = role === 'technician'

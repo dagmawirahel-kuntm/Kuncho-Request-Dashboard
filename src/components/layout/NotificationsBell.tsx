@@ -25,7 +25,7 @@ export function NotificationsBell() {
   const [tab, setTab] = useState<Tab>('updates')
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const { user, role, profile } = useAuth()
+  const { user, role, hasRole, profile } = useAuth()
   const taxReader = canSeeTaxImpact(role, profile?.is_tax_officer)
   const { data: unread = 0 } = useUnreadCount()
   const { data: feed = [], isLoading } = useNotificationFeed(30)
@@ -41,7 +41,7 @@ export function NotificationsBell() {
   }, [open])
 
   const r = role ?? ''
-  const is = (...roles: string[]) => roles.includes(r)
+  const is = (...roles: string[]) => hasRole(...roles)
   const { data: todo = [] } = useQuery({
     queryKey: ['notifications-todo', user?.id, r, taxReader, profile?.is_vrf_manager],
     enabled: !!user,

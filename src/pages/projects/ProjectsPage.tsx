@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Project } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { Pill, Stat } from '@/components/record/Record'
 import { useProjectBoqStatuses, boqLabel } from '@/lib/boq'
 import { Plus, Pencil, Trash2, Search, ChevronRight, ChevronDown, Building2, User, MapPin, Briefcase, Layers } from 'lucide-react'
@@ -62,6 +63,9 @@ export default function ProjectsPage() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const qc = useQueryClient()
+  // The operations manager runs every project but doesn't open new ones (447).
+  const { hasRole } = useAuth()
+  const canCreate = hasRole('admin', 'executive', 'finance', 'project_manager')
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [filter, setFilter] = useState<Filter>('active')
   const [dept, setDept] = useState<string | null>(null)
@@ -214,9 +218,11 @@ export default function ProjectsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Projects</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Client work and the internal cost buckets, with what each has spent</p>
         </div>
-        <Link to="/projects/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New project
-        </Link>
+        {canCreate && (
+          <Link to="/projects/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New project
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">

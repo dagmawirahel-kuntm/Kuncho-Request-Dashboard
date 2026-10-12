@@ -37,7 +37,7 @@ export function ProtectedRoute({
   allowedRoles, allowAssignedProjectManager, allowVrfManager, allowLogisticsOfficer,
   allowTaxOfficer,
 }: ProtectedRouteProps) {
-  const { user, profile, role, loading } = useAuth()
+  const { user, profile, role, hasRole, loading } = useAuth()
   const location = useLocation()
   // Called unconditionally — hooks can't sit behind the early returns
   // below. It no-ops for anyone without a staff row.
@@ -56,7 +56,8 @@ export function ProtectedRoute({
   if (profile?.account_status === 'pending') return <AccountStatusPage status="pending" />
   if (profile?.account_status === 'disabled') return <AccountStatusPage status="disabled" />
 
-  if (allowedRoles && role && !allowedRoles.includes(role)) {
+  // hasRole: the login role, or a role held as a badge (operations manager, 447).
+  if (allowedRoles && role && !hasRole(...allowedRoles)) {
     // VRF badge grant is checked first: a badge-holding finance user is in.
     if (allowVrfManager && profile?.is_vrf_manager) return <Outlet />
     if (allowLogisticsOfficer && profile?.is_logistics_officer) return <Outlet />

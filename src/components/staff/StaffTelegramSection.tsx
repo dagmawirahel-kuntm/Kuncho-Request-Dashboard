@@ -25,12 +25,12 @@ interface LinkRow {
 const btn = 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
 
 export function StaffTelegramSection({ staffId, staffName, hasLogin }: { staffId: string; staffName: string; hasLogin: boolean }) {
-  const { role } = useAuth()
+  const { hasRole } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: channels } = useChannelSettings()
   // Kept in step with bot_staff_link_code's own check.
-  const canConnect = ['admin', 'executive', 'operations_manager', 'hr_officer'].includes(role ?? '')
+  const canConnect = hasRole('admin', 'executive', 'operations_manager', 'hr_officer')
   const [qr, setQr] = useState<string | null>(null)
 
   const { data: link } = useQuery({

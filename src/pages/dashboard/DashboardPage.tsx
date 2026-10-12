@@ -15,11 +15,11 @@ const sections = [
   { label: 'Procurement', to: '/procurement', icon: Building2, color: 'bg-purple-50 text-purple-500', desc: 'Vendors, categories, receipts', roles: ['admin', 'executive', 'finance', 'procurement_officer'] as UserRole[] },
   { label: 'Finance', to: '/finance', icon: DollarSign, color: 'bg-emerald-50 text-emerald-500', desc: 'Accounts, sales, bonds', roles: ['admin', 'executive', 'finance'] as UserRole[] },
   { label: 'HR', to: '/hr', icon: Wallet, color: 'bg-orange-50 text-orange-500', desc: 'Staff, payroll, advances', roles: ['admin', 'executive', 'finance', 'hr_officer'] as UserRole[] },
-  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations', roles: ['admin', 'executive', 'finance', 'project_manager'] as UserRole[] },
+  { label: 'Management', to: '/management', icon: FolderKanban, color: 'bg-rose-50 text-rose-500', desc: 'Projects, products, locations', roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] as UserRole[] },
 ]
 
 export default function DashboardPage() {
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
 
   // Logistics officers get a fleet/dispatch-focused dashboard instead of
   // the generic "my requests" home — their day is about the fleet, not
@@ -38,7 +38,7 @@ export default function DashboardPage() {
   // is admin/operations_manager only — anyone else who navigates here
   // directly (not just via their default landing) gets sent back
   // through LandingRedirect to their own department/role home instead.
-  if (role !== 'admin' && role !== 'operations_manager') {
+  if (!hasRole('admin', 'operations_manager')) {
     return <Navigate to="/" replace />
   }
 

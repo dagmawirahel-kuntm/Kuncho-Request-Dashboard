@@ -76,8 +76,8 @@ export function PaperTab({ people }: { people: AttendancePerson[] }) {
   const { data: locks = [] } = useAttendanceLocks()
   const holidayName = useMemo(() => new Map(holidays.map(h => [h.holiday_date, h.name])), [holidays])
 
-  const { role } = useAuth()
-  const tracksPaper = role === 'admin' || role === 'hr_officer' || role === 'operations_manager'
+  const { role, hasRole } = useAuth()
+  const tracksPaper = hasRole('admin', 'hr_officer', 'operations_manager')
   const canPhoto = role === 'admin' || role === 'hr_officer'
   const { data: sheets = [] } = useQuery({
     queryKey: ['attendance-sheets'],

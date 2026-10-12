@@ -62,29 +62,34 @@ export function useMyDepartment(): { department: string | null; isLoading: boole
 // Returns the projects themselves, not just a flag: every caller
 // (route guard, sidebar entry, the order form's project picker) needs
 // either the count or the list, and one query serves all three.
+//
+// The operations manager (role or badge) runs every project (migration
+// 447): every project is theirs here, the way manages_project() says yes
+// to them in the database. everyProject tells a caller that this is the
+// whole list, not a set of assignments.
 export function useMyManagedProjects() {
+  const { isOpsManager } = useAuth()
   const { data: staff, isLoading: staffLoading } = useMyStaffId()
   const staffId = staff?.id
   const query = useQuery({
-    queryKey: ['my-managed-projects', staffId],
+    queryKey: ['my-managed-projects', isOpsManager ? 'every' : staffId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id,project_name')
-        .eq('project_manager_id', staffId!)
-        .order('project_name')
+      let q = supabase.from('projects').select('id,project_name').order('project_name')
+      if (!isOpsManager) q = q.eq('project_manager_id', staffId!)
+      const { data, error } = await q
       if (error) throw error
       return (data ?? []) as { id: string; project_name: string }[]
     },
-    enabled: !!staffId,
+    enabled: isOpsManager || !!staffId,
     staleTime: 300000,
   })
   return {
     projects: query.data ?? [],
     managesAny: (query.data?.length ?? 0) > 0,
+    everyProject: isOpsManager,
     // A caller gating access must not act on "no projects" before the
     // staff row has even resolved, or it redirects a real PM away.
-    isLoading: staffLoading || (!!staffId && query.isLoading),
+    isLoading: isOpsManager ? query.isLoading : staffLoading || (!!staffId && query.isLoading),
   }
 }
 

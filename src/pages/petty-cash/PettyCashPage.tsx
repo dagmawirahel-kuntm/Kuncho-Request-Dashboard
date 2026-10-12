@@ -18,9 +18,9 @@ type PettyCashFloatRow = PettyCashFloat & {
 export default function PettyCashPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, isOpsManager } = useAuth()
   const qc = useQueryClient()
-  const canManage = role === 'admin' || role === 'executive' || role === 'finance' || role === 'project_manager'
+  const canManage = role === 'admin' || role === 'executive' || role === 'finance' || role === 'project_manager' || isOpsManager
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['petty-cash-floats'],

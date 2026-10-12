@@ -23,10 +23,10 @@ interface Payment { id: string; expense_code: string | null; date: string; amoun
 
 export default function SubcontractDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { role } = useAuth()
+  const { hasRole } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const canWrite = !!role && SUBCONTRACT_WRITE_ROLES.includes(role)
+  const canWrite = hasRole(...SUBCONTRACT_WRITE_ROLES)
   const { data: rows = [], isLoading } = useSubcontractBoard(id)
   const r = rows[0]
   const [rating, setRating] = useState(false)

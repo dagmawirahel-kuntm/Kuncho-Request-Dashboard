@@ -55,7 +55,7 @@ export default function LabourRequestPage() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const { toast } = useToast()
-  const { role, user } = useAuth()
+  const { user, hasRole } = useAuth()
 
   const { data: req, isLoading } = useQuery({
     queryKey: ['labour-request', id],
@@ -154,7 +154,7 @@ export default function LabourRequestPage() {
   if (isLoading || !req) return <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
 
   const stage = stageOf(req)
-  const approver = APPROVER_ROLES.includes(role ?? '')
+  const approver = hasRole(...APPROVER_ROLES)
   const isAsker = req.requested_by === user?.id
   const canManage = approver || canRun
   const open_ = req.status !== 'rejected' && !req.closed_at

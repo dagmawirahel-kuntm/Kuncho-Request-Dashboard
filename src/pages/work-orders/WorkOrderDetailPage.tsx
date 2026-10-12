@@ -32,8 +32,8 @@ const WRITE_ROLES = ['admin', 'executive', 'operations_manager', 'project_manage
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { role } = useAuth()
-  const canWrite = !!role && WRITE_ROLES.includes(role)
+  const { hasRole } = useAuth()
+  const canWrite = hasRole(...WRITE_ROLES)
   const [updating, setUpdating] = useState(false)
 
   const { data: wo, isLoading, error } = useQuery({

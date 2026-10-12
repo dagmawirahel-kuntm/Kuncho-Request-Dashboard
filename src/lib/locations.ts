@@ -16,4 +16,4 @@ export const LOCATION_KINDS: { value: LocationKind; label: string; icon: Element
 export const LOCATION_KIND = Object.fromEntries(LOCATION_KINDS.map(k => [k.value, k])) as Record<LocationKind, (typeof LOCATION_KINDS)[number]>
 
 // Who may add and change places — the same roles locations' RLS lets write.
-export const LOCATION_WRITERS = ['admin', 'executive', 'finance', 'project_manager', 'logistics_officer']
+export const LOCATION_WRITERS = ['admin', 'executive', 'finance', 'project_manager', 'logistics_officer', 'operations_manager']
