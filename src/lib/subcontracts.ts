@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 // next step for each engagement, dated progress updates, and payments that
 // look like subcontracted work but were made outside the page.
 
-export const SUBCONTRACT_WRITE_ROLES = ['admin', 'executive', 'project_manager', 'procurement_officer']
+export const SUBCONTRACT_WRITE_ROLES = ['admin', 'executive', 'project_manager', 'procurement_officer', 'operations_manager']
 
 export type NextStep = 'agree' | 'start' | 'overdue' | 'certify' | 'complete' | 'update' | 'rate'
 

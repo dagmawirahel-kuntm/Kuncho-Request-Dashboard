@@ -28,7 +28,7 @@ const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-80
 export default function LabourPayPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { hasRole } = useAuth()
   const { managedIds } = useLabourSites()
   const [params, setParams] = useSearchParams()
   const selected = params.get('req')
@@ -54,7 +54,7 @@ export default function LabourPayPage() {
   })
 
   const current = unpaid.find(u => u.labor_requisition_id === selected) ?? null
-  const canConfirm = (u: Unpaid) => ['admin', 'operations_manager'].includes(role ?? '') || managedIds.has(u.project_id)
+  const canConfirm = (u: Unpaid) => hasRole('admin', 'operations_manager') || managedIds.has(u.project_id)
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 pb-10">

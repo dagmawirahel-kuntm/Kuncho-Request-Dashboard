@@ -101,22 +101,22 @@ export const navGroups: NavGroup[] = [
     icon: FolderKanban,
     to: '/management',
     items: [
-      { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager'] },
+      { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       // Matches sdr_pm_read/sdr_exec_all on site_daily_reports — finance
       // has no read grant on that table, so it's left off here. Anyone who
       // manages a project sees it whatever their app role.
-      { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager'], showIfAssignedProjectManager: true },
-      { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager', 'procurement_officer'] },
+      { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
+      { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager', 'procurement_officer', 'operations_manager'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'technician'] },
       { label: 'Design Packages', to: '/design', icon: PenTool },
       // Three queues, one per approval step: the PM's, finance's, then the
       // executive's. Admin sees the last two, so they carry the step.
-      { label: 'BOQ Change Orders', to: '/pm/boq-change-orders', icon: FileText, roles: ['project_manager'], showIfAssignedProjectManager: true },
+      { label: 'BOQ Change Orders', to: '/pm/boq-change-orders', icon: FileText, roles: ['project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
       { label: 'BOQ Change Orders (Finance)', to: '/finance/boq-change-orders', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { label: 'BOQ Change Orders (Exec)', to: '/exec/boq-change-orders', icon: FileText, roles: ['admin', 'executive'] },
-      { subgroup: 'My sites', label: 'Deliveries to Sign', to: '/site-deliveries', icon: PackageCheck, roles: ['project_manager'], showIfAssignedProjectManager: true },
-      { subgroup: 'My sites', label: 'Goods Received on My Sites', to: '/goods-received', icon: ClipboardCheck, roles: ['project_manager'], showIfAssignedProjectManager: true },
-      { subgroup: 'My sites', label: 'Site Petty Cash Requests', to: '/pm/site-petty-cash-requests', icon: Wallet, roles: ['project_manager'], showIfAssignedProjectManager: true },
+      { subgroup: 'My sites', label: 'Deliveries to Sign', to: '/site-deliveries', icon: PackageCheck, roles: ['project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
+      { subgroup: 'My sites', label: 'Goods Received on My Sites', to: '/goods-received', icon: ClipboardCheck, roles: ['project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
+      { subgroup: 'My sites', label: 'Site Petty Cash Requests', to: '/pm/site-petty-cash-requests', icon: Wallet, roles: ['project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
       // Site foreman: visible only with at least one active project
       // assignment. Every item is gated by showIfSiteForeman + an empty
       // roles array so the "no roles = show to everyone" default doesn't
@@ -153,7 +153,8 @@ export const navGroups: NavGroup[] = [
     items: [
       { subgroup: 'Buying', label: 'Vendors', to: '/vendors', icon: Building2, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Vendor Review', to: '/vendors/review', icon: ShieldCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
-      { subgroup: 'Buying', label: 'Purchase Orders', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      // The operations manager approves POs up to 500,000 (133).
+      { subgroup: 'Buying', label: 'Purchase Orders', to: '/sourcing', icon: ClipboardList, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'operations_manager'] },
       { subgroup: 'Buying', label: 'Price Check Queue', to: '/procurement/price-check-requests', icon: Clock, roles: ['admin', 'executive', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Market Trends', to: '/procurement/market-trends', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Volatility Settings', to: '/procurement/volatility', icon: Settings, roles: ['admin', 'procurement_officer'] },
@@ -187,7 +188,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Pay', label: 'Batch Payments', to: '/batch-payments', icon: DollarSign, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Vendor Credits', to: '/finance/vendor-credits', icon: Tag, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
-      { subgroup: 'Pay', label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager'] },
+      { subgroup: 'Pay', label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       { subgroup: 'Pay', label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Labour Pay', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Collect', label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
@@ -258,12 +259,13 @@ export const navGroups: NavGroup[] = [
 // derived access that goes with an assignment or a badge. Shared by the
 // sidebar and anything else that lists pages (the dashboard's pinned pages).
 export function useNavItemVisible(): (item: NavItem) => boolean {
-  const { role, profile } = useAuth()
+  const { hasRole, profile } = useAuth()
   const { managesAny } = useMyManagedProjects()
   const { hasAny: isForemanWithProjects } = useMySiteForemanProjects()
   return (item: NavItem) =>
     !item.roles
-    || (!!role && item.roles.includes(role))
+    // The login role, or one held as a badge (operations manager, 447).
+    || hasRole(...item.roles)
     // Derived access, alongside the role list: an assigned project
     // manager sees the PM entries whatever their login role. Without
     // this the assignment is invisible to the person who holds it —

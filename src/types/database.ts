@@ -90,6 +90,9 @@ export interface UserProfile {
   is_logistics_officer: boolean
   is_ride_hailing_authorized: boolean
   is_tax_officer: boolean
+  // Runs operations alongside their role (migration 447): every project,
+  // with the project manager's powers on each.
+  is_operations_manager: boolean
   email: string | null
   trainer_hints_enabled: boolean
   created_at: string

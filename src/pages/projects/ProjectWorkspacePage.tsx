@@ -483,7 +483,7 @@ function MaterialsBalanceSection({ projectId }: { projectId: string }) {
 
 function ReturnToStockSection({ projectId, projectManagerId }: { projectId: string; projectManagerId: string | null }) {
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const { data: myStaff } = useMyStaffId()
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
@@ -493,7 +493,7 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
   const [notes, setNotes] = useState('')
   const [destinationProjectId, setDestinationProjectId] = useState<string | null>(null)
 
-  const canRequest = role === 'admin' || role === 'executive' || role === 'operations_manager'
+  const canRequest = hasRole('admin', 'executive', 'operations_manager')
     || (role === 'project_manager' && !!myStaff?.id && myStaff.id === projectManagerId)
 
   // Only material this project was actually issued, less whatever has
@@ -676,15 +676,15 @@ function ReturnToStockSection({ projectId, projectManagerId }: { projectId: stri
 export default function ProjectWorkspacePage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useTabParam(PROJECT_TABS, 'overview')
-  const { role, profile } = useAuth()
+  const { role, profile, hasRole } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const canManageBudget = role === 'admin' || role === 'executive' || role === 'finance'
   // Matches labor_allocations' RLS write policy (093)
-  const canManageLabor = role === 'admin' || role === 'executive' || role === 'project_manager' || role === 'operations_manager'
+  const canManageLabor = hasRole('admin', 'executive', 'project_manager', 'operations_manager')
   // Same set as WorkOrdersPage's own gate. Named separately from the labor
   // one so that if either moves, the other doesn't silently follow.
-  const canManageWorkOrders = role === 'admin' || role === 'executive' || role === 'operations_manager' || role === 'project_manager'
+  const canManageWorkOrders = hasRole('admin', 'executive', 'operations_manager', 'project_manager')
 
   const { data: project, isLoading: loadingProject, error: projectError } = useQuery({
     queryKey: ['project-workspace', id],

@@ -19,14 +19,15 @@ import {
 // ── Role helpers ─────────────────────────────────────────────────────────────
 
 function useRoleAccess() {
-  const { role, profile } = useAuth()
+  const { role, profile, isOpsManager } = useAuth()
   const isSuperRole    = role === 'admin' || role === 'executive' || role === 'finance'
   const isProcurement  = role === 'procurement_officer'
   const isPM           = role === 'project_manager'
   const showBundles    = isSuperRole || isProcurement
   const showCPO        = isSuperRole || isPM
   const showVRF        = role === 'admin' || role === 'executive'
-  const filterOwn      = !isSuperRole
+  // The operations manager reads every project's costs (447).
+  const filterOwn      = !isSuperRole && !isOpsManager
   const canCreate      = role !== 'procurement_officer'
   const canSeeTable    = isSuperRole
   return { role, profile, isSuperRole, isProcurement, isPM, showBundles, showCPO, showVRF, filterOwn, canCreate, canSeeTable }
@@ -1072,7 +1073,7 @@ export default function ExpensesPage() {
                 {recentGeneral.length === 0
                   ? <EmptyState message="No general expenses yet." />
                   : recentGeneral.map(e => (
-                      <ExpenseRow key={e.id} e={e} onDelete={handleDelete} canDelete={!filterOwn} />
+                      <ExpenseRow key={e.id} e={e} onDelete={handleDelete} canDelete={isSuperRole} />
                     ))
                 }
                 {generalExpenses.length > 5 && (

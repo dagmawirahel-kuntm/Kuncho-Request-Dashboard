@@ -21,14 +21,14 @@ type Tab = 'me' | 'register' | 'paper' | 'month' | 'changes' | 'qr'
 // after people also gets the roll-call, the month sheet and the log; HR,
 // operations and admin also print the QR posters people check in with.
 export default function AttendancePage() {
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const { data: people = [], isLoading } = useAttendancePeople()
   const me = people.find(p => p.is_me) ?? null
   const recordsOthers = people.some(p => p.can_record && !p.is_me)
   const seesOthers = people.some(p => !p.is_me)
   const isHr = role === 'hr_officer' || role === 'admin'
   // Kept in step with att_can_manage (migration 438).
-  const canQr = ['admin', 'hr_officer', 'operations_manager', 'executive'].includes(role ?? '')
+  const canQr = hasRole('admin', 'hr_officer', 'operations_manager', 'executive')
   const [tab, setTab] = useState<Tab | null>(null)
   const active: Tab = tab ?? (recordsOthers ? 'register' : seesOthers ? 'month' : me ? 'me' : canQr ? 'qr' : 'me')
   const [rulesOpen, setRulesOpen] = useState(false)

@@ -93,10 +93,10 @@ export function estimateOf(r: Pick<LabourRequest, 'payment_basis' | 'estimated_d
 
 /** The sites this person can ask for, record and confirm labour on. */
 export function useLabourSites() {
-  const { role } = useAuth()
+  const { hasRole } = useAuth()
   const { projects: managed, isLoading: l1 } = useMyManagedProjects()
   const { projects: foreman, isLoading: l2 } = useMySiteForemanProjects()
-  const everywhere = ALL_SITES_ROLES.includes(role ?? '')
+  const everywhere = hasRole(...ALL_SITES_ROLES)
   const all = useQuery({
     queryKey: ['labour-all-sites'],
     enabled: everywhere,

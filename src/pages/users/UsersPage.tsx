@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useDepartments } from '@/hooks/useLookups'
 import type { UserProfile, UserRole, AccountStatus } from '@/types/database'
-import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront, Landmark } from 'lucide-react'
+import { UserPlus, Shield, Info, UserCheck, UserX, Clock, Banknote, CarTaxiFront, Landmark, Briefcase } from 'lucide-react'
 
 // Department -> valid roles, per the map documented in migration
 // 081_department_roles_enum.sql. admin/manager are always included
@@ -213,7 +213,7 @@ export default function UsersPage() {
     toast('Role updated', 'success')
   }
 
-  async function handleBadgeToggle(id: string, field: 'is_vrf_manager' | 'is_logistics_officer' | 'is_ride_hailing_authorized' | 'is_tax_officer', next: boolean, label: string) {
+  async function handleBadgeToggle(id: string, field: 'is_vrf_manager' | 'is_logistics_officer' | 'is_ride_hailing_authorized' | 'is_tax_officer' | 'is_operations_manager', next: boolean, label: string) {
     setUpdatingId(id)
     const { error } = await supabase.from('user_profiles').update({ [field]: next }).eq('id', id)
     setUpdatingId(null)
@@ -414,6 +414,21 @@ export default function UsersPage() {
                         <Landmark className="h-2.5 w-2.5" /> Tax Officer{p.is_tax_officer ? '' : ' (off)'}
                       </button>
                     )}
+                    {/* Operations as a second job (447): every project, with the project manager's powers. */}
+                    {p.role !== 'operations_manager' && p.role !== 'admin' && (
+                      <button
+                        onClick={() => handleBadgeToggle(p.id, 'is_operations_manager', !p.is_operations_manager, 'Operations Manager')}
+                        disabled={updatingId === p.id}
+                        title="Operations Manager, alongside their role: every project with the project manager's powers, purchase requests, POs up to 500,000"
+                        className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                          p.is_operations_manager
+                            ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                            : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        }`}
+                      >
+                        <Briefcase className="h-2.5 w-2.5" /> Operations{p.is_operations_manager ? '' : ' (off)'}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleBadgeToggle(p.id, 'is_ride_hailing_authorized', !p.is_ride_hailing_authorized, 'Ride-hailing')}
                       disabled={updatingId === p.id}
@@ -471,7 +486,9 @@ export default function UsersPage() {
         mark VRF-linked expenses as paid — without giving them finance's full authority over every expense.
         <strong> Logistics Officer</strong> is a dedicated role (pick it above) rather than a badge — it's meant for
         individual staff whose job is dispatching the fleet. <strong>Ride-hailing</strong> stays a badge, since it's
-        an authorization that can sit on top of any role.
+        an authorization that can sit on top of any role. <strong>Operations</strong> gives someone with another role —
+        finance, say — the operations manager's work as well: every project with the project manager's powers,
+        purchase requests, and purchase orders up to 500,000.
       </p>
     </div>
   )

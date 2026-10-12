@@ -8,6 +8,13 @@ interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
   role: UserRole | null
+  // The roles this person holds: their role, plus operations_manager when
+  // they hold that badge (migration 447). Ask hasRole(), not role ===, when
+  // the operations manager is among the roles a check allows.
+  roles: UserRole[]
+  hasRole: (...allowed: string[]) => boolean
+  // The role or the badge: runs every project.
+  isOpsManager: boolean
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
@@ -59,12 +66,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (session) await fetchProfile(session.user.id)
   }
 
+  const role = profile?.role ?? null
+  const isOpsManager = role === 'operations_manager' || !!profile?.is_operations_manager
+  const roles: UserRole[] = !role ? [] : isOpsManager && role !== 'operations_manager' ? [role, 'operations_manager'] : [role]
+
   return (
     <AuthContext.Provider value={{
       session,
       user: session?.user ?? null,
       profile,
-      role: profile?.role ?? null,
+      role,
+      roles,
+      hasRole: (...allowed: string[]) => roles.some(r => allowed.includes(r)),
+      isOpsManager,
       loading,
       signIn,
       signOut,

@@ -19,7 +19,7 @@ import type { WidgetContext, WidgetDef } from './types'
 
 const everyone = () => true
 const hasStaff = (c: WidgetContext) => !!c.staffId
-const role = (...roles: string[]) => (c: WidgetContext) => c.role === 'admin' || (!!c.role && roles.includes(c.role))
+const role = (...roles: string[]) => (c: WidgetContext) => c.role === 'admin' || c.roles.some(r => roles.includes(r))
 
 // Every widget a dashboard can hold. `available` decides what "Add widget"
 // offers a person; row-level security still decides what data they see.

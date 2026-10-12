@@ -249,7 +249,7 @@ export default function PurchaseOrderPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { toast } = useToast()
-  const { role, profile } = useAuth()
+  const { role, profile, isOpsManager } = useAuth()
   // Admin toggle (shared with the PO list): this PO's effect on the month's VAT goal.
   const vatAllowed = canSeePoVatGoal(role)
   const [vatOn, setVatOn] = usePoVatToggle()
@@ -450,7 +450,7 @@ export default function PurchaseOrderPage() {
   const isFinance = role === 'finance'
   const isProcurement = role === 'procurement_officer'
   const isStockOrLogistics = role === 'stock_manager' || role === 'logistics_officer'
-  const isOperationsManager = role === 'operations_manager'
+  const isOperationsManager = isOpsManager
 
   // The PO approval ladder, per Operations Manual v0.1 §6:
   //   Procurement Officer -> 30,000 -> Operations Manager -> 500,000 -> CEO/MD

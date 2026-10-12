@@ -26,15 +26,15 @@ type Usage = {
 }
 type Unsaved = { place_key: string; place: string; times: number; last_used_at: string | null }
 
-const LOCATION_DELETERS = ['admin', 'project_manager', 'logistics_officer']
+const LOCATION_DELETERS = ['admin', 'project_manager', 'logistics_officer', 'operations_manager']
 
 export default function LocationsPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const qc = useQueryClient()
-  const canWrite = !!role && LOCATION_WRITERS.includes(role)
+  const canWrite = hasRole(...LOCATION_WRITERS)
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [kind, setKind] = useState<LocationKind | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -293,7 +293,7 @@ export default function LocationsPage() {
                               <Merge className="h-4 w-4" /> Same place as…
                             </button>
                           )}
-                          {LOCATION_DELETERS.includes(role ?? '') && used === 0 && (
+                          {hasRole(...LOCATION_DELETERS) && used === 0 && (
                             <button onClick={() => handleDelete(l)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
                               <Trash2 className="h-4 w-4" /> Delete
                             </button>

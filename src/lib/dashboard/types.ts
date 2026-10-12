@@ -16,6 +16,8 @@ export interface LayoutItem {
 export interface WidgetContext {
   userId: string
   role: UserRole | null
+  /** The role plus any held as a badge (operations manager, 447). */
+  roles: UserRole[]
   staff: Staff | null
   staffId: string | null
   department: string | null

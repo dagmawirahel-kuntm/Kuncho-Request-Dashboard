@@ -269,7 +269,7 @@ export const router = createBrowserRouter([
           { path: 'purchase-requests/:id', element: <OrderDetailPage /> },
           {
             // Procurement officers may view requests but cannot create or edit them
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'staff', 'technician', 'project_manager', 'hr_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'staff', 'technician', 'project_manager', 'hr_officer', 'operations_manager']} />,
             children: [
               { path: 'purchase-requests/new', element: <OrderFormPage /> },
               { path: 'purchase-requests/:id/edit', element: <OrderFormPage /> },
@@ -343,7 +343,6 @@ export const router = createBrowserRouter([
               { path: 'general-ledger/:id/edit', element: <GeneralLedgerFormPage /> },
               { path: 'general-ledger/sub-ledgers/new', element: <SubLedgerFormPage /> },
               { path: 'general-ledger/sub-ledgers/:id/edit', element: <SubLedgerFormPage /> },
-              { path: 'sourcing', element: <SourcingBundlesPage /> },
               { path: 'sourcing/new', element: <SourcingBundleFormPage /> },
               { path: 'sourcing/:id/edit', element: <SourcingBundleFormPage /> },
               { path: 'procurement/market-trends', element: <MarketTrendsPage /> },
@@ -352,6 +351,12 @@ export const router = createBrowserRouter([
               { path: 'procurement/item-brands', element: <ItemBrandsPage /> },
               { path: 'procurement/item-variants', element: <ItemVariantsPage /> },
             ],
+          },
+          {
+            // The PO list: procurement's, and the operations manager's, who
+            // approves POs up to 500,000 (133). Making POs stays above.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer', 'operations_manager']} />,
+            children: [{ path: 'sourcing', element: <SourcingBundlesPage /> }],
           },
           // My requests is visible to any authenticated user (each sees their own)
           { path: 'procurement/my-price-check-requests', element: <MyPriceCheckRequestsPage /> },
@@ -543,7 +548,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'operations_manager']} allowAssignedProjectManager />,
             children: [
               { path: 'pm/site-petty-cash-requests', element: <PMSitePettyCashQueuePage /> },
             ],
@@ -556,7 +561,7 @@ export const router = createBrowserRouter([
             // approval step both allow admin/PM only, but boq_change_orders_select
             // grants executive read — without it an exec's link would 404
             // the same way the note above the site-petty-cash route flags.
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'operations_manager']} allowAssignedProjectManager />,
             children: [
               { path: 'pm/boq-change-orders', element: <PmBoqChangeOrderQueuePage /> },
             ],
@@ -617,9 +622,16 @@ export const router = createBrowserRouter([
           {
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager']} />,
             children: [
+              { path: 'projects/new', element: <ProjectFormPage /> },
+            ],
+          },
+          {
+            // The operations manager runs every project (447) — reads and
+            // edits them, but doesn't open new ones.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'operations_manager']} />,
+            children: [
               { path: 'management', element: <ManagementDashboardPage /> },
               { path: 'projects', element: <ProjectsPage /> },
-              { path: 'projects/new', element: <ProjectFormPage /> },
               { path: 'projects/:id/edit', element: <ProjectFormPage /> },
             ],
           },
@@ -663,7 +675,7 @@ export const router = createBrowserRouter([
           // and changing them is for the roles locations' RLS lets write.
           { path: 'locations', element: <LocationsPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'logistics_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'logistics_officer', 'operations_manager']} />,
             children: [
               { path: 'locations/new', element: <LocationFormPage /> },
               { path: 'locations/tidy', element: <LocationsTidyPage /> },
@@ -764,7 +776,7 @@ export const router = createBrowserRouter([
             // petty_cash_* RLS (admin/manager/finance/project_manager) —
             // see 121. A custodian's own float is separately reachable via
             // RLS row-scoping if a self-service view is added later.
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'operations_manager']} />,
             children: [
               { path: 'petty-cash', element: <PettyCashPage /> },
               { path: 'petty-cash/new', element: <PettyCashFloatFormPage /> },
@@ -778,7 +790,7 @@ export const router = createBrowserRouter([
           { path: 'subcontracts', element: <SubcontractsPage /> },
           { path: 'subcontracts/:id', element: <SubcontractDetailPage /> },
           {
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'procurement_officer']} />,
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'project_manager', 'procurement_officer', 'operations_manager']} />,
             children: [
               { path: 'subcontracts/new', element: <SubcontractFormPage /> },
               { path: 'subcontracts/:id/edit', element: <SubcontractFormPage /> },

@@ -26,7 +26,7 @@ interface Props {
 
 export function ScheduleSection({ projectId, projectName }: Props) {
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, isOpsManager } = useAuth()
   const { data: myStaff } = useMyStaffId()
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -145,7 +145,7 @@ export function ScheduleSection({ projectId, projectName }: Props) {
   // schedules_insert (220) only permits admin or project_manager to create
   // a schedule — gating the button to match avoids a raw RLS error for
   // anyone else who can merely view this page.
-  const canBuildSchedule = role === 'admin' || role === 'project_manager'
+  const canBuildSchedule = role === 'admin' || role === 'project_manager' || isOpsManager
   const staleTaskIds = new Set(staleLinks.map(l => l.task_id))
 
   const orderedTasks = useMemo(() => buildTaskTree(tasks), [tasks])

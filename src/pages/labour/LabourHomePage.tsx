@@ -13,9 +13,9 @@ const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
 
 // Labour in one place: ask, record, confirm pay — and what's waiting on you.
 export default function LabourHomePage() {
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const { sites, managedIds, everywhere } = useLabourSites()
-  const approver = APPROVER_ROLES.includes(role ?? '')
+  const approver = hasRole(...APPROVER_ROLES)
   const finance = role === 'finance'
   const siteIds = new Set(sites.map(s => s.id))
   const [tab, setTab] = useState<RequestStage>('active')
@@ -51,7 +51,7 @@ export default function LabourHomePage() {
 
   // Labour still open on jobs that are already finished (migration 408).
   const { toast } = useToast()
-  const canBulkClose = ['admin', 'executive', 'operations_manager', 'hr_officer'].includes(role ?? '')
+  const canBulkClose = hasRole('admin', 'executive', 'operations_manager', 'hr_officer')
   const { data: onFinished = 0, refetch: refetchFinished } = useQuery({
     queryKey: ['labour-open-on-finished-orders'],
     enabled: canBulkClose,
@@ -76,7 +76,7 @@ export default function LabourHomePage() {
   // Everyone who isn't an approver or finance sees their own sites' requests.
   const mine = everywhere || finance ? requests : requests.filter(r => siteIds.has(r.project_id))
   const toApprove = approver ? requests.filter(r => r.status === 'pending') : []
-  const toConfirm = unpaid.filter(u => u.ready && (['admin', 'operations_manager'].includes(role ?? '') || managedIds.has(u.project_id)))
+  const toConfirm = unpaid.filter(u => u.ready && (hasRole('admin', 'operations_manager') || managedIds.has(u.project_id)))
   const noWorkers = mine.filter(r => stageOf(r) === 'active' && !r.slots_filled && (siteIds.has(r.project_id)))
 
   const needle = q.trim().toLowerCase()

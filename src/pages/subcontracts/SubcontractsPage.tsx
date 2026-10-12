@@ -30,8 +30,8 @@ const COLUMNS: { key: BoardRow['status'][]; label: string; hint: string }[] = [
 ]
 
 export default function SubcontractsPage() {
-  const { role } = useAuth()
-  const canWrite = !!role && SUBCONTRACT_WRITE_ROLES.includes(role)
+  const { hasRole } = useAuth()
+  const canWrite = hasRole(...SUBCONTRACT_WRITE_ROLES)
   const { data: rows = [], isLoading } = useSubcontractBoard()
   const { data: candidates = [] } = useSubcontractCandidates()
   const [search, setSearch] = useState('')

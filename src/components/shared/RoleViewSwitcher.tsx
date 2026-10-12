@@ -18,7 +18,7 @@ const BASE_VIEW_LABEL: Partial<Record<UserRole, [string, string]>> = {
 
 export function RoleViewSwitcher({ mode, role }: { mode: 'base' | 'workshop' | 'assigned-pm'; role: UserRole | null }) {
   const isWorkshopLead = useIsWorkshopLead()
-  const { projects: managedProjects, managesAny } = useMyManagedProjects()
+  const { projects: managedProjects, managesAny, everyProject } = useMyManagedProjects()
 
   if (mode === 'base') {
     if (!isWorkshopLead) return null
@@ -38,7 +38,8 @@ export function RoleViewSwitcher({ mode, role }: { mode: 'base' | 'workshop' | '
     // Someone whose role landing is elsewhere (finance, design, …) has
     // no other cue that they've been made PM of anything — this is what
     // makes the assignment visible on the page they actually land on.
-    if (!managesAny) return null
+    // Not for the operations manager: every project is theirs (447).
+    if (!managesAny || everyProject) return null
     return (
       <Link
         to="/pm-view"

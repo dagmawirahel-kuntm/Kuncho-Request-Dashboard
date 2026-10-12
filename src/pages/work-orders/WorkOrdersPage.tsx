@@ -36,8 +36,8 @@ function attentionOf(w: Row, b: WorkOrderBoardRow | undefined): string | null {
 
 export default function WorkOrdersPage() {
   const [params, setParams] = useSearchParams()
-  const { role } = useAuth()
-  const canManage = ['admin', 'executive', 'operations_manager', 'project_manager'].includes(role ?? '')
+  const { role, hasRole } = useAuth()
+  const canManage = hasRole('admin', 'executive', 'operations_manager', 'project_manager')
   const myJobs = useMyJobIds()
   // A technician comes here for their own jobs; managers for what needs them.
   const tab = (params.get('tab') as Tab) || (role === 'technician' ? 'mine' : 'attention')
