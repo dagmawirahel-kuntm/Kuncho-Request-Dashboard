@@ -13,6 +13,7 @@ import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { ScheduleSection } from '@/components/projects/ScheduleSection'
 import { BoqSection } from '@/components/projects/BoqSection'
 import { PaymentMilestonesSection } from '@/components/projects/PaymentMilestonesSection'
+import { ProjectClientsPanel } from '@/components/projects/ProjectClientsPanel'
 import { resolveHint } from '@/lib/trainerHints'
 import { useTabParam } from '@/lib/useTabParam'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, RecordTabs, Stat, StatusSteps, type TabDef } from '@/components/record/Record'
@@ -701,11 +702,15 @@ export default function ProjectWorkspacePage() {
   })
 
   // Trainer hint: does this project have a linked contract, and does that
-  // contract have an upstream opportunity.
+  // contract have an upstream opportunity. Where other clients pay their own
+  // part too, it is the project client's contract that counts.
+  const mainClientId = project?.client_id ?? null
   const { data: projectContract } = useQuery({
-    queryKey: ['project-contract-link', id],
+    queryKey: ['project-contract-link', id, mainClientId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('contracts').select('id, opportunity_id').eq('project_id', id!).limit(1).maybeSingle()
+      let q = supabase.from('contracts').select('id, opportunity_id').eq('project_id', id!)
+      if (mainClientId) q = q.eq('client_id', mainClientId)
+      const { data, error } = await q.order('created_at').limit(1).maybeSingle()
       if (error) throw error
       return data as { id: string; opportunity_id: string | null } | null
     },
@@ -1313,7 +1318,10 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Payments ─────────────────────────────────────────────────── */}
         {tab === 'payments' && (
-          <PaymentMilestonesSection projectId={id!} projectManagerId={project.project_manager_id ?? null} />
+          <>
+            <ProjectClientsPanel projectId={id!} projectName={project.project_name} mainClientId={project.client_id ?? null} />
+            <PaymentMilestonesSection projectId={id!} projectManagerId={project.project_manager_id ?? null} mainClientId={project.client_id ?? null} />
+          </>
         )}
 
         {/* ── Team & work ──────────────────────────────────────────────── */}

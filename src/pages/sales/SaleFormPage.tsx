@@ -129,6 +129,8 @@ function SaleFormPageBody({ id, record, bankLine }: { id?: string; record?: Sale
       }
       : {
         sales_status: 'Draft', is_project_funded: true, client_id: clientId ?? undefined, is_final_payment: false,
+        // From a project's "who pays" list: the project and the client's contract on it.
+        project_id: searchParams.get('project_id') ?? undefined, contract_id: searchParams.get('contract_id') ?? undefined,
         // From a bank line: what came in, when, where and with which
         // reference. Saved, the line links to it and marks it paid.
         ...(bankLine ? {

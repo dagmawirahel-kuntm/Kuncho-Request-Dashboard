@@ -90,11 +90,19 @@ export default function ProformaInvoicePage() {
       return (data ?? []) as { id: string; title: string; stage: string }[]
     },
   })
+  // The client's own projects, plus any it pays its own part of under
+  // someone else's (an event's exhibitors, migration 447), plus the one the
+  // link came with.
+  const linkedProjectId = searchParams.get('project_id')
   const { data: projects = [] } = useQuery({
-    queryKey: ['client-projects-lookup', id],
+    queryKey: ['client-projects-lookup', id, linkedProjectId],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await supabase.from('projects').select('id, project_name, start_date, target_handover_date').eq('client_id', id!).order('project_name')
+      const { data: billed, error: bErr } = await supabase.from('contracts').select('project_id').eq('client_id', id!).not('project_id', 'is', null)
+      if (bErr) throw bErr
+      const extra = [...new Set([...(billed ?? []).map(b => b.project_id as string), ...(linkedProjectId ? [linkedProjectId] : [])])]
+      const { data, error } = await supabase.from('projects').select('id, project_name, start_date, target_handover_date')
+        .or(`client_id.eq.${id}${extra.length ? `,id.in.(${extra.join(',')})` : ''}`).order('project_name')
       if (error) throw error
       return (data ?? []) as { id: string; project_name: string; start_date: string | null; target_handover_date: string | null }[]
     },
