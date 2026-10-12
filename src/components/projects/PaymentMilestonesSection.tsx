@@ -20,6 +20,9 @@ const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-sm outline-none fo
 interface Props {
   projectId: string
   projectManagerId: string | null
+  /** The project's own client; when others pay their own part too (an
+   *  event's exhibitors), the milestones are this client's. */
+  mainClientId?: string | null
 }
 
 type ContractRow = ContractTerms & {
@@ -30,7 +33,7 @@ type ContractRow = ContractTerms & {
   wht_deduction_mode: string
 }
 
-export function PaymentMilestonesSection({ projectId, projectManagerId }: Props) {
+export function PaymentMilestonesSection({ projectId, projectManagerId, mainClientId = null }: Props) {
   const { role } = useAuth()
   const { toast } = useToast()
   const { data: myStaff } = useMyStaffId()
@@ -44,7 +47,7 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
   const [busy, setBusy] = useState(false)
 
   const { data: contract } = useQuery({
-    queryKey: ['project-contract', projectId],
+    queryKey: ['project-contract', projectId, mainClientId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contracts')
@@ -52,9 +55,12 @@ export function PaymentMilestonesSection({ projectId, projectManagerId }: Props)
         .eq('project_id', projectId)
         .order('signed_date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      const rows = (data ?? []) as ContractRow[]
+      const all = (data ?? []) as ContractRow[]
       // A project can carry more than one contract row; the signed one is the
-      // one milestones should hang off.
+      // one milestones should hang off. Where other clients pay their own
+      // part under the project too, it is the project client's contract.
+      const own = mainClientId ? all.filter(c => c.client_id === mainClientId) : []
+      const rows = own.length ? own : all
       return rows.find(c => c.status === 'signed') ?? rows[0] ?? null
     },
   })
