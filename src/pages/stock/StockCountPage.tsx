@@ -8,7 +8,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { Panel, Pill, RecordHeader, Stat, type RecordAction } from '@/components/record/Record'
-import { printHtml } from '@/lib/leavePrint'
 import { stockCountSheetHtml } from '@/lib/stockCountSheet'
 import { useUserNames } from '@/lib/attendance'
 import { useStockItemsLite } from '@/lib/stockFamilies'
@@ -155,12 +154,18 @@ export default function StockCountPage() {
   async function printSheet() {
     if (!count) return
     const printNo = (count.sheet_prints ?? 0) + 1
+    // The window opens on the click itself; phones block one opened later.
+    const w = window.open('', '_blank')
+    if (!w) { toast('Allow pop-ups to print the sheet', 'error'); return }
+    w.document.write('<p style="font:14px Arial,sans-serif;padding:24px">Preparing the count sheet…</p>')
     const html = await stockCountSheetHtml(count, lines.map(l => ({
       line_no: l.line_no, item_name: l.stock_items?.item_name ?? '—', amharic_name: l.stock_items?.amharic_name ?? null,
       item_code: l.stock_items?.item_code ?? null, unit: l.stock_items?.unit ?? '', warehouse_zone: l.stock_items?.warehouse_zone ?? null,
       system_qty: Number(l.system_qty), counted_qty: l.counted_qty == null ? null : Number(l.counted_qty), note: l.note,
     })), { ...opts, printNo, url: `${window.location.origin}/stock/counts/${count.id}` })
-    if (!printHtml(html)) { toast('Allow pop-ups to print the sheet', 'error'); return }
+    w.document.open(); w.document.write(html); w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 400)
     setPrinting(false)
     // Each print of an open count is kept, so an old copy can be told apart.
     if (open && keeper) {
