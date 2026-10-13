@@ -12,7 +12,7 @@ import {
   type RowSelectionState,
   type Row,
 } from '@tanstack/react-table'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight,
@@ -66,7 +66,17 @@ interface DataTableProps<TData> {
    * alphabetically, every group styled the same (no recency headline —
    * there's no "most recent" concept for a category).
    */
-  groupBy?: { columnId: string; kind?: 'date' | 'text' }
+  groupBy?: {
+    columnId: string
+    kind?: 'date' | 'text'
+    /** Text groups only: order the groups by their key, newest first when
+     *  true (e.g. a "2019-02" month key), instead of alphabetically. */
+    desc?: boolean
+    /** Text groups only: how a group's key reads in its header. */
+    label?: (key: string) => ReactNode
+    /** Text groups only: shown at the right of the header, e.g. a subtotal. */
+    summary?: (rows: TData[]) => ReactNode
+  }
   /**
    * Reports the rows surviving the active search and filters, so a caller can
    * total or summarise exactly what the user is looking at rather than the
@@ -340,7 +350,12 @@ export function DataTable<TData extends { id: string }>({
           if (bucket) bucket.push(row)
           else buckets.set(key, [row])
         }
-        return Array.from(buckets, ([key, rows]) => ({ key, rows }))
+        const out = Array.from(buckets, ([key, rows]) => ({ key, rows }))
+        // Groups ordered by key, the ungrouped "—" last either way.
+        if (groupBy.kind === 'text' && groupBy.desc != null) {
+          out.sort((a, b) => (a.key === '—' ? 1 : b.key === '—' ? -1 : (groupBy.desc ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key))))
+        }
+        return out
       })()
     : null
 
@@ -539,13 +554,14 @@ export function DataTable<TData extends { id: string }>({
                   if (groupBy?.kind === 'text') {
                     return (
                       <Fragment key={group.key}>
-                        <tr className="border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                        <tr id={`dt-group-${group.key}`} className="scroll-mt-24 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                           <td colSpan={visibleHeaderCount} className="px-4 py-2">
                             <div className="flex items-baseline gap-2">
-                              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{group.key}</span>
+                              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{groupBy.label ? groupBy.label(group.key) : group.key}</span>
                               <span className="text-xs text-slate-400 dark:text-slate-500">
                                 · {group.rows.length} record{group.rows.length !== 1 ? 's' : ''}
                               </span>
+                              {groupBy.summary && <span className="ml-auto text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{groupBy.summary(group.rows.map(r => r.original))}</span>}
                             </div>
                           </td>
                         </tr>

@@ -5,7 +5,9 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatCurrencyCompact, formatDate, formatDateGC } from '@/lib/utils'
+import { Segmented } from '@/components/shared/Segmented'
+import { taxPeriod, useTaxPeriods, type TaxPeriod } from '@/hooks/useTaxPeriod'
 import type { Expense, ExpenseType, CpoBond, ExpensePaymentState } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,7 +15,7 @@ import { useFiscalYear } from '@/contexts/FiscalYearContext'
 import {
   Plus, Pencil, Trash2, Receipt, Package, ArrowLeftRight, Shield,
   ChevronRight, Clock, CheckCircle2, TruckIcon, FileText, Banknote,
-  ExternalLink, LayoutDashboard, Table2
+  ExternalLink, LayoutDashboard, Table2, CalendarDays, List
 } from 'lucide-react'
 
 // ── Role helpers ─────────────────────────────────────────────────────────────
@@ -181,6 +183,134 @@ function RecordsSummary({ rows, totalCount, dim, onDim }: {
                 {formatCurrency(restTotal)}
               </span>
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Month by month (Records tab) ─────────────────────────────────────────────
+
+// Where each record's money stands, as segments of its month's bar.
+const MONTH_SEGMENTS: { key: string; label: string; states: ExpensePaymentState[]; cls: string }[] = [
+  { key: 'paid',  label: 'Paid',               states: ['paid'],                       cls: 'bg-emerald-500' },
+  { key: 'sent',  label: 'Sent or advance',    states: ['sent', 'advance'],            cls: 'bg-amber-400' },
+  { key: 'open',  label: 'Not paid yet',       states: ['unpaid', 'approved_to_pay'],  cls: 'bg-slate-300 dark:bg-slate-500' },
+]
+
+interface MonthRow {
+  key: string
+  period: TaxPeriod | null
+  from: string | null
+  to: string | null
+  count: number
+  total: number
+  seg: Record<string, number>
+  types: { label: string; total: number }[]
+  state: 'past' | 'current' | 'upcoming'
+}
+
+/**
+ * The fiscal year month by month, in the Ethiopian months finance closes and
+ * files in (Pagume goes with Nehase or Meskerem as the year decides, as on
+ * Tax Filings and Month-end). Each month: how many records, how much, how
+ * much of it is paid, sent or still to pay, its biggest kinds of spend and
+ * how it moved from the month before. Built from the rows the table below
+ * shows, so its search and filters apply here too. A month opens its
+ * records in the table.
+ */
+function MonthlyOverview({ rows, totalCount, months, fyLabel, onPick }: {
+  rows: MonthRow[]
+  totalCount: number
+  months: number
+  fyLabel: string | null
+  onPick: (key: string) => void
+}) {
+  const shown = rows.reduce((s, r) => s + r.count, 0)
+  const grand = rows.reduce((s, r) => s + r.total, 0)
+  const open = rows.reduce((s, r) => s + (r.seg.open ?? 0), 0)
+  const max = Math.max(1, ...rows.map(r => r.total))
+  const active = rows.filter(r => r.count > 0 && r.period)
+  const avg = active.length ? active.reduce((s, r) => s + r.total, 0) / active.length : 0
+  const biggest = active.length ? active.reduce((a, b) => (b.total > a.total ? b : a)) : null
+  // Months still to come with nothing in them fold into one line.
+  const ahead = rows.filter(r => r.state === 'upcoming' && r.count === 0)
+  const visible = rows.filter(r => !ahead.includes(r))
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3 dark:border-slate-700">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <CalendarDays className="h-4 w-4 text-brand" /> Month by month{fyLabel ? ` · ${fyLabel}` : ''}
+          </h2>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            Ethiopian months, as finance closes and files them · {shown} record{shown === 1 ? '' : 's'}
+            {shown !== totalCount ? ` · filtered from ${totalCount}` : ''}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-right">
+          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Total</p><p className="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(grand)}</p></div>
+          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Average month</p><p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(avg)}</p></div>
+          {biggest?.period && <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Biggest</p><p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{biggest.period.label}</p></div>}
+          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Not paid yet</p><p className={`text-sm font-semibold tabular-nums ${open ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}`}>{formatCurrency(open)}</p></div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-1.5 text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        {MONTH_SEGMENTS.map(s => <span key={s.key} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-sm ${s.cls}`} />{s.label}</span>)}
+        <span className="ml-auto hidden sm:inline">Click a month to see its records</span>
+      </div>
+
+      {months === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-400">Nothing to show.</p> : (
+        <div className="divide-y dark:divide-slate-700/60">
+          {visible.map((r, i) => {
+            const prev = i > 0 ? visible[i - 1] : null
+            // A month still running is not compared with a whole one.
+            const change = prev && prev.period && r.period && prev.total > 0 && r.state === 'past' ? (r.total - prev.total) / prev.total : null
+            const empty = r.count === 0
+            return (
+              <button key={r.key} type="button" disabled={empty} onClick={() => onPick(r.key)}
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors enabled:hover:bg-slate-50 dark:enabled:hover:bg-slate-700/30 ${r.state === 'upcoming' ? 'opacity-50' : ''}`}>
+                <span className="w-32 shrink-0 sm:w-44">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-100">
+                    {r.period?.label ?? 'No date'}
+                    {r.state === 'current' && <span className="rounded bg-brand/10 px-1 text-[10px] font-semibold text-brand">in progress</span>}
+                  </span>
+                  {r.from && r.to && <span className="block text-[11px] text-slate-400">{formatDateGC(r.from).replace(/ \d{4}$/, '')} – {formatDateGC(r.to)}</span>}
+                </span>
+                <span className="hidden min-w-0 flex-1 sm:block">
+                  <span className="flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700" style={{ width: `${Math.max(empty ? 0 : 3, (r.total / max) * 100)}%` }}
+                    title={MONTH_SEGMENTS.map(s => `${s.label}: ${formatCurrency(r.seg[s.key] ?? 0)}`).join('\n')}>
+                    {MONTH_SEGMENTS.map(s => (r.seg[s.key] ?? 0) > 0 && (
+                      <span key={s.key} className={s.cls} style={{ width: `${((r.seg[s.key] ?? 0) / (r.total || 1)) * 100}%` }} />
+                    ))}
+                  </span>
+                  {r.types.length > 0 && (
+                    <span className="mt-0.5 block truncate text-[11px] text-slate-400">
+                      {r.types.slice(0, 3).map(t => `${t.label} ${Math.round((t.total / (r.total || 1)) * 100)}%`).join(' · ')}
+                    </span>
+                  )}
+                </span>
+                <span className="hidden w-16 shrink-0 text-right text-[11px] tabular-nums text-slate-400 sm:block">{empty ? '—' : `${r.count} rec.`}</span>
+                <span className="min-w-0 flex-1 text-right sm:w-36 sm:flex-none">
+                  <span className="block text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{empty ? '—' : formatCurrency(r.total)}</span>
+                  {(r.seg.open ?? 0) > 0 && <span className="block text-[11px] tabular-nums text-amber-600 dark:text-amber-400">{formatCurrencyCompact(r.seg.open)} not paid</span>}
+                  {!empty && <span className="block text-[11px] text-slate-400 sm:hidden">{r.count} record{r.count === 1 ? '' : 's'}</span>}
+                </span>
+                <span className={`hidden w-14 shrink-0 text-right text-[11px] font-medium tabular-nums md:block ${change == null ? 'text-slate-300 dark:text-slate-600' : change > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                  title="Compared with the month before">
+                  {change == null ? '' : `${change > 0 ? '▲' : '▼'} ${Math.abs(Math.round(change * 100))}%`}
+                </span>
+                <ChevronRight className={`h-4 w-4 shrink-0 ${empty ? 'text-transparent' : 'text-slate-300 dark:text-slate-600'}`} />
+              </button>
+            )
+          })}
+          {ahead.length > 0 && (
+            <p className="px-4 py-2.5 text-xs text-slate-400">
+              {ahead.length === 1 ? ahead[0].period?.label : `${ahead[0].period?.label} – ${ahead[ahead.length - 1].period?.label}`}: still to come, nothing recorded yet
+            </p>
           )}
         </div>
       )}
@@ -493,6 +623,12 @@ export default function ExpensesPage() {
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'records'>('dashboard')
   const [recordDim, setRecordDim] = useState<RecordDim>('date')
+  // The Records tab as one list, or month by month. Remembered per browser.
+  const [recordsView, setRecordsView] = useState<'list' | 'month'>(() => {
+    try { return localStorage.getItem('expenses-records-view') === 'month' ? 'month' : 'list' } catch { return 'list' }
+  })
+  useEffect(() => { try { localStorage.setItem('expenses-records-view', recordsView) } catch { /* private mode */ } }, [recordsView])
+  const { periodOf, rangeOf } = useTaxPeriods()
   // What the Records table is actually showing after its own search and
   // filters. Null until the table first reports, so the panel falls back to
   // the full set rather than flashing an empty total on mount.
@@ -652,7 +788,7 @@ export default function ExpensesPage() {
   // one that gets the fresh-platform current-FY default. The pipeline/
   // dashboard `expenses` query above stays unfiltered — pending approvals
   // must always show regardless of when they're dated.
-  const { fiscalPeriodId } = useFiscalYear()
+  const { fiscalPeriodId, periods: fiscalPeriods } = useFiscalYear()
   const { data: allExpenses = [], isLoading: allLoading } = useQuery({
     queryKey: ['expenses-all', fiscalPeriodId],
     queryFn: async () => {
@@ -874,6 +1010,13 @@ export default function ExpensesPage() {
     // the point of the Records tab.
     { id: 'vendor', header: 'Vendor', accessorFn: (r: Expense) => vendorOf(r), cell: ({ getValue }) => (getValue() as string) },
     { id: 'project', header: 'Project', accessorFn: (r: Expense) => projectOf(r), cell: ({ getValue }) => (getValue() as string) },
+    // The Ethiopian (tax) month, keyed "2019-02" so it sorts in time order.
+    { id: 'month', header: 'Month', accessorFn: (r: Expense) => periodOf(r.date)?.key ?? '', cell: ({ getValue }) => {
+      const k = getValue() as string
+      if (!k) return '—'
+      const [y, m] = k.split('-').map(Number)
+      return taxPeriod(y, m).label
+    }},
     { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={(getValue() as string) ?? 'pending'} /> },
     { accessorKey: 'payment_state', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => {
       const s = getValue() as keyof typeof PAYMENT_STATE_LABEL
@@ -888,7 +1031,75 @@ export default function ExpensesPage() {
       </div>
     )},
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [])
+  ], [periodOf])
+
+  // ── Records tab, month by month ───────────────────────────────────────────
+
+  const selectedFy = fiscalPeriodId ? fiscalPeriods.find(p => p.id === fiscalPeriodId) ?? null : null
+  const monthRows: MonthRow[] = useMemo(() => {
+    const rows = filteredRecords ?? allExpenses
+    const today = periodOf(new Date(now).toISOString().slice(0, 10))
+    // The year's twelve tax months, Hamle to Sene; for "all years", the
+    // months that have records.
+    const keys: string[] = []
+    const start = selectedFy ? periodOf(selectedFy.start_date) : null
+    if (start) {
+      let { year, month } = start
+      for (let i = 0; i < 12; i++) {
+        keys.push(taxPeriod(year, month).key)
+        if (month === 12) { month = 1; year++ } else month++
+      }
+    }
+    const byKey = new Map<string, MonthRow>()
+    const blank = (key: string): MonthRow => {
+      const period = key === '—' ? null : taxPeriod(Number(key.slice(0, 4)), Number(key.slice(5)))
+      const range = period ? rangeOf(period.year, period.month) : null
+      return {
+        key, period, from: range?.from ?? null, to: range?.to ?? null, count: 0, total: 0, seg: {}, types: [],
+        state: !period || !today ? 'past' : key < today.key ? 'past' : key === today.key ? 'current' : 'upcoming',
+      }
+    }
+    for (const k of keys) byKey.set(k, blank(k))
+    const types = new Map<string, Map<string, number>>()
+    for (const e of rows) {
+      const k = periodOf(e.date)?.key ?? '—'
+      const r = byKey.get(k) ?? blank(k)
+      byKey.set(k, r)
+      const amt = Number(e.amount_etb ?? 0)
+      r.count++; r.total += amt
+      const seg = MONTH_SEGMENTS.find(x => x.states.includes((e.payment_state ?? 'unpaid') as ExpensePaymentState))?.key ?? 'open'
+      r.seg[seg] = (r.seg[seg] ?? 0) + amt
+      const t = TYPE_LABEL[(e.expense_type ?? 'general') as ExpenseType] ?? 'General'
+      const tm = types.get(k) ?? new Map<string, number>()
+      tm.set(t, (tm.get(t) ?? 0) + amt); types.set(k, tm)
+    }
+    for (const [k, tm] of types) {
+      const r = byKey.get(k)!
+      r.types = Array.from(tm, ([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total)
+    }
+    return Array.from(byKey.values())
+      .filter(r => r.key !== '—' || r.count > 0)
+      .sort((a, b) => (a.key === '—' ? 1 : b.key === '—' ? -1 : a.key.localeCompare(b.key)))
+  }, [filteredRecords, allExpenses, periodOf, rangeOf, selectedFy, now])
+
+  // In month view the table is sectioned by the same months, newest first,
+  // each with its subtotal.
+  const monthGroupBy = useMemo(() => ({
+    columnId: 'month',
+    kind: 'text' as const,
+    desc: true,
+    label: (key: string) => {
+      if (key === '—') return 'No date'
+      const [y, m] = key.split('-').map(Number)
+      const r = rangeOf(y, m)
+      return `${taxPeriod(y, m).label} · ${formatDateGC(r.from)} – ${formatDateGC(r.to)}`
+    },
+    summary: (rows: Expense[]) => formatCurrency(rows.reduce((t, e) => t + Number(e.amount_etb ?? 0), 0)),
+  }), [rangeOf])
+
+  function pickMonth(key: string) {
+    document.getElementById(`dt-group-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const isLoading = expLoading || (showBundles && bundleLoading) || (showCPO && cpoLoading) || (showVRF && vrfLoading)
 
@@ -945,12 +1156,19 @@ export default function ExpensesPage() {
         allLoading
           ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
           : <div className="space-y-4">
-            <RecordsSummary
-              rows={filteredRecords ?? allExpenses}
-              totalCount={allExpenses.length}
-              dim={recordDim}
-              onDim={setRecordDim}
-            />
+            <Segmented value={recordsView} onChange={setRecordsView} size="sm" ariaLabel="How to show the records"
+              options={[{ value: 'list', label: 'List', icon: List }, { value: 'month', label: 'By month', icon: CalendarDays }]} />
+            {recordsView === 'month' ? (
+              <MonthlyOverview rows={monthRows} totalCount={allExpenses.length} months={monthRows.length}
+                fyLabel={selectedFy?.label ?? null} onPick={pickMonth} />
+            ) : (
+              <RecordsSummary
+                rows={filteredRecords ?? allExpenses}
+                totalCount={allExpenses.length}
+                dim={recordDim}
+                onDim={setRecordDim}
+              />
+            )}
             <DataTable
               columns={tableColumns}
               data={allExpenses}
@@ -961,7 +1179,7 @@ export default function ExpensesPage() {
               queryKeys={['expenses-all']}
               quickFilters={tableQuickFilters}
               expandable={{ summaryColumnIds: ['expense_code', 'expense_type', 'amount_etb', 'date', 'approval_status', 'payment_state'] }}
-      groupBy={RECORD_DIMENSIONS[recordDim].groupBy}
+              groupBy={recordsView === 'month' ? monthGroupBy : RECORD_DIMENSIONS[recordDim].groupBy}
               onFilteredRowsChange={setFilteredRecords}
             />
           </div>
