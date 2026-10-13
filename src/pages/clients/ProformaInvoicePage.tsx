@@ -166,8 +166,12 @@ export default function ProformaInvoicePage() {
     setNotes(source.notes ?? '')
     setScope(source.scope ?? '')
     setExclusions(source.exclusions ?? '')
-    setOpportunityId(source.opportunity_id ?? '')
-    setProjectId(source.project_id ?? '')
+    // A copy for another client (an exhibitor starting from the event's
+    // common proforma) keeps the lines, not the first client's deal; the
+    // project the link came with wins over the source's.
+    const sameClient = source.client_id === id
+    setOpportunityId(sameClient ? (source.opportunity_id ?? '') : (searchParams.get('opportunity_id') ?? ''))
+    setProjectId(searchParams.get('project_id') ?? source.project_id ?? '')
     setTemplateId(source.template_id)
     setSourceBoqId(source.source_boq_id)
     setDiscountKind(source.discount_kind ?? 'percent')

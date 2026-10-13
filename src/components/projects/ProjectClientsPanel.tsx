@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, FilePlus2, FileText, Receipt, Search, Upload, UserPlus, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatCurrencyCompact } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Panel, Pill, Stat } from '@/components/record/Record'
@@ -15,11 +15,17 @@ import { AddProjectClientsDialog } from './AddProjectClientsDialog'
 // own with its own contract, proforma, invoice, payment and papers. One row
 // per client: what was agreed, invoiced and received, which papers are on
 // file, and the next thing missing.
+//
+// Exhibitors start from one common proforma and change their booth's
+// specifics (migration 449): the project keeps which proforma that is, each
+// client's new proforma is a copy of it, and the client's own proforma total
+// can be taken as its contract price (VAT included, as proforma totals are).
 
 type Deal = Pick<SalesEngagementRow, 'engagement_id' | 'contract_id' | 'client_id' | 'client_name' | 'client_tin' | 'contract_no' | 'contract_value'
   | 'contract_status' | 'invoiced' | 'received' | 'outstanding' | 'invoice_count' | 'wht_certificates_due' | 'wht_certificates_collected' | 'checklist'>
 interface Extra { id: string; contract_value_includes_vat: boolean; wht_rate: number | null; notes: string | null }
 type Filter = 'all' | 'papers' | 'invoice' | 'owing' | 'done'
+interface Pf { id: string; proforma_number: string | null; client_id: string; total: number; status: string; clients: { client_name: string } | null }
 
 // The papers worth a chip on each row, in order.
 const PAPERS: { type: SalesChecklistItem['type']; short: string }[] = [
@@ -28,10 +34,12 @@ const PAPERS: { type: SalesChecklistItem['type']; short: string }[] = [
   { type: 'contract', short: 'Signed contract' },
 ]
 
-function nextStep(d: Deal): { text: string; tone: 'red' | 'amber' | 'green' | 'slate'; filter: Filter } {
+function nextStep(d: Deal, own: Pf | undefined, hasBase: boolean): { text: string; tone: 'red' | 'amber' | 'green' | 'slate'; filter: Filter } {
   const missing = (t: string) => d.checklist?.some(c => c.type === t && c.status === 'missing')
   if (!d.client_tin) return { text: 'Needs its TIN', tone: 'red', filter: 'papers' }
-  if (d.contract_value == null) return { text: 'Needs the agreed price', tone: 'red', filter: 'papers' }
+  if (d.contract_value == null) return own
+    ? { text: 'Take the price from its proforma', tone: 'amber', filter: 'papers' }
+    : { text: hasBase ? 'Needs its proforma (from the common one)' : 'Needs the agreed price', tone: 'red', filter: 'papers' }
   if (missing('tin_licence')) return { text: 'Needs TIN & licence copy', tone: 'amber', filter: 'papers' }
   if (missing('contract')) return { text: 'Needs the signed contract', tone: 'amber', filter: 'papers' }
   if (missing('proforma')) return { text: 'Needs a proforma', tone: 'amber', filter: 'papers' }
@@ -46,6 +54,7 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
   const qc = useQueryClient()
   const { toast } = useToast()
   const canEdit = role === 'admin' || role === 'finance'
+  const canChooseBase = canEdit || role === 'executive' || (role as string) === 'sales'
   const [adding, setAdding] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [q, setQ] = useState('')
@@ -75,8 +84,41 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
     },
   })
 
+  // The proformas under the project: the common one, and each client's latest.
+  const { data: pfs } = useQuery({
+    queryKey: ['project-clients-proformas', projectId],
+    queryFn: async () => {
+      const [p, f] = await Promise.all([
+        supabase.from('projects').select('base_proforma_id').eq('id', projectId).single(),
+        supabase.from('proformas').select('id, proforma_number, client_id, total, status, clients(client_name)')
+          .eq('project_id', projectId).order('created_at', { ascending: false }),
+      ])
+      if (f.error) throw f.error
+      const list = (f.data ?? []) as unknown as Pf[]
+      const latest = new Map<string, Pf>()
+      for (const x of list) if (!['superseded', 'declined'].includes(x.status) && !latest.has(x.client_id)) latest.set(x.client_id, x)
+      const baseId = (p.data as { base_proforma_id: string | null } | null)?.base_proforma_id ?? null
+      return { list, latest, base: list.find(x => x.id === baseId) ?? null }
+    },
+  })
+  const base = pfs?.base ?? null
+
   function refresh() {
-    for (const k of ['project-clients', 'project-clients-extra', 'sales-engagements', 'project-workspace', 'project-contract']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['project-clients', 'project-clients-extra', 'project-clients-proformas', 'sales-engagements', 'project-workspace', 'project-contract']) qc.invalidateQueries({ queryKey: [k] })
+  }
+  async function chooseBase(id: string | null) {
+    const { error } = await supabase.rpc('project_set_common_proforma', { p_project_id: projectId, p_proforma_id: id })
+    if (error) { toast(error.message, 'error'); return }
+    toast(id ? 'Every new proforma here now starts from that one' : 'No common proforma', 'success')
+    refresh()
+  }
+  // A proforma's total has VAT in it, so the contract price does too.
+  async function takeProformaPrice(d: Deal, pf: Pf) {
+    if (!d.contract_id) return
+    const { error } = await supabase.from('contracts').update({ contract_value: Number(pf.total), contract_value_includes_vat: true }).eq('id', d.contract_id)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`${d.client_name}: ${formatCurrency(Number(pf.total))} from ${pf.proforma_number ?? 'its proforma'}`, 'success')
+    refresh()
   }
   async function saveAmount(d: Deal, raw: string) {
     const v = raw.replace(/[^0-9.]/g, '') === '' ? null : Number(raw.replace(/[^0-9.]/g, ''))
@@ -99,7 +141,7 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
     refresh()
   }
 
-  const withNext = useMemo(() => deals.map(d => ({ d, next: nextStep(d) })), [deals])
+  const withNext = useMemo(() => deals.map(d => ({ d, next: nextStep(d, d.client_id ? pfs?.latest.get(d.client_id) : undefined, !!pfs?.base) })), [deals, pfs])
   const shown = withNext.filter(({ d, next }) =>
     (filter === 'all' || next.filter === filter)
     && (!q.trim() || `${d.client_name ?? ''} ${d.contract_no ?? ''} ${d.client_tin ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())))
@@ -130,6 +172,31 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
             <Stat label="Invoiced" value={formatCurrency(invoiced)} sub={agreed ? `${Math.round((invoiced / agreed) * 100)}% of agreed` : undefined} />
             <Stat label="Received" value={formatCurrency(received)} tone={received && received >= invoiced ? 'green' : undefined} sub={invoiced > received ? `${formatCurrency(invoiced - received)} owed` : undefined} />
             <Stat label="Complete" value={`${count('done')} of ${deals.length}`} tone={count('done') === deals.length ? 'green' : undefined} sub={`${count('papers')} missing papers`} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-dashed px-3 py-2 text-xs dark:border-slate-600">
+            <FileText className="h-3.5 w-3.5 text-brand" />
+            <span className="font-medium text-slate-600 dark:text-slate-300">Common proforma</span>
+            {base
+              ? <Link to={`/proformas/${base.id}`} className="font-mono font-semibold text-brand hover:underline">{base.proforma_number ?? 'Draft'}</Link>
+              : <span className="text-slate-400">none chosen</span>}
+            {base && <span className="text-slate-400">{base.clients?.client_name} · {formatCurrency(Number(base.total))}</span>}
+            {canChooseBase && (pfs?.list.length ?? 0) > 0 && (
+              <select value={base?.id ?? ''} onChange={e => void chooseBase(e.target.value || null)} aria-label="Common proforma"
+                className="rounded-md border bg-white px-1.5 py-1 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                <option value="">{base ? 'None' : 'Choose…'}</option>
+                {pfs!.list.filter(x => x.status !== 'superseded').map(x => (
+                  <option key={x.id} value={x.id}>{x.proforma_number ?? 'Draft'} · {x.clients?.client_name ?? ''} · {formatCurrencyCompact(Number(x.total))}</option>
+                ))}
+              </select>
+            )}
+            <span className="basis-full text-[11px] text-slate-400 sm:basis-auto">
+              {base
+                ? 'Each client\'s new proforma starts as a copy of it; change their booth\'s specifics there, then take the price from it.'
+                : (pfs?.list.length ?? 0) > 0
+                  ? 'Pick the proforma every client starts from.'
+                  : 'Make it first: create the proforma for one client (the first button on their row), then choose it here.'}
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -163,10 +230,11 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
               <tbody className="divide-y dark:divide-slate-700/60">
                 {shown.map(({ d, next }) => {
                   const x = d.contract_id ? extra?.contracts.get(d.contract_id) : undefined
+                  const own = d.client_id ? pfs?.latest.get(d.client_id) : undefined
                   const phone = d.client_id ? extra?.phones.get(d.client_id) : null
                   return (
                     <tr key={d.engagement_id} className="align-top">
-                      <td className="px-3 py-2">
+                      <td className="min-w-[12rem] px-3 py-2">
                         {d.client_id ? <Link to={`/clients/${d.client_id}`} className="font-medium text-slate-800 hover:text-brand dark:text-slate-100">{d.client_name}</Link> : <span className="font-medium">{d.client_name}</span>}
                         {d.client_id === mainClientId && <span className="ml-1.5"><Pill tone="brand">Host</Pill></span>}
                         <p className="text-[11px] text-slate-400">{[phone, x?.wht_rate ? `withholds ${Number(x.wht_rate)}%` : null].filter(Boolean).join(' · ')}</p>
@@ -192,6 +260,10 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
                         {x && (canEdit
                           ? <button onClick={() => void toggleVat(d, x.contract_value_includes_vat)} className="block w-full text-right text-[10px] text-slate-400 hover:text-brand">{x.contract_value_includes_vat ? 'incl. VAT' : '+ VAT'}</button>
                           : <span className="block text-[10px] text-slate-400">{x.contract_value_includes_vat ? 'incl. VAT' : '+ VAT'}</span>)}
+                        {own && (d.contract_value == null || Number(own.total) !== Number(d.contract_value)) && (canEdit && d.contract_id
+                          ? <button onClick={() => void takeProformaPrice(d, own)} title={`Take the total of ${own.proforma_number ?? 'its proforma'} as the agreed price`}
+                              className="block w-full text-right text-[10px] font-medium text-brand hover:underline">use {own.proforma_number ?? 'proforma'}: {formatCurrencyCompact(Number(own.total))}</button>
+                          : <span className="block text-[10px] text-slate-400">{own.proforma_number}: {formatCurrencyCompact(Number(own.total))}</span>)}
                       </td>
                       <td className="px-3 py-2 text-right text-xs tabular-nums">
                         <span className="text-slate-700 dark:text-slate-200">{formatCurrency(Number(d.invoiced))}</span>
@@ -219,9 +291,11 @@ export function ProjectClientsPanel({ projectId, projectName, mainClientId }: { 
                       <td className="whitespace-nowrap px-3 py-2 text-right">
                         {d.client_id && (
                           <span className="inline-flex gap-1">
-                            <Link to={`/clients/${d.client_id}/proforma?project_id=${projectId}`} title="New proforma" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand dark:hover:bg-slate-700"><FilePlus2 className="h-4 w-4" /></Link>
+                            {own && <Link to={`/proformas/${own.id}`} title={`Open ${own.proforma_number ?? 'its proforma'}`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand dark:hover:bg-slate-700"><FileText className="h-4 w-4" /></Link>}
+                            <Link to={base && base.client_id !== d.client_id ? `/clients/${d.client_id}/proforma?from=${base.id}&mode=copy&project_id=${projectId}` : `/clients/${d.client_id}/proforma?project_id=${projectId}`}
+                              title={base && base.client_id !== d.client_id ? `New proforma, starting from ${base.proforma_number ?? 'the common one'}` : 'New proforma'}
+                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand dark:hover:bg-slate-700"><FilePlus2 className="h-4 w-4" /></Link>
                             <Link to={`/sales/new?client_id=${d.client_id}&project_id=${projectId}${d.contract_id ? `&contract_id=${d.contract_id}` : ''}`} title="New invoice / record payment" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand dark:hover:bg-slate-700"><Receipt className="h-4 w-4" /></Link>
-                            {d.contract_id && <Link to={`/contracts/${d.contract_id}/edit`} title="Open the contract" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand dark:hover:bg-slate-700"><FileText className="h-4 w-4" /></Link>}
                           </span>
                         )}
                       </td>
@@ -270,14 +344,14 @@ function PaperChip({ d, item, short, canUpload, onDone }: { d: Deal; item: Sales
   }
 
   if (have || !canUpload || item.type === 'proforma') {
-    return <span title={`${item.label}: ${have ? 'on file' : item.status === 'missing' ? 'missing' : 'due later'}`} className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{have ? '✓ ' : ''}{short}</span>
+    return <span title={`${item.label}: ${have ? 'on file' : item.status === 'missing' ? 'missing' : 'due later'}`} className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{have ? '✓ ' : ''}{short}</span>
   }
   return (
     <>
       <input ref={input} type="file" className="hidden" accept="image/*,application/pdf,.doc,.docx"
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f) }} />
       <button type="button" disabled={busy} onClick={() => input.current?.click()} title={`Upload the ${item.label.toLowerCase()}`}
-        className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium hover:opacity-80 disabled:opacity-50 ${cls}`}>
+        className={`inline-flex items-center gap-0.5 whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium hover:opacity-80 disabled:opacity-50 ${cls}`}>
         <Upload className="h-2.5 w-2.5" /> {busy ? '…' : short}
       </button>
     </>
