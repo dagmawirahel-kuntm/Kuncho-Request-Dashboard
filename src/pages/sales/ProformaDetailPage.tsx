@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, CheckCircle2, ClipboardList, Copy, GitBranch, Layers, Percent, Receipt, ShieldAlert, ShieldCheck, ThumbsDown, TrendingUp, Wallet } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ClipboardList, Copy, GitBranch, Layers, Percent, Receipt, ShieldAlert, ShieldCheck, ThumbsDown, TrendingUp, UserPlus, Wallet } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -11,6 +11,7 @@ import { useCompanyProfile, useCompanySignoff } from '@/lib/companyProfile'
 import { buildProformaHtml, effectiveStatus, type ProformaDocInput } from '@/lib/documents/proformaDocument'
 import { DocumentActions } from '@/components/documents/DocumentActions'
 import { ActionDialog } from '@/components/shared/ActionDialog'
+import { ClientPickerDialog } from '@/components/shared/ClientPickerDialog'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/components/record/Record'
 import type { ProformaStatus } from '@/types/database'
 import { DEFAULT_DISCOUNT_LIMIT, discountLabel, discountPercent, type DiscountKind } from '@/lib/discount'
@@ -57,7 +58,7 @@ export default function ProformaDetailPage() {
   const canWrite = ['admin', 'executive', 'finance'].includes(role ?? '')
   const { data: company } = useCompanyProfile()
   const { data: signoff } = useCompanySignoff()
-  const [dialog, setDialog] = useState<null | 'decline'>(null)
+  const [dialog, setDialog] = useState<null | 'decline' | 'copy-to'>(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -267,7 +268,10 @@ export default function ProformaDetailPage() {
                 <GitBranch className="h-4 w-4" /> Revise
               </Link>
             )}
-            <Link to={`/clients/${pf.client_id}/proforma?from=${pf.id}&mode=copy`} className={tbtn} title="Start a new proforma from this one"><Copy className="h-4 w-4" /> Copy</Link>
+            <Link to={`/clients/${pf.client_id}/proforma?from=${pf.id}&mode=copy`} className={tbtn} title="Start a new proforma for this client from this one"><Copy className="h-4 w-4" /> Copy</Link>
+            <button onClick={() => setDialog('copy-to')} className={tbtn} title="Start another client's proforma from this one: same lines, their own changes and price">
+              <UserPlus className="h-4 w-4" /> Copy for another client
+            </button>
             {live && !needsApproval && requested < Number(pf.total) - 1 && (
               <Link to={`/clients/${pf.client_id}/payment-request?proforma_id=${pf.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700">
                 <ArrowRight className="h-4 w-4" /> Request payment
@@ -368,6 +372,14 @@ export default function ProformaDetailPage() {
         }
       />
 
+      {dialog === 'copy-to' && (
+        <ClientPickerDialog
+          title="Copy for another client"
+          description={`A new proforma for the client you pick, starting from ${pf.proforma_number ?? 'this one'}${pf.projects?.project_name ? ` under ${pf.projects.project_name}` : ''}. Change their specifics, then save.`}
+          projectId={pf.project_id} projectName={pf.projects?.project_name ?? null} excludeClientId={pf.client_id}
+          onClose={() => setDialog(null)}
+          onPick={cid => navigate(`/clients/${cid}/proforma?from=${pf.id}&mode=copy${pf.project_id ? `&project_id=${pf.project_id}` : ''}`)} />
+      )}
       {dialog === 'decline' && (
         <ActionDialog title="The client declined" confirmLabel="Mark declined" danger busy={busy} onClose={() => setDialog(null)}
           onConfirm={async () => { if (await update({ status: 'declined', declined_at: new Date().toISOString(), decline_reason: reason.trim() || null }, 'Marked declined')) setDialog(null) }}

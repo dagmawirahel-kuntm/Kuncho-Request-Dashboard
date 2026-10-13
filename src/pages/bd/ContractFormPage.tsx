@@ -61,7 +61,6 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
   const { data: opportunities = [] } = useOpportunities()
   const clientOptions = useMemo(() => clients.map((c: any) => ({ id: c.id, label: c.client_name })), [clients])
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
-  const opportunityOptions = useMemo(() => opportunities.map((o: any) => ({ id: o.id, label: o.title, sub: o.stage })), [opportunities])
   const contractHint = useMemo(() => {
     if (!record) return null
     return resolveHint({ entityType: 'contract', id: record.id, clientId: record.client_id, status: record.status, projectId: record.project_id })
@@ -95,6 +94,12 @@ function ContractFormPageBody({ id, record }: { id?: string; record?: Contract }
         retention_percent: 0,
       }
   )
+  // Only the contract's own client's opportunities (or prospects not yet a
+  // client): a contract under another client's opportunity drops out of the
+  // deals list (migration 450 refuses it).
+  const opportunityOptions = useMemo(() => (opportunities as { id: string; title: string; stage: string; client_id: string | null }[])
+    .filter(o => !o.client_id || !form.client_id || o.client_id === form.client_id || o.id === form.opportunity_id)
+    .map(o => ({ id: o.id, label: o.title, sub: o.stage })), [opportunities, form.client_id, form.opportunity_id])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [generating, setGenerating] = useState(false)

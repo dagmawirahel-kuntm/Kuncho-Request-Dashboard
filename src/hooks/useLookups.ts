@@ -425,7 +425,7 @@ export function useOpportunities() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('opportunities')
-        .select('id,title,stage')
+        .select('id,title,stage,client_id')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Proforma, ProformaStatus } from '@/types/database'
 import { ChevronDown, FileText, FilePlus, Percent, Plus, ShieldAlert } from 'lucide-react'
 import { effectiveStatus } from '@/lib/documents/proformaDocument'
+import { ClientPickerDialog } from '@/components/shared/ClientPickerDialog'
 
 type ProformaRow = Proforma & { clients: { client_name: string } | null; discount_amount?: number | null; lines_total?: number | null }
 
@@ -27,6 +28,8 @@ const STATUS_CLS: Record<ProformaStatus, string> = {
 
 export default function ProformasPage() {
   const [showOld, setShowOld] = useState(false)
+  const navigate = useNavigate()
+  const [picking, setPicking] = useState(false)
   const { data: proformas = [], isLoading } = useQuery({
     queryKey: ['proformas'],
     queryFn: async () => {
@@ -86,10 +89,15 @@ export default function ProformasPage() {
         <label className="flex items-center gap-1.5 text-xs text-slate-500">
           <input type="checkbox" checked={showOld} onChange={e => setShowOld(e.target.checked)} /> Show replaced versions
         </label>
-        <Link to="/clients" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+        <button onClick={() => setPicking(true)} className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
           <Plus className="h-4 w-4" /> New Proforma
-        </Link>
+        </button>
       </div>
+
+      {picking && (
+        <ClientPickerDialog title="New proforma" description="Who is it for? To start from another proforma, open that one and use “Copy for another client”."
+          onClose={() => setPicking(false)} onPick={cid => navigate(`/clients/${cid}/proforma`)} />
+      )}
 
       {discounts.length > 0 && (
         <div className="rounded-2xl border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -145,7 +153,7 @@ export default function ProformasPage() {
         <div className="rounded-2xl border-2 border-dashed dark:border-slate-700 bg-white dark:bg-slate-800 py-16 text-center">
           <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
           <p className="text-sm text-slate-500">No proforma invoices yet.</p>
-          <p className="text-xs text-slate-400 mt-1">Go to a client page and click "Proforma Invoice" to create one.</p>
+          <p className="text-xs text-slate-400 mt-1">Use “New Proforma” above, or “Proforma Invoice” on a client’s page.</p>
         </div>
       ) : (
         <div className="rounded-2xl bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm overflow-hidden">
