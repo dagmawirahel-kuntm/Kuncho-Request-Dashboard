@@ -18,7 +18,7 @@ export default function CpoBondsPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['cpo-bonds'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('cpo_bonds').select('*, vendors(vendor_name), accounts(account_name), expenses(item_service_description)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('cpo_bonds').select('*, vendors(vendor_name), accounts(account_name), expenses:related_expense_id(item_service_description)').order('created_at', { ascending: false })
       if (error) throw error
       return data as CpoBond[]
     },

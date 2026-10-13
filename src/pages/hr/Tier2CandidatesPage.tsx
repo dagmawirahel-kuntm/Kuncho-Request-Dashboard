@@ -25,7 +25,7 @@ export default function Tier2CandidatesPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('candidates')
-        .select('*, labor_requisitions(role_needed, headcount, projects(project_name))')
+        .select('*, labor_requisitions:labor_requisition_id(role_needed, headcount, projects(project_name))')
         .eq('candidate_type', 'tier_2_casual')
         .eq('outcome', 'pending')
         .order('created_at', { ascending: true })

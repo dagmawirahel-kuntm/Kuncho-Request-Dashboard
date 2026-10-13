@@ -508,7 +508,10 @@ export default function ExpensesPage() {
     queryFn: async () => {
       let q = supabase
         .from('expenses')
-        .select('*, projects(project_name), accounts(account_name), vendors(vendor_name)')
+        // accounts through account_id: expenses has a second key to accounts
+        // (spot_paid_account_id, migration 433), so an unqualified embed is
+        // ambiguous and PostgREST rejects the request (PGRST201).
+        .select('*, projects(project_name), accounts:account_id(account_name), vendors(vendor_name)')
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
       if (filterOwn && profile?.id) q = (q as any).eq('purchaser_user_id', profile.id)
@@ -661,8 +664,9 @@ export default function ExpensesPage() {
         // so PostgREST rejected the whole request (PGRST201) and the tab
         // rendered "No records found" for every row rather than for none.
         // vendor_receipt_facilitation_id is the live column: it is set on 13
-        // rows, vrf_id on none.
-        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts(account_name), vendor_receipt_facilitation:vendor_receipt_facilitation_id(record_name), transfers(transfer_id_code), locations(location_name)')
+        // rows, vrf_id on none. accounts likewise goes through account_id:
+        // spot_paid_account_id (migration 433) is a second key to accounts.
+        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts:account_id(account_name), vendor_receipt_facilitation:vendor_receipt_facilitation_id(record_name), transfers(transfer_id_code), locations(location_name)')
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
       // fiscal_period_id is stamped by trg_set_fiscal_period as
