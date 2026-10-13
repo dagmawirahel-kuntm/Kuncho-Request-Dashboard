@@ -103,7 +103,7 @@ export default function StockManagerViewPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('stock_return_requests')
-        .select('*, stock_items(item_name, unit), projects(project_name)')
+        .select('*, stock_items(item_name, unit), projects:project_id(project_name)')
         .eq('status', 'pending')
         .order('requested_at', { ascending: true })
         .limit(8)

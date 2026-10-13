@@ -28,7 +28,7 @@ const CONDITION_TONE: Record<string, 'green' | 'amber' | 'red' | 'slate'> = { go
 type Reversible = { reversal_of?: string | null; reversed_at?: string | null; reverse_reason?: string | null }
 type ReceiptRow = StockReceipt & Reversible & { grn_item_id?: string | null; projects: { project_name: string } | null }
 type IssueRow = StockIssue & Reversible & { unit_cost_snapshot?: number | null; projects: { project_name: string } | null }
-type ToolUnitRow = ToolUnit & { holder: { full_name: string } | null }
+type ToolUnitRow = ToolUnit & { holder: { employee_name: string } | null }
 type Move = { head?: string | null; kind: 'receipt' | 'issue'; id: string; date: string; qty: number; label: string; tone: 'green' | 'red' | 'amber'; project: string | null; price: number | null; notes: string | null; site: boolean; row: ReceiptRow | IssueRow }
 type Tab = 'history' | 'where' | 'prices' | 'units'
 
@@ -89,7 +89,7 @@ export default function StockItemDetailPage() {
     queryKey: ['tool-units', id],
     enabled: !!id && !!item?.is_tool,
     queryFn: async () => {
-      const { data, error } = await supabase.from('tool_units').select('*, holder:current_holder_id ( full_name )').eq('stock_item_id', id!).eq('active', true).order('asset_code')
+      const { data, error } = await supabase.from('tool_units').select('*, holder:current_holder_id ( employee_name )').eq('stock_item_id', id!).eq('active', true).order('asset_code')
       if (error) throw error
       return (data ?? []) as ToolUnitRow[]
     },
@@ -280,7 +280,7 @@ export default function StockItemDetailPage() {
                       <Wrench className="h-4 w-4 text-violet-500" />
                       <div className="min-w-0 flex-1">
                         <p className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{u.asset_code}{u.serial_number ? <span className="ml-2 font-normal text-slate-400">S/N {u.serial_number}</span> : null}</p>
-                        <p className="text-xs text-slate-500">{u.holder ? `With ${u.holder.full_name}` : 'In the store'}{u.purchase_date ? ` · bought ${formatDate(u.purchase_date)}` : ''}</p>
+                        <p className="text-xs text-slate-500">{u.holder ? `With ${u.holder.employee_name}` : 'In the store'}{u.purchase_date ? ` · bought ${formatDate(u.purchase_date)}` : ''}</p>
                       </div>
                       <Pill tone={CONDITION_TONE[u.condition] ?? 'slate'}>{u.condition}</Pill>
                     </li>

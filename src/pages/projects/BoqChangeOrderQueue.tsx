@@ -38,7 +38,7 @@ export function BoqChangeOrderQueue({ stage }: { stage: Stage }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('boq_change_orders')
-        .select('*, boqs(title, project_id, projects(project_name))')
+        .select('*, boqs:boq_id(title, project_id, projects(project_name))')
         .in('status', statuses)
         .order('created_at')
       if (error) throw error
