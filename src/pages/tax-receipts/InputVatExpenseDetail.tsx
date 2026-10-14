@@ -15,6 +15,7 @@ interface ExpenseDetail {
   wht_amount: number | null
   net_payable: number | null
   paid_date: string | null
+  bank_date: string | null
   payment_method: string | null
   payment_state: string | null
   bank_ref: string | null
@@ -56,7 +57,7 @@ export function InputVatExpenseDetail({ row }: { row: InputVatRow }) {
         .from('expenses')
         .select(`
           item_service_description, description_of_item, quantity, uom, amount_etb, wht_amount, net_payable,
-          paid_date, payment_method, payment_state, bank_ref, notes,
+          paid_date, bank_date, payment_method, payment_state, bank_ref, notes,
           projects:project_id ( project_name ),
           categories:category_id ( category_name ),
           sub_categories:sub_category_id ( item_name ),
@@ -111,7 +112,8 @@ export function InputVatExpenseDetail({ row }: { row: InputVatRow }) {
         <Item label="WHT" value={Number(e.wht_amount ?? 0) > 0 ? formatCurrency(Number(e.wht_amount)) : null} />
         <Item label="Net paid" value={e.net_payable != null ? formatCurrency(Number(e.net_payable)) : null} />
         <Item label="VAT" value={`${formatCurrency(Number(row.vat_amount ?? 0))} · ${row.vat_source === 'estimated' ? 'estimated' : row.vat_source === 'receipt' ? 'from receipt' : 'entered'}`} />
-        <Item label="Paid" value={e.paid_date ? formatDateGC(e.paid_date) : null} />
+        <Item label="Marked paid" value={e.paid_date ? formatDateGC(e.paid_date) : null} />
+        <Item label="Bank date" value={e.bank_date ? formatDateGC(e.bank_date) : null} />
         <Item label="Paid by" value={paid} />
         <Item label="Bank ref" value={bankRef} />
         <Item label="Declared in" value={row.declare_period_label} />

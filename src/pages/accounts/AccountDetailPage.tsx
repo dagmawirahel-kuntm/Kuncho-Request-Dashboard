@@ -243,11 +243,11 @@ function monthKey(dateStr: string | null) {
   return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleString('default', { month: 'long', year: 'numeric' })
 }
 
-function groupByMonth<T extends { paid_date?: string | null; date?: string | null }>(items: T[]) {
+function groupByMonth<T extends { bank_date?: string | null; paid_date?: string | null; date?: string | null }>(items: T[]) {
   const out: { month: string; rows: T[] }[] = []
   const seen: Record<string, number> = {}
   for (const row of items) {
-    const m = monthKey(row.paid_date ?? row.date ?? null)
+    const m = monthKey(row.bank_date ?? row.paid_date ?? row.date ?? null)
     if (seen[m] == null) { seen[m] = out.length; out.push({ month: m, rows: [] }) }
     out[seen[m]].rows.push(row)
   }
@@ -301,7 +301,7 @@ export default function AccountDetailPage() {
         .from('expenses')
         .select(`
           id, item_service_description, amount_etb, payment_status,
-          bank_ref, paid_date, date,
+          bank_ref, paid_date, bank_date, date,
           vendors:vendor_id ( vendor_name ),
           projects:project_id ( project_name ),
           categories:category_id ( category_name )
@@ -550,7 +550,7 @@ export default function AccountDetailPage() {
 
                       {/* Expense rows */}
                       {rows.map((e, i) => {
-                        const dateStr = e.paid_date ?? e.date
+                        const dateStr = e.bank_date ?? e.paid_date ?? e.date
                         const d = dateStr ? new Date(dateStr) : null
                         const dayNum  = d ? d.getDate() : '—'
                         const dayName = d ? d.toLocaleString('default', { weekday: 'short' }) : ''

@@ -725,11 +725,19 @@ export default function ExpenseDetailPage() {
     // expense still looked like it stopped at Finance Approved. Show it on every
     // record (grey until settled) the same way Finance Approved shows.
     {
-      label: 'Paid',
+      label: 'Marked paid',
       done: expense.payment_state === 'paid' || expense.payment_status === true,
       date: expense.paid_date ?? (expense as any).total_payment_date ?? expense.payment_state_changed_at ?? null,
       by: null,
     },
+    // Once matched to its bank statement line, the bank's date is the one
+    // withholding and the ledger use (451); the marked-paid date stays as is.
+    ...(expense.bank_date ? [{
+      label: 'Cleared by bank',
+      done: true,
+      date: expense.bank_date,
+      by: 'date used for tax',
+    }] : []),
   ]
 
   return (
@@ -1096,6 +1104,9 @@ export default function ExpenseDetailPage() {
               { label: 'WHT',                value: expense.verify_wht ? `Required${expense.wht_handling_method ? ' — ' + expense.wht_handling_method : ''}` : null, icon: null },
               { label: 'Payment Method',     value: expense.payment_method,                                                   icon: null },
               { label: 'Matched Bank Line',  value: expense.transfers?.transfer_id_code ?? null,                              icon: null },
+              { label: 'Bank Date',          value: expense.bank_date
+                  ? `${formatDate(expense.bank_date)} — used for withholding and the books${expense.paid_date && expense.paid_date.slice(0, 10) !== expense.bank_date ? ` (marked paid ${formatDate(expense.paid_date)})` : ''}`
+                  : null,                                                                                                       icon: null },
               { label: 'Matched VRF',        value: expense.vendor_receipt_facilitation?.record_name ?? null,                icon: null },
             ] as { label: string; value: string | null | undefined; icon: React.ReactNode }[])
               .filter(r => r.value)

@@ -66,7 +66,7 @@ export default function PaperworkTab({ wht, canAct }: { wht: WhtToPrepareRow[]; 
                     {g.rows.map(r => (
                       <li key={r.expense_id}>
                         <Link to={`/expenses/${r.expense_id}`} className="font-mono text-brand hover:underline">{r.expense_code ?? 'Payment'}</Link>
-                        {' '}· WHT {formatCurrency(r.wht_amount ?? 0)} of {formatCurrency(r.amount_etb ?? 0)}{r.paid_date ? ` · paid ${formatDate(r.paid_date)}` : ''}
+                        {' '}· WHT {formatCurrency(r.wht_amount ?? 0)} of {formatCurrency(r.amount_etb ?? 0)}{r.bank_date ? ` · bank ${formatDate(r.bank_date)}` : r.paid_date ? ` · marked paid ${formatDate(r.paid_date)}` : ''}
                       </li>
                     ))}
                   </ul>
