@@ -21,6 +21,7 @@ import { chime, confetti, effectsAllowed } from '@/lib/celebrate'
 import { useRefreshTaxImpact, useTaxImpact, type ImpactItem } from '@/lib/taxImpact'
 import { TaxTag } from '@/components/tax/TaxTag'
 import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxImpactBanners'
+import { useScrollMemory } from '@/hooks/useScrollMemory'
 
 const pause = (ms: number) => new Promise(r => window.setTimeout(r, ms))
 
@@ -48,6 +49,8 @@ export default function ExpenseApprovalQueuePage() {
   const [params] = useSearchParams()
   const focusId = params.get('expense')
   const { data: rows = [], isLoading } = useApprovalQueue()
+  // Back from an expense: same place in the queue.
+  useScrollMemory('expense-approval-queue', !isLoading)
   const { data: ctx } = useApprovalContext()
   // Tax impact (migration 423): the same T-tags as the PO list and the payment queue.
   const { data: impact, byId: impactById, allowed: impactAllowed } = useTaxImpact()

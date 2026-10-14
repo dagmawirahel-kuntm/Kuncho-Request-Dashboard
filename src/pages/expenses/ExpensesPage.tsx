@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useScrollMemory } from '@/hooks/useScrollMemory'
 import type { ColumnDef } from '@tanstack/react-table'
 import { supabase } from '@/lib/supabase'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
@@ -615,13 +616,20 @@ const tableQuickFilters: QuickFilter[] = [
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { role, profile, isSuperRole, showBundles, showCPO, showVRF, filterOwn, canCreate, canSeeTable } = useRoleAccess()
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'records'>('dashboard')
+  // The tab lives in the address (?view=records), so coming back from an
+  // expense — Back, Save or Cancel — lands on the same tab.
+  const activeTab: 'dashboard' | 'records' = searchParams.get('view') === 'records' ? 'records' : 'dashboard'
+  const setActiveTab = (t: 'dashboard' | 'records') => setSearchParams(p => {
+    const n = new URLSearchParams(p)
+    if (t === 'records') n.set('view', 'records'); else n.delete('view')
+    return n
+  }, { replace: true })
   const [recordDim, setRecordDim] = useState<RecordDim>('date')
   // The Records tab as one list, or month by month. Remembered per browser.
   const [recordsView, setRecordsView] = useState<'list' | 'month'>(() => {
@@ -1102,6 +1110,7 @@ export default function ExpensesPage() {
   }
 
   const isLoading = expLoading || (showBundles && bundleLoading) || (showCPO && cpoLoading) || (showVRF && vrfLoading)
+  useScrollMemory(`expenses:${activeTab}`, activeTab === 'records' ? !allLoading : !isLoading)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
