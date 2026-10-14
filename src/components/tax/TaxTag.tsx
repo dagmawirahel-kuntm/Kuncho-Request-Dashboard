@@ -24,6 +24,18 @@ export function TaxTag({ item, periodLabel, size = 'sm', link = true }: {
   link?: boolean
 }) {
   if (!item) return null
+  // Confirmed by the bank (migration 451): the bank's month, not a rank.
+  if (item.queue === 'bank') {
+    const month = item.period?.label ?? 'an earlier month'
+    const t = `Paid per the bank${item.bank_date ? ` on ${item.bank_date}` : ''} — its ${formatCurrency(item.vat)} VAT counts in ${month}. The payment isn't recorded in the system yet: record it.`
+    const badge = (
+      <span title={t} aria-label={t}
+        className={`inline-flex shrink-0 select-none items-center gap-1 rounded-[4px] border border-emerald-600 px-1.5 font-semibold leading-none text-emerald-700 dark:border-emerald-400 dark:text-emerald-300 ${size === 'md' ? 'h-6 text-xs' : 'h-5 text-[11px]'}`}>
+        <span aria-hidden>✓</span>{month.split(' ')[0]}
+      </span>
+    )
+    return link ? <Link to={`/tax-impact#${item.id}`} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">{badge}</Link> : badge
+  }
   const known = item.cls === 'vat' && item.rank != null
   const level = meterLevel(item.share)
   const h = size === 'md' ? 'h-6 text-xs' : 'h-5 text-[11px]'
@@ -76,6 +88,7 @@ export function TaxTagLegend() {
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ rank: 1, share: 0.27, escalated: true })} link={false} /> escalated</span>
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ rank: 2, share: 0.24, overdue: true })} link={false} /> overdue</span>
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ cls: 'unknown', rank: null })} link={false} /> ask for a VAT receipt</span>
+      <span className="flex items-center gap-1.5"><TaxTag item={sample({ queue: 'bank', rank: null, period: { ec_year: 2019, ec_month: 1, label: 'Meskerem 2019', from_bank: true } })} link={false} /> paid per the bank, in its month</span>
       <span>Bars: share of the month's VAT gap (5%, 10%, 20%+)</span>
     </div>
   )

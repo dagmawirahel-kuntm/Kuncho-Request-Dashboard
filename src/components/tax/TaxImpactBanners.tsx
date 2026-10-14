@@ -121,7 +121,9 @@ export function TaxImpactNote({ id, po = false }: { id: string; po?: boolean }) 
       : 'bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
       <TaxTag item={it} periodLabel={data.period.label} size="md" />
       <p className="min-w-0 flex-1 text-slate-700 dark:text-slate-200">
-        {it.cls === 'vat'
+        {it.queue === 'bank'
+          ? <>The bank shows this paid{it.bank_date ? <> on <b>{it.bank_date}</b></> : null} — its <b>{etb(it.vat)}</b> VAT counts in <b>{it.period?.label ?? 'that month'}</b>, not {data.period.label}</>
+          : it.cls === 'vat'
           ? <><b>#{it.rank}</b> by tax impact in {data.period.label} · <b>{etb(it.vat)}</b> VAT · {pctText(it.share)} of the {data.basis === 'goal' ? 'VAT gap' : 'VAT waiting'}</>
           : <><b>{etb(it.vat)}</b> of VAT if the vendor gives a VAT receipt</>}
         <span className="text-slate-500 dark:text-slate-400">
@@ -136,4 +138,4 @@ export function TaxImpactNote({ id, po = false }: { id: string; po?: boolean }) 
   )
 }
 
-const QUEUE_LABEL_SHORT: Record<ImpactQueue, string> = { approve: 'waiting for approval', pay: 'approved, not paid', raise: 'not raised' }
+const QUEUE_LABEL_SHORT: Record<ImpactQueue, string> = { approve: 'waiting for approval', pay: 'approved, not paid', raise: 'not raised', bank: 'paid per the bank' }
