@@ -247,9 +247,25 @@ export function DataTable<TData extends { id: string }>({
   const qc = useQueryClient()
 
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
-  const [sorting, setSorting] = useState<SortingState>(() => groupBy ? [{ id: groupBy.columnId, desc: groupBy.kind !== 'text' }] : [])
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '')
+  // Search, filters, sort and page survive leaving the table for a record
+  // and coming back (per browser tab), so editing one row doesn't lose your
+  // place in the list.
+  const stateKey = persistKey ? `dt-state-${persistKey}` : null
+  const [saved] = useState<{ sorting?: SortingState; columnFilters?: ColumnFiltersState; globalFilter?: string; pageIndex?: number; pageSize?: number } | null>(() => {
+    if (!stateKey) return null
+    try { return JSON.parse(sessionStorage.getItem(stateKey) ?? 'null') } catch { return null }
+  })
+  const [sorting, setSorting] = useState<SortingState>(() => saved?.sorting ?? (groupBy ? [{ id: groupBy.columnId, desc: groupBy.kind !== 'text' }] : []))
+  const [columnFilters, setColumnFiltersRaw] = useState<ColumnFiltersState>(saved?.columnFilters ?? [])
+  const [globalFilter, setGlobalFilterRaw] = useState(initialGlobalFilter ?? saved?.globalFilter ?? '')
+  const [pagination, setPagination] = useState({ pageIndex: saved?.pageIndex ?? 0, pageSize: saved?.pageSize ?? 50 })
+  // A new search or filter starts from the first page.
+  const setColumnFilters: typeof setColumnFiltersRaw = v => { setColumnFiltersRaw(v); setPagination(p => ({ ...p, pageIndex: 0 })) }
+  const setGlobalFilter: typeof setGlobalFilterRaw = v => { setGlobalFilterRaw(v); setPagination(p => ({ ...p, pageIndex: 0 })) }
+  useEffect(() => {
+    if (!stateKey) return
+    try { sessionStorage.setItem(stateKey, JSON.stringify({ sorting, columnFilters, globalFilter, ...pagination })) } catch { /* storage blocked */ }
+  }, [stateKey, sorting, columnFilters, globalFilter, pagination])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [deleting, setDeleting] = useState(false)
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -302,10 +318,13 @@ export function DataTable<TData extends { id: string }>({
   const table = useReactTable({
     data,
     columns: tableColumns,
-    state: { sorting, columnFilters, globalFilter, columnVisibility, rowSelection },
+    state: { sorting, columnFilters, globalFilter, columnVisibility, rowSelection, pagination },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
+    // Data arriving after a return must not throw the restored page away.
+    autoResetPageIndex: false,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     getRowId: row => row.id,
@@ -314,8 +333,12 @@ export function DataTable<TData extends { id: string }>({
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 50 } },
   })
+  // Fewer rows than when the page was remembered: show the last page there is.
+  const pageCount = table.getPageCount()
+  useEffect(() => {
+    if (data.length && pageCount > 0 && pagination.pageIndex >= pageCount) setPagination(p => ({ ...p, pageIndex: pageCount - 1 }))
+  }, [data.length, pageCount, pagination.pageIndex])
 
   const selectedIds = Object.keys(rowSelection).filter(id => rowSelection[id])
 

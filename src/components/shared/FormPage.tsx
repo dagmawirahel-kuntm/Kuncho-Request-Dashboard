@@ -4,6 +4,8 @@ import { ArrowLeft } from 'lucide-react'
 interface FormPageProps {
   title: string
   backTo: string
+  /** Leave the form some other way than a link — e.g. back to wherever the person came from. */
+  onBack?: () => void
   children?: React.ReactNode
   error?: string
   saving?: boolean
@@ -12,7 +14,9 @@ interface FormPageProps {
   onSave: () => void
 }
 
-export function FormPage({ title, backTo, children, error, saving, saveLabel = 'Save', loading, onSave }: FormPageProps) {
+export function FormPage({ title, backTo, onBack, children, error, saving, saveLabel = 'Save', loading, onSave }: FormPageProps) {
+  // A link still renders (open in a new tab works); onBack takes over a plain click.
+  const back = onBack ? (e: React.MouseEvent) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); onBack() } : undefined
   return (
     <div className="animate-fade-in-up space-y-4">
 
@@ -21,6 +25,7 @@ export function FormPage({ title, backTo, children, error, saving, saveLabel = '
         <div className="flex items-center gap-2.5 min-w-0">
           <Link
             to={backTo}
+            onClick={back}
             className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand transition-colors flex-shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />Back
@@ -33,6 +38,7 @@ export function FormPage({ title, backTo, children, error, saving, saveLabel = '
           <div className="flex items-center gap-2 flex-shrink-0">
             <Link
               to={backTo}
+              onClick={back}
               className="rounded-md border dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             >
               Cancel

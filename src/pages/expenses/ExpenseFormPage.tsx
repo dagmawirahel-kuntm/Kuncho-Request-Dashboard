@@ -68,8 +68,21 @@ export default function ExpenseFormPage() {
   // A bank line the statement shows and nothing in the system accounts for
   // (the bank audit, migration 440): record the expense it was.
   const bankLineId = searchParams.get('bank_line')
-  const returnTo: string = (location.state as { returnTo?: string })?.returnTo
-    ?? (bankLineId ? '/bank-statement-import?tab=audit' : '/expenses')
+  // Where saving or cancelling lands: an explicit returnTo if the caller
+  // gave one, else back where the person came from (the approvals queue,
+  // the records table with its filters, the expense itself…) — not always
+  // the approvals page, which made people find their place again after
+  // every edit. Opened directly (no history): the expense, or the list.
+  const navigate = useNavigate()
+  const explicitReturn = (location.state as { returnTo?: string })?.returnTo
+    ?? (bankLineId ? '/bank-statement-import?tab=audit' : undefined)
+  const returnTo: string = explicitReturn ?? (id ? `/expenses/${id}` : '/expenses')
+  const cameFromApp = location.key !== 'default'
+  const leave = () => {
+    if (explicitReturn) navigate(explicitReturn)
+    else if (cameFromApp) navigate(-1)
+    else navigate(returnTo, { replace: true })
+  }
   const prId   = searchParams.get('pr_id')
   const lineId = searchParams.get('line_id')
   const vrfId  = searchParams.get('vrf_id')
@@ -186,11 +199,11 @@ export default function ExpenseFormPage() {
   })
 
   if (isEdit && isLoading) {
-    return <FormPage title="Edit Expense" backTo={returnTo} loading onSave={() => {}} />
+    return <FormPage title="Edit Expense" backTo={returnTo} onBack={leave} loading onSave={() => {}} />
   }
   // The form starts from the line, so it waits for it.
   if (!isEdit && bankLineId && bankLineLoading) {
-    return <FormPage title="New Expense" backTo={returnTo} loading onSave={() => {}} />
+    return <FormPage title="New Expense" backTo={returnTo} onBack={leave} loading onSave={() => {}} />
   }
 
   return (
@@ -198,6 +211,7 @@ export default function ExpenseFormPage() {
       id={id}
       record={record}
       returnTo={returnTo}
+      onLeave={leave}
       linkedPr={linkedPr}
       linkedLineItem={linkedLineItem}
       linkedVrf={linkedVrf}
@@ -226,8 +240,8 @@ type LinkedBundle = {
   }[]
 }
 
-function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty, linkedCpoBond, linkedEngagement, linkedBankLine }: {
-  id?: string; record?: Expense; returnTo?: string
+function ExpenseFormPageBody({ id, record, returnTo = '/expenses', onLeave, linkedPr, linkedLineItem, linkedVrf, linkedBundle, linkedProperty, linkedCpoBond, linkedEngagement, linkedBankLine }: {
+  id?: string; record?: Expense; returnTo?: string; onLeave: () => void
   linkedPr?: Order; linkedLineItem?: OrderItem
   linkedVrf?: (VendorReceiptFacilitation & { initial: { account_name: string } | null })
   linkedBundle?: LinkedBundle
@@ -237,7 +251,6 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   linkedBankLine?: BankLinePrefill
 }) {
   const isEdit = !!id
-    const navigate = useNavigate()
     const { user, role } = useAuth()
     const taxPeriodOf = useTaxPeriodLabel()
     const { toast } = useToast()
@@ -708,7 +721,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
     qc.invalidateQueries({ queryKey: ['expenses-lookup'] })
     if (isEdit) toast('Expense updated', 'success')
     else submitted(toast, 'Expense submitted', 'Now waiting for approval. Track it under Approvals')
-    navigate(returnTo)
+    onLeave()
   }
 
   async function handleApprovalTransition(nextStatus: string, extra: Record<string, unknown> = {}) {
@@ -735,7 +748,7 @@ function ExpenseFormPageBody({ id, record, returnTo = '/expenses', linkedPr, lin
   const canResubmit = isEdit && approvalStatus === 'rejected' && (role === 'admin' || role === 'executive' || record?.purchaser_user_id === user?.id)
 
   return (
-    <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo={returnTo} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={() => handleSave()}>
+    <FormPage title={isEdit ? 'Edit Expense' : 'New Expense'} backTo={returnTo} onBack={onLeave} error={error} saving={saving} saveLabel={isEdit ? 'Save Changes' : 'Save Expense'} onSave={() => handleSave()}>
 
       {isEdit && (
         <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
