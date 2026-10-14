@@ -13,6 +13,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'pay', label: 'Approved, not paid' },
   { key: 'raise', label: 'PO not raised' },
   { key: 'ask', label: 'Ask for VAT receipt' },
+  { key: 'bank', label: 'Paid per the bank' },
 ]
 
 const etb = (n: number) => formatCurrency(Math.round(n)).replace(/\.00$/, '')
@@ -36,12 +37,13 @@ export default function TaxImpactPage() {
     approve: items.filter(i => i.cls === 'vat' && i.queue === 'approve').length,
     pay: items.filter(i => i.cls === 'vat' && i.queue === 'pay').length,
     raise: items.filter(i => i.cls === 'vat' && i.queue === 'raise').length,
-    ask: items.filter(i => i.cls === 'unknown').length,
+    ask: items.filter(i => i.cls === 'unknown' && i.queue !== 'bank').length,
+    bank: items.filter(i => i.queue === 'bank').length,
   }), [items])
 
   const needle = q.trim().toLowerCase()
   const shown = items.filter(i =>
-    (filter === 'all' || (filter === 'ask' ? i.cls === 'unknown' : i.cls === 'vat' && i.queue === filter))
+    (filter === 'all' || (filter === 'bank' ? i.queue === 'bank' : filter === 'ask' ? i.cls === 'unknown' && i.queue !== 'bank' : i.cls === 'vat' && i.queue === filter))
     && (!highOnly || i.high)
     && (!needle || `${i.code ?? ''} ${i.po_code ?? ''} ${i.vendor ?? ''} ${i.label ?? ''} T${i.rank ?? ''}`.toLowerCase().includes(needle)))
 
@@ -52,7 +54,8 @@ export default function TaxImpactPage() {
     el?.scrollIntoView({ block: 'center' })
   }, [target, data])
 
-  const ranked = items.filter(i => i.cls === 'vat')
+  // Paid per the bank (migration 451) belongs to the bank's month, not this one.
+  const ranked = items.filter(i => i.cls === 'vat' && i.queue !== 'bank')
   const high = ranked.filter(i => i.high)
   const reachIdx = ranked.findIndex(i => i.reaches_goal)
   const totalVat = ranked.reduce((s, i) => s + i.vat, 0)
@@ -137,7 +140,7 @@ export default function TaxImpactPage() {
                 </tr>
               </thead>
               <tbody className="divide-y dark:divide-slate-700">
-                {shown.map(it => <Row key={it.id} it={it} period={data.period.label} target={it.id === target} />)}
+                {shown.map(it => <Row key={it.id} it={it} period={it.period?.label ?? data.period.label} target={it.id === target} />)}
                 {shown.length === 0 && (
                   <tr><td colSpan={9} className="px-3 py-10 text-center text-sm text-slate-400">Nothing matches.</td></tr>
                 )}
@@ -145,7 +148,8 @@ export default function TaxImpactPage() {
             </table>
           </div>
           <p className="text-[11px] text-slate-400">
-            Only VAT from suppliers who give VAT receipts is ranked. Escalation changes the order of the queues, not who approves.
+            Only VAT from suppliers who give VAT receipts is ranked. An item goes by this month until a bank statement line confirms its payment; then it goes by the bank's date and month, and drops out of the ranking.
+             Escalation changes the order of the queues, not who approves.
             Paying early only moves VAT between months — use this to time what is needed anyway.
           </p>
         </>

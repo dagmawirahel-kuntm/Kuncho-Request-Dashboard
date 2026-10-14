@@ -9,7 +9,8 @@ import { useAuth } from '@/contexts/AuthContext'
 // the approval and payment queues and the table, so an item can be followed
 // from screen to screen.
 
-export type ImpactQueue = 'approve' | 'pay' | 'raise'
+// 'bank': the bank statement shows it paid (migration 451) — record the payment.
+export type ImpactQueue = 'approve' | 'pay' | 'raise' | 'bank'
 
 export interface ImpactItem {
   kind: 'expense' | 'po'
@@ -36,6 +37,10 @@ export interface ImpactItem {
   overdue: boolean
   po_id: string | null
   po_code: string | null
+  /** The bank's value date, once a statement line confirms the payment. */
+  bank_date?: string | null
+  /** The month the item belongs to: the bank's month when confirmed, else the current one. */
+  period?: { ec_year: number; ec_month: number; label: string; from_bank: boolean }
 }
 
 export interface TaxImpact {
@@ -103,9 +108,11 @@ export const QUEUE_LABEL: Record<ImpactQueue, string> = {
   approve: 'Waiting for approval',
   pay: 'Approved, not paid',
   raise: 'PO not raised for payment',
+  bank: 'Paid per the bank — not recorded',
 }
 
 export function nextStep(it: ImpactItem, periodLabel: string): string {
+  if (it.queue === 'bank') return `Record the payment — the bank shows it paid${it.bank_date ? ` on ${it.bank_date}` : ''}, so it counts in ${it.period?.label ?? 'that month'}`
   if (it.cls === 'unknown') return 'Ask the vendor for a VAT receipt'
   if (it.queue === 'approve') return `Approve, then pay by the end of ${periodLabel}`
   if (it.queue === 'pay') return `Pay by the end of ${periodLabel}`
