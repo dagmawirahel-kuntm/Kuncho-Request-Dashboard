@@ -7,12 +7,13 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import {
   CLASSIFICATIONS, KIND_LABEL, describeReconciled, ruleTextFrom,
-  type BankLine, type Suggestion,
+  type BankLine, type LineCombination, type Suggestion,
 } from '@/lib/bankReconciliation'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
+import { SeveralPayments } from './SeveralPayments'
 import {
   ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
-  Repeat, Search, Sparkles, AlertTriangle,
+  Repeat, Search, Sparkles, AlertTriangle, Layers,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -147,7 +148,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null }: {
 }
 
 // ── One line, being reconciled ──────────────────────────────────────────
-type Tab = 'suggest' | 'find' | 'explain' | 'transfer'
+type Tab = 'suggest' | 'several' | 'find' | 'explain' | 'transfer'
 
 function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: { id: string; account_name: string }[]; onDone: () => void }) {
   const { toast } = useToast()
@@ -163,6 +164,18 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
     },
   })
 
+  // Several expenses that add up to this line (452) — the same query the
+  // Several payments tab shows.
+  const { data: combos = [] } = useQuery({
+    queryKey: ['bank-combinations', line.line_id],
+    enabled: line.direction === 'debit',
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('suggest_bank_line_combinations', { p_line_id: line.line_id })
+      if (error) throw error
+      return (data ?? []) as LineCombination[]
+    },
+  })
+
   async function apply(kind: string, targetId: string) {
     setBusy(true)
     const { error } = await supabase.rpc('apply_bank_line_match', { p_line_id: line.line_id, p_kind: kind, p_target_id: targetId })
@@ -174,6 +187,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'suggest', label: `Suggestions${suggestions.length ? ` (${suggestions.length})` : ''}`, icon: <Sparkles className="h-3.5 w-3.5" /> },
+    ...(line.direction === 'debit' ? [{ id: 'several' as const, label: `Several payments${combos.length ? ` (${combos.length})` : ''}`, icon: <Layers className="h-3.5 w-3.5" /> }] : []),
     { id: 'find', label: 'Find', icon: <Search className="h-3.5 w-3.5" /> },
     { id: 'explain', label: 'Explain', icon: <Coins className="h-3.5 w-3.5" /> },
     { id: 'transfer', label: 'Between accounts', icon: <Repeat className="h-3.5 w-3.5" /> },
@@ -190,6 +204,17 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
         ))}
       </div>
 
+      {tab === 'suggest' && combos.length > 0 && (
+        <button onClick={() => setTab('several')}
+          className="flex w-full items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-200">
+          <Layers className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {combos[0].n} expenses{combos[0].same_vendor && combos[0].vendor_names ? ` from ${combos[0].vendor_names}` : ''} add up to this line exactly
+            {combos.length > 1 ? ` · ${combos.length - 1} other combination${combos.length > 2 ? 's' : ''}` : ''}
+          </span>
+          <span className="shrink-0 font-semibold">Review →</span>
+        </button>
+      )}
       {tab === 'suggest' && (
         isLoading ? <p className="text-xs text-slate-400">Looking…</p>
         : suggestions.length === 0 ? (
@@ -229,6 +254,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
         )
       )}
 
+      {tab === 'several' && <SeveralPayments line={line} onDone={onDone} />}
       {tab === 'find' && <FindRecord line={line} busy={busy} onPick={apply} />}
       {tab === 'explain' && <ExplainLine line={line} onDone={onDone} />}
       {tab === 'transfer' && <TransferLine line={line} accounts={accounts} onDone={onDone} />}

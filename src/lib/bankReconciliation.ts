@@ -9,6 +9,18 @@ export type ReconciledAs =
 interface LinkRef { id: string; label: string; amount: number }
 
 /** A row of v_bank_line_status: a statement line and what it settles. */
+/** Open expenses that together add up to an outgoing bank line (452). */
+export interface LineCombination {
+  expense_ids: string[]
+  total: number
+  difference: number
+  n: number
+  same_vendor: boolean
+  vendor_names: string | null
+  codes: string | null
+  score: number
+}
+
 export interface BankLine {
   line_id: string
   import_id: string
