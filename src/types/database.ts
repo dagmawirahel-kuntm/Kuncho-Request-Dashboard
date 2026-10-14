@@ -459,6 +459,8 @@ export interface Expense {
   partial_payment_date: string | null
   completion_percentage: number | null
   paid_date: string | null
+  /** Date the money left per the matched bank line — used for withholding and the ledger (451). */
+  bank_date?: string | null
   vendors_location: string | null
   category_id: string | null
   vendor_id: string | null

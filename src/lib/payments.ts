@@ -72,6 +72,8 @@ export const toSend = (r: Pick<ToPayQueueRow, 'cash_to_send' | 'net_payable' | '
 export type WhtToPrepareRow = {
   expense_id: string; expense_code: string | null; vendor_name: string | null; vendor_tin: string | null
   amount_etb: number | null; wht_amount: number | null; net_payable: number | null; paid_date: string | null
+  /** The bank's date once matched, and the date withholding is filed under (451). */
+  bank_date: string | null; tax_date: string | null
 }
 
 export function usePaymentsData() {
@@ -145,7 +147,7 @@ export function usePaymentsData() {
   const wht = useQuery({
     queryKey: ['v-wht-receipts-to-prepare'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_wht_receipts_to_prepare').select('*').order('paid_date', { ascending: false })
+      const { data, error } = await supabase.from('v_wht_receipts_to_prepare').select('*').order('tax_date', { ascending: false })
       if (error) throw error
       return (data ?? []) as WhtToPrepareRow[]
     },
