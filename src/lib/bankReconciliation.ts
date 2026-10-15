@@ -91,6 +91,7 @@ export const CLASSIFICATIONS: Record<LineDirection, { value: string; label: stri
     { value: 'loan_repayment', label: 'Loan repayment', hint: 'Paying back a loan' },
     { value: 'owner_drawing', label: 'Owner withdrawal', hint: 'Money taken out by the owners' },
     { value: 'other_expense', label: 'Other expense', hint: 'Anything else paid out' },
+    { value: 'refund_paid', label: 'Refund paid back', hint: 'Returning money received by mistake (clears "Refund owed")' },
   ],
   credit: [
     { value: 'other_income', label: 'Other income', hint: 'Interest and other income that isn\'t a sale' },
@@ -98,6 +99,7 @@ export const CLASSIFICATIONS: Record<LineDirection, { value: string; label: stri
     { value: 'loan_received', label: 'Loan received', hint: 'A loan paid into the account' },
     { value: 'vendor_refund', label: 'Refund from a vendor', hint: 'A supplier paying money back' },
     { value: 'wht_refund', label: 'Withholding tax refund', hint: 'WHT returned to Kuncho' },
+    { value: 'refund_owed', label: 'Received by mistake', hint: 'A wrong payer or a double payment, to be paid back — held as a refund owed' },
   ],
 }
 

@@ -81,6 +81,7 @@ import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
 import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
 import GovernmentStatementPage from '@/pages/reports/GovernmentStatementPage'
 import SalesPage from '@/pages/sales/SalesPage'
+import PackageReceiptsPage from '@/pages/sales/PackageReceiptsPage'
 import SalesJourneyPage from '@/pages/sales/SalesJourneyPage'
 import ClientHistoryPage from '@/pages/sales/client-history/ClientHistoryPage'
 import SaleFormPage from '@/pages/sales/SaleFormPage'
@@ -480,6 +481,8 @@ export const router = createBrowserRouter([
               { path: 'finance/pay-out', element: <PayOutPage /> },
               { path: 'month-end', element: <MonthEndPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
+              // Engagements many clients pay a set package for (455).
+              { path: 'package-receipts', element: <PackageReceiptsPage /> },
               { path: 'clients/new', element: <ClientFormPage /> },
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
               // tax_summary was an empty manual monthly rollup; periods now
