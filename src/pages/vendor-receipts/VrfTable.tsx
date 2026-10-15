@@ -86,7 +86,7 @@ export function VrfTable({ rows, canWrite, onDelete }: {
         const p = row.original.payment_state
         return (
           <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAYMENT_CLS[p]}`}
-            title={p === 'sent' && row.original.sent_date ? `Sent ${row.original.sent_date}` : undefined}>
+            title={p === 'sent' ? [row.original.sent_date ? `Sent ${row.original.sent_date}` : null, row.original.bank_date ? `bank ${row.original.bank_date}` : null].filter(Boolean).join(' · ') || undefined : undefined}>
             {PAYMENT_LABEL[p]}
           </span>
         )

@@ -60,6 +60,7 @@ type Form = {
   supply_kind: 'goods' | 'services'
   wht_overridden: boolean
   wht_amount: string
+  wht_in_deal: boolean
   commission_basis: VrfCommissionBasis
   commission_rate: string
   commission_amount: string
@@ -94,6 +95,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     supply_kind: record?.supply_kind ?? 'goods',
     wht_overridden: record?.wht_overridden ?? false,
     wht_amount: record?.wht_amount != null ? String(record.wht_amount) : '',
+    wht_in_deal: record?.wht_in_deal ?? true,
     commission_basis: record?.commission_basis ?? 'receipt_pct',
     commission_rate: record?.commission_rate != null ? String(record.commission_rate) : '7',
     commission_amount: record?.commission_amount != null ? String(record.commission_amount) : '',
@@ -169,9 +171,11 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     const commission = form.commission_basis === 'receipt_pct' ? Math.round(receipt * rate) / 100
       : form.commission_basis === 'vat_pct' ? Math.round(vat * rate) / 100
       : parseFloat(form.commission_amount) || 0
-    const net = receipt - wht
+    // WHT is always counted; the deal decides whether it comes out of what
+    // the vendor is sent or is paid by us on top (453).
+    const net = form.wht_in_deal ? receipt - wht : receipt
     return { vat, wht, commission, net, expected: net - commission, cost: commission + wht, whtRate, threshold }
-  }, [rates, receipt, form.supply_kind, form.wht_overridden, form.wht_amount, form.commission_basis, form.commission_rate, form.commission_amount])
+  }, [rates, receipt, form.supply_kind, form.wht_overridden, form.wht_amount, form.wht_in_deal, form.commission_basis, form.commission_rate, form.commission_amount])
 
   const vendorList = vendors as { id: string; vendor_name: string; tin: string | null }[]
   const vendorOptions = useMemo(() => vendorList.map(v => ({ id: v.id, label: v.vendor_name, sub: v.tin ? `TIN ${v.tin}` : 'no TIN on file' })), [vendorList])
@@ -191,7 +195,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     if (!form.vendor_id) { setError('Choose the vendor that issued the receipt'); return }
     if (!form.trxn_date) { setError('Enter the receipt date'); return }
     if (receipt <= 0) { setError('Enter the receipt amount'); return }
-    if (form.wht_overridden && form.wht_amount === '') { setError('Enter the WHT, or let it be calculated'); return }
+    if (form.wht_overridden && !(parseFloat(form.wht_amount) > 0)) { setError('Enter the corrected WHT — to send the vendor the full amount, choose that under the deal instead'); return }
 
     const payload = {
       structured: true,
@@ -203,6 +207,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       supply_kind: form.supply_kind,
       wht_overridden: form.wht_overridden,
       wht_amount: form.wht_overridden ? parseFloat(form.wht_amount) || 0 : null,
+      wht_in_deal: form.wht_in_deal,
       commission_basis: form.commission_basis,
       commission_rate: form.commission_basis === 'fixed' ? null : parseFloat(form.commission_rate) || 0,
       commission_amount: form.commission_basis === 'fixed' ? parseFloat(form.commission_amount) || 0 : null,
@@ -271,7 +276,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="WHT" hint={form.wht_overridden ? 'Entered by hand' : `${(calc.whtRate * 100).toFixed(0)}% of the pre-VAT amount at or above ${formatCurrency(calc.threshold)}`}>
+        <Field label="WHT" hint={form.wht_overridden ? 'Corrected by hand' : `${(calc.whtRate * 100).toFixed(0)}% of the pre-VAT amount at or above ${formatCurrency(calc.threshold)} — always counted for tax`}>
           <div className="flex items-center gap-2">
             <input type="number" step="0.01" min="0" className={inputCls}
               value={form.wht_overridden ? form.wht_amount : calc.wht.toFixed(2)}
@@ -280,9 +285,18 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
             <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
               <input type="checkbox" checked={form.wht_overridden}
                 onChange={e => { set('wht_overridden', e.target.checked); if (e.target.checked && form.wht_amount === '') set('wht_amount', calc.wht.toFixed(2)) }} />
-              Enter myself
+              Correct it
             </label>
           </div>
+          <div className="mt-2 inline-flex rounded-md border p-0.5 text-xs dark:border-slate-600" role="group" aria-label="Who bears the WHT">
+            {([[true, 'Out of what the vendor is sent'], [false, 'Vendor gets the full amount']] as const).map(([v, label]) => (
+              <button key={String(v)} type="button" onClick={() => set('wht_in_deal', v)} aria-pressed={form.wht_in_deal === v}
+                className={`rounded px-2.5 py-1 font-medium ${form.wht_in_deal === v ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>{label}</button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {form.wht_in_deal ? 'The WHT is held back from the vendor and paid to the tax office.' : 'The vendor is sent the whole receipt amount; we still owe the WHT to the tax office, on top.'}
+          </p>
         </Field>
         <Field label="Commission">
           <div className="grid grid-cols-[1fr_7rem] gap-2">
@@ -303,7 +317,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       {/* What follows from the receipt amount */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-px overflow-hidden rounded-lg border bg-slate-200 dark:border-slate-700 dark:bg-slate-700">
         {[
-          ['Sent', calc.net, 'receipt − WHT'],
+          ['Sent', calc.net, form.wht_in_deal ? 'receipt − WHT' : 'full receipt — WHT paid on top'],
           ['Commission', calc.commission, ''],
           ['Should come back', calc.expected, 'sent − commission'],
           ['Real cost', calc.cost, 'commission + WHT'],
