@@ -271,13 +271,13 @@ function ScoreDot({ score }: { score: number }) {
 // Search any open record of the right direction.
 function FindRecord({ line, busy, onPick }: { line: BankLine; busy: boolean; onPick: (kind: string, id: string) => void }) {
   const kinds = line.direction === 'debit'
-    ? [['expense', 'Expense'], ['batch', 'Batch payment'], ['vrf', 'Vendor request'], ['payroll', 'Payroll run']] as const
+    ? [['expense', 'Expense'], ['batch', 'Batch payment'], ['vrf', 'Vendor request'], ['vrf_part', 'Vendor request part'], ['payroll', 'Payroll run']] as const
     : [['sale', 'Sale / invoice']] as const
   const [kind, setKind] = useState<string>(kinds[0][0])
   const [q, setQ] = useState('')
 
   const { data: results = [], isFetching } = useQuery({
-    queryKey: ['bank-find', kind, q],
+    queryKey: ['bank-find', kind, q, line.account_id],
     queryFn: async () => {
       const term = q.trim()
       const like = `%${term}%`
@@ -303,6 +303,19 @@ function FindRecord({ line, busy, onPick }: { line: BankLine; busy: boolean; onP
         const { data, error } = await query
         if (error) throw error
         return (data ?? []).map(v => ({ id: v.id, label: `${v.record_name ?? 'Vendor request'} ${v.facilitator_name ?? ''}`.trim(), sub: formatDate(v.trxn_date), amount: Number(v.net_sent ?? v.amount_transferred ?? 0) }))
+      }
+      if (kind === 'vrf_part') {
+        // Parts recorded by date from this line's account, still without a line (454).
+        const { data, error } = await supabase.from('vrf_payment_parts')
+          .select('id, amount, sent_date, note, vrf:vendor_receipt_facilitation(record_name, facilitator_name)')
+          .eq('account_id', line.account_id).is('transfer_id', null).is('reversed_at', null)
+          .order('sent_date', { ascending: false }).limit(50)
+        if (error) throw error
+        const rows = (data ?? []) as unknown as { id: string; amount: number; sent_date: string; note: string | null; vrf: { record_name: string | null; facilitator_name: string | null } | null }[]
+        const t = term.toLowerCase()
+        return rows
+          .filter(r => !t || `${r.vrf?.record_name ?? ''} ${r.vrf?.facilitator_name ?? ''} ${r.note ?? ''}`.toLowerCase().includes(t))
+          .map(r => ({ id: r.id, label: `${r.vrf?.record_name ?? 'Vendor request'} · part ${r.vrf?.facilitator_name ?? ''}`.trim(), sub: `${formatDate(r.sent_date)}${r.note ? ` · ${r.note}` : ''}`, amount: Number(r.amount) }))
       }
       if (kind === 'payroll') {
         let query = supabase.from('payroll').select('id, payroll_record, end_date, payment_status').order('end_date', { ascending: false }).limit(25)

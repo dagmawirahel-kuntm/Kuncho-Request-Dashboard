@@ -1441,6 +1441,26 @@ export interface VrfRegisterRow {
   sent_date: string | null
   wht_in_deal: boolean
   bank_date: string | null
+  /** What has gone out so far when it is paid in parts (migration 454). */
+  sent_in_parts: number
+  parts_count: number
+}
+
+/** One part of a VRF paid in parts, possibly from several banks (migration 454). */
+export interface VrfPaymentPart {
+  id: string
+  vrf_id: string
+  account_id: string
+  amount: number
+  transfer_id: string | null
+  sent_date: string
+  bank_date: string | null
+  note: string | null
+  sent_by: string | null
+  created_at: string
+  reversed_at: string | null
+  reversed_by: string | null
+  reverse_reason: string | null
 }
 
 /** Money taken from a VRF's returned funds for personal use (migration 320). */
