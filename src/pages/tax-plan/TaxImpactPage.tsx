@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import { TaxTag, TaxTagLegend } from '@/components/tax/TaxTag'
 import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxImpactBanners'
+import { ReceiptChase } from '@/components/tax/ReceiptChase'
+import { useReceiptChase } from '@/lib/receiptChase'
+import { BankLinesToMatch } from '@/components/tax/BankLinesToMatch'
 import { QUEUE_LABEL, nextStep, pctText, useRefreshTaxImpact, useTaxImpact, type ImpactItem, type ImpactQueue } from '@/lib/taxImpact'
-import { Landmark, RefreshCw, Search, Target, ArrowUpRight } from 'lucide-react'
+import { Landmark, RefreshCw, Search, Target, ArrowUpRight, Receipt, Banknote, ListOrdered } from 'lucide-react'
+
+type PageTab = 'impact' | 'receipts' | 'bank'
 
 type Filter = 'all' | ImpactQueue | 'ask'
 const FILTERS: { key: Filter; label: string }[] = [
@@ -30,6 +36,18 @@ export default function TaxImpactPage() {
   const [q, setQ] = useState('')
   const { hash } = useLocation()
   const target = hash.replace('#', '')
+  const { hasRole } = useAuth()
+  const canMatch = hasRole('admin', 'finance')
+  const [params, setParams] = useSearchParams()
+  const t = params.get('tab') as PageTab | null
+  const tab: PageTab = t === 'receipts' || (t === 'bank' && canMatch) ? t : 'impact'
+  const chase = useReceiptChase()
+  const chaseOpen = (chase.data ?? []).filter(r => r.chase_status !== 'not_coming')
+  const pageTabs: { id: PageTab; label: string; icon: typeof Receipt; count?: number }[] = [
+    { id: 'impact', label: 'Open items', icon: ListOrdered },
+    { id: 'receipts', label: 'Receipts to chase', icon: Receipt, count: chase.data ? chaseOpen.length : undefined },
+    ...(canMatch ? [{ id: 'bank' as const, label: 'Bank lines to match', icon: Banknote }] : []),
+  ]
 
   const items = useMemo(() => data?.items ?? [], [data])
   const counts = useMemo(() => ({
@@ -84,7 +102,20 @@ export default function TaxImpactPage() {
         </div>
       </div>
 
-      {error ? (
+      <div className="flex gap-1 overflow-x-auto border-b [scrollbar-width:none] dark:border-slate-700">
+        {pageTabs.map(pt => (
+          <button key={pt.id} type="button"
+            onClick={() => setParams(p => { const n = new URLSearchParams(p); if (pt.id === 'impact') n.delete('tab'); else n.set('tab', pt.id); return n }, { replace: true })}
+            className={`-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${tab === pt.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+            <pt.icon className="h-4 w-4" /> {pt.label}
+            {pt.count != null && <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">{pt.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'receipts' ? <ReceiptChase />
+      : tab === 'bank' ? (data ? <BankLinesToMatch current={data.period} /> : <p className="py-12 text-center text-sm text-slate-400">Loading…</p>)
+      : error ? (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{(error as Error).message}</p>
       ) : isLoading || !data ? (
         <p className="py-12 text-center text-sm text-slate-400">Working out the tax impact…</p>
