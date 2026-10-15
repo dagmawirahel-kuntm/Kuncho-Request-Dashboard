@@ -4,7 +4,8 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
-import type { Client, ClientInsert } from '@/types/database'
+import type { Client, ClientInsert, WithholdingProfile } from '@/types/database'
+import { WITHHOLDING_PROFILES } from '@/lib/clientWithholding'
 import { useToast } from '@/contexts/ToastContext'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
@@ -62,6 +63,7 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
           notes: record.notes,
           receipt_vouched: record.receipt_vouched,
           logo_url: record.logo_url,
+          withholding_profile: record.withholding_profile ?? null,
         }
       : { receipt_vouched: false, logo_url: null }
   )
@@ -116,6 +118,18 @@ function ClientFormBody({ id, record, returnTo }: { id?: string; record?: Client
         </select>
       </Field>
       </div>
+
+      <Field label="When they pay, they keep back">
+        <select className={inputCls} value={form.withholding_profile ?? ''}
+          onChange={e => set('withholding_profile', (e.target.value || null) as WithholdingProfile | null)}>
+          <option value="">Follow the business type ({form.business_type === 'Government' ? 'government' : '3% income tax'})</option>
+          {WITHHOLDING_PROFILES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">
+          {(WITHHOLDING_PROFILES.find(p => p.value === (form.withholding_profile ?? (form.business_type === 'Government' ? 'government' : 'income_tax')))?.hint) ?? ''}.
+          {' '}Used to split a short payment into income tax, VAT withheld and transfer charges.
+        </p>
+      </Field>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Email">

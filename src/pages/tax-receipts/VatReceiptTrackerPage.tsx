@@ -142,6 +142,8 @@ export default function VatReceiptTrackerPage() {
     Number(p.output_vat) !== 0 || Number(p.input_vat_reclaimable) !== 0 || Number(p.input_vat_pending_review) !== 0
   const selected = position.find(p => periodKey(p) === picked)
     ?? position.find(hasActivity) ?? position.find(p => p.is_current) ?? position[0]
+  // VAT government clients kept back and paid over themselves (455).
+  const withheld = Number(selected?.vat_withheld_by_clients ?? 0)
   const selKey = selected ? periodKey(selected) : 'all'
 
   return (
@@ -185,9 +187,10 @@ export default function VatReceiptTrackerPage() {
               value={<span title={formatCurrency(selected.input_vat_needs_receipt)}>{formatCurrencyCompact(selected.input_vat_needs_receipt)}</span>} sub={`${selected.needs_receipt_count} purchase${selected.needs_receipt_count === 1 ? '' : 's'} to capture`}
               onClick={() => showPurchases('needs_receipt', selKey)} />
             <Card icon={Scale} label="Net now" tone="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
-              value={<NetLine compact net={Number(selected.net_vat)} />} sub="Output less claimed input" />
+              value={<NetLine compact net={Number(selected.net_vat) - withheld} />}
+              sub={withheld > 0 ? `Less ${formatCurrencyCompact(withheld)} VAT withheld by clients` : 'Output less claimed input'} />
             <Card icon={Target} label="If all claimed" tone="bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
-              value={<NetLine compact net={Number(selected.net_vat_if_all_claimed)} />}
+              value={<NetLine compact net={Number(selected.net_vat_if_all_claimed) - withheld} />}
               sub={Number(selected.net_vat) !== Number(selected.net_vat_if_all_claimed)
                 ? `Would save ${formatCurrencyCompact(Number(selected.net_vat) - Number(selected.net_vat_if_all_claimed))}`
                 : 'Nothing left to claim'} />
@@ -339,8 +342,8 @@ export default function VatReceiptTrackerPage() {
                     <td className="px-4 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">
                       {Number(p.input_vat_needs_receipt) > 0 ? `${formatCurrency(p.input_vat_needs_receipt)} (${p.needs_receipt_count})` : '—'}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums font-semibold"><NetLine net={Number(p.net_vat)} /></td>
-                    <td className="px-4 py-2 text-right tabular-nums"><NetLine net={Number(p.net_vat_if_all_claimed)} /></td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold"><NetLine net={Number(p.net_vat) - Number(p.vat_withheld_by_clients ?? 0)} /></td>
+                    <td className="px-4 py-2 text-right tabular-nums"><NetLine net={Number(p.net_vat_if_all_claimed) - Number(p.vat_withheld_by_clients ?? 0)} /></td>
                     <td className="px-4 py-2 text-xs">
                       {/* Only the tax read set gets a filing id back (the view's
                           join to tax_filings is RLS-filtered); others see a dash. */}

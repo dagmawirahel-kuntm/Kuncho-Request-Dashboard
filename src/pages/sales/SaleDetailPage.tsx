@@ -13,6 +13,7 @@ import { Printer,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import type { Sale } from '@/types/database'
+import { SaleWithholdingPanel } from '@/components/sales/SaleWithholdingPanel'
 
 const THEME = { bg: '#064E3B', abbr: 'SAL', label: 'Sales Record' }
 
@@ -294,6 +295,8 @@ export default function SaleDetailPage() {
           </div>
         </div>
       </div>
+
+      <SaleWithholdingPanel key={`${sale.id}-${sale.updated_at}`} sale={sale} canAdjust={role === 'admin' || role === 'finance'} />
 
       {/* Details */}
       <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">

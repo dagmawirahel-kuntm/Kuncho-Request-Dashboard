@@ -894,6 +894,17 @@ export interface Sale {
   /** What the bank line brought in, and what the client kept back (migration 348). */
   amount_received?: number | null
   withheld_by_client?: number | null
+  /** What withheld_by_client is made of (migration 455): income tax (a profit-tax
+   *  credit), VAT withheld by a government payer, a transfer charge; and any
+   *  unexplained shortfall, which stays owed. */
+  income_tax_withheld?: number | null
+  vat_withheld?: number | null
+  receipt_charge?: number | null
+  receipt_shortfall?: number | null
+  /** Set when a person corrected the split; null means it was worked out. */
+  withholding_set_by?: string | null
+  withholding_note?: string | null
+  package_id?: string | null
   contract_id: string | null
   is_final_payment: boolean
   /** Invoiced before this fiscal year and still owed at its start (migration 370). */
@@ -996,9 +1007,12 @@ export interface Client {
   notes: string | null
   receipt_vouched: boolean
   logo_url: string | null
+  /** What the client keeps back when paying (migration 455); null follows business_type. */
+  withholding_profile?: WithholdingProfile | null
   created_at: string
   updated_at: string
 }
+export type WithholdingProfile = 'none' | 'income_tax' | 'government'
 export type ClientInsert = Omit<Client, 'id' | 'created_at' | 'updated_at'>
 
 // ── Client attachments ────────────────────────────────────────────
@@ -1840,6 +1854,9 @@ export interface VatPositionRow {
   /** Net if every flagged purchase in the period were claimed. */
   net_vat_if_all_claimed: number
   is_current: boolean
+  /** VAT government clients withheld from their payments in the month (455); it comes off what the return owes. */
+  vat_withheld_by_clients?: number
+  net_vat_after_withheld?: number
 }
 
 /** Where a purchase stands on its way to an input VAT claim (417). */
