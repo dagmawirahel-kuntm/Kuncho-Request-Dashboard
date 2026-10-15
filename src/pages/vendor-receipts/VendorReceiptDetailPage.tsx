@@ -437,14 +437,14 @@ export default function VendorReceiptDetailPage() {
             <div className="px-5">
               <SummaryRow label="Receipt Amount" sub="VAT included — the one figure typed in" value={formatCurrency(receiptAmt)} />
               <SummaryRow
-                label="WHT Withheld"
-                sub={vrf.wht_overridden ? 'Entered by hand · owed to the government' : 'Worked out from the WHT rate · owed to the government'}
+                label={vrf.wht_in_deal === false ? 'WHT (paid on top)' : 'WHT Withheld'}
+                sub={`${vrf.wht_overridden ? 'Corrected by hand' : 'Worked out from the WHT rate'} · owed to the government${vrf.wht_in_deal === false ? ' · the vendor was sent the full amount' : ''}`}
                 value={formatCurrency(whtRecorded)}
                 accent="text-slate-600 dark:text-slate-300"
               />
               <SummaryRow
                 label={vrf.payment_state === 'sent' ? 'Sent' : 'To send'}
-                sub={`Receipt − WHT${(vrf as any).initial?.account_name ? ` · from ${(vrf as any).initial.account_name}` : ''}${vrf.payment_state === 'sent' && vrf.sent_date ? ` · ${formatDate(vrf.sent_date)}` : ''}${vrf.out_transfer_id ? ' · matched to its bank line' : ''}`}
+                sub={`${vrf.wht_in_deal === false ? 'Full receipt amount' : 'Receipt − WHT'}${(vrf as any).initial?.account_name ? ` · from ${(vrf as any).initial.account_name}` : ''}${vrf.payment_state === 'sent' && vrf.sent_date ? ` · marked sent ${formatDate(vrf.sent_date)}` : ''}${vrf.bank_date ? ` · bank ${formatDate(vrf.bank_date)}` : vrf.out_transfer_id ? ' · matched to its bank line' : ''}`}
                 value={formatCurrency(transferred)}
                 accent="text-red-600 dark:text-red-400"
               />

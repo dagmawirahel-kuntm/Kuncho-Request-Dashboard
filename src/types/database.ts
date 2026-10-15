@@ -1334,17 +1334,21 @@ export interface VendorReceiptFacilitation {
   /** The receipt total, VAT included — the one figure typed in. */
   receipt_amount: number | null
   supply_kind: 'goods' | 'services'
-  /** Worked out from the WHT rate unless wht_overridden. */
+  /** Always worked out from the WHT rate (a hand-entered figure only corrects it). */
   wht_amount: number | null
   wht_overridden: boolean
+  /** true: WHT comes out of what is sent; false: the vendor gets the full receipt amount and the WHT is paid on top (453). */
+  wht_in_deal: boolean
+  /** Value date of the matched bank line (453). */
+  bank_date: string | null
   commission_basis: VrfCommissionBasis | null
   /** The bank line that paid this VRF, when the statement is imported. */
   out_transfer_id: string | null
   needs_review: boolean
   review_notes: string[]
-  /** Generated: receipt − WHT. */
+  /** Generated: receipt − WHT when the WHT is in the deal, else the full receipt. */
   net_sent: number | null
-  /** Generated: receipt − WHT − commission. */
+  /** Generated: what is sent − commission. */
   expected_return: number | null
   /** The company that issued the receipt and was paid for it (migration 324). */
   vendor_id: string | null
@@ -1358,7 +1362,7 @@ export interface VendorReceiptFacilitation {
 }
 export type VendorReceiptFacilitationInsert = Omit<VendorReceiptFacilitation,
   'id' | 'record_name' | 'created_at' | 'updated_at' | 'net_sent' | 'expected_return'
-  | 'payment_state' | 'approved_by' | 'approved_at' | 'sent_by' | 'sent_date'>
+  | 'payment_state' | 'approved_by' | 'approved_at' | 'sent_by' | 'sent_date' | 'bank_date'>
 export type VrfCommissionBasis = 'receipt_pct' | 'vat_pct' | 'fixed'
 /** to_pay → approved → sent. Only a sent VRF has left the bank. */
 export type VrfPaymentState = 'to_pay' | 'approved' | 'sent'
@@ -1435,6 +1439,28 @@ export interface VrfRegisterRow {
   payment_state: VrfPaymentState
   approved_at: string | null
   sent_date: string | null
+  wht_in_deal: boolean
+  bank_date: string | null
+  /** What has gone out so far when it is paid in parts (migration 454). */
+  sent_in_parts: number
+  parts_count: number
+}
+
+/** One part of a VRF paid in parts, possibly from several banks (migration 454). */
+export interface VrfPaymentPart {
+  id: string
+  vrf_id: string
+  account_id: string
+  amount: number
+  transfer_id: string | null
+  sent_date: string
+  bank_date: string | null
+  note: string | null
+  sent_by: string | null
+  created_at: string
+  reversed_at: string | null
+  reversed_by: string | null
+  reverse_reason: string | null
 }
 
 /** Money taken from a VRF's returned funds for personal use (migration 320). */
