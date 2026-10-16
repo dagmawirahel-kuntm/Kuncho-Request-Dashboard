@@ -125,6 +125,8 @@ export function TaxImpactNote({ id, po = false }: { id: string; po?: boolean }) 
           ? <>The bank shows this paid{it.bank_date ? <> on <b>{it.bank_date}</b></> : null} — its <b>{etb(it.vat)}</b> VAT counts in <b>{it.period?.label ?? 'that month'}</b>, not {data.period.label}</>
           : it.cls === 'vat'
           ? <><b>#{it.rank}</b> by tax impact in {data.period.label} · <b>{etb(it.vat)}</b> VAT · {pctText(it.share)} of the {data.basis === 'goal' ? 'VAT gap' : 'VAT waiting'}</>
+          : it.cls === 'unconfirmed'
+          ? <><b>{etb(it.vat)}</b> of VAT if this amount includes VAT — not ranked until “Does this amount include VAT?” is answered Yes</>
           : <><b>{etb(it.vat)}</b> of VAT if the vendor gives a VAT receipt</>}
         <span className="text-slate-500 dark:text-slate-400">
           {' · '}{QUEUE_LABEL_SHORT[it.queue]} {it.age_days} day{it.age_days === 1 ? '' : 's'}
