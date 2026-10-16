@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { ArrowLeft, Layers, CheckCircle2, Landmark } from 'lucide-react'
+import { ArrowLeft, Layers, CheckCircle2, Landmark, Pencil } from 'lucide-react'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
@@ -326,6 +326,12 @@ export default function BatchPaymentDetailPage() {
               >
                 <Landmark className="h-3.5 w-3.5" /> {shared(e => e.payment_method) === 'cash' ? 'Confirm paid' : 'Mark paid'}
               </button>
+            )}
+            {canConfirm && id && !batch.dissolved_at && (
+              <Link to={`/batch-payments/${id}/edit`}
+                className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Link>
             )}
             {id && <PaymentRequestActions sourceType="batch_payment" sourceId={id} document={prDocument} />}
           </div>

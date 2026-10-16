@@ -2032,6 +2032,8 @@ export interface BatchPayment {
   paid_date?: string | null
   proof_url?: string | null
   proof_name?: string | null
+  /** Taken apart with dissolve_batch_payment(); kept only for its voided documents (456). */
+  dissolved_at?: string | null
   created_at: string
   updated_at: string
 }
