@@ -9,7 +9,7 @@ import type { VrfReturn, VrfRegisterRow } from '@/types/database'
 import { AlertCircle, CheckCircle2, Plus, Trash2 } from 'lucide-react'
 
 function refreshVrf(qc: ReturnType<typeof useQueryClient>, vrfId: string) {
-  for (const key of [['vrf-returns', vrfId], ['vrf', vrfId], ['vrf-register'], ['vrf-register', vrfId], ['vrf-fund', vrfId], ['vrf-holding-accounts'], ['vendor-receipts']]) {
+  for (const key of [['vrf-returns', vrfId], ['vrf', vrfId], ['vrf-register'], ['vrf-register', vrfId], ['vrf-fund', vrfId], ['vrf-holding-accounts'], ['vendor-receipts'], ['vrf-returns-dates']]) {
     qc.invalidateQueries({ queryKey: key })
   }
 }
