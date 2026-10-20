@@ -454,22 +454,6 @@ export function useStaffDirectory() {
   })
 }
 
-export function useFfeJobDescriptions() {
-  return useQuery({
-    queryKey: ['ffe-job-descriptions-lookup'],
-    staleTime: 60000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('job_descriptions')
-        .select('id,role_name,role_overview,sort_order')
-        .eq('active', true)
-        .order('sort_order')
-      if (error) throw error
-      return data ?? []
-    },
-  })
-}
-
 export function useVehicles() {
   return useQuery({
     queryKey: ['vehicles-lookup'],

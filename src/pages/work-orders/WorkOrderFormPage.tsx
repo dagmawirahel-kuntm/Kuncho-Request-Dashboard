@@ -6,14 +6,14 @@ import { supabase } from '@/lib/supabase'
 import { useProjectBoqStatus } from '@/lib/boq'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Segmented } from '@/components/shared/Segmented'
-import { StarRating } from '@/components/shared/StarRating'
 import { FactList, Panel, RecordHeader, RecordLayout } from '@/components/record/Record'
-import type { WorkOrder, WorkOrderInsert, WorkOrderType, FfeJobDescription, FfeKeyResponsibility, StaffFfeCurrentScoreRow } from '@/types/database'
+import type { WorkOrder, WorkOrderInsert, WorkOrderType } from '@/types/database'
 import { useProjects, useProperties, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { UNITS, type WorkOrderItem } from '@/lib/workOrders'
+import { useRoles } from '@/lib/roles'
 import { WORK_PRESETS } from '@/lib/workOrderPresets'
 import { formatDate } from '@/lib/utils'
 import {
@@ -158,43 +158,25 @@ function WorkOrderFormBody({ id, record, items: savedItems }: { id?: string; rec
     toast(`${picked.length} part${picked.length === 1 ? '' : 's'} added from the BOQ`, 'success')
   }
 
-  // Skill-matched lead for a workshop job: pick the responsibility the job
-  // is really about, and candidates sort by their current score for it.
+  // Skill-matched lead for a workshop job: pick the skill the job is really
+  // about, and the people signed off on it are listed, highest level first.
   const [skillOpen, setSkillOpen] = useState(false)
   const [relevantResponsibilityId, setRelevantResponsibilityId] = useState<string | null>(null)
-  const { data: roles = [] } = useQuery({
-    queryKey: ['ffe-job-descriptions-active'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('job_descriptions').select('*').eq('active', true).order('sort_order')
-      if (error) throw error
-      return data as FfeJobDescription[]
-    },
-    enabled: skillOpen,
-  })
-  const { data: responsibilities = [] } = useQuery({
-    queryKey: ['ffe-key-responsibilities-active'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('key_responsibilities').select('*').eq('active', true).order('sort_order')
-      if (error) throw error
-      return data as FfeKeyResponsibility[]
-    },
-    enabled: skillOpen,
-  })
-  const roleNameById = useMemo(() => new Map(roles.map(r => [r.id, r.role_name])), [roles])
+  const { data: roles = [] } = useRoles()
   const responsibilityOptions = useMemo(
-    () => responsibilities.map(r => ({ id: r.id, label: `${roleNameById.get(r.job_description_id) ?? ''} — ${r.responsibility_title}` })),
-    [responsibilities, roleNameById]
+    () => roles.flatMap(r => r.items.filter(i => i.kind === 'skill').map(i => ({ id: i.id, label: `${r.role_name} — ${i.responsibility_title}`, sub: `L${i.level}` }))),
+    [roles]
   )
-  const { data: currentScores = [] } = useQuery({
-    queryKey: ['staff-ffe-current-scores', relevantResponsibilityId],
+  const { data: sortedCandidates = [] } = useQuery({
+    queryKey: ['skill-holders', relevantResponsibilityId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_current_scores').select('*').eq('responsibility_id', relevantResponsibilityId!)
+      const { data, error } = await supabase.from('v_skill_holders').select('staff_id, employee_name, role_level, signed_at').eq('skill_id', relevantResponsibilityId!)
       if (error) throw error
-      return data as StaffFfeCurrentScoreRow[]
+      return ((data ?? []) as { staff_id: string; employee_name: string; role_level: number | null; signed_at: string }[])
+        .sort((a, b) => (b.role_level ?? 0) - (a.role_level ?? 0))
     },
     enabled: skillOpen && !!relevantResponsibilityId,
   })
-  const sortedCandidates = useMemo(() => [...currentScores].sort((a, b) => b.score - a.score), [currentScores])
 
   const filled = items.filter(i => i.description.trim())
   const byAmount = filled.filter(i => parseFloat(i.quantity) > 0).length
@@ -402,12 +384,12 @@ function WorkOrderFormBody({ id, record, items: savedItems }: { id?: string; rec
                       {relevantResponsibilityId && (
                         <div className="max-h-48 space-y-1 overflow-y-auto">
                           {sortedCandidates.length === 0 ? (
-                            <p className="px-2 py-1.5 text-xs text-slate-400">No one has been rated on this yet.</p>
+                            <p className="px-2 py-1.5 text-xs text-slate-400">No one is signed off on this yet.</p>
                           ) : sortedCandidates.map(c => (
                             <button type="button" key={c.staff_id} onClick={() => set('assigned_lead_staff_id', c.staff_id)}
                               className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${form.assigned_lead_staff_id === c.staff_id ? 'bg-brand/10' : ''}`}>
-                              <span className="text-slate-700 dark:text-slate-200">{staffNameById.get(c.staff_id) ?? '—'}</span>
-                              <StarRating score={c.score} />
+                              <span className="text-slate-700 dark:text-slate-200">{c.employee_name}</span>
+                              <span className="text-[11px] text-slate-500">{c.role_level ? `Level ${c.role_level}` : ''}</span>
                             </button>
                           ))}
                         </div>

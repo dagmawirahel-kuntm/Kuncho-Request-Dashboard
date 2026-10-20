@@ -8,13 +8,10 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { RoleViewSwitcher } from '@/components/shared/RoleViewSwitcher'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { WorkOrder, WorkOrderCostRow } from '@/types/database'
-import { useStaffSkillLevels } from '@/hooks/useCompetency'
-import { SKILL_LEVEL_TONE } from '@/lib/skills'
+import { useStaffRoles } from '@/lib/roles'
 import { Hammer, Award, ArrowRight } from 'lucide-react'
 
 type OpenWorkOrder = WorkOrder & { projects: { project_name: string } | null }
-
-const levelRank: Record<string, number> = { Advanced: 3, Intermediate: 2, Beginner: 1 }
 
 export default function WorkshopViewPage() {
   const { role } = useAuth()
@@ -42,15 +39,16 @@ export default function WorkshopViewPage() {
     },
   })
 
-  // Skill levels come from competency ratings (migration 398).
-  const { data: skillLevels = [] } = useStaffSkillLevels()
+  // Workshop people by level (migration 457), highest first.
+  const { data: staffRoles = [] } = useStaffRoles()
 
   const { data: staffDirectory = [] } = useStaffDirectory()
   const staffNameById = useMemo(() => new Map(staffDirectory.map((s: any) => [s.id, s.employee_name])), [staffDirectory])
   const costByWorkOrder = useMemo(() => new Map(costs.map(c => [c.work_order_id, c])), [costs])
   const sortedCandidates = useMemo(
-    () => [...skillLevels].sort((a, b) => (levelRank[b.skill_level] ?? 0) - (levelRank[a.skill_level] ?? 0) || Number(b.avg_score ?? 0) - Number(a.avg_score ?? 0)),
-    [skillLevels]
+    () => staffRoles.filter(p => p.role_kind === 'workshop' && p.role_level)
+      .sort((a, b) => (b.role_level ?? 0) - (a.role_level ?? 0) || (b.skills_signed - a.skills_signed)),
+    [staffRoles]
   )
 
   return (
@@ -102,17 +100,17 @@ export default function WorkshopViewPage() {
 
         <div className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 shadow-sm p-5 space-y-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-            <Award className="h-4 w-4 text-brand" /> FF&E Skill Levels
+            <Award className="h-4 w-4 text-brand" /> Workshop levels
           </h2>
           <p className="text-xs text-slate-400">Suggestion only — doesn't block who you assign</p>
           {sortedCandidates.length === 0 ? (
-            <p className="py-6 text-center text-xs text-slate-400">No one rated yet — score people from their profile's Competency tab</p>
+            <p className="py-6 text-center text-xs text-slate-400">No workshop roles given yet — assign them on the Competency Hub</p>
           ) : (
             <div className="space-y-1 max-h-96 overflow-y-auto">
               {sortedCandidates.map(c => (
-                <div key={`${c.staff_id}-${c.job_description_id}`} className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs">
-                  <Link to={`/staff/${c.staff_id}/ffe-skills`} className="text-slate-700 dark:text-slate-200 truncate hover:text-brand">{staffNameById.get(c.staff_id) ?? '—'} <span className="text-slate-400">· {c.role_name} · {Number(c.avg_score ?? 0).toFixed(1)}</span></Link>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 ${SKILL_LEVEL_TONE[c.skill_level]}`}>{c.skill_level}</span>
+                <div key={c.staff_id} className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs">
+                  <Link to={`/staff/${c.staff_id}/skills`} className="text-slate-700 dark:text-slate-200 truncate hover:text-brand">{c.employee_name} <span className="text-slate-400">· {c.role_name} · {c.skills_signed}/{c.skills_total} signed</span></Link>
+                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold shrink-0 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{c.level_title ?? `L${c.role_level}`}</span>
                 </div>
               ))}
             </div>
