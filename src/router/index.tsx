@@ -212,8 +212,10 @@ import PropertyFormPage from '@/pages/properties/PropertyFormPage'
 import WorkOrdersPage from '@/pages/work-orders/WorkOrdersPage'
 import WorkOrderFormPage from '@/pages/work-orders/WorkOrderFormPage'
 import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
-import FfeJobDescriptionsPage from '@/pages/work-orders/FfeJobDescriptionsPage'
-import StaffFfeSkillsPage from '@/pages/work-orders/StaffFfeSkillsPage'
+import RolesPage from '@/pages/roles/RolesPage'
+import RolePrintPage from '@/pages/roles/RolePrintPage'
+import PersonSkillsPage from '@/pages/roles/PersonSkillsPage'
+import OldSkillsRedirect from '@/pages/roles/OldSkillsRedirect'
 import ExecDashboardPage from '@/pages/exec/ExecDashboardPage'
 import TradeCatalogPage from '@/pages/hr/TradeCatalogPage'
 
@@ -595,7 +597,6 @@ export const router = createBrowserRouter([
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'hr/casual-workers', element: <CasualWorkersPage /> },
-              { path: 'hr/competency-hub', element: <CompetencyHubPage /> },
               // Tier 2 trade catalog — HR polishes newly-approved trades'
               // emoji + accent colors. RLS on tier2_trade_roster gates writes
               // to admin per migration 183.
@@ -811,12 +812,16 @@ export const router = createBrowserRouter([
               { path: 'work-orders/:id/edit', element: <WorkOrderFormPage /> },
             ],
           },
-          // ── FF&E job descriptions & staff skill checklists: read for
-          // everyone; write (roles/responsibilities and checklist toggles)
-          // gated in-page to admin/operations_manager, matching
-          // job_descriptions/key_responsibilities/staff_competency_checklist RLS (128).
-          { path: 'ffe-job-descriptions', element: <FfeJobDescriptionsPage /> },
-          { path: 'staff/:id/ffe-skills', element: <StaffFfeSkillsPage /> },
+          // ── Roles with levels and a person's skills (457): read for
+          // everyone; editing roles gated in-page to admin/operations
+          // (job_descriptions/role_levels RLS); sign-offs and level changes
+          // go through RPCs that check the department head / foreman rule.
+          { path: 'roles', element: <RolesPage /> },
+          { path: 'hr/competency-hub', element: <CompetencyHubPage /> },
+          { path: 'roles/:id/print', element: <RolePrintPage /> },
+          { path: 'staff/:id/skills', element: <PersonSkillsPage /> },
+          { path: 'ffe-job-descriptions', element: <Navigate to="/roles" replace /> },
+          { path: 'staff/:id/ffe-skills', element: <OldSkillsRedirect /> },
           // ── Role-based Operations & Construction views: each role lands
           // on its own composed view (default landing set in
           // LandingRedirect.tsx) instead of a generic department page.

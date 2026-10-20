@@ -7,8 +7,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { fieldCls } from '@/lib/formStyles'
 import { RecordHeader, RecordLayout, Panel, FactList, Stat, Pill, type RecordAction } from '@/components/record/Record'
-import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
 import {
   useSubcontractBoard, useProgressUpdates, useSubcontractLines, isLot, fmtQty, SUBCONTRACT_WRITE_ROLES, NEXT_STEP, STATUS_LABEL,
   type BoardRow, type SubcontractLine,
@@ -452,30 +450,54 @@ function CertificatesPanel({ r, lines, canWrite, onSaved }: { r: BoardRow; lines
   )
 }
 
-// Rating a firm against a job description's responsibilities — the same
-// ratings the Competency hub keeps for subcontractors.
+// Rating a firm when the job is done: the same four scores as a work
+// order's crew, cooperation in place of teamwork (migration 457).
+const SUB_SCORES = [
+  ['quality', 'Quality of the work'], ['timeliness', 'On time'], ['safety', 'Safety on site'], ['cooperation', 'Cooperation and communication'],
+] as const
+
 function RatePanel({ r, onClose }: { r: BoardRow; onClose: () => void }) {
-  const [jdId, setJdId] = useState<string | null>(null)
-  const { data: jds = [] } = useQuery({
-    queryKey: ['job-descriptions-picker'], staleTime: 300_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('job_descriptions').select('id, role_name').eq('active', true).order('role_name')
-      if (error) throw error
-      return (data ?? []) as { id: string; role_name: string }[]
-    },
-  })
+  const { toast } = useToast()
+  const [scores, setScores] = useState<Record<string, number>>({})
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const done = SUB_SCORES.every(([k]) => scores[k])
+
+  async function save() {
+    setBusy(true)
+    const { error } = await supabase.rpc('rate_subcontract', {
+      p_subcontract: r.id, p_quality: scores.quality, p_timeliness: scores.timeliness, p_safety: scores.safety, p_cooperation: scores.cooperation, p_comment: comment.trim() || null,
+    })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Rating saved', 'success'); onClose()
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <div className="h-full w-full max-w-xl overflow-y-auto border-l bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-800" onClick={e => e.stopPropagation()}>
+      <div className="h-full w-full max-w-md overflow-y-auto border-l bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-800" onClick={e => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Rate {r.vendor_name}</h3>
-            <p className="mt-0.5 text-[11px] text-slate-500">Pick the kind of work they did, then score what matters.</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">1 poor · 3 as agreed · 5 excellent. The next time you need this kind of work, the ratings show who to call.</p>
           </div>
           <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
         </div>
-        <div className="mb-3"><SearchableSelect value={jdId} onChange={setJdId} options={jds.map(j => ({ id: j.id, label: j.role_name }))} placeholder="Kind of work…" /></div>
-        {jdId && <CompetencyRatingForm jobDescriptionId={jdId} subcontractId={r.id} />}
+        <div className="space-y-3">
+          {SUB_SCORES.map(([k, label]) => (
+            <div key={k}>
+              <p className="mb-1 text-sm text-slate-700 dark:text-slate-200">{label}</p>
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button key={n} type="button" onClick={() => setScores(s => ({ ...s, [k]: n }))}
+                    className={`h-9 w-9 rounded-lg border text-sm font-semibold ${scores[k] === n ? 'border-brand bg-brand text-white' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>{n}</button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <textarea rows={2} value={comment} onChange={e => setComment(e.target.value)} className={fieldCls} placeholder="Anything worth remembering — e.g. good finish, late by a week" />
+          <button onClick={save} disabled={!done || busy} className="w-full rounded-md bg-brand py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save rating'}</button>
+        </div>
       </div>
     </div>
   )

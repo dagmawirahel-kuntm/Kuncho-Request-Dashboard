@@ -9,7 +9,7 @@ import { useDepartments, useProjects } from '@/hooks/useLookups'
 import { useRollingPerformance } from '@/hooks/useWorkOrderRatings'
 import { StarRating } from '@/components/shared/StarRating'
 import { RequestWorkerForProjectModal } from '@/components/shared/RequestWorkerForProjectModal'
-import { CompetencyRatingForm } from '@/components/shared/CompetencyRatingForm'
+import { StaffSkillsSummary } from '@/pages/roles/StaffSkillsSummary'
 import { MyAssetsSection } from '@/components/staff/MyAssetsSection'
 import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
 import { StaffTaxCostSection } from '@/components/staff/StaffTaxCostSection'
@@ -909,7 +909,7 @@ export default function StaffDetailPage() {
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'performance', label: 'Performance' },
-    { id: 'competency', label: 'Competency' },
+    { id: 'competency', label: 'Skills & level' },
     { id: 'payroll', label: 'Payroll' },
     ...(canSeeTaxCost ? [{ id: 'tax' as TabId, label: 'Tax & Pension' }] : []),
     { id: 'advances', label: 'Cash Advances' },
@@ -1095,22 +1095,7 @@ export default function StaffDetailPage() {
           {activeTab === 'performance' && (
             <PerformanceTab staffId={staff.id} isOwnProfile={isOwnProfile} viewerRole={role ?? null} />
           )}
-          {activeTab === 'competency' && (
-            <CompetencyRatingForm
-              staffId={staff.id}
-              /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-              jobDescriptionId={(staff as any).job_description_id ?? null}
-              showSummary
-              editHref={canEdit ? `/staff/${staff.id}/edit` : undefined}
-              canAssignJd={canEdit}
-              person={staff}
-            />
-          )}
-          {activeTab === 'competency' && (
-            <Link to={`/staff/${staff.id}/ffe-skills`} className="inline-block text-xs text-brand hover:underline">
-              Rate other trades this person can do, and see score history →
-            </Link>
-          )}
+          {activeTab === 'competency' && <StaffSkillsSummary staffId={staff.id} />}
           {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
           {activeTab === 'tax'        && canSeeTaxCost && <StaffTaxCostSection staffId={staff.id} />}
           {activeTab === 'advances'   && <AdvancesTab advances={advances} staffId={staff.id} />}

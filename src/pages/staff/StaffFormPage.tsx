@@ -140,7 +140,6 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
   const managerOptions = useMemo(() => (directory as { id: string; employee_name: string; role: string | null; employment_type: string | null }[])
     .filter(s => s.id !== id && s.employment_type !== 'tier_2_casual')
     .map(s => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [directory, id])
-  const jdOptions = useMemo(() => jobDescriptions.map(j => ({ id: j.id, label: j.role_name, sub: j.department_id ? departmentNameById.get(j.department_id) : undefined })), [jobDescriptions, departmentNameById])
   const userProfileOptions = useMemo(() => userProfiles.map(u => ({ id: u.id, label: u.full_name, sub: u.email ? `${u.email} · ${u.role}` : u.role })), [userProfiles])
 
   const selectedLogin = userProfiles.find(u => u.id === form.user_id)
@@ -314,8 +313,11 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
                       <span>Site foreman — runs residential sites day to day. Unlocks Site Ops on each project they get an active role assignment for.</span>
                     </label>
                   </Field>
-                  <Field label="Job description" hint="The role they're rated against on the Competency tab">
-                    <SearchableSelect value={form.job_description_id ?? null} onChange={v => set('job_description_id', v)} options={jdOptions} placeholder="Not assigned yet" />
+                  <Field label="Role & level" hint="Set on their skills page, where the level and sign-offs live">
+                    <p className="py-2 text-sm text-slate-600 dark:text-slate-300">
+                      {jobDescriptions.find(j => j.id === form.job_description_id)?.role_name ?? 'Not assigned yet'}
+                      {id && <> · <Link to={`/staff/${id}/skills`} className="text-brand hover:underline">Skills & level →</Link></>}
+                    </p>
                   </Field>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -340,11 +342,7 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
                       <input list="sub-team-list" className={inputCls} value={form.sub_team ?? ''} onChange={e => set('sub_team', e.target.value || null)} placeholder="e.g. Workshop — Carpentry" />
                       <datalist id="sub-team-list">{['Workshop — Carpentry', 'Workshop — CNC', 'Workshop — Leather', 'Site'].map(t => <option key={t} value={t} />)}</datalist>
                     </Field>
-                    {id && (
-                      <Field label="FF&E skills" hint="For the five FF&E fabrication roles — the level is worked out there">
-                        <Link to={`/staff/${id}/ffe-skills`} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Open the FF&E profile →</Link>
-                      </Field>
-                    )}
+
                   </div>
                 )}
               </div>
