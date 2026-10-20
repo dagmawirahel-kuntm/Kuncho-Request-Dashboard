@@ -8,6 +8,13 @@ export type ReconciledAs =
 
 interface LinkRef { id: string; label: string; amount: number }
 
+/** Whether a yyyy-mm-dd date falls between from and to (either may be blank). */
+export function inRange(date: string | null, from: string, to: string) {
+  if (!from && !to) return true
+  if (!date) return false
+  return (!from || date >= from) && (!to || date <= to)
+}
+
 /** A row of v_bank_line_status: a statement line and what it settles. */
 /** Open expenses that together add up to an outgoing bank line (452). */
 export interface LineCombination {
