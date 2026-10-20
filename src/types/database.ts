@@ -3162,6 +3162,9 @@ export interface SubcontractorEngagement {
   vendor_id: string
   project_id: string
   cost_group_id: string | null
+  /** The work order the job sits under (456) — recommended, not required. */
+  work_order_id: string | null
+  /** A one-line summary; the work itself is in subcontract_lines (456). */
   scope_of_work: string | null
   agreed_amount: number
   start_date: string | null

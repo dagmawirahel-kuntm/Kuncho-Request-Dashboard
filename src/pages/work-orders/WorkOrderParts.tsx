@@ -9,7 +9,8 @@ import { Pill } from '@/components/record/Record'
 import type { WorkOrder } from '@/types/database'
 import { itemDone, itemShare, itemsProgress, useWorkOrderItems, type WorkOrderItem, type WorkOrderLabourRow, type WorkOrderLabourHistoryRow } from '@/lib/workOrders'
 import { BLOCKER_KIND, useBlockedItems } from '@/lib/workOrderBlockers'
-import { Check, CheckCircle2, ClipboardCheck, HardHat, Minus, Plus, RotateCcw, TrendingUp, X, Ban } from 'lucide-react'
+import { useSubcontractedParts, useWorkOrderSubcontracts, STATUS_LABEL as SUB_STATUS } from '@/lib/subcontracts'
+import { Check, CheckCircle2, ClipboardCheck, HardHat, Minus, Plus, RotateCcw, TrendingUp, X, Ban, Handshake } from 'lucide-react'
 
 const card = 'rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const fmtQty = (n: number | null | undefined) => n == null ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -24,6 +25,7 @@ function refreshAll(qc: ReturnType<typeof useQueryClient>, id: string) {
 export function ItemsCard({ wo, canUpdate, canEdit, onUpdate }: { wo: WorkOrder; canUpdate: boolean; canEdit: boolean; onUpdate: () => void }) {
   const { data: items = [], isLoading } = useWorkOrderItems(wo.id)
   const blockedItems = useBlockedItems(wo.id)
+  const subbed = useSubcontractedParts(wo.id)
   const open = wo.status !== 'completed' && wo.status !== 'cancelled'
   return (
     <section className={card}>
@@ -49,6 +51,11 @@ export function ItemsCard({ wo, canUpdate, canEdit, onUpdate }: { wo: WorkOrder;
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className={`truncate text-sm ${done ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{i.description}</p>
+                  {subbed.get(i.id) && (
+                    <Link to={`/subcontracts/${subbed.get(i.id)!.engagementId}`} className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-violet-700 hover:underline dark:text-violet-300">
+                      <Handshake className="h-3 w-3" /> Subcontracted to {subbed.get(i.id)!.vendor}
+                    </Link>
+                  )}
                   {blockedItems.get(i.id) && (
                     <p className="mt-0.5 text-[11px] font-medium text-red-600">
                       Held up — {(BLOCKER_KIND[blockedItems.get(i.id)!.kind] ?? BLOCKER_KIND.other).label.toLowerCase()}
@@ -72,11 +79,60 @@ export function ItemsCard({ wo, canUpdate, canEdit, onUpdate }: { wo: WorkOrder;
   )
 }
 
+// ── Given to outside firms ───────────────────────────────────────────
+export function SubcontractedCard({ wo, canAdd }: { wo: WorkOrder; canAdd: boolean }) {
+  const { data: subs = [], isLoading } = useWorkOrderSubcontracts(wo.id)
+  const live = subs.filter(r => r.status !== 'terminated')
+  const agreed = live.reduce((s, r) => s + r.agreed_amount, 0)
+  const certified = subs.reduce((s, r) => s + r.certified, 0)
+  if (!isLoading && subs.length === 0 && !canAdd) return null
+  return (
+    <section className={card}>
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3 dark:border-slate-700">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Subcontracted</h2>
+          {subs.length > 0 && <p className="text-[11px] text-slate-500">{formatCurrency(agreed)} agreed · {formatCurrency(certified)} certified</p>}
+        </div>
+        {canAdd && wo.status !== 'cancelled' && (
+          <Link to={`/subcontracts/new?project=${wo.project_id}&work_order=${wo.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold text-brand dark:border-slate-600">
+            <Handshake className="h-3.5 w-3.5" /> Subcontract part of this job
+          </Link>
+        )}
+      </div>
+      {isLoading ? <p className="p-4 text-center text-sm text-slate-400">Loading…</p> : subs.length === 0 ? (
+        <p className="p-4 text-sm text-slate-500">None. If an outside firm does part of this job, record it here — its cost counts on this order and the parts it covers move with its progress.</p>
+      ) : (
+        <ul className="divide-y dark:divide-slate-700">
+          {subs.map(r => (
+            <li key={r.id}>
+              <Link to={`/subcontracts/${r.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.vendor_name ?? 'Subcontractor'}</p>
+                  <p className="truncate text-xs text-slate-500">{r.scope_of_work ?? `${r.line_count} line${r.line_count === 1 ? '' : 's'} of work`}</p>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                    <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.min(r.percent_complete, 100)}%` }} />
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(r.agreed_amount)}</p>
+                  <p className="text-[11px] text-slate-500">{SUB_STATUS[r.status]} · {Math.round(r.percent_complete)}%</p>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 // ── Update progress: one sheet, thumb-sized ─────────────────────────
 export function UpdateProgressSheet({ wo, onClose }: { wo: WorkOrder; onClose: () => void }) {
   const qc = useQueryClient()
   const { toast } = useToast()
   const { data: items = [] } = useWorkOrderItems(wo.id)
+  // Parts a subcontract covers move from the subcontract, not from here.
+  const subbed = useSubcontractedParts(wo.id)
   const [done, setDone] = useState<Record<string, string>>({})
   const [pct, setPct] = useState<number | undefined>(undefined)
   const [note, setNote] = useState('')
@@ -90,7 +146,7 @@ export function UpdateProgressSheet({ wo, onClose }: { wo: WorkOrder; onClose: (
 
   async function save() {
     setSaving(true)
-    const changed = items.filter(i => done[i.id] !== undefined && (parseFloat(done[i.id]) || 0) !== Number(i.done_quantity))
+    const changed = items.filter(i => !subbed.has(i.id) && done[i.id] !== undefined && (parseFloat(done[i.id]) || 0) !== Number(i.done_quantity))
     const { error } = await supabase.rpc('record_work_order_progress', {
       p_wo: wo.id,
       p_items: changed.map(i => ({ id: i.id, done_quantity: Math.max(parseFloat(done[i.id]) || 0, 0) })),
@@ -122,7 +178,14 @@ export function UpdateProgressSheet({ wo, onClose }: { wo: WorkOrder; onClose: (
               return (
                 <li key={i.id} className="rounded-xl border p-3 dark:border-slate-700">
                   <p className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-100">{i.description}</p>
-                  {i.quantity == null ? (
+                  {subbed.get(i.id) ? (
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+                      <span className="tabular-nums">{i.quantity == null ? (itemDone(i) ? 'Done' : 'Not done') : `${fmtQty(i.done_quantity)} of ${fmtQty(i.quantity)} ${i.unit ?? ''}`}</span>
+                      <span className="text-xs">Done by {subbed.get(i.id)!.vendor} —{' '}
+                        <Link to={`/subcontracts/${subbed.get(i.id)!.engagementId}`} className="font-medium text-brand hover:underline">record it on the subcontract</Link>
+                      </span>
+                    </p>
+                  ) : i.quantity == null ? (
                     <button type="button" onClick={() => setDone(d => ({ ...d, [i.id]: (parseFloat(v) || 0) > 0 ? '0' : '1' }))}
                       className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-semibold ${(parseFloat(v) || 0) > 0 ? 'border-emerald-500 bg-emerald-500 text-white' : 'dark:border-slate-600'}`}>
                       <Check className="h-4 w-4" /> {(parseFloat(v) || 0) > 0 ? 'Done' : 'Mark done'}

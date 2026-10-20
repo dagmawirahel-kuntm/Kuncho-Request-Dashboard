@@ -95,6 +95,7 @@ export const UNITS = ['m²', 'm', 'm³', 'pcs', 'sets', 'rooms', 'points', 'kg']
 export function useWorkOrderItems(workOrderId: string) {
   return useQuery({
     queryKey: ['work-order-items', workOrderId],
+    enabled: !!workOrderId,
     queryFn: async () => {
       const { data, error } = await supabase.from('work_order_items').select('*').eq('work_order_id', workOrderId).order('sort_order')
       if (error) throw error
