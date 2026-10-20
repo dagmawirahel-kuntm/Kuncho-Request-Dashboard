@@ -189,6 +189,28 @@ function SummaryRow({ label, value, sub, accent }: { label: string; value: strin
   )
 }
 
+/** More came back than expected by exactly the WHT: the vendor took only the
+ *  commission off the whole receipt amount and handed the WHT back (472). */
+function WhtHandedBackFix({ vrfId }: { vrfId: string }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [busy, setBusy] = useState(false)
+  async function mark() {
+    setBusy(true)
+    const { error } = await supabase.from('vendor_receipt_facilitation').update({ wht_returned: true }).eq('id', vrfId)
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    for (const k of ['vrf', 'vrf-register', 'vendor-receipts', 'vrf-fund']) qc.invalidateQueries({ queryKey: [k] })
+    toast('Recorded: the vendor handed the WHT back with the return', 'success')
+  }
+  return (
+    <button type="button" onClick={mark} disabled={busy}
+      className="mt-2 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+      {busy ? 'Saving…' : 'Yes — the vendor handed the WHT back'}
+    </button>
+  )
+}
+
 export default function VendorReceiptDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { role } = useAuth()
@@ -272,6 +294,9 @@ export default function VendorReceiptDetailPage() {
   const receiptAmt   = Number(reg?.receipt_amount ?? transferred)
   const whtRecorded  = Number(reg?.wht_recorded ?? 0)
   const expected     = Number(reg?.expected_return ?? transferred - commission)
+  // Over by exactly the held-back WHT: most likely the vendor handed it back.
+  const whtBackGuess = !!reg && vrf.wht_in_deal && !vrf.wht_returned && whtRecorded > 0
+    && unaccounted < 0 && Math.abs(Math.abs(unaccounted) - whtRecorded) < 1
   const BASIS_TEXT: Record<string, string> = {
     receipt_pct: `${vrf.commission_rate ?? 0}% of the receipt`,
     vat_pct: `${vrf.commission_rate ?? 0}% of the VAT on the receipt`,
@@ -437,8 +462,8 @@ export default function VendorReceiptDetailPage() {
             <div className="px-5">
               <SummaryRow label="Receipt Amount" sub="VAT included — the one figure typed in" value={formatCurrency(receiptAmt)} />
               <SummaryRow
-                label={vrf.wht_in_deal === false ? 'WHT (paid on top)' : 'WHT Withheld'}
-                sub={`${vrf.wht_overridden ? 'Corrected by hand' : 'Worked out from the WHT rate'} · owed to the government${vrf.wht_in_deal === false ? ' · the vendor was sent the full amount' : ''}`}
+                label={vrf.wht_in_deal === false ? 'WHT (paid on top)' : vrf.wht_returned ? 'WHT Withheld, Handed Back' : 'WHT Withheld'}
+                sub={`${vrf.wht_overridden ? 'Corrected by hand' : 'Worked out from the WHT rate'} · owed to the government${vrf.wht_in_deal === false ? ' · the vendor was sent the full amount' : vrf.wht_returned ? ' · the vendor returns it with the money' : ''}`}
                 value={formatCurrency(whtRecorded)}
                 accent="text-slate-600 dark:text-slate-300"
               />
@@ -454,7 +479,7 @@ export default function VendorReceiptDetailPage() {
                 value={formatCurrency(commission)}
                 accent="text-amber-600 dark:text-amber-400"
               />
-              <SummaryRow label="Should Come Back" sub="Sent − commission" value={formatCurrency(expected)} />
+              <SummaryRow label="Should Come Back" sub={vrf.wht_returned ? 'Receipt − commission · the WHT comes back too' : 'Sent − commission'} value={formatCurrency(expected)} />
               <SummaryRow
                 label="Came Back"
                 sub={vrf.return_account_id ? `Into ${(vrf as any).returned?.account_name ?? 'the holding account'}` : 'Recorded under Returns'}
@@ -469,7 +494,7 @@ export default function VendorReceiptDetailPage() {
                   accent={Math.abs(unaccounted) < 1 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}
                 />
               )}
-              <SummaryRow label="Real Cost" sub="Commission + WHT" value={formatCurrency(commission + whtRecorded)} />
+              <SummaryRow label="Real Cost" sub={vrf.wht_returned ? 'Commission — the WHT came back' : 'Commission + WHT'} value={formatCurrency(commission + (vrf.wht_returned ? 0 : whtRecorded))} />
             </div>
           </div>
 
@@ -537,8 +562,11 @@ export default function VendorReceiptDetailPage() {
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {unaccounted > 0
                     ? 'Correct the WHT or commission with Edit, or record the rest of the return if more is still to come back.'
-                    : 'Check the returned amount, the WHT and the commission are right.'}
+                    : whtBackGuess
+                      ? 'That is exactly the WHT: the vendor took only the commission off the whole receipt amount and handed the WHT back.'
+                      : 'Check the returned amount, the WHT and the commission are right.'}
                 </p>
+                {whtBackGuess && canAddExpense && <WhtHandedBackFix vrfId={vrf.id} />}
               </div>
             </div>
           )}

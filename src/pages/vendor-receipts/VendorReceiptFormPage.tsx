@@ -31,6 +31,20 @@ const BASIS_LABEL: Record<VrfCommissionBasis, string> = {
   fixed: 'Fixed amount',
 }
 
+// Who bears the WHT: held back from what is sent (453), held back but handed
+// back by the vendor with the return (472), or sent in full and paid on top.
+type Deal = 'held' | 'held_returned' | 'full'
+const DEALS: [Deal, string][] = [
+  ['held', 'Out of what the vendor is sent'],
+  ['held_returned', 'Held back, vendor returns it'],
+  ['full', 'Vendor gets the full amount'],
+]
+const DEAL_TEXT: Record<Deal, string> = {
+  held: 'The WHT is held back from the vendor and paid to the tax office; they return what they were sent, less commission.',
+  held_returned: 'The WHT is held back and paid to the tax office, but the vendor takes only the commission off the whole receipt amount — so the WHT comes back with the return.',
+  full: 'The vendor is sent the whole receipt amount; we still owe the WHT to the tax office, on top.',
+}
+
 export default function VendorReceiptFormPage() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
@@ -61,6 +75,7 @@ type Form = {
   wht_overridden: boolean
   wht_amount: string
   wht_in_deal: boolean
+  wht_returned: boolean
   commission_basis: VrfCommissionBasis
   commission_rate: string
   commission_amount: string
@@ -96,6 +111,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
     wht_overridden: record?.wht_overridden ?? false,
     wht_amount: record?.wht_amount != null ? String(record.wht_amount) : '',
     wht_in_deal: record?.wht_in_deal ?? true,
+    wht_returned: record?.wht_returned ?? false,
     commission_basis: record?.commission_basis ?? 'receipt_pct',
     commission_rate: record?.commission_rate != null ? String(record.commission_rate) : '7',
     commission_amount: record?.commission_amount != null ? String(record.commission_amount) : '',
@@ -172,11 +188,14 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       : form.commission_basis === 'vat_pct' ? Math.round(vat * rate) / 100
       : parseFloat(form.commission_amount) || 0
     // WHT is always counted; the deal decides whether it comes out of what
-    // the vendor is sent or is paid by us on top (453).
+    // the vendor is sent or is paid by us on top (453), and whether a vendor
+    // it was held back from still hands it back with the return (472).
     const net = form.wht_in_deal ? receipt - wht : receipt
-    return { vat, wht, commission, net, expected: net - commission, cost: commission + wht, whtRate, threshold }
-  }, [rates, receipt, form.supply_kind, form.wht_overridden, form.wht_amount, form.wht_in_deal, form.commission_basis, form.commission_rate, form.commission_amount])
+    const handedBack = form.wht_in_deal && form.wht_returned ? wht : 0
+    return { vat, wht, commission, net, expected: net - commission + handedBack, cost: commission + wht - handedBack, whtRate, threshold }
+  }, [rates, receipt, form.supply_kind, form.wht_overridden, form.wht_amount, form.wht_in_deal, form.wht_returned, form.commission_basis, form.commission_rate, form.commission_amount])
 
+  const deal: Deal = !form.wht_in_deal ? 'full' : form.wht_returned ? 'held_returned' : 'held'
   const vendorList = vendors as { id: string; vendor_name: string; tin: string | null }[]
   const vendorOptions = useMemo(() => vendorList.map(v => ({ id: v.id, label: v.vendor_name, sub: v.tin ? `TIN ${v.tin}` : 'no TIN on file' })), [vendorList])
   const chosenVendor = vendorList.find(v => v.id === form.vendor_id)
@@ -208,6 +227,7 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
       wht_overridden: form.wht_overridden,
       wht_amount: form.wht_overridden ? parseFloat(form.wht_amount) || 0 : null,
       wht_in_deal: form.wht_in_deal,
+      wht_returned: form.wht_in_deal && form.wht_returned,
       commission_basis: form.commission_basis,
       commission_rate: form.commission_basis === 'fixed' ? null : parseFloat(form.commission_rate) || 0,
       commission_amount: form.commission_basis === 'fixed' ? parseFloat(form.commission_amount) || 0 : null,
@@ -288,15 +308,14 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
               Correct it
             </label>
           </div>
-          <div className="mt-2 inline-flex rounded-md border p-0.5 text-xs dark:border-slate-600" role="group" aria-label="Who bears the WHT">
-            {([[true, 'Out of what the vendor is sent'], [false, 'Vendor gets the full amount']] as const).map(([v, label]) => (
-              <button key={String(v)} type="button" onClick={() => set('wht_in_deal', v)} aria-pressed={form.wht_in_deal === v}
-                className={`rounded px-2.5 py-1 font-medium ${form.wht_in_deal === v ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>{label}</button>
+          <div className="mt-2 inline-flex flex-wrap rounded-md border p-0.5 text-xs dark:border-slate-600" role="group" aria-label="Who bears the WHT">
+            {DEALS.map(([d, label]) => (
+              <button key={d} type="button" aria-pressed={deal === d}
+                onClick={() => setForm(f => ({ ...f, wht_in_deal: d !== 'full', wht_returned: d === 'held_returned' }))}
+                className={`rounded px-2.5 py-1 font-medium ${deal === d ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>{label}</button>
             ))}
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {form.wht_in_deal ? 'The WHT is held back from the vendor and paid to the tax office.' : 'The vendor is sent the whole receipt amount; we still owe the WHT to the tax office, on top.'}
-          </p>
+          <p className="mt-1 text-[11px] text-slate-500">{DEAL_TEXT[deal]}</p>
         </Field>
         <Field label="Commission">
           <div className="grid grid-cols-[1fr_7rem] gap-2">
@@ -319,8 +338,8 @@ function VendorReceiptFormPageBody({ id, record }: { id?: string; record?: Vendo
         {[
           ['Sent', calc.net, form.wht_in_deal ? 'receipt − WHT' : 'full receipt — WHT paid on top'],
           ['Commission', calc.commission, ''],
-          ['Should come back', calc.expected, 'sent − commission'],
-          ['Real cost', calc.cost, 'commission + WHT'],
+          ['Should come back', calc.expected, deal === 'held_returned' ? 'receipt − commission' : 'sent − commission'],
+          ['Real cost', calc.cost, deal === 'held_returned' ? 'commission — the WHT comes back' : 'commission + WHT'],
           ['VAT on receipt', calc.vat, 'not claimable'],
         ].map(([label, value, sub]) => (
           <div key={label as string} className="bg-white px-3 py-2 dark:bg-slate-800">
