@@ -1,4 +1,4 @@
--- 458: Bank matching in rounds — "canceling statement due to statement timeout".
+-- 471: Bank matching in rounds — "canceling statement due to statement timeout".
 --
 -- The app's database connection stops any one request after 8 seconds.
 -- Importing a statement wrote its lines in under a second and then matched

@@ -1,4 +1,4 @@
--- 457: Bank statement import — "UPDATE requires a WHERE clause".
+-- 470: Bank statement import — "UPDATE requires a WHERE clause".
 --
 -- The API's database role loads Supabase's safeupdate guard, which rejects
 -- any UPDATE or DELETE without a WHERE — inside functions too. The import
