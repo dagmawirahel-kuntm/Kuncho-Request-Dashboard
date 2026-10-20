@@ -10,10 +10,12 @@ import { ReviewQueue } from './ReviewQueue'
 import { StatementsPanel } from './StatementsPanel'
 import { AuditPanel } from './AuditPanel'
 import { useBankAuditFlags } from '@/lib/bankAudit'
-import { Landmark, Lock } from 'lucide-react'
+import { inRange } from '@/lib/bankReconciliation'
+import { CalendarRange, Landmark, Lock } from 'lucide-react'
 
 type Tab = 'queue' | 'audit' | 'import' | 'statements'
 const TABS: Tab[] = ['queue', 'audit', 'import', 'statements']
+const dateCls = 'rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
 /**
  * Bank reconciliation: import each account's statements (CSV, Excel, PDF),
@@ -35,8 +37,11 @@ export default function BankReconciliationPage() {
   const [accountId, setAccountId] = useState<string | null>(() => params.get('account'))
   // The line the queue opens on: from a link (?line=), or a flag on the audit.
   const [focusLineId, setFocusLineId] = useState<string | null>(() => params.get('line'))
+  // The lines (by value date) and the flags (by their date) between two days.
+  const [from, setFrom] = useState(() => params.get('from') ?? '')
+  const [to, setTo] = useState(() => params.get('to') ?? '')
   const { data: flags = [] } = useBankAuditFlags()
-  const flagCount = flags.filter(f => !accountId || f.account_id === accountId).length
+  const flagCount = flags.filter(f => (!accountId || f.account_id === accountId) && inRange(f.ref_date, from, to)).length
 
   const { data: overview = [], isLoading } = useQuery({
     queryKey: ['bank-overview'],
@@ -112,9 +117,22 @@ export default function BankReconciliationPage() {
         )}
       </div>
 
-      {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} />}
+      {(activeTab === 'queue' || activeTab === 'audit') && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <CalendarRange className="h-3.5 w-3.5 text-slate-400" />
+          <label className="flex items-center gap-1.5">From
+            <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} className={dateCls} />
+          </label>
+          <label className="flex items-center gap-1.5">to
+            <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} className={dateCls} />
+          </label>
+          {(from || to) && <button onClick={() => { setFrom(''); setTo('') }} className="text-brand hover:underline">Any date</button>}
+        </div>
+      )}
+
+      {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} from={from} to={to} />}
       {activeTab === 'audit' && (
-        <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'}
+        <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'} from={from} to={to}
           onOpenLine={lineId => { setFocusLineId(lineId); setTab('queue') }}
           onImport={acct => { setAccountId(acct); setTab('import') }} />
       )}

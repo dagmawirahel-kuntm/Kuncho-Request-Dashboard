@@ -26,10 +26,13 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   }
 }
 
-export function ReviewQueue({ accountId, accounts, focusLineId = null }: {
+export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '' }: {
   accountId: string | null
   accounts: { id: string; account_name: string }[]
   focusLineId?: string | null
+  /** Value dates to show, yyyy-mm-dd; blank for no limit. */
+  from?: string
+  to?: string
 }) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -41,10 +44,12 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null }: {
   const accountName = useMemo(() => new Map(accounts.map(a => [a.id, a.account_name])), [accounts])
 
   const { data: lines = [], isLoading } = useQuery({
-    queryKey: ['bank-lines', 'queue', accountId, showDone],
+    queryKey: ['bank-lines', 'queue', accountId, showDone, from, to],
     queryFn: async () => {
       let q = supabase.from('v_bank_line_status').select('*').order('value_date', { ascending: !showDone }).order('line_no')
       if (accountId) q = q.eq('account_id', accountId)
+      if (from) q = q.gte('value_date', from)
+      if (to) q = q.lte('value_date', to)
       q = showDone ? q.not('reconciled_as', 'is', null).limit(200) : q.is('reconciled_as', null)
       const { data, error } = await q
       if (error) throw error
@@ -104,7 +109,9 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null }: {
       <div className="overflow-hidden rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
         {isLoading ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p>
         : shown.length === 0 ? (
-          <p className="py-10 text-center text-sm text-slate-400">{showDone ? 'No reconciled lines yet.' : 'Every line is reconciled.'}</p>
+          <p className="py-10 text-center text-sm text-slate-400">
+            {showDone ? 'No reconciled lines yet.' : 'Every line is reconciled.'}{(from || to) && ' (between these dates)'}
+          </p>
         ) : (
           <div className="divide-y dark:divide-slate-700">
             {shown.map(l => (

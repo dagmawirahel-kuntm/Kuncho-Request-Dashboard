@@ -7,7 +7,7 @@ import { btn } from '@/lib/ui/button'
 import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { UndoMatch } from '@/components/cash/LineHistory'
-import type { ReconciledAs } from '@/lib/bankReconciliation'
+import { inRange, type ReconciledAs } from '@/lib/bankReconciliation'
 import {
   FLAG_META, MATCH_KIND, SEVERITY_META, useBankAuditAccounts, useBankAuditFlags, useBankAuditScorecard,
   useBankAuditSettings, useBankChargeRules, useRefreshBankAudit,
@@ -26,11 +26,14 @@ import {
 
 const inputCls = 'w-full rounded-md border px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
-export function AuditPanel({ accountId, accounts, canAct, isAdmin, onOpenLine, onImport }: {
+export function AuditPanel({ accountId, accounts, canAct, isAdmin, from = '', to = '', onOpenLine, onImport }: {
   accountId: string | null
   accounts: { id: string; account_name: string }[]
   canAct: boolean
   isAdmin: boolean
+  /** Flags dated between these, yyyy-mm-dd; blank for no limit. */
+  from?: string
+  to?: string
   /** Opens a statement line in the queue, to match or explain it. */
   onOpenLine: (lineId: string) => void
   onImport: (accountId: string) => void
@@ -38,7 +41,7 @@ export function AuditPanel({ accountId, accounts, canAct, isAdmin, onOpenLine, o
   return (
     <div className="space-y-5">
       <AccountStrip accountId={accountId} onImport={onImport} />
-      <FlagList accountId={accountId} canAct={canAct} onOpenLine={onOpenLine} />
+      <FlagList accountId={accountId} from={from} to={to} canAct={canAct} onOpenLine={onOpenLine} />
       <Scorecard />
       <Rules accounts={accounts} canAct={canAct} isAdmin={isAdmin} />
     </div>
@@ -124,14 +127,17 @@ function AmountBar({ confirmed, unchecked, problem }: { confirmed: number; unche
 type KindFilter = 'all' | BankAuditFlagKind
 type AgeFilter = 'all' | BankFlagSeverity
 
-function FlagList({ accountId, canAct, onOpenLine }: { accountId: string | null; canAct: boolean; onOpenLine: (lineId: string) => void }) {
+function FlagList({ accountId, from, to, canAct, onOpenLine }: {
+  accountId: string | null; from: string; to: string; canAct: boolean; onOpenLine: (lineId: string) => void
+}) {
   const { data: flags = [], isLoading } = useBankAuditFlags()
   const [kind, setKind] = useState<KindFilter>('all')
   const [age, setAge] = useState<AgeFilter>('all')
   const [bigOnly, setBigOnly] = useState(false)
   const [q, setQ] = useState('')
 
-  const inAccount = useMemo(() => flags.filter(f => !accountId || f.account_id === accountId), [flags, accountId])
+  const inAccount = useMemo(() => flags.filter(f => (!accountId || f.account_id === accountId) && inRange(f.ref_date, from, to)),
+    [flags, accountId, from, to])
   const counts = useMemo(() => {
     const m = new Map<BankAuditFlagKind, number>()
     for (const f of inAccount) m.set(f.kind, (m.get(f.kind) ?? 0) + 1)
