@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { autoMatchBankLines } from '@/lib/bankAutoMatch'
 import {
   CLASSIFICATIONS, KIND_LABEL, describeReconciled, ruleTextFrom,
   type BankLine, type LineCombination, type Suggestion,
@@ -40,7 +41,8 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   const [search, setSearch] = useState('')
   const [showDone, setShowDone] = useState(false)
   const [openId, setOpenId] = useState<string | null>(focusLineId)
-  const [running, setRunning] = useState(false)
+  // Lines tried so far while automatic matching runs, round by round.
+  const [running, setRunning] = useState<number | null>(null)
   const accountName = useMemo(() => new Map(accounts.map(a => [a.id, a.account_name])), [accounts])
 
   const { data: lines = [], isLoading } = useQuery({
@@ -62,11 +64,14 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
     (!search.trim() || `${l.narration ?? ''} ${l.reference ?? ''} ${l.amount}`.toLowerCase().includes(search.trim().toLowerCase())))
 
   async function runAuto() {
-    setRunning(true)
-    const { data, error } = await supabase.rpc('auto_reconcile_bank_lines', { p_import_id: null, p_account_id: accountId })
-    setRunning(false)
-    if (error) { toast(error.message, 'error'); return }
-    const n = Number(data ?? 0)
+    setRunning(0)
+    let n: number
+    try {
+      n = (await autoMatchBankLines({ accountId, onProgress: p => setRunning(p.tried) })).matched
+    } catch (e) {
+      setRunning(null); toast((e as Error).message, 'error'); invalidateAll(qc); return
+    }
+    setRunning(null)
     toast(n > 0 ? `Matched ${n} line${n === 1 ? '' : 's'} automatically` : 'Nothing more could be matched automatically — the rest need a look', n > 0 ? 'success' : 'info')
     invalidateAll(qc)
   }
@@ -93,9 +98,9 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
         <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
           <input type="checkbox" checked={showDone} onChange={e => { setShowDone(e.target.checked); setOpenId(null) }} /> Show reconciled
         </label>
-        <button onClick={runAuto} disabled={running}
+        <button onClick={runAuto} disabled={running !== null}
           className="ml-auto flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
-          <RefreshCw className={`h-3.5 w-3.5 ${running ? 'animate-spin' : ''}`} /> Run automatic matching
+          <RefreshCw className={`h-3.5 w-3.5 ${running !== null ? 'animate-spin' : ''}`} /> {running ? `Matching… ${running} lines checked` : 'Run automatic matching'}
         </button>
       </div>
 
@@ -392,8 +397,7 @@ function ExplainLine({ line, onDone }: { line: BankLine; onDone: () => void }) {
     if (error) { setBusy(false); toast(error.message, 'error'); return }
     let extra = 0
     if (remember) {
-      const { data } = await supabase.rpc('auto_reconcile_bank_lines', { p_import_id: null, p_account_id: line.account_id })
-      extra = Number(data ?? 0)
+      extra = (await autoMatchBankLines({ accountId: line.account_id }).catch(() => ({ matched: 0 }))).matched
     }
     setBusy(false)
     toast(`Explained and posted to the ledger${extra ? `; the new rule settled ${extra} more line${extra === 1 ? '' : 's'}` : ''}`, 'success')

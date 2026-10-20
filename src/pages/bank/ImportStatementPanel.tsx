@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { autoMatchBankLines, type MatchRound } from '@/lib/bankAutoMatch'
 import { readStatementFile, type ReadStatement } from '@/lib/bankStatements/readers'
 import {
   applyMapping, detectMapping, headerSignature,
@@ -26,6 +27,7 @@ interface DryRun {
   in_closed_period: number
   import_id: string | null
   auto_reconciled?: number
+  matching?: MatchRound | null
 }
 
 const selectCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -48,6 +50,8 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   const [showMapping, setShowMapping] = useState(false)
   const [reading, setReading] = useState(false)
   const [importing, setImporting] = useState(false)
+  // Lines tried so far while matching after the import, out of the new ones.
+  const [matching, setMatching] = useState<{ tried: number; of: number } | null>(null)
 
   // Accounts in use first; "inactive" accounts that were never opened last.
   const { data: accounts = [] } = useQuery({
@@ -142,11 +146,27 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
         header_signature: headerSignature(read.grid, mapping.headerRow), mapping, updated_at: new Date().toISOString(),
       }], { onConflict: 'account_id,source_format,header_signature' })
     }
-    setImporting(false)
     const r = data as DryRun
-    toast(r.new === 0
-      ? 'Nothing new — every line in this file was already imported'
-      : `Imported ${r.new} line${r.new === 1 ? '' : 's'}${r.already_imported ? ` (${r.already_imported} already in)` : ''}; ${r.auto_reconciled ?? 0} matched automatically`, 'success')
+    // The lines are saved. Matching them carries on in rounds where the
+    // import's own round stopped, each short enough for the request limit.
+    let auto = r.auto_reconciled ?? 0
+    let matchError: string | null = null
+    if (r.import_id && r.matching?.more) {
+      const paired = auto - r.matching.matched
+      setMatching({ tried: r.matching.tried, of: r.new - paired })
+      try {
+        const m = await autoMatchBankLines({ importId: r.import_id, from: r.matching, onProgress: p => setMatching(s => s && { ...s, tried: p.tried }) })
+        auto = paired + m.matched
+      } catch (e) {
+        matchError = (e as Error).message
+      }
+      setMatching(null)
+    }
+    setImporting(false)
+    const imported = `Imported ${r.new} line${r.new === 1 ? '' : 's'}${r.already_imported ? ` (${r.already_imported} already in)` : ''}`
+    if (r.new === 0) toast('Nothing new — every line in this file was already imported', 'success')
+    else if (matchError) toast(`${imported}. Automatic matching stopped part-way (${matchError}) — press Auto-match on the queue to finish it.`, 'info')
+    else toast(`${imported}; ${auto} matched automatically`, 'success')
     for (const k of ['bank-lines', 'bank-overview', 'bank-imports', 'bank-statement-formats', 'bank-import-accounts', 'expenses', 'sales', 'accounts']) {
       qc.invalidateQueries({ queryKey: [k] })
     }
@@ -226,7 +246,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
             <button onClick={handleImport}
               disabled={importing || !accountId || !dry || dry.new === 0 || dry.in_closed_period > 0 || parsed.lines.length === 0}
               className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
-              {importing ? 'Importing…' : dry ? `Import ${dry.new} new line${dry.new === 1 ? '' : 's'}` : 'Import'}
+              {matching ? `Matching… ${Math.min(matching.tried, matching.of)} of ${matching.of}` : importing ? 'Importing…' : dry ?`Import ${dry.new} new line${dry.new === 1 ? '' : 's'}` : 'Import'}
             </button>
           </div>
         </div>

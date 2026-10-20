@@ -7,6 +7,7 @@ import { btn } from '@/lib/ui/button'
 import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { UndoMatch } from '@/components/cash/LineHistory'
+import { autoMatchBankLines } from '@/lib/bankAutoMatch'
 import { inRange, type ReconciledAs } from '@/lib/bankReconciliation'
 import {
   FLAG_META, MATCH_KIND, SEVERITY_META, useBankAuditAccounts, useBankAuditFlags, useBankAuditScorecard,
@@ -469,10 +470,9 @@ function ChargeRules({ accounts, canAct }: { accounts: { id: string; account_nam
     const { error } = await supabase.from('bank_charge_rules').insert([{ amount: amt, label: label.trim(), account_id: accountId }])
     if (error) { setBusy(false); toast(error.message, 'error'); return }
     // Lines this charge now explains have it booked on the next automatic pass; run it now.
-    const { data } = await supabase.rpc('auto_reconcile_bank_lines', { p_import_id: null, p_account_id: accountId })
+    const n = (await autoMatchBankLines({ accountId }).catch(() => ({ matched: 0 }))).matched
     setBusy(false)
     setAmount(''); setLabel(''); setAccountId(null)
-    const n = Number(data ?? 0)
     toast(`Charge added${n ? ` — and ${n} more line${n === 1 ? '' : 's'} matched` : ''}`, 'success')
     refresh()
   }
