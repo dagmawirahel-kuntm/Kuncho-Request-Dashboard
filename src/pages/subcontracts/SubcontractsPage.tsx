@@ -39,7 +39,7 @@ export default function SubcontractsPage() {
   const list = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return rows
-    return rows.filter(r => [r.vendor_name, r.project_name, r.scope_of_work].some(v => (v ?? '').toLowerCase().includes(q)))
+    return rows.filter(r => [r.vendor_name, r.project_name, r.scope_of_work, r.work_order_title].some(v => (v ?? '').toLowerCase().includes(q)))
   }, [rows, search])
 
   const open = rows.filter(r => ['drafting', 'agreed', 'in_progress'].includes(r.status))
@@ -142,8 +142,9 @@ function JobCard({ r }: { r: BoardRow }) {
         <p className="min-w-0 text-sm font-semibold text-slate-800 dark:text-slate-100">{r.vendor_name ?? 'Subcontractor'}</p>
         <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{etb(r.agreed_amount)}</span>
       </div>
-      <p className="text-xs text-slate-500">{r.project_name ?? '—'}</p>
+      <p className="text-xs text-slate-500">{r.project_name ?? '—'}{r.work_order_title && <> · {r.work_order_title}</>}</p>
       {r.scope_of_work && <p className="mt-1 line-clamp-2 text-xs text-slate-600 dark:text-slate-300">{r.scope_of_work}</p>}
+      {r.line_count > 1 && <p className="mt-0.5 text-[11px] text-slate-400">{r.line_count} lines of work</p>}
       <div className="mt-2 space-y-1">
         <p className="text-[11px] text-slate-500"><b className="font-semibold text-slate-700 dark:text-slate-200">{Math.round(r.percent_complete)}% done</b></p>
         <p className="text-[11px] tabular-nums text-slate-500">{etb(r.certified)} certified · {etb(r.paid)} paid</p>

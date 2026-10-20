@@ -20,7 +20,8 @@ import { Pill } from '@/components/record/Record'
 import { WO_STATUS, useMyJobIds, type WorkOrderBoardRow } from '@/lib/workOrders'
 import { blockerEffect } from '@/lib/workOrderBlockers'
 import { BlockersCard } from './WorkOrderBlockers'
-import { ItemsCard, LabourCard, StatusActions, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
+import { ItemsCard, LabourCard, StatusActions, SubcontractedCard, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
+import { SUBCONTRACT_WRITE_ROLES, useWorkOrderSubcontracts } from '@/lib/subcontracts'
 import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, SiteMaterialReceipt } from '@/types/database'
 import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, UserMinus, UserPlus2, Send } from 'lucide-react'
 
@@ -34,7 +35,10 @@ export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { hasRole } = useAuth()
   const canWrite = hasRole(...WRITE_ROLES)
+  const canSubcontract = hasRole(...SUBCONTRACT_WRITE_ROLES)
   const [updating, setUpdating] = useState(false)
+  const { data: subs = [] } = useWorkOrderSubcontracts(id)
+  const subcontracted = subs.filter(s => s.status !== 'terminated').reduce((t, s) => t + s.agreed_amount, 0)
 
   const { data: wo, isLoading, error } = useQuery({
     queryKey: ['work-order-detail', id],
@@ -134,7 +138,7 @@ export default function WorkOrderDetailPage() {
           <span className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{pct}%</span>
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <dl className={`mt-4 grid grid-cols-2 gap-3 text-sm ${subs.length ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
           <div><dt className="text-xs text-slate-400">Lead</dt><dd className="text-slate-700 dark:text-slate-200">{(wo.assigned_lead_staff_id && staffNameById.get(wo.assigned_lead_staff_id)) ?? '—'}</dd></div>
           <div><dt className="text-xs text-slate-400">Due</dt><dd className="text-slate-700 dark:text-slate-200">
             {effect && effect.lost > 0 && effect.adjustedDue ? (
@@ -146,6 +150,10 @@ export default function WorkOrderDetailPage() {
           </dd></div>
           <div><dt className="text-xs text-slate-400">Labour</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(Number(board?.labour_cost ?? cost?.labor_cost ?? 0))}</dd></div>
           <div><dt className="text-xs text-slate-400">Materials</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(cost?.materials_cost ?? 0)}</dd></div>
+          {subs.length > 0 && (
+            <div><dt className="text-xs text-slate-400">Subcontracts</dt><dd className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(subcontracted)}
+              <span className="block text-[11px] font-normal text-slate-400">{formatCurrency(subs.reduce((t, s) => t + s.certified, 0))} certified</span></dd></div>
+          )}
         </dl>
         {wo.scope_of_work && wo.scope_of_work !== wo.title && <p className="mt-3 whitespace-pre-line border-t pt-3 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">{wo.scope_of_work}</p>}
         <div className="mt-4 border-t pt-3 dark:border-slate-700"><StatusActions wo={wo} canUpdate={canUpdate} /></div>
@@ -153,6 +161,7 @@ export default function WorkOrderDetailPage() {
 
       <BlockersCard wo={wo} board={board} canAct={canRecord} />
       <ItemsCard wo={wo} canUpdate={canRecord} canEdit={canWrite} onUpdate={() => setUpdating(true)} />
+      <SubcontractedCard wo={wo} canAdd={canSubcontract} />
       <LabourCard wo={wo} canUpdate={canUpdate} />
       <UpdatesTimeline workOrderId={wo.id} />
       <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
