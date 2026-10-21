@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -16,7 +16,7 @@ import {
   GROUP_BY_LABEL, SIGNAL_META, SIGNAL_ORDER, groupKey, signalsOf, timesUsual, useApprovalContext, useCashCover,
   type ApprovalContextRow, type GroupBy, type Signal,
 } from '@/lib/approvals'
-import { CheckCircle2, Clock, HelpCircle, Landmark, MessageCircleQuestion, Paperclip, Search, Wallet, Wrench, X } from 'lucide-react'
+import { CheckCircle2, Clock, HelpCircle, Landmark, Layers, MessageCircleQuestion, Paperclip, Search, Wallet, Wrench, X } from 'lucide-react'
 import { chime, confetti, effectsAllowed } from '@/lib/celebrate'
 import { useRefreshTaxImpact, useTaxImpact, type ImpactItem } from '@/lib/taxImpact'
 import { TaxTag } from '@/components/tax/TaxTag'
@@ -35,6 +35,10 @@ const pause = (ms: number) => new Promise(r => window.setTimeout(r, ms))
 // delivered), and what it does to its project. The cash strip says what the
 // bank accounts can bear. A question goes to whoever raised it instead of a
 // reject, and the answer comes back here.
+//
+// Selected bills can also go into one batch (473) — paid as one wire, the way
+// labour drafts are. They stay pending; the batch page approves and releases
+// them together once the payer and the account are chosen.
 
 type Filter = 'all' | 'ready' | 'fix' | Signal
 type Order = 'oldest' | 'impact'
@@ -65,6 +69,7 @@ export default function ExpenseApprovalQueuePage() {
   const [leaving, setLeaving] = useState<Set<string>>(new Set())
   const qc = useQueryClient()
   const { toast } = useToast()
+  const navigate = useNavigate()
 
   const signals = useMemo(() => new Map(rows.map(r => [r.id, signalsOf(r, ctx?.get(r.id), me)])), [rows, ctx, me])
   const has = (r: ApprovalQueueRow, s: Signal) => signals.get(r.id)?.includes(s) ?? false
@@ -119,6 +124,8 @@ export default function ExpenseApprovalQueuePage() {
   const toFix = rows.filter(blocked).length
   const asked = signalCounts.get('asked') ?? 0
   const pickedReady = shown.filter(r => picked.has(r.id) && !blocked(r))
+  // A bill already in a batch is approved with that batch.
+  const pickedToBatch = pickedReady.filter(r => !r.batch_payment_id)
   // Approved together: ready, not waiting on an answer, and not your own.
   const bulkable = (r: ApprovalQueueRow) => !blocked(r) && !has(r, 'asked') && !has(r, 'mine')
 
@@ -180,6 +187,30 @@ export default function ExpenseApprovalQueuePage() {
     setPicked(new Set())
     if (done.length && done.length < rows.length) toast(`${done.length} approved for payment`, 'success')
     await afterApproved(done)
+  }
+
+  // Grouped while pending, as labour drafts are: the batch is approved and
+  // sent from its own page, where the payer and the account are picked.
+  async function batchMany(list: ApprovalQueueRow[]) {
+    const one = <T,>(vals: (T | null)[]) => { const s = new Set(vals.filter(v => v != null)); return s.size === 1 ? [...s][0] : null }
+    const name = one(list.map(r => r.payee_name)) ?? one(list.map(r => r.project_name)) ?? `${list.length} bills`
+    const code = `Batch — ${name} — ${formatDate(new Date().toISOString().slice(0, 10))}`
+    const skipped = pickedReady.length - list.length
+    if (!window.confirm(`Put ${list.length} bills (${formatCurrency(sum(list))}) in one batch, “${code}”?\n\n`
+      + 'They stay pending. On the batch page you approve them together, pick who pays and from which account, and they go out as one payment.'
+      + (skipped ? `\n\n${skipped} selected ${skipped === 1 ? 'is' : 'are'} already in a batch and stay${skipped === 1 ? 's' : ''} there.` : ''))) return
+    setBulkBusy(true)
+    const { data, error } = await supabase.rpc('create_batch_payment', {
+      p_expense_ids: list.map(r => r.id), p_assignee_id: me, p_account_id: null,
+      p_payment_method: 'batch_wire', p_payment_code: code, p_notes: null,
+    })
+    setBulkBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    setPicked(new Set())
+    refresh()
+    qc.invalidateQueries({ queryKey: ['batch-payments'] })
+    toast('Batch created — approve it from here to release it for payment', 'success')
+    navigate(`/batch-payments/${data}`)
   }
 
   function approvedOne(id: string) {
@@ -262,6 +293,13 @@ export default function ExpenseApprovalQueuePage() {
             <button disabled={bulkBusy} onClick={() => approveMany(pickedReady)}
               className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50">
               {bulkBusy ? 'Approving…' : `Approve ${pickedReady.length} selected`}
+            </button>
+          )}
+          {canApprove && pickedToBatch.length > 1 && (
+            <button disabled={bulkBusy} onClick={() => batchMany(pickedToBatch)}
+              title="Group them into one payment — approved and sent together from the batch page"
+              className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+              <Layers className="h-3.5 w-3.5" /> Put {pickedToBatch.length} in one batch
             </button>
           )}
         </div>
@@ -459,13 +497,18 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
       <div className="flex items-start gap-3">
         {canApprove && (
           <input type="checkbox" className="mt-1" disabled={isBlocked} checked={picked && !isBlocked} onChange={e => onPick(e.target.checked)}
-            title={isBlocked ? 'Fix what is missing first' : 'Select to approve together'} />
+            title={isBlocked ? 'Fix what is missing first' : 'Select to approve together, or to put in one batch'} />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <TaxTag item={impact} periodLabel={period} />
             <Link to={`/expenses/${r.id}`} className="font-mono text-xs font-bold text-brand hover:underline">{r.expense_code ?? 'Expense'}</Link>
             <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.item_service_description ?? '—'}</span>
+            {r.batch_payment_id && (
+              <Link to={`/batch-payments/${r.batch_payment_id}`} title="Approved and paid with its batch" className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 hover:underline dark:bg-sky-900/20 dark:text-sky-300">
+                <Layers className="h-3 w-3" /> {r.batch_code ?? 'In a batch'}
+              </Link>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-slate-500">
             {r.payee_name ?? 'No payee'} · {r.project_name ?? (r.is_overhead ? 'Company overhead' : 'No project')} · {r.category_name ?? 'No ledger'}
