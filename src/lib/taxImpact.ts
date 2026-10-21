@@ -21,8 +21,10 @@ export interface ImpactItem {
   vendor_type: string | null
   amount: number
   vat: number
-  /** 'vat' is ranked; 'unknown' (vendor listed only as "Supplier") is not — ask for a VAT receipt. */
-  cls: 'vat' | 'unknown'
+  /** 'vat' is ranked. 'unknown' (vendor listed only as "Supplier") is not — ask for a VAT receipt.
+   *  'unconfirmed': nobody has answered "Does this amount include VAT?" Yes on the expense (457) —
+   *  not ranked until they do. */
+  cls: 'vat' | 'unknown' | 'unconfirmed'
   queue: ImpactQueue
   entered_at: string
   age_days: number
@@ -113,6 +115,7 @@ export const QUEUE_LABEL: Record<ImpactQueue, string> = {
 
 export function nextStep(it: ImpactItem, periodLabel: string): string {
   if (it.queue === 'bank') return `Record the payment — the bank shows it paid${it.bank_date ? ` on ${it.bank_date}` : ''}, so it counts in ${it.period?.label ?? 'that month'}`
+  if (it.cls === 'unconfirmed') return 'Answer "Does this amount include VAT?" on the expense — Yes ranks it'
   if (it.cls === 'unknown') return 'Ask the vendor for a VAT receipt'
   if (it.queue === 'approve') return `Approve, then pay by the end of ${periodLabel}`
   if (it.queue === 'pay') return `Pay by the end of ${periodLabel}`

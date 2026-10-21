@@ -11,7 +11,8 @@ import { QUEUE_LABEL, meterLevel, nextStep, pctText, type ImpactItem } from '@/l
 //
 // High impact (5%+ of the gap) is a filled navy ticket with a gold stub;
 // other ranked items are outlined; a vendor whose VAT receipts are unknown
-// gets a dashed "T?" tag. It is a shape and a number, not a colour, so it
+// gets a dashed "T?" tag, and an expense whose "Does this amount include
+// VAT?" isn't answered Yes gets a dotted grey "T?" (457). It is a shape and a number, not a colour, so it
 // reads the same in light and dark mode and in print.
 
 const NAVY = '#1e3a5f'
@@ -44,12 +45,16 @@ export function TaxTag({ item, periodLabel, size = 'sm', link = true }: {
       `${item.share != null ? `, ${pctText(item.share)} of the gap` : ''}. ${QUEUE_LABEL[item.queue]}${item.age_days ? ` for ${item.age_days} day${item.age_days === 1 ? '' : 's'}` : ''}.` +
       `${item.escalated && item.overtook ? ` Escalated: went ahead of ${item.jumped} smaller item${item.jumped === 1 ? '' : 's'} already waiting (biggest ${item.overtook.code ?? 'an earlier one'}).` : ''}` +
       `${item.overdue ? ' Overdue.' : ''} Next: ${nextStep(item, periodLabel ?? 'the month')}.`
+    : item.cls === 'unconfirmed'
+    ? `${formatCurrency(item.vat)} of VAT if this amount includes VAT — not ranked until "Does this amount include VAT?" is answered Yes on the expense.`
     : `${formatCurrency(item.vat)} of VAT if the vendor gives a VAT receipt — ask for one.`
 
   const body = (
     <span title={title} aria-label={title}
       className={`relative inline-flex shrink-0 select-none items-stretch overflow-visible rounded-[4px] font-mono font-bold leading-none ${h} ${
-        !known ? 'border border-dashed border-amber-500 text-amber-700 dark:text-amber-300'
+        !known ? (item.cls === 'unconfirmed'
+          ? 'border border-dotted border-slate-400 text-slate-500 dark:border-slate-500 dark:text-slate-400'
+          : 'border border-dashed border-amber-500 text-amber-700 dark:text-amber-300')
         : item.high ? 'text-white shadow-sm' : 'border border-[#1e3a5f] bg-white text-[#1e3a5f] dark:border-sky-400 dark:bg-slate-900 dark:text-sky-300'}`}
       style={known && item.high ? { background: NAVY } : undefined}>
       {/* stub with the meter */}
@@ -88,6 +93,7 @@ export function TaxTagLegend() {
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ rank: 1, share: 0.27, escalated: true })} link={false} /> escalated</span>
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ rank: 2, share: 0.24, overdue: true })} link={false} /> overdue</span>
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ cls: 'unknown', rank: null })} link={false} /> ask for a VAT receipt</span>
+      <span className="flex items-center gap-1.5"><TaxTag item={sample({ cls: 'unconfirmed', rank: null })} link={false} /> VAT not confirmed on the expense</span>
       <span className="flex items-center gap-1.5"><TaxTag item={sample({ queue: 'bank', rank: null, period: { ec_year: 2019, ec_month: 1, label: 'Meskerem 2019', from_bank: true } })} link={false} /> paid per the bank, in its month</span>
       <span>Bars: share of the month's VAT gap (5%, 10%, 20%+)</span>
     </div>

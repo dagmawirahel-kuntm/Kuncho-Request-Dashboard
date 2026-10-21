@@ -12,13 +12,14 @@ import { Landmark, RefreshCw, Search, Target, ArrowUpRight, Receipt, Banknote, L
 
 type PageTab = 'impact' | 'receipts' | 'bank'
 
-type Filter = 'all' | ImpactQueue | 'ask'
+type Filter = 'all' | ImpactQueue | 'ask' | 'confirm'
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'approve', label: 'Waiting for approval' },
   { key: 'pay', label: 'Approved, not paid' },
   { key: 'raise', label: 'PO not raised' },
   { key: 'ask', label: 'Ask for VAT receipt' },
+  { key: 'confirm', label: 'VAT not confirmed' },
   { key: 'bank', label: 'Paid per the bank' },
 ]
 
@@ -56,12 +57,16 @@ export default function TaxImpactPage() {
     pay: items.filter(i => i.cls === 'vat' && i.queue === 'pay').length,
     raise: items.filter(i => i.cls === 'vat' && i.queue === 'raise').length,
     ask: items.filter(i => i.cls === 'unknown' && i.queue !== 'bank').length,
+    confirm: items.filter(i => i.cls === 'unconfirmed' && i.queue !== 'bank').length,
     bank: items.filter(i => i.queue === 'bank').length,
   }), [items])
 
   const needle = q.trim().toLowerCase()
   const shown = items.filter(i =>
-    (filter === 'all' || (filter === 'bank' ? i.queue === 'bank' : filter === 'ask' ? i.cls === 'unknown' && i.queue !== 'bank' : i.cls === 'vat' && i.queue === filter))
+    (filter === 'all' || (filter === 'bank' ? i.queue === 'bank'
+      : filter === 'ask' ? i.cls === 'unknown' && i.queue !== 'bank'
+      : filter === 'confirm' ? i.cls === 'unconfirmed' && i.queue !== 'bank'
+      : i.cls === 'vat' && i.queue === filter))
     && (!highOnly || i.high)
     && (!needle || `${i.code ?? ''} ${i.po_code ?? ''} ${i.vendor ?? ''} ${i.label ?? ''} T${i.rank ?? ''}`.toLowerCase().includes(needle)))
 
@@ -179,7 +184,7 @@ export default function TaxImpactPage() {
             </table>
           </div>
           <p className="text-[11px] text-slate-400">
-            Only VAT from suppliers who give VAT receipts is ranked. An item goes by this month until a bank statement line confirms its payment; then it goes by the bank's date and month, and drops out of the ranking.
+            Only VAT from suppliers who give VAT receipts is ranked, and only on expenses where “Does this amount include VAT?” is answered Yes. An item goes by this month until a bank statement line confirms its payment; then it goes by the bank's date and month, and drops out of the ranking.
              Escalation changes the order of the queues, not who approves.
             Paying early only moves VAT between months — use this to time what is needed anyway.
           </p>
