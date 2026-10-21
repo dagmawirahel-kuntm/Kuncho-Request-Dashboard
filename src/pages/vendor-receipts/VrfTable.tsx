@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable, type QuickFilter } from '@/components/shared/DataTable'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateGC } from '@/lib/utils'
 import type { VrfPaymentState, VrfRegisterRow, VrfStatus } from '@/types/database'
 import { PAYMENT_CLS, PAYMENT_LABEL } from './vrfPayment'
 import { AlertCircle, Pencil, Trash2 } from 'lucide-react'
@@ -19,7 +21,25 @@ function toConfirm(r: VrfRegisterRow) {
 }
 
 /** DataTable keys rows by id; a register row's id is its VRF's. */
-type Row = VrfRegisterRow & { id: string }
+type Row = VrfRegisterRow & { id: string; last_return: string | null; return_count: number }
+
+/** A date in a dense column: Gregorian, with both calendars on hover. */
+function DateCell({ date, sub }: { date: string | null | undefined; sub?: string | null }) {
+  if (!date) return <span className="text-slate-300 dark:text-slate-600">—</span>
+  return (
+    <span className="whitespace-nowrap" title={formatDate(date)}>
+      <span className="text-slate-700 dark:text-slate-200">{formatDateGC(date)}</span>
+      {sub && <span className="block text-[11px] text-slate-400">{sub}</span>}
+    </span>
+  )
+}
+
+const dateCol = (id: string, header: string, pick: (r: Row) => string | null | undefined, sub?: (r: Row) => string | null): ColumnDef<Row> => ({
+  id,
+  header,
+  accessorFn: r => pick(r) ?? '',
+  cell: ({ row }) => <DateCell date={pick(row.original)} sub={sub?.(row.original)} />,
+})
 
 const money = (key: keyof VrfRegisterRow, header: string, cls = ''): ColumnDef<Row> => ({
   id: key as string,
@@ -55,13 +75,12 @@ export function VrfTable({ rows, canWrite, onDelete }: {
         </Link>
       ),
     },
-    // Sorts by date; reads as the Ethiopian month.
-    {
-      id: 'trxn_date',
-      header: 'Month',
-      accessorFn: r => r.trxn_date ?? '',
-      cell: ({ row }) => <span className="whitespace-nowrap text-slate-600 dark:text-slate-300">{row.original.period_label ?? '—'}</span>,
-    },
+    // The VRF's date, with its Ethiopian month under it.
+    dateCol('trxn_date', 'Date', r => r.trxn_date, r => r.period_label),
+    dateCol('approved_at', 'Approved', r => r.approved_at),
+    // Marked sent, and the bank's value date once the statement shows it.
+    dateCol('sent_date', 'Sent', r => r.sent_date, r => (r.bank_date ? `bank ${formatDateGC(r.bank_date)}` : null)),
+    dateCol('last_return', 'Last return', r => r.last_return, r => (r.return_count > 1 ? `${r.return_count} returns` : null)),
     { id: 'facilitator_name', header: 'Facilitator', accessorFn: r => r.facilitator_name ?? '' },
     {
       id: 'vendor_name',
@@ -134,7 +153,23 @@ export function VrfTable({ rows, canWrite, onDelete }: {
       ) : null,
     },
   ], [canWrite, onDelete])
-  const data = useMemo<Row[]>(() => rows.map(r => ({ ...r, id: r.vrf_id })), [rows])
+  // When money last came back on each VRF.
+  const { data: returns = [] } = useQuery({
+    queryKey: ['vrf-returns-dates'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vrf_returns').select('vrf_id, return_date')
+      if (error) throw error
+      return (data ?? []) as { vrf_id: string; return_date: string }[]
+    },
+  })
+  const data = useMemo<Row[]>(() => {
+    const last = new Map<string, { date: string; n: number }>()
+    for (const r of returns) {
+      const cur = last.get(r.vrf_id)
+      last.set(r.vrf_id, { date: !cur || r.return_date > cur.date ? r.return_date : cur.date, n: (cur?.n ?? 0) + 1 })
+    }
+    return rows.map(r => ({ ...r, id: r.vrf_id, last_return: last.get(r.vrf_id)?.date ?? null, return_count: last.get(r.vrf_id)?.n ?? 0 }))
+  }, [rows, returns])
 
   return (
     <DataTable
@@ -143,7 +178,7 @@ export function VrfTable({ rows, canWrite, onDelete }: {
       searchPlaceholder="Search VRF, facilitator or vendor…"
       persistKey="vrf-register"
       quickFilters={quickFilters}
-      expandable={{ summaryColumnIds: ['record_name', 'trxn_date', 'vendor_name', 'receipt_amount', 'payment_state', 'status', 'check'] }}
+      expandable={{ summaryColumnIds: ['record_name', 'trxn_date', 'vendor_name', 'receipt_amount', 'sent_date', 'payment_state', 'status', 'check'] }}
     />
   )
 }

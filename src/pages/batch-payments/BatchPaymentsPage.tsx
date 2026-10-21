@@ -66,16 +66,22 @@ export default function BatchPaymentsPage() {
         .select('*, user_profiles(full_name), batch_payment_expenses(expense_id, expenses(amount_etb, wht_amount, credit_applied_etb, payment_state, expense_type))')
         .order('created_at', { ascending: false })
       if (error) throw error
-      return data as unknown as BatchRow[]
+      // A dissolved batch is kept only for its voided payment-request documents (456).
+      return (data as unknown as (BatchRow & { dissolved_at?: string | null })[]).filter(b => !b.dissolved_at)
     },
   })
 
+  // Dissolving puts every payment back in the To-Pay queue (sent ones as
+  // approved) and voids the batch's payment request (456). Deleting the row
+  // directly used to leave its payments marked sent, with no batch.
   async function handleDelete(id: string) {
-    if (!window.confirm('Delete this batch payment? This cannot be undone.')) return
-    const { error } = await supabase.from('batch_payments').delete().eq('id', id)
+    const reason = window.prompt('Dissolve this batch? Every payment in it goes back to the To-Pay queue. Reason (optional):')
+    if (reason === null) return
+    const { data, error } = await supabase.rpc('dissolve_batch_payment', { p_batch_id: id, p_reason: reason || null })
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['batch-payments'] })
-    toast('Payment deleted', 'success')
+    qc.invalidateQueries({ queryKey: ['v-to-pay-queue'] })
+    toast(String(data ?? 'Batch dissolved'), 'success')
   }
 
   const columns: ColumnDef<BatchRow>[] = useMemo(() => [
@@ -114,8 +120,8 @@ export default function BatchPaymentsPage() {
       cell: ({ row }) => (
         canWrite ? (
           <div className="flex items-center gap-1">
-            <Link to={`/batch-payments/${row.original.id}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit code / notes"><Pencil className="h-3.5 w-3.5" /></Link>
-            <button onClick={() => handleDelete(row.original.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+            <Link to={`/batch-payments/${row.original.id}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></Link>
+            <button onClick={() => handleDelete(row.original.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Dissolve"><Trash2 className="h-3.5 w-3.5" /></button>
           </div>
         ) : null
       ),
