@@ -1353,6 +1353,8 @@ export interface VendorReceiptFacilitation {
   wht_overridden: boolean
   /** true: WHT comes out of what is sent; false: the vendor gets the full receipt amount and the WHT is paid on top (453). */
   wht_in_deal: boolean
+  /** With the WHT held back: the vendor still returns receipt − commission, handing the WHT back (472). */
+  wht_returned: boolean
   /** Value date of the matched bank line (453). */
   bank_date: string | null
   commission_basis: VrfCommissionBasis | null
@@ -1458,6 +1460,8 @@ export interface VrfRegisterRow {
   /** What has gone out so far when it is paid in parts (migration 454). */
   sent_in_parts: number
   parts_count: number
+  /** The vendor hands the held-back WHT back with the return (472). */
+  wht_returned: boolean
 }
 
 /** One part of a VRF paid in parts, possibly from several banks (migration 454). */

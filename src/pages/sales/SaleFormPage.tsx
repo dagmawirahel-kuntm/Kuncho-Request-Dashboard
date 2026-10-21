@@ -3,6 +3,7 @@ import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { autoMatchBankLines } from '@/lib/bankAutoMatch'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -184,8 +185,7 @@ function SaleFormPageBody({ id, record, bankLine }: { id?: string; record?: Sale
     // Recorded from a bank line: link the two now, by the line's reference.
     let linked = false
     if (!isEdit && bankLine) {
-      const { data } = await supabase.rpc('auto_reconcile_bank_lines', { p_import_id: null, p_account_id: bankLine.account_id })
-      linked = Number(data ?? 0) > 0
+      linked = (await autoMatchBankLines({ accountId: bankLine.account_id }).catch(() => ({ matched: 0 }))).matched > 0
       for (const k of ['bank-audit-flags', 'bank-audit-accounts', 'bank-lines', 'bank-overview']) qc.invalidateQueries({ queryKey: [k] })
     }
     setSaving(false)
