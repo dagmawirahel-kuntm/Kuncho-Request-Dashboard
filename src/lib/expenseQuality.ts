@@ -76,6 +76,9 @@ export interface ApprovalQueueRow {
   receipt_url: string | null
   approval_status: string
   issues: ExpenseIssue[]
+  /** The batch it is grouped in, approved and paid with the rest (473). */
+  batch_payment_id: string | null
+  batch_code: string | null
 }
 
 export function useExpenseIssues() {
