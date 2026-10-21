@@ -6,13 +6,13 @@ import { fieldCls } from '@/lib/formStyles'
 import { KPI_KEYS, levelLabel, type ItemKind, type RoleKind, type RoleWithParts } from '@/lib/roles'
 import { Plus, Trash2, X } from 'lucide-react'
 
-// Editing a role: its words, its levels (title, Amharic title, pay band)
-// and its items — skills at a level, duties, and KPIs picked from what the
+// Editing a role: its words in English and Amharic, its levels (title,
+// summary, pay band) and its items — skills at a level, duties, and KPIs picked from what the
 // app can measure. Items taken out are switched off, never removed, so
 // past sign-offs keep what they were for.
 
-interface DraftLevel { level: number; title: string; title_am: string; summary: string; day_rate_min: string; day_rate_max: string; monthly_min: string; monthly_max: string }
-interface DraftItem { key: string; id?: string; kind: ItemKind; level: number; title: string; detail: string; kpi_key: string }
+interface DraftLevel { level: number; title: string; title_am: string; summary: string; summary_am: string; day_rate_min: string; day_rate_max: string; monthly_min: string; monthly_max: string }
+interface DraftItem { key: string; id?: string; kind: ItemKind; level: number; title: string; title_am: string; detail: string; kpi_key: string }
 
 let seq = 0
 const str = (v: number | null | undefined) => (v == null ? '' : String(v))
@@ -33,19 +33,21 @@ export function RoleEditor({ role, departments, families, onClose }: {
   const [dept, setDept] = useState(role?.department_id ?? '')
   const [reportsTo, setReportsTo] = useState(role?.reports_to ?? '')
   const [overview, setOverview] = useState(role?.role_overview ?? '')
+  const [overviewAm, setOverviewAm] = useState(role?.role_overview_am ?? '')
+  const [reportsToAm, setReportsToAm] = useState(role?.reports_to_am ?? '')
   const [levels, setLevels] = useState<DraftLevel[]>(
     role?.levels.length
-      ? role.levels.map(l => ({ level: l.level, title: l.title, title_am: l.title_am ?? '', summary: l.summary ?? '', day_rate_min: str(l.day_rate_min), day_rate_max: str(l.day_rate_max), monthly_min: str(l.monthly_min), monthly_max: str(l.monthly_max) }))
-      : [{ level: 1, title: '', title_am: '', summary: '', day_rate_min: '', day_rate_max: '', monthly_min: '', monthly_max: '' }],
+      ? role.levels.map(l => ({ level: l.level, title: l.title, title_am: l.title_am ?? '', summary: l.summary ?? '', summary_am: l.summary_am ?? '', day_rate_min: str(l.day_rate_min), day_rate_max: str(l.day_rate_max), monthly_min: str(l.monthly_min), monthly_max: str(l.monthly_max) }))
+      : [{ level: 1, title: '', title_am: '', summary: '', summary_am: '', day_rate_min: '', day_rate_max: '', monthly_min: '', monthly_max: '' }],
   )
   const [items, setItems] = useState<DraftItem[]>(
-    (role?.items ?? []).map(i => ({ key: i.id, id: i.id, kind: i.kind, level: i.level, title: i.responsibility_title, detail: i.responsibility_detail ?? '', kpi_key: i.kpi_key ?? '' })),
+    (role?.items ?? []).map(i => ({ key: i.id, id: i.id, kind: i.kind, level: i.level, title: i.responsibility_title, title_am: i.title_am ?? '', detail: i.responsibility_detail ?? '', kpi_key: i.kpi_key ?? '' })),
   )
   const [busy, setBusy] = useState(false)
 
   const setLevel = (n: number, patch: Partial<DraftLevel>) => setLevels(ls => ls.map(l => (l.level === n ? { ...l, ...patch } : l)))
   const setItem = (key: string, patch: Partial<DraftItem>) => setItems(xs => xs.map(x => (x.key === key ? { ...x, ...patch } : x)))
-  const addItem = (k: ItemKind, level = 1) => setItems(xs => [...xs, { key: `n${++seq}`, kind: k, level, title: '', detail: '', kpi_key: '' }])
+  const addItem = (k: ItemKind, level = 1) => setItems(xs => [...xs, { key: `n${++seq}`, kind: k, level, title: '', title_am: '', detail: '', kpi_key: '' }])
 
   async function save() {
     if (!name.trim()) { toast('Give the role a name', 'error'); return }
@@ -58,6 +60,7 @@ export function RoleEditor({ role, departments, families, onClose }: {
       const fields = {
         role_name: name.trim(), role_name_am: nameAm.trim() || null, family: family.trim() || null, kind,
         department_id: dept || null, reports_to: reportsTo.trim() || null, role_overview: overview.trim() || null,
+        reports_to_am: reportsToAm.trim() || null, role_overview_am: overviewAm.trim() || null,
       }
       let roleId = role?.id
       if (roleId) {
@@ -69,7 +72,7 @@ export function RoleEditor({ role, departments, families, onClose }: {
         roleId = data.id as string
       }
       const { error: lErr } = await supabase.from('role_levels').upsert(levels.map(l => ({
-        job_description_id: roleId, level: l.level, title: l.title.trim(), title_am: l.title_am.trim() || null, summary: l.summary.trim() || null,
+        job_description_id: roleId, level: l.level, title: l.title.trim(), title_am: l.title_am.trim() || null, summary: l.summary.trim() || null, summary_am: l.summary_am.trim() || null,
         day_rate_min: numOrNull(l.day_rate_min), day_rate_max: numOrNull(l.day_rate_max), monthly_min: numOrNull(l.monthly_min), monthly_max: numOrNull(l.monthly_max),
       })), { onConflict: 'job_description_id,level' })
       if (lErr) throw lErr
@@ -80,7 +83,7 @@ export function RoleEditor({ role, departments, families, onClose }: {
       }
       for (const [n, it] of items.entries()) {
         const row = {
-          job_description_id: roleId, kind: it.kind, level: it.kind === 'skill' ? it.level : 1, responsibility_title: it.title.trim(),
+          job_description_id: roleId, kind: it.kind, level: it.kind === 'skill' ? it.level : 1, responsibility_title: it.title.trim(), title_am: it.title_am.trim() || null,
           responsibility_detail: it.detail.trim() || null, kpi_key: it.kind === 'kpi' ? it.kpi_key : null, sort_order: (n + 1) * 10, active: true,
         }
         const { error } = it.id
@@ -123,6 +126,7 @@ export function RoleEditor({ role, departments, families, onClose }: {
       <div className="min-w-0 flex-1 space-y-1">
         <input value={it.title} onChange={e => setItem(it.key, { title: e.target.value })} className={fieldCls}
           placeholder={it.kind === 'skill' ? 'What they can do — e.g. Fits hinges, runners and handles' : it.kind === 'kpi' ? 'What is measured — e.g. Approval turnaround' : 'What the job involves'} />
+        <input value={it.title_am} onChange={e => setItem(it.key, { title_am: e.target.value })} className={fieldCls} placeholder="The same in Amharic" lang="am" />
         {it.kind === 'kpi' && (
           <select value={it.kpi_key} onChange={e => setItem(it.key, { kpi_key: e.target.value })} className={fieldCls}>
             <option value="">Measured how?</option>
@@ -164,14 +168,16 @@ export function RoleEditor({ role, departments, families, onClose }: {
               </select>
             </label>
             <label className="text-xs text-slate-500">Reports to<input value={reportsTo} onChange={e => setReportsTo(e.target.value)} className={fieldCls} /></label>
+            <label className="text-xs text-slate-500">Reports to, in Amharic<input value={reportsToAm} onChange={e => setReportsToAm(e.target.value)} className={fieldCls} lang="am" /></label>
           </div>
           <label className="block text-xs text-slate-500">What the job is for<textarea rows={2} value={overview} onChange={e => setOverview(e.target.value)} className={fieldCls} /></label>
+          <label className="block text-xs text-slate-500">What the job is for, in Amharic<textarea rows={2} value={overviewAm} onChange={e => setOverviewAm(e.target.value)} className={fieldCls} lang="am" /></label>
 
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Levels</p>
               <div className="flex gap-2 text-xs">
-                {levels.length < 3 && <button type="button" onClick={() => setLevels(ls => [...ls, { level: ls.length + 1, title: '', title_am: '', summary: '', day_rate_min: '', day_rate_max: '', monthly_min: '', monthly_max: '' }])} className="text-brand hover:underline">Add level</button>}
+                {levels.length < 3 && <button type="button" onClick={() => setLevels(ls => [...ls, { level: ls.length + 1, title: '', title_am: '', summary: '', summary_am: '', day_rate_min: '', day_rate_max: '', monthly_min: '', monthly_max: '' }])} className="text-brand hover:underline">Add level</button>}
                 {levels.length > 1 && <button type="button" onClick={() => setLevels(ls => ls.slice(0, -1))} className="text-slate-500 hover:underline">Remove top level</button>}
               </div>
             </div>
@@ -183,6 +189,7 @@ export function RoleEditor({ role, departments, families, onClose }: {
                     <input value={l.title} onChange={e => setLevel(l.level, { title: e.target.value })} className={fieldCls} placeholder="Title — e.g. Assistant carpenter" />
                     <input value={l.title_am} onChange={e => setLevel(l.level, { title_am: e.target.value })} className={fieldCls} placeholder="Title in Amharic" />
                     <input value={l.summary} onChange={e => setLevel(l.level, { summary: e.target.value })} className={`${fieldCls} sm:col-span-2`} placeholder="In a line — what someone at this level does" />
+                    <input value={l.summary_am} onChange={e => setLevel(l.level, { summary_am: e.target.value })} className={`${fieldCls} sm:col-span-2`} placeholder="The same line in Amharic" lang="am" />
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">Day rate
                       <input type="number" value={l.day_rate_min} onChange={e => setLevel(l.level, { day_rate_min: e.target.value })} className={fieldCls} placeholder="from" />
                       <input type="number" value={l.day_rate_max} onChange={e => setLevel(l.level, { day_rate_max: e.target.value })} className={fieldCls} placeholder="to" />

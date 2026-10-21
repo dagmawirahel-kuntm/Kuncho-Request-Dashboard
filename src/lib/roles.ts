@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 
@@ -16,10 +17,12 @@ export interface Role {
   role_name: string
   role_name_am: string | null
   role_overview: string | null
+  role_overview_am: string | null
   family: string | null
   kind: RoleKind
   department_id: string | null
   reports_to: string | null
+  reports_to_am: string | null
   sort_order: number
   active: boolean
   confirmed_at: string | null
@@ -31,6 +34,7 @@ export interface RoleLevel {
   title: string
   title_am: string | null
   summary: string | null
+  summary_am: string | null
   day_rate_min: number | null
   day_rate_max: number | null
   monthly_min: number | null
@@ -43,6 +47,7 @@ export interface RoleItem {
   responsibility_title: string
   responsibility_detail: string | null
   title_am: string | null
+  detail_am: string | null
   level: number
   kind: ItemKind
   kpi_key: string | null
@@ -122,6 +127,37 @@ export const KPI_KEYS: { key: string; label: string; roles: string }[] = [
 ]
 
 export const KIND_LABEL: Record<RoleKind, string> = { workshop: 'Workshop', site: 'Site', office: 'Office' }
+
+// ── Language ────────────────────────────────────────────────────────────
+// Roles read in English, Amharic or both (migration 473 gave every role
+// its Amharic). The choice is remembered on this device.
+export type RoleLang = 'en' | 'am' | 'both'
+export const ROLE_LANGS: [RoleLang, string][] = [['both', 'English + አማርኛ'], ['am', 'አማርኛ'], ['en', 'English']]
+const LANG_KEY = 'roles-lang'
+const isLang = (v: unknown): v is RoleLang => v === 'en' || v === 'am' || v === 'both'
+
+export function useRoleLang(initial?: string | null) {
+  const [lang, setLangState] = useState<RoleLang>(() => {
+    if (isLang(initial)) return initial
+    try {
+      const saved = localStorage.getItem(LANG_KEY)
+      if (isLang(saved)) return saved
+    } catch { /* storage unavailable — fall back to both */ }
+    return 'both'
+  })
+  const setLang = (l: RoleLang) => {
+    setLangState(l)
+    try { localStorage.setItem(LANG_KEY, l) } catch { /* not remembered, still applied */ }
+  }
+  return [lang, setLang] as const
+}
+
+/** A label in the chosen language; with both, "Skills / ክህሎቶች". */
+export const langLabel = (lang: RoleLang, en: string, am: string) => (lang === 'en' ? en : lang === 'am' ? am : `${en} / ${am}`)
+
+/** The words for one language: Amharic falls back to English where none is written. */
+export const inLang = (lang: RoleLang, en: string | null | undefined, am: string | null | undefined) =>
+  lang === 'am' ? (am || en || '') : (en || '')
 
 /** "Level 2 · ደረጃ 2" — the same words everywhere. */
 export const levelLabel = (n: number | null | undefined) => (n ? `Level ${n} · ደረጃ ${n}` : 'No level')
