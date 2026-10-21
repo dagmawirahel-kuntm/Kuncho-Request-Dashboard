@@ -99,7 +99,7 @@ export default function PersonSkillsPage() {
   const actions: RecordAction[] = [
     { label: 'Move up a level', icon: ArrowUpCircle, primary: true, onClick: () => { if (window.confirm(`Move ${p.employee_name} up to level ${(p.role_level ?? 0) + 1}?`)) moveUp() }, hidden: !canSign || !ready || atTop },
     { label: p.job_description_id ? 'Change role or level' : 'Give a role', icon: UserCog, primary: !p.job_description_id, onClick: () => setChanging(true), hidden: !(canManage || canSign) },
-    { label: 'Job description', icon: Printer, to: `/roles/${p.job_description_id}/print`, hidden: !p.job_description_id },
+    { label: 'Job description', icon: Printer, to: `/roles/${p.job_description_id}/print?level=${p.role_level ?? 1}&staff=${p.staff_id}`, hidden: !p.job_description_id },
   ]
 
   return (
@@ -152,7 +152,7 @@ export default function PersonSkillsPage() {
                 return (
                   <div key={l.level} className="border-b last:border-0 dark:border-slate-700">
                     <p className={`px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide ${mine ? 'text-brand' : 'text-slate-400'}`}>
-                      {levelLabel(l.level)} — {l.title}{l.level === (p.role_level ?? 0) + 1 ? ' · next level' : mine ? '' : ' · later'}
+                      {levelLabel(l.level)} — {l.title}{l.title_am ? ` · ${l.title_am}` : ''}{l.level === (p.role_level ?? 0) + 1 ? ' · next level' : mine ? '' : ' · later'}
                     </p>
                     <ul className="divide-y dark:divide-slate-700/60">
                       {ls.map(s => {
@@ -164,6 +164,7 @@ export default function PersonSkillsPage() {
                                 : <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full border border-slate-300 dark:border-slate-600" />}
                             <div className="min-w-0 flex-1">
                               <p className={so ? 'text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'}>{s.responsibility_title}</p>
+                              {s.title_am && <p className="text-xs text-slate-400">{s.title_am}</p>}
                               {so && (
                                 <p className="text-[11px] text-slate-400">
                                   Signed {formatDate(so.signed_at)}{so.who ? ` by ${so.who}` : ''}{so.note ? ` — ${so.note}` : ''}
