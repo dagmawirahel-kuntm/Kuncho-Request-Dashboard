@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { addDays, dayLabel, fmtMoney, isoDay, useLabourSites } from '@/lib/labour'
-import { ChevronLeft, ChevronRight, ClipboardCheck, Lock, Plus, Save, HardHat } from 'lucide-react'
+import { addDays, dayLabel, fmtMoney, isoDay, overtimeAmount, overtimeRateLabel, useLabourSites, type OvertimeDayRates } from '@/lib/labour'
+import { ChevronLeft, ChevronRight, ClipboardCheck, Lock, Plus, Save, HardHat, Timer } from 'lucide-react'
 
 type Row = {
   labor_requisition_id: string; role_needed: string; payment_basis: 'per_day' | 'per_volume' | 'fixed_price'; payment_model: string
@@ -13,7 +13,7 @@ type Row = {
   staff_id: string | null; worker_name: string; phone: string | null
   entry_id: string | null; hours: number | null; overtime_hours: number | null; quantity: number | null; percent_done: number | null; note: string | null; locked: boolean
 }
-type Draft = { hours: string; overtime_hours: string; quantity: string; percent_done: string; note: string }
+type Draft = { hours: string; overtime_hours: string; night: string; agreed: string; quantity: string; percent_done: string; note: string }
 
 const key = (r: Pick<Row, 'labor_requisition_id' | 'staff_id'>) => `${r.labor_requisition_id}:${r.staff_id ?? 'all'}`
 const num = (s: string) => (s.trim() === '' ? null : Number(s))
@@ -57,11 +57,36 @@ export default function LabourRecordPage() {
     },
   })
 
+  // Overtime (migration 458): the rates in force on each request today, and
+  // what each entry already holds beyond the day sheet's columns.
+  const { data: otRates = {} } = useQuery({
+    queryKey: ['labour-overtime-day-rates', site, date],
+    enabled: !!site,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_overtime_day_rates', { p_project: site, p_date: date })
+      if (error) throw error
+      return Object.fromEntries(((data ?? []) as OvertimeDayRates[]).map(r => [r.labor_requisition_id, r])) as Record<string, OvertimeDayRates>
+    },
+  })
+  const entryIds = useMemo(() => rows.filter(r => r.entry_id && Number(r.overtime_hours) > 0).map(r => r.entry_id!).sort(), [rows])
+  const { data: otExtra = {} } = useQuery({
+    queryKey: ['labour-overtime-entries', entryIds.join(',')],
+    enabled: entryIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_work_entries').select('id, overtime_night_hours, overtime_agreed_amount').in('id', entryIds)
+      if (error) throw error
+      return Object.fromEntries(((data ?? []) as { id: string; overtime_night_hours: number; overtime_agreed_amount: number | null }[]).map(e => [e.id, e]))
+    },
+  })
+  const dayKind = Object.values(otRates).find(r => r.day_kind !== 'working_day')
+
   const [drafts, setDrafts] = useState<Record<string, Record<string, Draft>>>({})
   const sheetKey = `${site}|${date}`
   const draftOf = (r: Row): Draft => drafts[sheetKey]?.[key(r)] ?? {
     hours: r.hours != null ? String(Number(r.hours)) : '',
     overtime_hours: r.overtime_hours ? String(Number(r.overtime_hours)) : '',
+    night: r.entry_id && Number(otExtra[r.entry_id]?.overtime_night_hours) ? String(Number(otExtra[r.entry_id].overtime_night_hours)) : '',
+    agreed: r.entry_id && otExtra[r.entry_id]?.overtime_agreed_amount != null ? String(Number(otExtra[r.entry_id].overtime_agreed_amount)) : '',
     quantity: r.quantity != null ? String(Number(r.quantity)) : '',
     percent_done: r.percent_done != null ? String(Number(r.percent_done)) : '',
     note: r.note ?? '',
@@ -79,10 +104,13 @@ export default function LabourRecordPage() {
 
   const dayCost = rows.reduce((sum, r) => {
     const d = draftOf(r)
-    if (r.payment_basis === 'per_day') return sum + ((num(d.hours) ?? 0) / 8 + (num(d.overtime_hours) ?? 0) / 8 * 1.5) * (r.day_rate ?? 0)
+    if (r.payment_basis === 'per_day') return sum + (num(d.hours) ?? 0) / 8 * (r.day_rate ?? 0) + otOf(r, d)
     if (r.payment_basis === 'per_volume') return sum + (num(d.quantity) ?? 0) * (r.unit_rate ?? 0)
     return sum + (num(d.percent_done) ?? 0) / 100 * (r.fixed_price_amount ?? 0)
   }, 0)
+  function otOf(r: Row, d: Draft) {
+    return overtimeAmount(otRates[r.labor_requisition_id], Number(r.day_rate ?? 0), num(d.overtime_hours) ?? 0, num(d.night) ?? 0, num(d.agreed))
+  }
   const recorded = rows.filter(r => { const d = draftOf(r); return (num(d.hours) ?? 0) > 0 || (num(d.quantity) ?? 0) > 0 || (num(d.percent_done) ?? 0) > 0 }).length
 
   async function save() {
@@ -90,12 +118,15 @@ export default function LabourRecordPage() {
     if (!touched.length) return
     const bad = touched.find(r => { const d = draftOf(r); const h = num(d.hours); return h != null && (h < 0 || h > 24) })
     if (bad) { toast(`Hours for ${bad.worker_name} must be between 0 and 24`, 'error'); return }
+    const badNight = touched.find(r => { const d = draftOf(r); return (num(d.night) ?? 0) > (num(d.overtime_hours) ?? 0) })
+    if (badNight) { toast(`${badNight.worker_name}: hours after 10 pm can't be more than the overtime hours`, 'error'); return }
     setSaving(true)
     const { error } = await supabase.rpc('record_labour_day', {
       p_project: site, p_date: date,
       p_entries: touched.map(r => {
         const d = draftOf(r)
         return { req: r.labor_requisition_id, staff: r.staff_id, hours: num(d.hours), overtime_hours: num(d.overtime_hours) ?? 0,
+          overtime_night_hours: num(d.night) ?? 0, overtime_amount: num(d.agreed),
           quantity: num(d.quantity), percent_done: num(d.percent_done), note: d.note }
       }),
     })
@@ -104,6 +135,7 @@ export default function LabourRecordPage() {
     setDrafts(d => { const n = { ...d }; delete n[sheetKey]; return n })
     qc.invalidateQueries({ queryKey: ['labour-day-sheet', site, date] })
     qc.invalidateQueries({ queryKey: ['labour-unpaid'] })
+    qc.invalidateQueries({ queryKey: ['labour-overtime-entries'] })
     toast(`Saved ${dayLabel(date)}`, 'success')
   }
 
@@ -127,6 +159,13 @@ export default function LabourRecordPage() {
           <button onClick={() => setQ('date', addDays(date, 1))} disabled={date >= today} className="rounded-lg border p-2.5 disabled:opacity-30 dark:border-slate-600" aria-label="Next day"><ChevronRight className="h-4 w-4" /></button>
         </div>
       </div>
+
+      {site && dayKind && (
+        <p className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          <Timer className="h-4 w-4 shrink-0" />
+          {dayKind.day_kind === 'holiday' ? `${dayKind.holiday_name ?? 'A public holiday'}` : 'The weekly rest day'} — overtime at the {dayKind.day_kind === 'holiday' ? 'holiday' : 'rest-day'} rate where the company rates apply.
+        </p>
+      )}
 
       {!site ? null : loadingRows ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p> : groups.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-8 text-center dark:border-slate-600">
@@ -169,9 +208,16 @@ export default function LabourRecordPage() {
                               <input className={cell} inputMode="decimal" disabled={r.locked} value={d.hours} onChange={e => set(r, { hours: e.target.value })} placeholder="hrs" aria-label="Hours" />
                             </div>
                             <details className="text-xs text-slate-500" open={!!num(d.overtime_hours)}>
-                              <summary className="cursor-pointer select-none">Overtime{num(d.overtime_hours) ? `: ${d.overtime_hours} h` : ''}</summary>
-                              <input className={`${cell} mt-1 w-28`} inputMode="decimal" disabled={r.locked} value={d.overtime_hours} onChange={e => set(r, { overtime_hours: e.target.value })} placeholder="hours" />
-                              <span className="ml-2">paid at 1.5×</span>
+                              <summary className="cursor-pointer select-none">Overtime{num(d.overtime_hours) ? `: ${d.overtime_hours} h · ${fmtMoney(otOf(r, d))}` : ''}</summary>
+                              <div className="mt-1 grid grid-cols-3 gap-1.5">
+                                <label>Hours
+                                  <input className={cell} inputMode="decimal" disabled={r.locked} value={d.overtime_hours} onChange={e => set(r, { overtime_hours: e.target.value })} placeholder="0" /></label>
+                                <label>After 10 pm
+                                  <input className={cell} inputMode="decimal" disabled={r.locked || !num(d.overtime_hours)} value={d.night} onChange={e => set(r, { night: e.target.value })} placeholder="0" /></label>
+                                <label>Agreed amount
+                                  <input className={cell} inputMode="decimal" disabled={r.locked || !num(d.overtime_hours)} value={d.agreed} onChange={e => set(r, { agreed: e.target.value })} placeholder="—" /></label>
+                              </div>
+                              <p className="mt-1">{num(d.agreed) != null ? 'Agreed amount — replaces the rate for this day' : overtimeRateLabel(otRates[r.labor_requisition_id])}</p>
                             </details>
                           </div>
                         ) : r.payment_basis === 'per_volume' ? (

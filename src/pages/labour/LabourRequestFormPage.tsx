@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useVendors } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, useLabourSites, type PayBasis, type PayCycle } from '@/lib/labour'
+import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
 import { ArrowLeft, ArrowRight, Check, HardHat, Plus, UserPlus, Users, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
 const input = 'w-full rounded-lg border px-3 py-2.5 text-base sm:text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -73,6 +73,11 @@ export default function LabourRequestFormPage() {
   const [totalQty, setTotalQty] = useState('')
   const [price, setPrice] = useState('')
   const [notes, setNotes] = useState('')
+  // Overtime on a day-rate request (migration 458): the company's rates
+  // unless a different deal was struck with these workers.
+  const [otRule, setOtRule] = useState<OvertimeRule>('company')
+  const [otValue, setOtValue] = useState('')
+  const { data: otSettings } = useOvertimeSettings()
   const [saving, setSaving] = useState(false)
 
   const { data: workers = [] } = useQuery({
@@ -113,9 +118,11 @@ export default function LabourRequestFormPage() {
       if (basis === 'per_volume' && !(parseFloat(totalQty) > 0)) return 'About how much work in total?'
       if (basis === 'fixed_price' && !(parseFloat(price) > 0)) return 'Give the agreed price'
       if (basis === 'per_day' && dayRate && !(parseFloat(dayRate) > 0)) return 'The day rate must be more than 0'
+      if (basis === 'per_day' && otRule === 'multiplier' && !(parseFloat(otValue) >= 1 && parseFloat(otValue) <= 5)) return 'The overtime multiplier is between 1× and 5×'
+      if (basis === 'per_day' && otRule === 'per_hour' && !(parseFloat(otValue) > 0)) return 'Give the birr per overtime hour'
     }
     return null
-  }, [step, site, work, start, end, named, extra, crew, leader, basis, unitRate, totalQty, price, dayRate])
+  }, [step, site, work, start, end, named, extra, crew, leader, basis, unitRate, totalQty, price, dayRate, otRule, otValue])
 
   function addPerson() {
     if (!draft.name.trim()) return
@@ -138,6 +145,9 @@ export default function LabourRequestFormPage() {
         volume_unit: basis === 'per_volume' ? unit : null,
         estimated_total_volume: basis === 'per_volume' ? parseFloat(totalQty) : null,
         fixed_price_amount: basis === 'fixed_price' ? parseFloat(price) : null,
+        overtime_rule: basis === 'per_day' ? otRule : 'company',
+        overtime_multiplier: basis === 'per_day' && otRule === 'multiplier' ? parseFloat(otValue) : null,
+        overtime_hour_rate: basis === 'per_day' && otRule === 'per_hour' ? parseFloat(otValue) : null,
         is_casual_or_new: people.length > 0 || parseInt(extra) > 0,
         requested_by: profile?.id, status: 'pending',
         // Asked for from a work order: its labour counts against it.
@@ -296,6 +306,26 @@ export default function LabourRequestFormPage() {
             <div className="grid grid-cols-2 gap-3">
               <div><Label hint={roster.length ? "Blank: each keeps their own rate" : undefined}>Day rate (ETB)</Label><input className={input} inputMode="decimal" value={dayRate} onChange={e => setDayRate(e.target.value)} placeholder="e.g. 600" /></div>
               <div><Label hint="For the estimate">About how many days</Label><input className={input} inputMode="numeric" value={days} onChange={e => setDays(e.target.value)} placeholder="e.g. 12" /></div>
+            </div>
+          )}
+          {basis === 'per_day' && (
+            <div>
+              <Label hint="Only if they work beyond 8 hours. An amount agreed on the day can still be typed when recording.">Overtime</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([['company', 'Company rates'], ['multiplier', 'Our multiplier'], ['per_hour', 'Birr per hour']] as [OvertimeRule, string][]).map(([v, l]) => (
+                  <button key={v} type="button" onClick={() => { setOtRule(v); setOtValue('') }}
+                    className={`rounded-lg border px-2 py-2.5 text-xs font-medium sm:text-sm ${otRule === v ? 'border-brand bg-brand/10 text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>{l}</button>
+                ))}
+              </div>
+              {otRule === 'company' ? (
+                <p className="mt-1.5 text-xs text-slate-500">{overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</p>
+              ) : (
+                <div className="mt-2 flex items-center gap-2">
+                  <input className={`${input.replace('w-full ', '')} w-32 shrink-0`} inputMode="decimal" value={otValue} onChange={e => setOtValue(e.target.value)}
+                    placeholder={otRule === 'multiplier' ? 'e.g. 1.5' : 'e.g. 150'} aria-label={otRule === 'multiplier' ? 'Overtime multiplier' : 'Birr per overtime hour'} />
+                  <span className="text-sm text-slate-500">{otRule === 'multiplier' ? '× the hourly rate, for every overtime hour' : 'ETB for each overtime hour'}</span>
+                </div>
+              )}
             </div>
           )}
           {basis === 'per_volume' && (<>

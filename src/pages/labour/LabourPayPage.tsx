@@ -137,6 +137,18 @@ function Confirm({ u, allowed, onBack, onDone, toast }: {
     },
   })
   const total = lines.reduce((s, l) => s + Number(l.amount || 0), 0)
+  // How each worker's overtime was priced, day by day (migration 458).
+  const { data: otByStaff = {} } = useQuery({
+    queryKey: ['labour-pay-lines', u.labor_requisition_id, to, 'overtime'],
+    enabled: u.payment_basis === 'per_day',
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_overtime_lines', { p_req: u.labor_requisition_id, p_to: to })
+      if (error) throw error
+      const m: Record<string, { work_date: string; basis: string; amount: number }[]> = {}
+      for (const o of (data ?? []) as { staff_id: string; work_date: string; basis: string; amount: number }[]) (m[o.staff_id] ??= []).push(o)
+      return m
+    },
+  })
 
   async function confirm() {
     setBusy(true)
@@ -171,6 +183,9 @@ function Confirm({ u, allowed, onBack, onDone, toast }: {
                     : u.payment_basis === 'per_volume' ? `${Number(l.quantity ?? 0).toLocaleString()} × ${fmtMoney(l.rate)}`
                     : `${Number(l.percent_done ?? 0)}% of ${fmtMoney(l.rate)}`}
                 </p>
+                {(otByStaff[l.staff_id ?? ''] ?? []).map(o => (
+                  <p key={o.work_date} className="text-[11px] text-slate-400">Overtime {dayLabel(o.work_date)} · {o.basis} · {fmtMoney(o.amount)}</p>
+                ))}
               </div>
               <p className="text-sm font-semibold">{fmtMoney(l.amount)}</p>
             </li>

@@ -10,11 +10,12 @@ import { buildPaySheetHtml, type PayLine } from '@/lib/documents/labourPay'
 import { printHtml } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
 import {
-  APPROVER_ROLES, BASIS_LABEL, STAGE, addDays, financeStatus, financeTone, dayLabel, estimateOf, fmtMoney, isoDay, rateSummary, stageOf, type LabourRequest,
+  APPROVER_ROLES, BASIS_LABEL, OT_COMPANY_ROLES, STAGE, addDays, financeStatus, financeTone, dayLabel, estimateOf, fmtMoney, isoDay,
+  overtimeSummary, rateSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type OvertimeRule,
 } from '@/lib/labour'
 import {
   ArrowLeft, Check, ClipboardCheck, Clock, FileText, MessageSquare, Printer, Send, Smartphone, UserMinus, UserPlus, Wallet, X,
-  CalendarPlus, Ban, Undo2, Users,
+  CalendarPlus, Ban, Undo2, Users, Timer,
 } from 'lucide-react'
 
 type Person = { staff_id: string | null; candidate_id: string | null; name: string; phone: string | null; day_rate: number | null; state: 'on_site' | 'left' | 'named' | 'new'; since: string | null }
@@ -37,6 +38,7 @@ const EVENT: Record<string, { label: string; icon: typeof Check; tone: string }>
   worker_added: { label: 'Worker added', icon: UserPlus, tone: 'text-slate-500' },
   worker_removed: { label: 'Worker removed', icon: UserMinus, tone: 'text-slate-500' },
   pay_confirmed: { label: 'Pay confirmed by the site', icon: ClipboardCheck, tone: 'text-brand' },
+  overtime_rule: { label: 'Overtime deal changed', icon: Timer, tone: 'text-blue-600' },
   pay_reopened: { label: 'Pay confirmation taken back', icon: Undo2, tone: 'text-amber-600' },
   pay_approved: { label: 'Finance approved the pay', icon: Wallet, tone: 'text-emerald-600' },
   pay_rejected: { label: 'Finance sent the pay back', icon: X, tone: 'text-red-600' },
@@ -56,6 +58,8 @@ export default function LabourRequestPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const { user, hasRole } = useAuth()
+  const { managedIds } = useLabourSites()
+  const { data: otSettings } = useOvertimeSettings()
 
   const { data: req, isLoading } = useQuery({
     queryKey: ['labour-request', id],
@@ -233,6 +237,10 @@ export default function LabourRequestPage() {
           <div><dt className="text-xs text-slate-400">Paid</dt><dd>{req.pay_cycle === 'weekly' ? 'Every week' : 'At the end'}</dd></div>
           <div><dt className="text-xs text-slate-400">Estimate</dt><dd>{fmtMoney(estimate)}</dd></div>
         </dl>
+        {req.payment_basis === 'per_day' && (
+          <OvertimeDeal req={req} summary={overtimeSummary(req, otSettings)}
+            canEdit={open_ && (hasRole(...OT_COMPANY_ROLES) || managedIds.has(req.project_id))} onSaved={refresh} />
+        )}
         {req.decision_note && <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">“{req.decision_note}”</p>}
         {req.closed_at && <p className="mt-2 text-xs text-slate-500">Closed {dayLabel(req.closed_at.slice(0, 10))}{req.close_reason ? ` — ${req.close_reason}` : ''}</p>}
       </section>
@@ -433,6 +441,54 @@ export default function LabourRequestPage() {
 
 // The work order this labour is for. Linking one counts the labour on that
 // job and brings the workers onto its crew (migration 408).
+// The request's overtime deal (migration 458). A change reprices work not
+// yet confirmed for pay; confirmed pay sheets keep what they were.
+function OvertimeDeal({ req, summary, canEdit, onSaved }: { req: LabourRequest; summary: string; canEdit: boolean; onSaved: () => void }) {
+  const { toast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [rule, setRule] = useState<OvertimeRule>(req.overtime_rule ?? 'company')
+  const [value, setValue] = useState(String(req.overtime_rule === 'multiplier' ? req.overtime_multiplier ?? '' : req.overtime_rule === 'per_hour' ? req.overtime_hour_rate ?? '' : ''))
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    const { error } = await supabase.rpc('set_labour_overtime_rule', { p_req: req.id, p_rule: rule, p_value: rule === 'company' ? null : Number(value) })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Overtime deal saved — it applies to work not yet confirmed for pay', 'success')
+    setEditing(false); onSaved()
+  }
+
+  if (!editing) return (
+    <div className="mt-3 flex items-start justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-900/40">
+      <div className="min-w-0"><p className="text-xs text-slate-400">Overtime</p><p className="text-slate-700 dark:text-slate-200">{summary}</p></div>
+      {canEdit && <button onClick={() => setEditing(true)} className="shrink-0 text-xs font-medium text-brand">Change</button>}
+    </div>
+  )
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border p-3 dark:border-slate-600">
+      <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Overtime on this request</p>
+      <div className="grid grid-cols-3 gap-2">
+        {([['company', 'Company rates'], ['multiplier', 'Our multiplier'], ['per_hour', 'Birr per hour']] as [OvertimeRule, string][]).map(([v, l]) => (
+          <button key={v} type="button" onClick={() => { setRule(v); setValue('') }}
+            className={`rounded-lg border px-2 py-2 text-xs font-medium ${rule === v ? 'border-brand bg-brand/10 text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>{l}</button>
+        ))}
+      </div>
+      {rule !== 'company' && (
+        <div className="flex items-center gap-2">
+          <input className={`${input.replace('w-full ', '')} w-28 shrink-0`} inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} placeholder={rule === 'multiplier' ? '1.5' : '150'} aria-label="Overtime value" />
+          <span className="text-xs text-slate-500">{rule === 'multiplier' ? '× the hourly rate, any day' : 'ETB an overtime hour'}</span>
+        </div>
+      )}
+      <p className="text-[11px] text-slate-400">Applies to work not yet confirmed for pay.</p>
+      <div className="flex justify-end gap-2">
+        <button onClick={() => setEditing(false)} className="rounded-lg border px-3 py-1.5 text-xs dark:border-slate-600">Cancel</button>
+        <button onClick={save} disabled={busy || (rule !== 'company' && !(Number(value) > 0))} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">{busy ? 'Saving…' : 'Save'}</button>
+      </div>
+    </div>
+  )
+}
+
 function JobLink({ req, canManage }: { req: LabourRequest; canManage: boolean }) {
   const qc = useQueryClient()
   const { toast } = useToast()
