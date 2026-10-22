@@ -5,9 +5,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useWorkerHistory, type CasualWorkerRow, type TradeRosterEntry, type WorkerRolling, type BadgeSummary } from '@/hooks/useTier2Workers'
 import { Tier2WorkerCard, BADGE_META } from './Tier2WorkerCard'
 import { RequestWorkerForProjectModal } from './RequestWorkerForProjectModal'
+import { WorkerCurrentWork, WorkerWorkHistory } from './WorkerWorkHistory'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
-type Tab = 'overview' | 'history' | 'payments' | 'ratings'
+type Tab = 'overview' | 'work' | 'history' | 'payments' | 'ratings'
 
 interface Props {
   worker: CasualWorkerRow
@@ -52,14 +53,14 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
 
           <div>
             <div className="flex border-b dark:border-slate-700 mb-4 -mt-1">
-              {(['overview','history','payments',...(canSeeRatings ? ['ratings' as Tab] : [])] as Tab[]).map(t => (
+              {(['overview','work','history','payments',...(canSeeRatings ? ['ratings' as Tab] : [])] as Tab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
                     tab === t ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                   }`}
-                >{t}</button>
+                >{t === 'history' ? 'Requests' : t}</button>
               ))}
             </div>
 
@@ -68,6 +69,7 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
                 <Row k="Trade"        v={trade ? `${trade.icon_emoji} ${trade.codename_english}` : worker.trade_tag ?? '—'} />
                 <Row k="Day rate"     v={worker.day_rate != null ? formatCurrency(worker.day_rate) + ' / day' : '—'} />
                 <Row k="Status"       v={worker.status ?? 'active'} />
+                <Row k="Working on"   v={<WorkerCurrentWork staffId={worker.id} />} />
                 <Row k="First engaged" v={worker.first_engaged_at ? formatDate(worker.first_engaged_at) : '—'} />
                 <Row k="Last engaged"  v={worker.last_engaged_at  ? formatDate(worker.last_engaged_at)  : '—'} />
                 <Row k="Rolling score" v={perf?.sufficient_data ? `${perf.overall_score_100}/100 · ${perf.tier_rank}` : 'Insufficient data'} />
@@ -86,6 +88,8 @@ export function CasualWorkerDetailModal({ worker, trade, perf, badges, onClose }
                 } />
               </div>
             )}
+
+            {tab === 'work' && <WorkerWorkHistory staffId={worker.id} />}
 
             {tab === 'history' && (
               isLoading ? <p className="text-sm text-slate-400">Loading…</p> :

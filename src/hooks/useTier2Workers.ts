@@ -141,3 +141,29 @@ export function useWorkerHistory(staffId: string | undefined) {
     },
   })
 }
+
+// Where a worker has worked (migration 459): the work orders they were put
+// on and the projects they worked on, with days counted once per project.
+export interface WorkerWorkOrder {
+  id: string; title: string; project_id: string | null; project_name: string | null; status: string
+  on_crew: boolean; crew_since: string | null; crew_until: string | null; role_on_wo: string | null
+  days: number; last_day: string | null; current: boolean
+}
+export interface WorkerProject {
+  project_id: string; project_name: string; days: number; hours: number | null
+  first_day: string | null; last_day: string | null; work_orders: number; current: boolean
+}
+
+export function useWorkerWorkHistory(staffId: string | undefined) {
+  return useQuery({
+    enabled: !!staffId,
+    queryKey: ['worker-work-history', staffId],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('staff_work_history', { p_staff: staffId })
+      if (error) throw error
+      const d = (data ?? {}) as { work_orders?: WorkerWorkOrder[]; projects?: WorkerProject[] }
+      return { workOrders: d.work_orders ?? [], projects: d.projects ?? [] }
+    },
+  })
+}
