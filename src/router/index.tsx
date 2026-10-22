@@ -186,6 +186,7 @@ import LabourHomePage from '@/pages/labour/LabourHomePage'
 import LabourRequestFormPage from '@/pages/labour/LabourRequestFormPage'
 import LabourRequestPage from '@/pages/labour/LabourRequestPage'
 import LabourRecordPage from '@/pages/labour/LabourRecordPage'
+import LabourOvertimePage from '@/pages/labour/LabourOvertimePage'
 import LabourPayPage from '@/pages/labour/LabourPayPage'
 import LabourRedirect from '@/pages/labour/LabourRedirect'
 import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
@@ -770,6 +771,7 @@ export const router = createBrowserRouter([
           { path: 'labour/new', element: <LabourRequestFormPage /> },
           { path: 'labour/record', element: <LabourRecordPage /> },
           { path: 'labour/pay', element: <LabourPayPage /> },
+          { path: 'labour/overtime', element: <LabourOvertimePage /> },
           { path: 'labour/:id', element: <LabourRequestPage /> },
           { path: 'labor-requisitions', element: <Navigate to="/labour" replace /> },
           { path: 'labor-requisitions/new', element: <Navigate to="/labour/new" replace /> },

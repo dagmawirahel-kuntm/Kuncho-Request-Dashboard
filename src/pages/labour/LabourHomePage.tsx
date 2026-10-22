@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
-import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, stageOf, useLabourSites, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { ChevronRight, ClipboardCheck, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
+import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
+import { ChevronRight, ClipboardCheck, Clock, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -16,6 +16,7 @@ export default function LabourHomePage() {
   const { role, hasRole } = useAuth()
   const { sites, managedIds, everywhere } = useLabourSites()
   const approver = hasRole(...APPROVER_ROLES)
+  const { data: otSettings } = useOvertimeSettings()
   const finance = role === 'finance'
   const siteIds = new Set(sites.map(s => s.id))
   const [tab, setTab] = useState<RequestStage>('active')
@@ -110,6 +111,9 @@ export default function LabourHomePage() {
           {toConfirm.length > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{toConfirm.length}</span>}
         </Link>
       </div>
+      <Link to="/labour/overtime" className="flex items-center justify-center gap-1.5 text-xs text-slate-500 hover:text-brand">
+        <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
+      </Link>
 
       {canBulkClose && onFinished > 0 && (
         <div className={`${card} flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10`}>

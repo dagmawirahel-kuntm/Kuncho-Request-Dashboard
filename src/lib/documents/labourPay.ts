@@ -9,6 +9,8 @@ export interface PayLine {
   staff_id: string | null; worker_name: string; first_day: string | null; last_day: string | null
   days: number | null; hours: number | null; overtime_hours: number | null; quantity: number | null; percent_done: number | null
   rate: number | null; overtime_amount: number | null; amount: number
+  /** How the overtime was priced, day by day — on sheets confirmed since migration 458. */
+  overtime_detail?: { date: string; hours: number; night_hours: number; rule: string; basis: string; amount: number }[] | null
 }
 
 export interface PaySheetPrint {
@@ -36,7 +38,9 @@ export function buildPaySheetHtml(s: PaySheetPrint): string {
     ${byDay ? `<td class="r">${l.overtime_hours ? `${num(l.overtime_hours)} h<div style="font-size:8.4pt;color:#6b6453">${esc(docMoney(l.overtime_amount))}</div>` : '—'}</td>` : ''}
     <td class="r">${esc(docMoney(l.rate))}</td>
     <td class="r" style="font-weight:600">${esc(docMoney(l.amount))}</td>
-  </tr>`).join('')
+  </tr>${l.overtime_detail?.length ? `<tr><td></td><td colspan="${byDay ? 5 : 4}" style="font-size:8.2pt;color:#6b6453;padding-top:0">${
+    l.overtime_detail.map(o => `Overtime ${esc(docDate(o.date))}: ${esc(o.basis)} = ${esc(docMoney(o.amount))}`).join(' · ')}</td></tr>` : ''}`).join('')
+  const detailed = s.lines.some(l => l.overtime_detail?.length)
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>${esc(s.code)} - ${esc(companyName())}</title>
@@ -69,7 +73,9 @@ ${renderParty({
   <tfoot><tr class="total"><td></td><td colspan="${byDay ? 4 : 3}">${bi('Total')}</td><td class="r">${esc(docMoney(s.total))}</td></tr></tfoot>
 </table>
 ${s.note ? `${renderHeading('Notes')}<div style="font-size:9.3pt">${escLines(s.note)}</div>` : ''}
-<div style="font-size:8.6pt;color:#6b6453;margin-top:8px">Day work is paid for hours worked: 8 hours is a day; overtime is paid at 1.5× the hourly rate.</div>
+<div style="font-size:8.6pt;color:#6b6453;margin-top:8px">Day work is paid for hours worked: 8 hours is a day. ${detailed
+  ? 'Overtime is priced as shown under each worker, from the hourly rate (day rate ÷ 8).'
+  : 'Overtime is paid at 1.5× the hourly rate.'}</div>
 <div class="sig-grid">
   <div class="box">${lbl('Confirmed by')}<br/><b>${esc(s.confirmed_by_name ?? '')}</b><br/>${esc(docDate(s.confirmed_at))}</div>
   <div class="box">${lbl('Approved by')} — finance</div>

@@ -53,6 +53,9 @@ export interface LabourRequest {
   close_reason: string | null
   slots_filled: number | null
   work_order_id: string | null
+  overtime_rule: OvertimeRule
+  overtime_multiplier: number | null
+  overtime_hour_rate: number | null
   projects?: { project_name: string } | null
   vendors?: { vendor_name: string } | null
   work_orders?: { id: string; title: string | null; scope_of_work: string | null; status: string } | null
@@ -81,6 +84,69 @@ export function rateSummary(r: Pick<LabourRequest, 'payment_basis' | 'estimated_
   if (r.payment_basis === 'per_volume') return `${money(r.unit_rate)} per ${r.volume_unit ?? 'unit'}`
   if (r.payment_basis === 'fixed_price') return `${money(r.fixed_price_amount)} for the task`
   return r.estimated_day_rate ? `${money(r.estimated_day_rate)} a day` : "Each worker's own day rate"
+}
+
+// ── Overtime (migration 458) ─────────────────────────────────────────
+// An overtime hour is priced by the first that applies: an amount agreed
+// for that worker that day; the request's own deal (a multiplier, or birr
+// per hour); the company's rates by when it was worked.
+
+export type OvertimeRule = 'company' | 'multiplier' | 'per_hour'
+export type OvertimeSettings = {
+  evening_multiplier: number; night_multiplier: number; rest_day_multiplier: number; holiday_multiplier: number
+  rest_day: number; updated_at: string; updated_by_name: string | null
+}
+/** The rates in force on one request on one day (labour_overtime_day_rates). */
+export type OvertimeDayRates = {
+  labor_requisition_id: string; day_kind: 'working_day' | 'rest_day' | 'holiday'; holiday_name: string | null
+  rule: OvertimeRule; multiplier: number | null; night_multiplier: number | null; hour_rate: number | null
+}
+/** One overtime entry, priced (labour_overtime_lines, and a pay sheet line's overtime_detail). */
+export type OvertimeDetail = { date: string; hours: number; night_hours: number; rule: OvertimeRule | 'agreed'; basis: string; amount: number }
+
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+export const OT_COMPANY_ROLES = ['admin', 'finance', 'operations_manager', 'hr_officer']
+export const OT_DEFAULTS = { evening_multiplier: 1.5, night_multiplier: 1.75, rest_day_multiplier: 2, holiday_multiplier: 2.5, rest_day: 0 }
+
+const x = (n: number | null | undefined) => `${Number(n ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}×`
+
+export function useOvertimeSettings() {
+  return useQuery({
+    queryKey: ['labour-overtime-settings'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_overtime_settings').select('*').maybeSingle()
+      if (error) throw error
+      return (data ?? { ...OT_DEFAULTS, updated_at: '', updated_by_name: null }) as OvertimeSettings
+    },
+  })
+}
+
+/** "Company rates (1.5× · night 1.75× · …)", "2× the hourly rate", "150 ETB an hour". */
+export function overtimeSummary(r: Pick<LabourRequest, 'overtime_rule' | 'overtime_multiplier' | 'overtime_hour_rate'>, s?: OvertimeSettings | null): string {
+  if (r.overtime_rule === 'multiplier') return `${x(r.overtime_multiplier)} the hourly rate, any day`
+  if (r.overtime_rule === 'per_hour') return `${Number(r.overtime_hour_rate ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} ETB an hour`
+  if (!s) return 'Company rates'
+  return `Company rates: ${x(s.evening_multiplier)} · night ${x(s.night_multiplier)} · ${WEEKDAYS[s.rest_day] ?? 'rest day'} ${x(s.rest_day_multiplier)} · holiday ${x(s.holiday_multiplier)}`
+}
+
+/** What a day's overtime comes to, for the Record screen's running total. */
+export function overtimeAmount(rates: OvertimeDayRates | undefined, dayRate: number, hours: number, night: number, agreed: number | null): number {
+  if (!hours) return 0
+  if (agreed != null) return agreed
+  if (!rates) return hours * dayRate / 8 * 1.5
+  if (rates.rule === 'per_hour') return hours * Number(rates.hour_rate ?? 0)
+  const n = Math.min(Math.max(night, 0), hours)
+  return (hours - n) * dayRate / 8 * Number(rates.multiplier ?? 1.5) + n * dayRate / 8 * Number(rates.night_multiplier ?? rates.multiplier ?? 1.5)
+}
+
+/** "paid at 2× (rest day)", "night at 1.75×", "150 ETB an hour (request deal)". */
+export function overtimeRateLabel(rates: OvertimeDayRates | undefined): string {
+  if (!rates) return 'paid at 1.5×'
+  if (rates.rule === 'per_hour') return `${Number(rates.hour_rate ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} ETB an hour (request deal)`
+  if (rates.rule === 'multiplier') return `paid at ${x(rates.multiplier)} (request deal)`
+  const day = rates.day_kind === 'holiday' ? (rates.holiday_name ?? 'holiday') : rates.day_kind === 'rest_day' ? 'rest day' : null
+  return `paid at ${x(rates.multiplier)}${day ? ` (${day})` : ''} · after 10 pm ${x(rates.night_multiplier)}`
 }
 
 /** Rough cost of a request, for the approver. */
