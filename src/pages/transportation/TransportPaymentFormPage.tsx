@@ -139,18 +139,28 @@ export default function TransportPaymentFormPage() {
     dropRecordCache(qc, 'transport-for-payment')
     qc.invalidateQueries({ queryKey: ['expenses'] })
     qc.invalidateQueries({ queryKey: ['transport-for-expense', job.id] })
-    toast('Payment request submitted', 'success')
-    navigate(`/transportation/${job.id}/edit`)
+    qc.invalidateQueries({ queryKey: ['transportation'] })
+    qc.invalidateQueries({ queryKey: ['transport-linked-expense'] })
+    toast('Payment request raised — here is its document to print or send', 'success')
+    // Straight to the request document, already open: the step people missed.
+    navigate(`/expenses/${data.id}?prq=open`)
   }
 
   const backTo = id ? `/transportation/${id}/edit` : '/transportation'
 
   if (isLoading || !job) {
-    return <FormPage title="Transport Payment" backTo={backTo} loading onSave={() => {}} />
+    return <FormPage title="Request payment" backTo={backTo} loading onSave={() => {}} />
   }
 
   return (
-    <FormPage title="Transport Payment" backTo={backTo} error={error} saving={saving} saveLabel="Submit Payment Request" onSave={handleSave}>
+    <FormPage title="Request payment" backTo={backTo} error={error} saving={saving} saveLabel="Raise payment request" onSave={handleSave}>
+      <ol className="grid grid-cols-3 gap-2 text-center text-[11px]">
+        {['Check who is paid and how much', 'Raise the request', 'Print or send the request document'].map((t, i) => (
+          <li key={t} className={`rounded-lg border px-2 py-1.5 ${i === 0 ? 'border-brand bg-brand/5 font-semibold text-brand' : 'text-slate-500 dark:border-slate-700'}`}>
+            <span className="block text-sm font-bold">{i + 1}</span>{t}
+          </li>
+        ))}
+      </ol>
       <div className="flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/40 px-3 py-2.5">
         <Truck className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
         <div className="text-sm text-blue-800 dark:text-blue-300">

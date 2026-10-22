@@ -10,7 +10,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
 import { NEXT_STEP, OPEN_JOB_STATUSES, PAY_STAGE, payStageOf, setJobStatus } from '@/lib/transport'
-import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users, Calculator, Banknote } from 'lucide-react'
+import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users, Calculator, Banknote, Receipt, Send, UserCircle2 } from 'lucide-react'
 import { PickupBundlesPanel } from '@/components/transport/PickupAdvice'
 
 // Chained ETA per vehicle — own_fleet jobs only, since hired/ride-hailing
@@ -211,12 +211,80 @@ function StaleJobsPanel({ jobs, onDone }: { jobs: JobRow[]; onDone: () => void }
   )
 }
 
+// Hired and ride-hailing trips with no payment request yet — the step that
+// gets missed. Delivered ones first: their driver is waiting for the money.
+function PaymentRequestsToRaise({ jobs, requesterOf, showRequester }: { jobs: JobRow[]; requesterOf: (id: string) => string | null; showRequester: boolean }) {
+  const [all, setAll] = useState(false)
+  if (jobs.length === 0) return null
+  const sorted = [...jobs].sort((a, b) => Number(b.job_status === 'completed') - Number(a.job_status === 'completed') || b.created_at.localeCompare(a.created_at))
+  const shown = all ? sorted : sorted.slice(0, 5)
+  const delivered = jobs.filter(j => j.job_status === 'completed').length
+  const total = jobs.reduce((t, j) => t + Number(j.amount ?? 0), 0)
+  return (
+    <div className="overflow-hidden rounded-xl border-2 border-amber-400 bg-white shadow-sm dark:border-amber-600 dark:bg-slate-800">
+      <div className="flex flex-wrap items-center gap-3 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 dark:from-amber-900/20 dark:to-orange-900/10">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow"><Receipt className="h-5 w-5" /></span>
+        <div className="min-w-0 flex-1">
+          <p className="text-base font-bold text-amber-950 dark:text-amber-100">{jobs.length} trip{jobs.length === 1 ? '' : 's'} need{jobs.length === 1 ? 's' : ''} a payment request</p>
+          <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
+            {delivered > 0 ? `${delivered} already delivered — their drivers are waiting. ` : ''}
+            {total > 0 ? `About ${formatCurrency(total)} in all. ` : ''}One click each: raise it, then print or send the request document.
+          </p>
+        </div>
+      </div>
+      <ul className="divide-y dark:divide-slate-700">
+        {shown.map(j => {
+          const from = j.pickup?.location_name ?? j.pickup_location_text
+          const to = j.dropoff?.location_name ?? j.dropoff_location_text
+          const who = requesterOf(j.id)
+          return (
+            <li key={j.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+              <div className="min-w-0 flex-1">
+                <Link to={`/transportation/${j.id}/edit`} className="block truncate text-sm font-medium text-slate-800 hover:text-brand dark:text-slate-100">{j.request_name ?? 'Transport job'}</Link>
+                <p className="truncate text-xs text-slate-500">
+                  {j.job_status === 'completed' ? <span className="font-semibold text-amber-700 dark:text-amber-300">Delivered</span> : <span className="capitalize">{j.job_status.replace('_', ' ')}</span>}
+                  {(from || to) && <> · {from ?? '?'} → {to ?? '?'}</>}
+                  {showRequester && who && <> · asked by {who}</>}
+                </p>
+              </div>
+              {j.amount != null && <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(j.amount)}</span>}
+              <Link to={`/transportation/${j.id}/pay`} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-700">
+                <Send className="h-3.5 w-3.5" /> Request payment
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+      {jobs.length > 5 && (
+        <button onClick={() => setAll(v => !v)} className="w-full border-t px-4 py-2 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:border-slate-700 dark:text-amber-300 dark:hover:bg-amber-900/10">
+          {all ? 'Show fewer' : `Show all ${jobs.length}`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function TransportationPage() {
   const [searchParams] = useSearchParams()
   const { toast } = useToast()
-  const { role, user } = useAuth()
+  const { role, user, profile } = useAuth()
   const qc = useQueryClient()
   const [myJobsOnly, setMyJobsOnly] = useState(false)
+  // Admin, dispatch and finance see every job and who asked for it; anyone
+  // else sees their own requests and the jobs they handle (migration 458).
+  const fullView = role === 'admin' || role === 'finance' || role === 'logistics_officer' || !!profile?.is_logistics_officer
+  const [person, setPerson] = useState<string>('all')
+
+  const { data: requesters = [] } = useQuery({
+    queryKey: ['transport-requesters'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_transport_requesters').select('job_id, requested_by_id, requester_name')
+      if (error) throw error
+      return (data ?? []) as { job_id: string; requested_by_id: string | null; requester_name: string | null }[]
+    },
+  })
+  const requesterByJob = useMemo(() => new Map(requesters.map(r => [r.job_id, r])), [requesters])
+  const requesterOf = (id: string) => requesterByJob.get(id)?.requester_name ?? null
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['transportation'],
@@ -264,13 +332,30 @@ export default function TransportationPage() {
       return a && (a.user_id === user?.id || (a.email ?? '').toLowerCase() === email)
     })
   }, [data, myJobsOnly, user])
+  const people = useMemo(() => {
+    const m = new Map<string, { key: string; name: string; n: number }>()
+    for (const j of data) {
+      const r = requesterByJob.get(j.id)
+      const key = r?.requested_by_id ?? 'none'
+      const e = m.get(key) ?? { key, name: r?.requester_name ?? 'Not recorded', n: 0 }
+      e.n++; m.set(key, e)
+    }
+    return [...m.values()].sort((a, b) => (a.key === 'none' ? 1 : b.key === 'none' ? -1 : b.n - a.n))
+  }, [data, requesterByJob])
+  const byPerson = useMemo(() => {
+    if (person === 'all') return mine
+    if (person === 'me') return mine.filter(j => j.requested_by_id === user?.id)
+    return mine.filter(j => (requesterByJob.get(j.id)?.requested_by_id ?? 'none') === person)
+  }, [mine, person, requesterByJob, user])
+  const toRequest = useMemo(() => byPerson.filter(j => (j.transport_mode === 'hired' || j.transport_mode === 'ride_hailing') && j.job_status !== 'cancelled' && !j.expense_id), [byPerson])
+
   const [stage, setStage] = useState<Stage>('all')
   const stageCount = useMemo(() => {
-    const c: Record<Stage, number> = { all: mine.length, dispatch: 0, road: 0, pay: 0, done: 0, cancelled: 0 }
-    for (const j of mine) c[stageOf(j)]++
+    const c: Record<Stage, number> = { all: byPerson.length, dispatch: 0, road: 0, pay: 0, done: 0, cancelled: 0 }
+    for (const j of byPerson) c[stageOf(j)]++
     return c
-  }, [mine])
-  const filtered = useMemo(() => stage === 'all' ? mine : mine.filter(j => stageOf(j) === stage), [mine, stage])
+  }, [byPerson])
+  const filtered = useMemo(() => stage === 'all' ? byPerson : byPerson.filter(j => stageOf(j) === stage), [byPerson, stage])
 
   async function advance(job: JobRow) {
     const step = NEXT_STEP[job.job_status]
@@ -368,6 +453,14 @@ export default function TransportationPage() {
         return <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[14rem] truncate block">{from ?? '?'} → {to ?? '?'}</span>
       },
     },
+    ...(fullView ? [{
+      id: 'requester', header: 'Asked by',
+      accessorFn: (j: JobRow) => requesterOf(j.id) ?? '',
+      cell: ({ row }: { row: { original: JobRow } }) => {
+        const n = requesterOf(row.original.id)
+        return n ? <span className="flex items-center gap-1 whitespace-nowrap text-xs text-slate-600 dark:text-slate-300"><UserCircle2 className="h-3.5 w-3.5 text-slate-400" />{n}</span> : <span className="text-[11px] text-slate-300 dark:text-slate-600">not recorded</span>
+      },
+    } as ColumnDef<JobRow>] : []),
     { accessorKey: 'requested_date', header: 'Date', cell: ({ getValue }) => <span className="whitespace-nowrap text-xs">{formatDate(getValue() as string)}</span> },
     { accessorKey: 'amount', header: 'Cost', cell: ({ getValue }) => getValue() != null ? formatCurrency(getValue() as number) : '—' },
     {
@@ -377,6 +470,11 @@ export default function TransportationPage() {
         // the bank — not a tick on the job.
         const st = payStageOf(row.original.transport_mode, row.original.expenses)
         if (st === 'not_needed') return <span className="text-[10px] text-slate-400">n/a</span>
+        if (st === 'none' && row.original.job_status !== 'cancelled') return (
+          <Link to={`/transportation/${row.original.id}/pay`} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-700">
+            <Send className="h-3 w-3" /> Request payment
+          </Link>
+        )
         return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${PAY_STAGE[st].cls}`}>{PAY_STAGE[st].label}</span>
       },
     },
@@ -392,14 +490,16 @@ export default function TransportationPage() {
       ),
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [])
+  ], [fullView, requesterByJob])
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Transport Jobs</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Dispatch, track, and settle every transport engagement</p>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{fullView ? 'Transport Jobs' : 'My transport requests'}</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {fullView ? 'Every job, who asked for it, and where it stands' : 'The trips you asked for and the ones you handle — where each is and what is left to do'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -433,6 +533,19 @@ export default function TransportationPage() {
         </div>
       </div>
       {role === 'staff' && <OwnRecordsBanner />}
+      {!fullView && !isLoading && <MySummary jobs={data} toRequest={toRequest.length} />}
+      <PaymentRequestsToRaise jobs={toRequest} requesterOf={requesterOf} showRequester={fullView} />
+      {fullView && people.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs font-medium text-slate-500">Asked by</span>
+          {[{ key: 'all', name: 'Everyone', n: data.length }, { key: 'me', name: 'Me', n: data.filter(j => j.requested_by_id === user?.id).length }, ...people].map(p => (
+            <button key={p.key} onClick={() => setPerson(p.key)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs ${person === p.key ? 'border-brand bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+              {p.name} <span className={`tabular-nums ${person === p.key ? 'text-white/80' : 'text-slate-400'}`}>{p.n}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <StaleJobsPanel jobs={stale} onDone={refresh} />
       <VehicleQueuePanel />
       <PickupBundlesPanel />
@@ -464,6 +577,34 @@ export default function TransportationPage() {
       </div>
 
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={filtered} searchPlaceholder="Search jobs…" persistKey="transportation" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="transportation_requests" queryKeys={['transportation']} quickFilters={transportQuickFilters} />}
+    </div>
+  )
+}
+
+// The requester's own picture: their trips by where each one stands.
+function MySummary({ jobs, toRequest }: { jobs: JobRow[]; toRequest: number }) {
+  const waiting = jobs.filter(j => j.job_status === 'requested').length
+  const road = jobs.filter(j => j.job_status === 'assigned' || j.job_status === 'in_progress').length
+  const done = jobs.filter(j => j.job_status === 'completed').length
+  const cards = [
+    { label: 'Waiting for a vehicle', n: waiting, cls: 'text-slate-800 dark:text-slate-100' },
+    { label: 'On the road', n: road, cls: 'text-violet-700 dark:text-violet-300' },
+    { label: 'Need a payment request', n: toRequest, cls: toRequest ? 'text-amber-600' : 'text-slate-800 dark:text-slate-100' },
+    { label: 'Delivered', n: done, cls: 'text-emerald-700 dark:text-emerald-300' },
+  ]
+  if (jobs.length === 0) return (
+    <div className="rounded-xl border bg-white px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+      You have no transport requests yet. <Link to="/transportation/new" className="font-medium text-brand hover:underline">Ask for a vehicle</Link> and it will show here with every step.
+    </div>
+  )
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {cards.map(c => (
+        <div key={c.label} className="rounded-xl border bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{c.label}</p>
+          <p className={`text-xl font-bold tabular-nums ${c.cls}`}>{c.n}</p>
+        </div>
+      ))}
     </div>
   )
 }

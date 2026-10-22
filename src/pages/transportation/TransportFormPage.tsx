@@ -1,16 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { RoutePriceHint } from '@/components/transport/RoutePriceHint'
 import { PickupAdvice } from '@/components/transport/PickupAdvice'
 import { TripCrewPanel } from '@/components/transport/TripCrew'
 import { DriverPicker } from '@/components/transport/DriverPicker'
+import { PaymentCallout } from '@/components/transport/PaymentCallout'
 import { PAY_STAGE, payStageOf } from '@/lib/transport'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { formatCurrency } from '@/lib/utils'
 import type {
   TransportationRequest, TransportationRequestInsert, Vehicle,
   TransportJobType, HiredVehicleClass, TransportJobStatus, VehicleCapacityClass,
@@ -20,7 +20,7 @@ import { useProjects, useLocations, useVendors, useStaff, locationPickerOptions 
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { submitted } from '@/lib/celebrate'
-import { Receipt, ExternalLink, CheckCircle2, Check, Handshake, Send } from 'lucide-react'
+import { CheckCircle2, Check, Handshake, Send } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -409,6 +409,9 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         <JobTimeline record={record} paid={linkedExpense ? payStageOf(record.transport_mode, linkedExpense) : (isMoneyJob ? 'none' : 'not_needed')}
           actions={canMove ? flow.next : []} onAction={transition} />
       )}
+      {isEdit && record && id && (
+        <PaymentCallout jobId={id} mode={record.transport_mode} jobStatus={record.job_status} amount={record.amount} expense={linkedExpense} />
+      )}
 
       {!isEdit && (
         <Field label="Who finds the driver?">
@@ -649,42 +652,6 @@ function TransportFormPageBody({ id, record }: { id?: string; record?: Transport
         <textarea rows={2} className={inputCls} value={form.notes ?? ''} onChange={e => set('notes', e.target.value)} />
       </Field>
 
-      {/* ── Payment: through the real ledger only ── */}
-      {isEdit && (
-        <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
-            <Receipt className="h-3.5 w-3.5" /> Payment
-          </p>
-          {linkedExpense ? (
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="text-sm text-slate-700">
-                <span className="font-mono text-xs font-bold text-brand mr-1.5">{linkedExpense.expense_code}</span>
-                {linkedExpense.amount_etb != null && formatCurrency(linkedExpense.amount_etb)}
-                <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${PAY_STAGE[payStageOf(form.transport_mode ?? 'hired', linkedExpense)].cls}`}>
-                  {PAY_STAGE[payStageOf(form.transport_mode ?? 'hired', linkedExpense)].label}
-                </span>
-              </div>
-              <Link to={`/expenses/${linkedExpense.id}`} className="flex items-center gap-1 text-xs text-brand hover:underline">
-                View expense <ExternalLink className="h-3 w-3" />
-              </Link>
-            </div>
-          ) : isMoneyJob ? (
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs text-slate-500">
-                No expense linked yet — payment happens through a real, finance-gated expense.
-              </p>
-              <Link
-                to={`/transportation/${id}/pay`}
-                className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90"
-              >
-                Create Expense for this job
-              </Link>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400">Own-fleet job — no direct payment expected (fuel is handled separately).</p>
-          )}
-        </div>
-      )}
     </FormPage>
   )
 }
