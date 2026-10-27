@@ -74,6 +74,12 @@ CREATE TABLE IF NOT EXISTS labour_pay_holds (
   staff_id            uuid REFERENCES staff(id) ON DELETE SET NULL,
   held_at             timestamptz NOT NULL DEFAULT now()
 );
+-- Where the held pay came from. The held expense itself carries no request
+-- or period: an expense is one per request and period (idx_expense_rollup_unique).
+ALTER TABLE labour_pay_holds
+  ADD COLUMN IF NOT EXISTS labor_requisition_id uuid REFERENCES labor_requisitions(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS period_start date,
+  ADD COLUMN IF NOT EXISTS period_end date;
 
 ALTER TABLE labor_expense_workers ADD COLUMN IF NOT EXISTS advance_deducted numeric;
 COMMENT ON COLUMN labor_expense_workers.advance_deducted IS 'Cash advance taken off this worker''s pay on a labour payment request (479); the bank sends the rest.';
@@ -107,7 +113,7 @@ RETURNS TABLE (expense_id uuid, expense_code text, project_id uuid, project_name
   period_start date, period_end date, amount numeric, workers integer, unverified integer, held boolean, pay_sheet_code text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
   SELECT e.id, e.expense_code, e.project_id, p.project_name,
-         COALESCE(r.role_needed, e.item_service_description), e.rollup_period_start, e.rollup_period_end, e.amount_etb,
+         COALESCE(r.role_needed, e.item_service_description), COALESCE(e.rollup_period_start, h.period_start), COALESCE(e.rollup_period_end, h.period_end), e.amount_etb,
          (SELECT count(*)::int FROM labor_expense_workers w WHERE w.expense_id = e.id),
          (SELECT count(*)::int FROM labor_expense_workers w JOIN staff s ON s.id = w.staff_id
            WHERE w.expense_id = e.id AND s.verified_at IS NULL AND e.vendor_id IS NULL),
@@ -115,7 +121,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
     FROM expenses e
     LEFT JOIN labour_pay_sheets ps ON ps.expense_id = e.id
     LEFT JOIN labour_pay_holds h ON h.expense_id = e.id
-    LEFT JOIN labor_requisitions r ON r.id = e.rolled_up_from_requisition_id
+    LEFT JOIN labor_requisitions r ON r.id = COALESCE(e.rolled_up_from_requisition_id, h.labor_requisition_id)
     LEFT JOIN projects p ON p.id = e.project_id
    WHERE (ps.id IS NOT NULL OR h.expense_id IS NOT NULL)
      AND e.approval_status = 'pending' AND COALESCE(e.payment_state, 'unpaid') = 'unpaid'
@@ -123,7 +129,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
      AND NOT EXISTS (SELECT 1 FROM labour_pay_request_items i JOIN labour_pay_requests q ON q.id = i.request_id
                       WHERE i.expense_id = e.id AND i.removed_at IS NULL AND q.status NOT IN ('cancelled'))
      AND (manages_project(e.project_id) OR COALESCE(get_user_role()::text IN ('admin', 'operations_manager', 'finance'), false) OR is_ops_manager())
-   ORDER BY p.project_name, e.rollup_period_end;
+   ORDER BY p.project_name, COALESCE(e.rollup_period_end, h.period_end);
 $function$;
 
 -- ── The request's worker lines ───────────────────────────────────────
@@ -275,13 +281,13 @@ BEGIN
       FOR w IN SELECT x.id, x.staff_id, x.subtotal, s.employee_name FROM labor_expense_workers x JOIN staff s ON s.id = x.staff_id
                 WHERE x.expense_id = e.id AND worker_pay_held(x.staff_id) LOOP
         INSERT INTO expenses (item_service_description, amount_etb, expense_type, category_id, project_id, date,
-          paid_to_staff_id, approval_status, payment_state, rolled_up_from_requisition_id, rollup_period_start, rollup_period_end)
+          paid_to_staff_id, approval_status, payment_state)
         VALUES (format('Held for HR verification — %s · from %s', w.employee_name, COALESCE(e.expense_code, 'a labour payable')),
-          w.subtotal, e.expense_type, e.category_id, e.project_id, e.date, w.staff_id, 'pending', 'unpaid',
-          e.rolled_up_from_requisition_id, e.rollup_period_start, e.rollup_period_end)
+          w.subtotal, e.expense_type, e.category_id, e.project_id, e.date, w.staff_id, 'pending', 'unpaid')
         RETURNING id INTO v_new;
         UPDATE labor_expense_workers SET expense_id = v_new WHERE id = w.id;
-        INSERT INTO labour_pay_holds (expense_id, original_expense_id, request_id, staff_id) VALUES (v_new, e.id, p_request, w.staff_id);
+        INSERT INTO labour_pay_holds (expense_id, original_expense_id, request_id, staff_id, labor_requisition_id, period_start, period_end)
+        VALUES (v_new, e.id, p_request, w.staff_id, e.rolled_up_from_requisition_id, e.rollup_period_start, e.rollup_period_end);
         UPDATE expenses SET amount_etb = amount_etb - w.subtotal WHERE id = e.id;
         v_held := v_held + w.subtotal; v_held_n := v_held_n + 1;
       END LOOP;
