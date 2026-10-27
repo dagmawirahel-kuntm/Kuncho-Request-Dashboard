@@ -269,6 +269,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $
 DECLARE
   q labour_pay_requests%ROWTYPE; it record; w record; e expenses%ROWTYPE;
   v_new uuid; v_held numeric := 0; v_held_n int := 0; v_ok int := 0; v_total numeric := 0;
+  v_n_held int; v_n_free int; v_sum_held numeric; v_one uuid;
 BEGIN
   IF COALESCE(get_user_role()::text, '') NOT IN ('finance', 'admin') THEN RAISE EXCEPTION 'Finance approves requests'; END IF;
   SELECT * INTO q FROM labour_pay_requests WHERE id = p_request FOR UPDATE;
@@ -278,6 +279,20 @@ BEGIN
     SELECT * INTO e FROM expenses WHERE id = it.expense_id FOR UPDATE;
     -- Hold the lines of workers HR hasn't verified (not crew-leader pay).
     IF e.vendor_id IS NULL THEN
+      SELECT count(*) FILTER (WHERE worker_pay_held(x.staff_id)), count(*) FILTER (WHERE NOT worker_pay_held(x.staff_id)),
+             COALESCE(sum(x.subtotal) FILTER (WHERE worker_pay_held(x.staff_id)), 0),
+             (array_agg(x.staff_id) FILTER (WHERE worker_pay_held(x.staff_id)))[1]
+        INTO v_n_held, v_n_free, v_sum_held, v_one
+        FROM labor_expense_workers x WHERE x.expense_id = e.id;
+      -- Everyone on it is held: keep the whole payable back as it is, for a later request.
+      IF v_n_held > 0 AND (v_n_free = 0 OR v_sum_held >= e.amount_etb) THEN
+        INSERT INTO labour_pay_holds (expense_id, request_id, staff_id, labor_requisition_id, period_start, period_end)
+        VALUES (e.id, p_request, CASE WHEN v_n_held = 1 THEN v_one END, e.rolled_up_from_requisition_id, e.rollup_period_start, e.rollup_period_end)
+        ON CONFLICT (expense_id) DO UPDATE SET request_id = EXCLUDED.request_id, held_at = now();
+        UPDATE labour_pay_request_items SET removed_at = now() WHERE request_id = p_request AND expense_id = e.id;
+        v_held := v_held + e.amount_etb; v_held_n := v_held_n + v_n_held;
+        CONTINUE;
+      END IF;
       FOR w IN SELECT x.id, x.staff_id, x.subtotal, s.employee_name FROM labor_expense_workers x JOIN staff s ON s.id = x.staff_id
                 WHERE x.expense_id = e.id AND worker_pay_held(x.staff_id) LOOP
         INSERT INTO expenses (item_service_description, amount_etb, expense_type, category_id, project_id, date,
