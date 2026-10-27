@@ -47,6 +47,7 @@ import StaffPage from '@/pages/staff/StaffPage'
 import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
 import CasualWorkersPage from '@/pages/hr/CasualWorkersPage'
+import WorkerRegisterPage from '@/pages/hr/WorkerRegisterPage'
 import CompetencyHubPage from '@/pages/hr/CompetencyHubPage'
 import LaborExpenseDraftsPage from '@/pages/finance/LaborExpenseDraftsPage'
 import MarketTrendsPage from '@/pages/procurement/MarketTrendsPage'
@@ -598,6 +599,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'hr/casual-workers', element: <CasualWorkersPage /> },
+              { path: 'hr/worker-register', element: <WorkerRegisterPage /> },
               // Tier 2 trade catalog — HR polishes newly-approved trades'
               // emoji + accent colors. RLS on tier2_trade_roster gates writes
               // to admin per migration 183.

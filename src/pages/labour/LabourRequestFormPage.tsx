@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useVendors } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { WorkerPicker } from '@/components/labour/WorkerPicker'
 import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
 import { ArrowLeft, ArrowRight, Check, HardHat, Plus, UserPlus, Users, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
@@ -79,20 +80,6 @@ export default function LabourRequestFormPage() {
   const [otValue, setOtValue] = useState('')
   const { data: otSettings } = useOvertimeSettings()
   const [saving, setSaving] = useState(false)
-
-  const { data: workers = [] } = useQuery({
-    queryKey: ['labour-roster-workers'],
-    staleTime: 300_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_directory')
-        .select('id, employee_name, phone_number, role, employment_type, status')
-        .eq('status', 'active').eq('employment_type', 'tier_2_casual').order('employee_name')
-      if (error) throw error
-      return (data ?? []) as { id: string; employee_name: string; phone_number: string | null; role: string | null }[]
-    },
-  })
-  const workerOptions = workers.filter(w => !roster.some(r => r.id === w.id))
-    .map(w => ({ id: w.id, label: w.employee_name, sub: [w.role, w.phone_number].filter(Boolean).join(' · ') }))
 
   const named = roster.length + people.length
   const headcount = Math.max(named + (parseInt(extra) || 0), 1)
@@ -247,12 +234,12 @@ export default function LabourRequestFormPage() {
 
         {step === 1 && (<>
           <div>
-            <Label hint="People who have worked with us before.">From our workers</Label>
-            <SearchableSelect value={null} onChange={id => { const w = workers.find(x => x.id === id); if (w) setRoster(r => [...r, { id: w.id, name: w.employee_name }]) }}
-              options={workerOptions} placeholder="Search by name or phone…" />
+            <Label hint="Best fits first: the right trade, verified by HR, free today, worked on this site before.">From our workers</Label>
+            <WorkerPicker projectId={site} workOrderId={workOrder} work={work} picked={roster.map(r => r.id)}
+              onToggle={c => setRoster(r => r.some(x => x.id === c.staff_id) ? r.filter(x => x.id !== c.staff_id) : [...r, { id: c.staff_id, name: c.name }])} />
           </div>
           <div>
-            <Label hint="They're added to our workers when the request is approved.">Someone new</Label>
+            <Label hint="Name and phone. HR verifies them (ID, bank account) before they can be paid.">Someone new</Label>
             <div className="flex gap-2">
               <input className={input} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Full name" />
               <input className={`${input} max-w-[9rem]`} inputMode="tel" value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="Phone" />

@@ -230,6 +230,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { subgroup: 'People', label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { subgroup: 'People', label: 'Casual Workers', to: '/hr/casual-workers', icon: HardHat, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
+      { subgroup: 'People', label: 'Worker register', to: '/hr/worker-register', icon: ShieldCheck, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { subgroup: 'People', label: 'Onboarding', to: '/onboarding-tasks', icon: UserCheck },
       { subgroup: 'People', label: 'Leave Requests', to: '/leave-requests', icon: CalendarClock, roles: ['admin', 'hr_officer'] },
       { subgroup: 'People', label: 'Performance Reviews', to: '/performance-reviews', icon: ClipboardCheck, roles: ['admin', 'hr_officer'] },
