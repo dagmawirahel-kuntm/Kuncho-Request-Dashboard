@@ -38,6 +38,9 @@ import StockItemDetailPage from '@/pages/stock/StockItemDetailPage'
 import StockMovementPage from '@/pages/stock/StockMovementPage'
 import StockToolsPage from '@/pages/stock/StockToolsPage'
 import TransportationPage from '@/pages/transportation/TransportationPage'
+import VariationsPage from '@/pages/variations/VariationsPage'
+import VariationFormPage from '@/pages/variations/VariationFormPage'
+import VariationDetailPage from '@/pages/variations/VariationDetailPage'
 import TransportFormPage from '@/pages/transportation/TransportFormPage'
 import TransportPaymentFormPage from '@/pages/transportation/TransportPaymentFormPage'
 import PayOutPage from '@/pages/finance/PayOutPage'
@@ -646,6 +649,18 @@ export const router = createBrowserRouter([
               { path: 'projects', element: <ProjectsPage /> },
               { path: 'projects/this-week', element: <ProjectsWeekPage /> },
               { path: 'projects/:id/edit', element: <ProjectFormPage /> },
+            ],
+          },
+          {
+            // Variation orders (459): recorded and priced by PMs, operations
+            // and executives; read by finance and sales so they're seen long
+            // before collection. Writes go through RPCs that check roles.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'sales']} allowAssignedProjectManager />,
+            children: [
+              { path: 'variations', element: <VariationsPage /> },
+              { path: 'variations/new', element: <VariationFormPage /> },
+              { path: 'variations/:id', element: <VariationDetailPage /> },
+              { path: 'variations/:id/edit', element: <VariationFormPage /> },
             ],
           },
           {

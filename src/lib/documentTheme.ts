@@ -475,7 +475,7 @@ export interface VerifyInfo { url: string; qrDataUrl: string; version?: number }
  * printing may use them; a received-by or client-acceptance block beside
  * it; and the verification QR on the right.
  */
-export function renderSignoff(p: { forLabel?: string; signoff?: CompanySignoff | null; preparedBy?: string | null; verify?: VerifyInfo | null; receivedBy?: boolean; acceptance?: string | null }): string {
+export function renderSignoff(p: { forLabel?: string; signoff?: CompanySignoff | null; preparedBy?: string | null; verify?: VerifyInfo | null; receivedBy?: boolean; acceptance?: string | null; acceptanceWhat?: string }): string {
   const s = p.signoff
   const sign = `
   <div class="doc-sign">
@@ -489,7 +489,7 @@ export function renderSignoff(p: { forLabel?: string; signoff?: CompanySignoff |
   const accept = p.acceptance ? `
   <div class="doc-accept">
     <div class="t">Accepted by the client${bilingual() ? '<span class="am">የደንበኛ ማረጋገጫ</span>' : ''}</div>
-    <div>We accept this offer on behalf of <b>${esc(p.acceptance)}</b>.</div>
+    <div>We accept ${esc(p.acceptanceWhat ?? 'this offer')} on behalf of <b>${esc(p.acceptance)}</b>.</div>
     <div class="row"><span>Name${bilingual() ? ' · ስም' : ''}</span><span>Signature${bilingual() ? ' · ፊርማ' : ''}</span></div>
     <div class="row"><span>Date${bilingual() ? ' · ቀን' : ''}</span><span>Stamp${bilingual() ? ' · ማህተም' : ''}</span></div>
   </div>` : ''
