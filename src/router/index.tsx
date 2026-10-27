@@ -47,6 +47,7 @@ import StaffPage from '@/pages/staff/StaffPage'
 import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import StaffFormPage from '@/pages/staff/StaffFormPage'
 import CasualWorkersPage from '@/pages/hr/CasualWorkersPage'
+import WorkerRegisterPage from '@/pages/hr/WorkerRegisterPage'
 import CompetencyHubPage from '@/pages/hr/CompetencyHubPage'
 import LaborExpenseDraftsPage from '@/pages/finance/LaborExpenseDraftsPage'
 import MarketTrendsPage from '@/pages/procurement/MarketTrendsPage'
@@ -68,6 +69,7 @@ import VendorReviewPage from '@/pages/vendors/VendorReviewPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import ProjectWorkspacePage from '@/pages/projects/ProjectWorkspacePage'
+import ProjectsWeekPage from '@/pages/projects/ProjectsWeekPage'
 import AccountsPage from '@/pages/accounts/AccountsPage'
 import AccountFormPage from '@/pages/accounts/AccountFormPage'
 import AccountDetailPage from '@/pages/accounts/AccountDetailPage'
@@ -189,6 +191,9 @@ import LabourRecordPage from '@/pages/labour/LabourRecordPage'
 import LabourOvertimePage from '@/pages/labour/LabourOvertimePage'
 import LabourPayPage from '@/pages/labour/LabourPayPage'
 import LabourRedirect from '@/pages/labour/LabourRedirect'
+import LabourPayRequestsPage from '@/pages/labour/LabourPayRequestsPage'
+import LabourWeekPage from '@/pages/labour/LabourWeekPage'
+import LabourPayRequestPage from '@/pages/labour/LabourPayRequestPage'
 import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
 import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
 import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
@@ -598,6 +603,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'hr', element: <HRDashboardPage /> },
               { path: 'hr/casual-workers', element: <CasualWorkersPage /> },
+              { path: 'hr/worker-register', element: <WorkerRegisterPage /> },
               // Tier 2 trade catalog — HR polishes newly-approved trades'
               // emoji + accent colors. RLS on tier2_trade_roster gates writes
               // to admin per migration 183.
@@ -637,6 +643,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'management', element: <ManagementDashboardPage /> },
               { path: 'projects', element: <ProjectsPage /> },
+              { path: 'projects/this-week', element: <ProjectsWeekPage /> },
               { path: 'projects/:id/edit', element: <ProjectFormPage /> },
             ],
           },
@@ -770,8 +777,11 @@ export const router = createBrowserRouter([
           { path: 'labour', element: <LabourHomePage /> },
           { path: 'labour/new', element: <LabourRequestFormPage /> },
           { path: 'labour/record', element: <LabourRecordPage /> },
+          { path: 'labour/record/week', element: <LabourWeekPage /> },
           { path: 'labour/pay', element: <LabourPayPage /> },
           { path: 'labour/overtime', element: <LabourOvertimePage /> },
+          { path: 'labour/requests', element: <LabourPayRequestsPage /> },
+          { path: 'labour/requests/:id', element: <LabourPayRequestPage /> },
           { path: 'labour/:id', element: <LabourRequestPage /> },
           { path: 'labor-requisitions', element: <Navigate to="/labour" replace /> },
           { path: 'labor-requisitions/new', element: <Navigate to="/labour/new" replace /> },

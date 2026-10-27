@@ -6,14 +6,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useVendors } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { WorkerPicker } from '@/components/labour/WorkerPicker'
+import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { useWorkerPhotos } from '@/lib/workerPhotos'
 import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
-import { ArrowLeft, ArrowRight, Check, HardHat, Plus, UserPlus, Users, X, CalendarDays, Ruler, Tag } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, HardHat, Plus, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
 const input = 'w-full rounded-lg border px-3 py-2.5 text-base sm:text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 const COMMON_WORK = ['Daily labourer', 'Mason', 'Carpenter', 'Painter', 'Plasterer', 'Tile fixer', 'Electrician', 'Plumber', 'Welder', 'Gypsum fixer']
 const UNITS = ['m²', 'm', 'm³', 'pcs', 'points', 'rooms']
 
-type NewPerson = { name: string; phone: string }
+type NewPerson = { name: string; phone: string; photo: string | null }
 
 function Label({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
@@ -60,7 +63,7 @@ export default function LabourRequestFormPage() {
 
   const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
   const [people, setPeople] = useState<NewPerson[]>([])
-  const [draft, setDraft] = useState<NewPerson>({ name: '', phone: '' })
+  const [draft, setDraft] = useState<NewPerson>({ name: '', phone: '', photo: null })
   const [extra, setExtra] = useState('0')
   const [crew, setCrew] = useState(false)
   const [leader, setLeader] = useState<string | null>(null)
@@ -80,21 +83,8 @@ export default function LabourRequestFormPage() {
   const { data: otSettings } = useOvertimeSettings()
   const [saving, setSaving] = useState(false)
 
-  const { data: workers = [] } = useQuery({
-    queryKey: ['labour-roster-workers'],
-    staleTime: 300_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('v_staff_directory')
-        .select('id, employee_name, phone_number, role, employment_type, status')
-        .eq('status', 'active').eq('employment_type', 'tier_2_casual').order('employee_name')
-      if (error) throw error
-      return (data ?? []) as { id: string; employee_name: string; phone_number: string | null; role: string | null }[]
-    },
-  })
-  const workerOptions = workers.filter(w => !roster.some(r => r.id === w.id))
-    .map(w => ({ id: w.id, label: w.employee_name, sub: [w.role, w.phone_number].filter(Boolean).join(' · ') }))
-
   const named = roster.length + people.length
+  const { data: photos = {} } = useWorkerPhotos(roster.map(r => r.id))
   const headcount = Math.max(named + (parseInt(extra) || 0), 1)
   const estimate = estimateOf({
     payment_basis: basis, estimated_day_rate: parseFloat(dayRate) || null, estimated_days: parseFloat(days) || null, headcount,
@@ -128,8 +118,8 @@ export default function LabourRequestFormPage() {
 
   function addPerson() {
     if (!draft.name.trim()) return
-    setPeople(p => [...p, { name: draft.name.trim(), phone: draft.phone.trim() }])
-    setDraft({ name: '', phone: '' })
+    setPeople(p => [...p, { name: draft.name.trim(), phone: draft.phone.trim(), photo: draft.photo }])
+    setDraft({ name: '', phone: '', photo: null })
   }
 
   async function submit() {
@@ -161,7 +151,7 @@ export default function LabourRequestFormPage() {
         if (e) throw e
       }
       for (const p of people) {
-        const { error: e } = await supabase.rpc('labour_add_new_worker', { p_req: req.id, p_name: p.name, p_phone: p.phone || null, p_day_rate: null })
+        const { error: e } = await supabase.rpc('labour_add_person', { p_req: req.id, p_name: p.name, p_phone: p.phone || null, p_day_rate: null, p_photo: p.photo })
         if (e) throw e
       }
       qc.invalidateQueries({ queryKey: ['labour-requests'] })
@@ -247,29 +237,32 @@ export default function LabourRequestFormPage() {
 
         {step === 1 && (<>
           <div>
-            <Label hint="People who have worked with us before.">From our workers</Label>
-            <SearchableSelect value={null} onChange={id => { const w = workers.find(x => x.id === id); if (w) setRoster(r => [...r, { id: w.id, name: w.employee_name }]) }}
-              options={workerOptions} placeholder="Search by name or phone…" />
+            <Label hint="Best fits first: the right trade, verified by HR, free today, worked on this site before.">From our workers</Label>
+            <WorkerPicker projectId={site} workOrderId={workOrder} work={work} picked={roster.map(r => r.id)}
+              onToggle={c => setRoster(r => r.some(x => x.id === c.staff_id) ? r.filter(x => x.id !== c.staff_id) : [...r, { id: c.staff_id, name: c.name }])} />
           </div>
           <div>
-            <Label hint="They're added to our workers when the request is approved.">Someone new</Label>
-            <div className="flex gap-2">
-              <input className={input} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Full name" />
-              <input className={`${input} max-w-[9rem]`} inputMode="tel" value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="Phone" />
-              <button type="button" onClick={addPerson} className="shrink-0 rounded-lg bg-brand px-3 text-white disabled:opacity-40" disabled={!draft.name.trim()} aria-label="Add"><Plus className="h-4 w-4" /></button>
+            <Label hint="Their photo, name and phone. HR verifies them (ID, bank account) before they can be paid.">Someone new</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <PhotoButton url={draft.photo} name={draft.name} onPhoto={url => setDraft(d => ({ ...d, photo: url }))} />
+              <input className={`${input} min-w-0 flex-1`} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Full name" />
+              <div className="flex w-full gap-2 sm:w-auto">
+                <input className={`${input} min-w-0 flex-1 sm:w-36 sm:flex-none`} inputMode="tel" value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="Phone" />
+                <button type="button" onClick={addPerson} className="shrink-0 rounded-lg bg-brand px-3 text-white disabled:opacity-40" disabled={!draft.name.trim()} aria-label="Add"><Plus className="h-4 w-4" /></button>
+              </div>
             </div>
           </div>
           {(roster.length > 0 || people.length > 0) && (
             <ul className="divide-y rounded-lg border dark:divide-slate-700 dark:border-slate-700">
               {roster.map(w => (
                 <li key={w.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                  <Users className="h-4 w-4 text-slate-400" /><span className="flex-1">{w.name}</span>
+                  <WorkerAvatar size="sm" url={photos[w.id]} name={w.name} /><span className="flex-1">{w.name}</span>
                   <button type="button" onClick={() => setRoster(r => r.filter(x => x.id !== w.id))} className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
                 </li>
               ))}
               {people.map((p, i) => (
                 <li key={`${p.name}-${i}`} className="flex items-center gap-2 px-3 py-2 text-sm">
-                  <UserPlus className="h-4 w-4 text-emerald-500" /><span className="flex-1">{p.name}{p.phone ? <span className="text-slate-400"> · {p.phone}</span> : ''} <span className="text-[10px] font-semibold text-emerald-600">NEW</span></span>
+                  <PhotoButton size="sm" url={p.photo} name={p.name} onPhoto={url => setPeople(x => x.map((q, j) => (j === i ? { ...q, photo: url } : q)))} /><span className="flex-1">{p.name}{p.phone ? <span className="text-slate-400"> · {p.phone}</span> : ''} <span className="text-[10px] font-semibold text-emerald-600">NEW</span></span>
                   <button type="button" onClick={() => setPeople(x => x.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
                 </li>
               ))}

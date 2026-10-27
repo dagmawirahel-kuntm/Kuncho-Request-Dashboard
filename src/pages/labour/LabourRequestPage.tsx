@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Pill } from '@/components/record/Record'
+import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { setWorkerPhoto, useWorkerPhotos } from '@/lib/workerPhotos'
 import { buildPaySheetHtml, type PayLine } from '@/lib/documents/labourPay'
 import { printHtml } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
@@ -86,6 +88,7 @@ export default function LabourRequestPage() {
       return (data ?? []) as Person[]
     },
   })
+  const { data: photos = {} } = useWorkerPhotos(people.map(p => p.staff_id), people.map(p => p.candidate_id))
   const { data: events = [] } = useQuery({
     queryKey: ['labour-request-events', id],
     queryFn: async () => {
@@ -120,7 +123,7 @@ export default function LabourRequestPage() {
   const [comment, setComment] = useState('')
   const [addMode, setAddMode] = useState<'roster' | 'new'>('roster')
   const [pick, setPick] = useState<string | null>(null)
-  const [person, setPerson] = useState({ name: '', phone: '' })
+  const [person, setPerson] = useState<{ name: string; phone: string; photo: string | null }>({ name: '', phone: '', photo: null })
 
   const { data: roster = [] } = useQuery({
     queryKey: ['labour-roster-workers'],
@@ -207,9 +210,17 @@ export default function LabourRequestPage() {
       if (await run(() => supabase.rpc('labour_add_worker', { p_req: id, p_staff_id: pick }), 'Worker added')) setPick(null)
     } else {
       if (!person.name.trim()) { toast('Give the name', 'error'); return }
-      if (await run(() => supabase.rpc('labour_add_new_worker', { p_req: id, p_name: person.name.trim(), p_phone: person.phone.trim() || null, p_day_rate: null }),
-        req!.status === 'approved' ? `${person.name.trim()} is on the request` : `${person.name.trim()} will be hired when the request is approved`)) setPerson({ name: '', phone: '' })
+      if (await run(() => supabase.rpc('labour_add_person', { p_req: id, p_name: person.name.trim(), p_phone: person.phone.trim() || null, p_day_rate: null, p_photo: person.photo }),
+        req!.status === 'approved' ? `${person.name.trim()} is on the request` : `${person.name.trim()} will be hired when the request is approved`)) {
+        setPerson({ name: '', phone: '', photo: null })
+        qc.invalidateQueries({ queryKey: ['worker-photos'] })
+      }
     }
+  }
+  async function savePhoto(p: Person, url: string) {
+    await setWorkerPhoto(p, url)
+    qc.invalidateQueries({ queryKey: ['worker-photos'] })
+    toast(`${p.name}'s photo saved`, 'success')
   }
   async function remove(p: Person) {
     if (!p.staff_id || !confirm(`Take ${p.name} off this request?`)) return
@@ -281,6 +292,9 @@ export default function LabourRequestPage() {
           <ul className="divide-y dark:divide-slate-700">
             {[...onSite, ...waitingPeople, ...people.filter(p => p.state === 'left')].map(p => (
               <li key={p.staff_id ?? p.candidate_id} className={`flex items-center gap-3 px-4 py-2.5 ${p.state === 'left' ? 'opacity-50' : ''}`}>
+                {open_ && canManage && p.state !== 'left'
+                  ? <PhotoButton url={photos[p.staff_id ?? p.candidate_id ?? '']} name={p.name} onPhoto={url => savePhoto(p, url)} />
+                  : <WorkerAvatar url={photos[p.staff_id ?? p.candidate_id ?? '']} name={p.name} />}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{p.name}</p>
                   <p className="text-xs text-slate-500">
@@ -393,6 +407,10 @@ export default function LabourRequestPage() {
                     options={roster.filter(w => !people.some(p => p.staff_id === w.id && p.state !== 'left')).map(w => ({ id: w.id, label: w.employee_name, sub: [w.role, w.phone_number].filter(Boolean).join(' · ') }))} />
                 ) : (
                   <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <PhotoButton size="lg" url={person.photo} name={person.name} onPhoto={url => setPerson(p => ({ ...p, photo: url }))} />
+                      <p className="text-xs text-slate-500">{person.photo ? 'Photo added — tap it to change.' : 'Add their photo: take it now, or choose one from your files.'}</p>
+                    </div>
                     <input className={input} value={person.name} onChange={e => setPerson(p => ({ ...p, name: e.target.value }))} placeholder="Full name" autoFocus />
                     <input className={input} value={person.phone} onChange={e => setPerson(p => ({ ...p, phone: e.target.value }))} placeholder="Phone (so they can be found again)" inputMode="tel" />
                   </div>
