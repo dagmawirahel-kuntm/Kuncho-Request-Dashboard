@@ -50,6 +50,8 @@ export type BatchWorkerRow = {
   gang_member_names: string | null
   overtime_hours: number | null
   overtime_amount: number | null
+  /** Cash advance taken off this line on a labour payment request (479). */
+  advance_deducted?: number | null
   staff: { employee_name: string; bank_account: string | null; bank: BankRef } | null
 }
 
@@ -68,7 +70,7 @@ export const BATCH_EXPENSE_SELECT = `id, expense_code, expense_type, item_servic
   labor_requisitions:rolled_up_from_requisition_id(role_needed, payment_basis, volume_unit, scope_of_work, site_location)`
 
 export const BATCH_WORKER_SELECT =
-  'id, expense_id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, overtime_hours, overtime_amount, staff(employee_name, bank_account, bank:accounts!staff_bank_id_fkey(account_name))'
+  'id, expense_id, staff_id, days_worked, day_rate, subtotal, gang_size, gang_member_names, overtime_hours, overtime_amount, advance_deducted, staff(employee_name, bank_account, bank:accounts!staff_bank_id_fkey(account_name))'
 
 // Splits an expense-level amount (its WHT, its applied credit) across that
 // expense's lines in proportion to each line's value, to the cent. Any
@@ -125,7 +127,9 @@ export function buildBatchLines(expenses: BatchExpense[], workers: BatchWorkerRo
         vendorBankAccount: e.vendors?.bank_account ?? null,
         vendorBankName: e.vendors?.bank?.account_name ?? null,
         whtAmount: whtParts[i] || null,
-        creditApplied: creditParts[i] || null,
+        // An advance deducted on the PM's request is money the worker already
+        // has: the bank sends the rest, like an applied credit.
+        creditApplied: (creditParts[i] + Number(w.advance_deducted ?? 0)) || null,
       }))
       continue
     }

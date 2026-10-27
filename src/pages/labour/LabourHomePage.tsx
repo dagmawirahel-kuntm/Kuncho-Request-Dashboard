@@ -5,8 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
+import { usePayableDrafts } from '@/lib/labourPayRequests'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { ChevronRight, ClipboardCheck, Clock, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -40,15 +41,18 @@ export default function LabourHomePage() {
       return (data ?? []) as { labor_requisition_id: string; project_id: string; ready: boolean }[]
     },
   })
+  // Finance works payment requests from PMs (479), not loose pay sheets.
   const { data: financeWaiting = 0 } = useQuery({
     queryKey: ['labour-finance-waiting'],
     enabled: finance || role === 'admin',
     queryFn: async () => {
-      const { count } = await supabase.from('labour_pay_sheets').select('id, expenses!inner(approval_status)', { count: 'exact', head: true })
-        .eq('expenses.approval_status', 'pending')
+      const { count } = await supabase.from('labour_pay_requests').select('id', { count: 'exact', head: true })
+        .in('status', ['submitted', 'approved'])
       return count ?? 0
     },
   })
+  // The PM's side: confirmed pay not yet put in a request.
+  const { data: toRequest = [] } = usePayableDrafts(!finance)
 
   // Labour still open on jobs that are already finished (migration 408).
   const { toast } = useToast()
@@ -116,7 +120,8 @@ export default function LabourHomePage() {
     ...(toApprove.length ? [{ to: '#waiting', label: 'Requests to approve', n: toApprove.length, tone: 'bg-amber-500' }] : []),
     ...(toConfirm.length ? [{ to: '/labour/pay', label: 'Weeks to confirm for pay', n: toConfirm.length, tone: 'bg-blue-600' }] : []),
     ...(noWorkers.length ? [{ to: '#active', label: 'Approved, no workers added yet', n: noWorkers.length, tone: 'bg-slate-500' }] : []),
-    ...(financeWaiting ? [{ to: '/finance/labor-expense-drafts', label: 'Confirmed pay waiting for finance', n: financeWaiting, tone: 'bg-emerald-600' }] : []),
+    ...(toRequest.length ? [{ to: '/labour/requests?view=mine', label: 'Confirmed pay to send in a payment request', n: toRequest.length, tone: 'bg-blue-600' }] : []),
+    ...(financeWaiting ? [{ to: '/labour/requests', label: 'Payment requests to approve or pay', n: financeWaiting, tone: 'bg-emerald-600' }] : []),
   ]
 
   return (
@@ -138,9 +143,12 @@ export default function LabourHomePage() {
           {toConfirm.length > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{toConfirm.length}</span>}
         </Link>
       </div>
-      <Link to="/labour/overtime" className="flex items-center justify-center gap-1.5 text-xs text-slate-500 hover:text-brand">
-        <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
-      </Link>
+      <div className="flex items-center justify-center gap-4 text-xs text-slate-500">
+        <Link to="/labour/requests" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><FileCheck2 className="h-3.5 w-3.5" /> Payment requests</Link>
+        <Link to="/labour/overtime" className="flex min-w-0 items-center gap-1.5 hover:text-brand">
+          <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
+        </Link>
+      </div>
 
       {canBulkClose && onFinished > 0 && (
         <div className={`${card} flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10`}>

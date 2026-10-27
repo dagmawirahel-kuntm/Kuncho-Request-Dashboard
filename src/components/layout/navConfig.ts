@@ -191,6 +191,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Pay', label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
       { subgroup: 'Pay', label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       { subgroup: 'Pay', label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Pay', label: 'Labour Payment Requests', to: '/labour/requests', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Labour Pay', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Collect', label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { subgroup: 'Collect', label: 'Package Receipts', to: '/package-receipts', icon: Boxes, roles: ['admin', 'finance'] },
