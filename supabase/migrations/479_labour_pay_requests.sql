@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS labour_pay_request_items (
   expense_id uuid NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
   PRIMARY KEY (request_id, expense_id)
 );
+-- Taken off the request: kept, marked, never deleted.
+ALTER TABLE labour_pay_request_items ADD COLUMN IF NOT EXISTS removed_at timestamptz;
 CREATE INDEX IF NOT EXISTS idx_lpr_items_expense ON labour_pay_request_items (expense_id);
 
 CREATE TABLE IF NOT EXISTS labour_pay_request_deductions (
@@ -94,7 +96,7 @@ CREATE OR REPLACE FUNCTION public.labour_pay_request_can_edit(p_request uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
   SELECT COALESCE(get_user_role()::text IN ('admin', 'operations_manager'), false) OR is_ops_manager()
       OR NOT EXISTS (SELECT 1 FROM labour_pay_request_items i JOIN expenses e ON e.id = i.expense_id
-                      WHERE i.request_id = p_request AND NOT manages_project(e.project_id));
+                      WHERE i.request_id = p_request AND i.removed_at IS NULL AND NOT manages_project(e.project_id));
 $function$;
 
 -- ── What a PM can ask to be paid ─────────────────────────────────────
@@ -119,7 +121,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
      AND e.approval_status = 'pending' AND COALESCE(e.payment_state, 'unpaid') = 'unpaid'
      AND NOT COALESCE(e.is_archived, false)
      AND NOT EXISTS (SELECT 1 FROM labour_pay_request_items i JOIN labour_pay_requests q ON q.id = i.request_id
-                      WHERE i.expense_id = e.id AND q.status NOT IN ('cancelled'))
+                      WHERE i.expense_id = e.id AND i.removed_at IS NULL AND q.status NOT IN ('cancelled'))
      AND (manages_project(e.project_id) OR COALESCE(get_user_role()::text IN ('admin', 'operations_manager', 'finance'), false) OR is_ops_manager())
    ORDER BY p.project_name, e.rollup_period_end;
 $function$;
@@ -135,7 +137,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
       JOIN expenses e ON e.id = i.expense_id
       LEFT JOIN vendors v ON v.id = e.vendor_id
       JOIN labor_expense_workers w ON w.expense_id = e.id
-     WHERE i.request_id = p_request
+     WHERE i.request_id = p_request AND i.removed_at IS NULL
   ), g AS (
     SELECT CASE WHEN vendor_id IS NOT NULL THEN NULL ELSE staff_id END AS staff_id, vendor_name,
            sum(days_worked) AS days, sum(subtotal) AS gross, string_agg(DISTINCT expense_code, ', ') AS codes
@@ -185,14 +187,17 @@ BEGIN
   IF NOT labour_pay_request_can_edit(p_request) THEN RAISE EXCEPTION 'Only the project manager can change this request'; END IF;
   IF cardinality(p_expense_ids) = 0 THEN RAISE EXCEPTION 'A request needs at least one pay sheet — cancel it instead'; END IF;
   SELECT count(*) INTO v_ok FROM unnest(p_expense_ids) x(id)
-   WHERE EXISTS (SELECT 1 FROM labour_pay_request_items i WHERE i.request_id = p_request AND i.expense_id = x.id)
+   WHERE EXISTS (SELECT 1 FROM labour_pay_request_items i WHERE i.request_id = p_request AND i.expense_id = x.id AND i.removed_at IS NULL)
       OR EXISTS (SELECT 1 FROM labour_payable_drafts() d WHERE d.expense_id = x.id);
   IF v_ok <> cardinality(p_expense_ids) THEN RAISE EXCEPTION 'Some of these cannot be added to this request'; END IF;
-  DELETE FROM labour_pay_request_items WHERE request_id = p_request AND NOT (expense_id = ANY (p_expense_ids));
-  INSERT INTO labour_pay_request_items (request_id, expense_id) SELECT p_request, unnest(p_expense_ids) ON CONFLICT DO NOTHING;
-  DELETE FROM labour_pay_request_deductions d WHERE d.request_id = p_request
+  UPDATE labour_pay_request_items SET removed_at = now()
+   WHERE request_id = p_request AND removed_at IS NULL AND NOT (expense_id = ANY (p_expense_ids));
+  INSERT INTO labour_pay_request_items (request_id, expense_id) SELECT p_request, unnest(p_expense_ids)
+  ON CONFLICT (request_id, expense_id) DO UPDATE SET removed_at = NULL;
+  -- Advances for workers no longer on the request: cleared.
+  UPDATE labour_pay_request_deductions d SET amount = 0 WHERE d.request_id = p_request AND d.amount > 0
      AND NOT EXISTS (SELECT 1 FROM labour_pay_request_items i JOIN labor_expense_workers w ON w.expense_id = i.expense_id
-                      WHERE i.request_id = p_request AND w.staff_id = d.staff_id);
+                      WHERE i.request_id = p_request AND i.removed_at IS NULL AND w.staff_id = d.staff_id);
   UPDATE labour_pay_requests SET updated_at = now() WHERE id = p_request;
 END $function$;
 
@@ -206,7 +211,7 @@ BEGIN
   SELECT gross INTO v_gross FROM labour_pay_request_lines(p_request) l WHERE l.staff_id = p_staff;
   IF v_gross IS NULL THEN RAISE EXCEPTION 'That worker is not on this request'; END IF;
   IF COALESCE(p_amount, 0) <= 0 THEN
-    DELETE FROM labour_pay_request_deductions WHERE request_id = p_request AND staff_id = p_staff;
+    UPDATE labour_pay_request_deductions SET amount = 0, note = NULL WHERE request_id = p_request AND staff_id = p_staff;
   ELSE
     IF p_amount > v_gross THEN RAISE EXCEPTION 'The advance (%) is more than their pay (%)', p_amount, v_gross; END IF;
     INSERT INTO labour_pay_request_deductions (request_id, staff_id, amount, note) VALUES (p_request, p_staff, p_amount, NULLIF(btrim(p_note), ''))
@@ -263,7 +268,7 @@ BEGIN
   SELECT * INTO q FROM labour_pay_requests WHERE id = p_request FOR UPDATE;
   IF NOT FOUND OR q.status <> 'submitted' THEN RAISE EXCEPTION 'Only a submitted request can be approved'; END IF;
 
-  FOR it IN SELECT i.expense_id FROM labour_pay_request_items i WHERE i.request_id = p_request LOOP
+  FOR it IN SELECT i.expense_id FROM labour_pay_request_items i WHERE i.request_id = p_request AND i.removed_at IS NULL LOOP
     SELECT * INTO e FROM expenses WHERE id = it.expense_id FOR UPDATE;
     -- Hold the lines of workers HR hasn't verified (not crew-leader pay).
     IF e.vendor_id IS NULL THEN
@@ -285,14 +290,14 @@ BEGIN
     UPDATE labor_expense_workers x SET advance_deducted = round(d.amount * x.subtotal / NULLIF(t.total, 0), 2)
       FROM labour_pay_request_deductions d,
            LATERAL (SELECT sum(y.subtotal) AS total FROM labor_expense_workers y JOIN labour_pay_request_items i2 ON i2.expense_id = y.expense_id
-                     WHERE i2.request_id = p_request AND y.staff_id = d.staff_id) t
-     WHERE d.request_id = p_request AND x.staff_id = d.staff_id AND x.expense_id = e.id;
+                     WHERE i2.request_id = p_request AND i2.removed_at IS NULL AND y.staff_id = d.staff_id) t
+     WHERE d.request_id = p_request AND d.amount > 0 AND x.staff_id = d.staff_id AND x.expense_id = e.id;
     SELECT * INTO e FROM expenses WHERE id = e.id;
     IF e.amount_etb > 0 THEN
       UPDATE expenses SET approval_status = 'finance_approved' WHERE id = e.id;
       v_ok := v_ok + 1; v_total := v_total + e.amount_etb;
     ELSE
-      DELETE FROM labour_pay_request_items WHERE request_id = p_request AND expense_id = e.id;
+      UPDATE labour_pay_request_items SET removed_at = now() WHERE request_id = p_request AND expense_id = e.id;
     END IF;
   END LOOP;
 
@@ -310,7 +315,7 @@ BEGIN
   SELECT * INTO q FROM labour_pay_requests WHERE id = p_request FOR UPDATE;
   IF NOT FOUND OR q.status <> 'approved' THEN RAISE EXCEPTION 'Approve the request first'; END IF;
   SELECT array_agg(i.expense_id) INTO v_ids FROM labour_pay_request_items i JOIN expenses e ON e.id = i.expense_id
-   WHERE i.request_id = p_request AND e.payment_state = 'approved_to_pay';
+   WHERE i.request_id = p_request AND i.removed_at IS NULL AND e.payment_state = 'approved_to_pay';
   IF v_ids IS NULL THEN RAISE EXCEPTION 'Nothing on this request is waiting to be paid'; END IF;
   v_batch := create_batch_payment(v_ids, p_assignee, p_account, p_method, q.code,
                'Labour payment request ' || q.code || COALESCE(' — ' || q.note, ''));
@@ -355,12 +360,12 @@ RETURNS TABLE (id uuid, code text, status text, created_by_name text, created_at
   net numeric, unverified integer, batch_payment_id uuid, batch_code text, batch_paid boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
   SELECT q.id, q.code, q.status, q.created_by_name, q.created_at, q.submitted_at, q.approved_at, q.returned_reason,
-         (SELECT string_agg(DISTINCT p.project_name, ', ') FROM labour_pay_request_items i JOIN expenses e ON e.id = i.expense_id JOIN projects p ON p.id = e.project_id WHERE i.request_id = q.id),
-         (SELECT count(*)::int FROM labour_pay_request_items i WHERE i.request_id = q.id),
+         (SELECT string_agg(DISTINCT p.project_name, ', ') FROM labour_pay_request_items i JOIN expenses e ON e.id = i.expense_id JOIN projects p ON p.id = e.project_id WHERE i.request_id = q.id AND i.removed_at IS NULL),
+         (SELECT count(*)::int FROM labour_pay_request_items i WHERE i.request_id = q.id AND i.removed_at IS NULL),
          l.workers, l.gross, l.deductions, l.net, l.unverified,
          q.batch_payment_id, b.payment_code,
          (q.batch_payment_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM labour_pay_request_items i JOIN expenses e ON e.id = i.expense_id
-                                                         WHERE i.request_id = q.id AND e.payment_state <> 'paid'))
+                                                         WHERE i.request_id = q.id AND i.removed_at IS NULL AND e.payment_state <> 'paid'))
     FROM labour_pay_requests q
     LEFT JOIN batch_payments b ON b.id = q.batch_payment_id
     LEFT JOIN LATERAL (SELECT count(*)::int AS workers, sum(x.gross) AS gross, sum(x.deduction) AS deductions, sum(x.net) AS net,
