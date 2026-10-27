@@ -74,6 +74,33 @@ export default function LabourHomePage() {
     toast(`${Number(data ?? 0)} labour request${Number(data) === 1 ? '' : 's'} ended`, 'success')
   }
 
+  // Requests with no work recorded for three weeks (migration 476): end
+  // them, or record the work, so "on this job" keeps meaning something.
+  type Quiet = { id: string; role_needed: string; project_name: string | null; work_order: string | null; workers: number; last_day: string | null; created_at: string }
+  const { data: quiet = [], refetch: refetchQuiet } = useQuery({
+    queryKey: ['labour-quiet-requests'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_quiet_requests')
+      if (error) throw error
+      return (data ?? []) as Quiet[]
+    },
+  })
+  const [showQuiet, setShowQuiet] = useState(false)
+  const [ending, setEnding] = useState<string | null>(null)
+  async function endQuiet(ids: string[]) {
+    if (ids.length > 1 && !confirm(`End all ${ids.length} quiet labour requests? Their workers are released from the jobs; days already recorded can still be paid.`)) return
+    setEnding(ids.length > 1 ? 'all' : ids[0])
+    let done = 0
+    for (const id of ids) {
+      const { error } = await supabase.rpc('close_labor_requisition', { p_id: id, p_reason: 'No work recorded for three weeks', p_end_workers: true })
+      if (error) { toast(error.message, 'error'); break }
+      done++
+    }
+    setEnding(null)
+    refetchQuiet()
+    if (done) toast(`${done} labour request${done === 1 ? '' : 's'} ended`, 'success')
+  }
+
   // Everyone who isn't an approver or finance sees their own sites' requests.
   const mine = everywhere || finance ? requests : requests.filter(r => siteIds.has(r.project_id))
   const toApprove = approver ? requests.filter(r => r.status === 'pending') : []
@@ -124,6 +151,45 @@ export default function LabourHomePage() {
             {closing ? 'Ending…' : 'End them'}
           </button>
         </div>
+      )}
+
+      {quiet.length > 0 && (
+        <section className={card}>
+          <button onClick={() => setShowQuiet(v => !v)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+            <span className="min-w-[1.75rem] rounded-full bg-slate-500 px-2 py-0.5 text-center text-xs font-bold text-white">{quiet.length}</span>
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Gone quiet</span>
+              <span className="block text-xs text-slate-500">Approved labour with no work recorded for three weeks — end it, or record the work.</span>
+            </span>
+            <span className="text-xs text-brand">{showQuiet ? 'Hide' : 'Show'}</span>
+          </button>
+          {showQuiet && (
+            <>
+              <ul className="divide-y border-t dark:divide-slate-700 dark:border-slate-700">
+                {quiet.map(r => (
+                  <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <Link to={`/labour/${r.id}`} className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.role_needed} <span className="font-normal text-slate-500">· {r.project_name}</span></p>
+                      <p className="truncate text-xs text-slate-500">
+                        {r.work_order ?? 'No work order'} · {r.workers} worker{r.workers === 1 ? '' : 's'} · {r.last_day ? `last worked ${dayLabel(r.last_day)}` : 'never worked'}
+                      </p>
+                    </Link>
+                    <button onClick={() => endQuiet([r.id])} disabled={!!ending}
+                      className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300">
+                      {ending === r.id ? 'Ending…' : 'End'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex justify-end border-t px-4 py-2.5 dark:border-slate-700">
+                <button onClick={() => endQuiet(quiet.map(r => r.id))} disabled={!!ending}
+                  className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                  {ending === 'all' ? 'Ending…' : `End all ${quiet.length}`}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
       )}
 
       {todo.length > 0 && (

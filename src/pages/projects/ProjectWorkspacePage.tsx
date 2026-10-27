@@ -16,6 +16,7 @@ import { PaymentMilestonesSection } from '@/components/projects/PaymentMilestone
 import { ProjectClientsPanel } from '@/components/projects/ProjectClientsPanel'
 import { resolveHint } from '@/lib/trainerHints'
 import { useTabParam } from '@/lib/useTabParam'
+import { ProjectWorkBoard } from './ProjectWorkBoard'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, RecordTabs, Stat, StatusSteps, type TabDef } from '@/components/record/Record'
 import { useStaff, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
@@ -24,13 +25,12 @@ import type {
   Project, ProjectStage, ProjectHealth, ProjectCostGroupBudget, ProjectBudgetSummary,
   CostGroup, BudgetVariation, BudgetCheckMode, LaborAllocation, LaborAllocationInsert, LaborAllocationStatus,
   StockReturnRequest, StockReturnRequestStatus,
-  WorkOrder, WorkOrderStatus, WorkOrderCostRow,
 } from '@/types/database'
 import {
   Building2, User, CalendarClock, Wallet, Receipt,
   ShieldCheck, AlertTriangle, Package, TruckIcon, ClipboardCheck,
   Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
-  Trash2, UserPlus, PackageOpen, Wrench, Hammer,
+  Trash2, UserPlus, PackageOpen, Hammer,
   LayoutDashboard, Layers, Banknote, Users, Boxes, Activity, ShoppingCart, Flag,
 } from 'lucide-react'
 
@@ -243,189 +243,6 @@ const RETURN_STATUS_CLS: Record<StockReturnRequestStatus, string> = {
 // v_project_material_balance has no notion of per-work-order
 // consumption (nothing in this system tracks that granularly yet), so
 // this is placed-vs-returned, not a live depletion meter.
-// ── Work orders on this project ──────────────────────────────────────
-// The Work Orders page lists every order across every project, which is
-// the wrong altitude for someone standing in one project asking "what is
-// open on my site right now". This is that question, scoped: the active
-// orders first, with the detail needed to act on one — who is leading it,
-// how far along, when it is due — without leaving the workspace.
-
-const WO_ACTIVE: WorkOrderStatus[] = ['requested', 'in_progress']
-
-const WO_STATUS_CLS: Record<WorkOrderStatus, string> = {
-  requested:   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  in_progress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  completed:   'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  cancelled:   'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-}
-
-const WO_STATUS_LABEL: Record<WorkOrderStatus, string> = {
-  requested: 'Requested', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled',
-}
-
-function WorkOrdersSection({ projectId, projectName, canManage }: {
-  projectId: string; projectName: string; canManage: boolean
-}) {
-  // Active is the default because it is the actionable set; closed orders
-  // stay one click away rather than padding the list.
-  const [showClosed, setShowClosed] = useState(false)
-
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['project-work-orders', projectId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('work_orders')
-        .select('id, work_type, scope_of_work, status, assigned_lead_staff_id, target_completion_date, current_progress_pct, created_at')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      return (data ?? []) as unknown as Pick<WorkOrder,
-        'id' | 'work_type' | 'scope_of_work' | 'status' | 'assigned_lead_staff_id'
-        | 'target_completion_date' | 'current_progress_pct' | 'created_at'>[]
-    },
-    enabled: !!projectId,
-  })
-
-  // Costs come from the same view the Work Orders page uses, so a figure
-  // here and there can never disagree.
-  // Keyed on the ids, not just the project: keying on the project alone
-  // would serve a stale cost map after an order is added or removed.
-  const orderIds = useMemo(() => orders.map(o => o.id), [orders])
-  const { data: costs = [] } = useQuery({
-    queryKey: ['project-work-order-costs', projectId, orderIds],
-    queryFn: async () => {
-      const ids = orderIds
-      if (ids.length === 0) return []
-      const { data, error } = await supabase.from('v_work_order_cost').select('*').in('work_order_id', ids)
-      if (error) throw error
-      return (data ?? []) as WorkOrderCostRow[]
-    },
-    enabled: orderIds.length > 0,
-  })
-  const costById = useMemo(() => new Map(costs.map(c => [c.work_order_id, c.total_cost])), [costs])
-
-  const { data: staffDirectory = [] } = useStaffDirectory()
-  const staffNameById = useMemo(
-    () => new Map((staffDirectory as { id: string; employee_name: string }[])
-      .map(st => [st.id, st.employee_name])),
-    [staffDirectory],
-  )
-
-  const active = useMemo(() => orders.filter(o => WO_ACTIVE.includes(o.status)), [orders])
-  const closed = useMemo(() => orders.filter(o => !WO_ACTIVE.includes(o.status)), [orders])
-  const visible = showClosed ? orders : active
-  const activeCost = useMemo(
-    () => active.reduce((sum, o) => sum + (costById.get(o.id) ?? 0), 0),
-    [active, costById],
-  )
-
-  return (
-    <div className="rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-          <Wrench className="h-4 w-4" /> Work Orders
-          <span className="text-xs font-normal text-slate-400">
-            — {active.length} active{activeCost > 0 ? ` · ${formatCurrency(activeCost)} costed` : ''}
-          </span>
-        </h3>
-        <div className="flex items-center gap-2">
-          {closed.length > 0 && (
-            <button
-              onClick={() => setShowClosed(v => !v)}
-              className="text-xs text-slate-400 hover:text-brand transition-colors"
-            >
-              {showClosed ? 'Active only' : `Show ${closed.length} closed`}
-            </button>
-          )}
-          <Link to={`/work-orders?q=${encodeURIComponent(projectName)}`}
-            className="text-xs text-slate-400 hover:text-brand transition-colors">
-            All work orders →
-          </Link>
-          {canManage && (
-            <Link to={`/work-orders/new?project_id=${projectId}`}
-              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <Plus className="h-3.5 w-3.5" /> New
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
-      ) : visible.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
-          {orders.length === 0 ? 'No work orders raised for this project yet' : 'No active work orders — all are closed'}
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b dark:border-slate-700 text-[10px] uppercase tracking-wider text-slate-400">
-                <th className="text-left font-semibold pb-2">Scope</th>
-                <th className="text-left font-semibold pb-2 hidden sm:table-cell">Lead</th>
-                <th className="text-left font-semibold pb-2 w-28">Progress</th>
-                <th className="text-left font-semibold pb-2 hidden md:table-cell">Target</th>
-                <th className="text-right font-semibold pb-2 hidden md:table-cell">Cost</th>
-                <th className="text-left font-semibold pb-2">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y dark:divide-slate-700">
-              {visible.map(o => {
-                const pct = Math.max(0, Math.min(100, Number(o.current_progress_pct ?? 0)))
-                const days = daysUntil(o.target_completion_date)
-                // Only an order still open can be late — a completed one
-                // that ran past its date is history, not a warning.
-                const overdue = days != null && days < 0 && WO_ACTIVE.includes(o.status)
-                return (
-                  <tr key={o.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                    <td className="py-2.5 pr-3">
-                      <Link to={`/work-orders/${o.id}`}
-                        className="font-medium text-slate-800 dark:text-slate-100 hover:text-brand hover:underline">
-                        {o.scope_of_work}
-                      </Link>
-                      <span className="ml-1.5 inline-flex items-center gap-1 text-[10px] text-slate-400">
-                        {o.work_type === 'workshop' ? <Hammer className="h-2.5 w-2.5" /> : <Wrench className="h-2.5 w-2.5" />}
-                        {o.work_type === 'workshop' ? 'Workshop' : 'Site'}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300 hidden sm:table-cell">
-                      {(o.assigned_lead_staff_id && staffNameById.get(o.assigned_lead_staff_id)) ?? '—'}
-                    </td>
-                    <td className="py-2.5 pr-3">
-                      <div className="flex items-center gap-1.5">
-                        <div className="h-1.5 flex-1 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-                          <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400">{pct}%</span>
-                      </div>
-                    </td>
-                    <td className="py-2.5 pr-3 text-xs whitespace-nowrap hidden md:table-cell">
-                      {o.target_completion_date ? (
-                        <span className={overdue ? 'text-red-600 dark:text-red-400 font-medium' : 'text-slate-500 dark:text-slate-400'}>
-                          {formatDate(o.target_completion_date)}
-                          {overdue && ` · ${Math.abs(days!)}d late`}
-                        </span>
-                      ) : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                    </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600 dark:text-slate-300 hidden md:table-cell">
-                      {costById.get(o.id) ? formatCurrency(costById.get(o.id)!) : '—'}
-                    </td>
-                    <td className="py-2.5">
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${WO_STATUS_CLS[o.status]}`}>
-                        {WO_STATUS_LABEL[o.status]}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function MaterialsBalanceSection({ projectId }: { projectId: string }) {
   const { data = [], isLoading } = useQuery({
     queryKey: ['project-material-balance-full', projectId],
@@ -1083,7 +900,7 @@ export default function ProjectWorkspacePage() {
     { id: 'budget', label: 'Budget', icon: Wallet, count: pendingVariations.length },
     { id: 'boq', label: boqStatus?.needs_boq && boqStatus.boq_status === 'none' ? 'BOQ & Schedule · missing' : 'BOQ & Schedule', icon: Layers },
     { id: 'payments', label: 'Payments', icon: Banknote },
-    { id: 'team', label: 'Team & work', icon: Users },
+    { id: 'team', label: 'Work', icon: Users },
     { id: 'materials', label: 'Materials', icon: Boxes },
     { id: 'activity', label: 'Activity', icon: Activity },
   ]
@@ -1327,8 +1144,11 @@ export default function ProjectWorkspacePage() {
         {/* ── Team & work ──────────────────────────────────────────────── */}
         {tab === 'team' && (
           <>
-            <LaborAllocationsSection projectId={id!} canManage={canManageLabor} />
-            <WorkOrdersSection projectId={id!} projectName={project.project_name} canManage={canManageWorkOrders} />
+            <ProjectWorkBoard projectId={id!} canManage={canManageWorkOrders} />
+            <details className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">Staff allocated to this project</summary>
+              <div className="p-4 pt-0"><LaborAllocationsSection projectId={id!} canManage={canManageLabor} /></div>
+            </details>
           </>
         )}
 

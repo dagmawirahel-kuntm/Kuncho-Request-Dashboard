@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -53,11 +54,27 @@ export function RequestWorkerForProjectModal({ workers, onClose, workOrderId, de
   const [notes, setNotes]         = useState('')
   const [saving, setSaving]       = useState(false)
 
+  // The job on that project the workers are for: labour is asked for a work
+  // order, so its days count where the work is done (migration 476).
+  const [pickedWo, setPickedWo] = useState<string | null>(null)
+  const { data: siteOrders = [] } = useQuery({
+    queryKey: ['labour-site-work-orders', projectId],
+    enabled: !!projectId && !workOrderId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('work_orders').select('id, title, scope_of_work, status')
+        .eq('project_id', projectId!).in('status', ['requested', 'in_progress']).order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as { id: string; title: string | null; scope_of_work: string | null; status: string }[]
+    },
+  })
+  const woId = workOrderId ?? (pickedWo && siteOrders.some(o => o.id === pickedWo) ? pickedWo : null)
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const projectOptions = useMemo(() => projects.map((p: any) => ({ id: p.id, label: p.project_name })), [projects])
 
   async function handleSave() {
     if (!projectId) { toast('Pick a project', 'error'); return }
+    if (!woId) { toast(siteOrders.length ? 'Pick the work order they are for' : 'That project has no open work order — create one first', 'error'); return }
     if (workers.length === 0) { toast('Pick at least one worker', 'error'); return }
     if (basis === 'per_volume' && (!totalVolume || Number(totalVolume) <= 0)) {
       toast('Enter the estimated total volume', 'error'); return
@@ -66,7 +83,7 @@ export function RequestWorkerForProjectModal({ workers, onClose, workOrderId, de
     const names = workers.map(w => w.employee_name).join(', ')
     const payload = {
       project_id: projectId,
-      work_order_id: workOrderId ?? null,
+      work_order_id: woId,
       // Denormalised single-worker pointer only; the join table below is
       // authoritative for the group.
       specific_staff_id: workers.length === 1 ? workers[0].id : null,
@@ -137,6 +154,21 @@ export function RequestWorkerForProjectModal({ workers, onClose, workOrderId, de
             <SearchableSelect value={projectId} onChange={setProjectId} options={projectOptions} placeholder="Select project…" />
           )}
         </div>
+
+        {!workOrderId && projectId && (
+          <div>
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Work order *</label>
+            {siteOrders.length > 0 ? (
+              <SearchableSelect value={pickedWo} onChange={setPickedWo}
+                options={siteOrders.map(o => ({ id: o.id, label: o.title || (o.scope_of_work ?? 'Work order').slice(0, 60), sub: o.status === 'in_progress' ? 'in progress' : 'not started' }))}
+                placeholder="The job they are for…" />
+            ) : (
+              <p className="mt-1 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                This project has no open work order. Create the work order first, then request them from it.
+              </p>
+            )}
+          </div>
+        )}
 
         {workers.length > 1 && (
           <div>

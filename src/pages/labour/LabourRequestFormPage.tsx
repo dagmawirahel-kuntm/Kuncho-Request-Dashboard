@@ -105,6 +105,8 @@ export default function LabourRequestFormPage() {
   const stepError = useMemo(() => {
     if (step === 0) {
       if (!site) return 'Choose the site'
+      // Labour is asked for a job, so its days count where the work is done (476).
+      if (!workOrder) return siteOrders.length ? 'Choose the work order this labour is for' : 'This site has no open work order — create one first'
       if (!work.trim()) return 'Say what work is needed'
       if (!start) return 'When should they start?'
       if (end && end < start) return 'The end date is before the start'
@@ -122,7 +124,7 @@ export default function LabourRequestFormPage() {
       if (basis === 'per_day' && otRule === 'per_hour' && !(parseFloat(otValue) > 0)) return 'Give the birr per overtime hour'
     }
     return null
-  }, [step, site, work, start, end, named, extra, crew, leader, basis, unitRate, totalQty, price, dayRate, otRule, otValue])
+  }, [step, site, workOrder, siteOrders.length, work, start, end, named, extra, crew, leader, basis, unitRate, totalQty, price, dayRate, otRule, otValue])
 
   function addPerson() {
     if (!draft.name.trim()) return
@@ -200,12 +202,18 @@ export default function LabourRequestFormPage() {
               : sites.length === 0 ? <p className="text-sm text-amber-600">You aren't the manager or foreman of any site. Ask operations to add you to one.</p>
               : <SearchableSelect value={site} onChange={setSite} options={sites.map(s => ({ id: s.id, label: s.project_name }))} placeholder="Choose the site…" />}
           </div>
-          {site && siteOrders.length > 0 && (
+          {site && (
             <div>
-              <Label hint="Its labour cost then counts on that job, and the workers join its crew.">For which job? <span className="font-normal text-slate-400">(recommended)</span></Label>
-              <SearchableSelect value={workOrder} onChange={setWoId}
-                options={siteOrders.map(o => ({ id: o.id, label: o.title || (o.scope_of_work ?? 'Work order').slice(0, 60), sub: o.status === 'in_progress' ? 'in progress' : 'not started' }))}
-                placeholder="Choose the work order…" />
+              <Label hint="Its days and cost count on that job, and the workers join its crew.">For which job?</Label>
+              {siteOrders.length > 0 ? (
+                <SearchableSelect value={workOrder} onChange={setWoId}
+                  options={siteOrders.map(o => ({ id: o.id, label: o.title || (o.scope_of_work ?? 'Work order').slice(0, 60), sub: o.status === 'in_progress' ? 'in progress' : 'not started' }))}
+                  placeholder="Choose the work order…" />
+              ) : (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                  This site has no open work order. <Link to={`/work-orders/new?project_id=${site}`} className="font-semibold underline">Create the work order</Link> first, then ask for labour from it.
+                </p>
+              )}
             </div>
           )}
           <div>
