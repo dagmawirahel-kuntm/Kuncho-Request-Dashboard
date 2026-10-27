@@ -5,8 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
+import { usePayableDrafts } from '@/lib/labourPayRequests'
+import { useMyWorkers } from '@/lib/workerDetails'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { ChevronRight, ClipboardCheck, Clock, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
+import { CalendarDays, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -40,15 +42,22 @@ export default function LabourHomePage() {
       return (data ?? []) as { labor_requisition_id: string; project_id: string; ready: boolean }[]
     },
   })
+  // Finance works payment requests from PMs (479), not loose pay sheets.
   const { data: financeWaiting = 0 } = useQuery({
     queryKey: ['labour-finance-waiting'],
     enabled: finance || role === 'admin',
     queryFn: async () => {
-      const { count } = await supabase.from('labour_pay_sheets').select('id, expenses!inner(approval_status)', { count: 'exact', head: true })
-        .eq('expenses.approval_status', 'pending')
+      const { count } = await supabase.from('labour_pay_requests').select('id', { count: 'exact', head: true })
+        .in('status', ['submitted', 'approved'])
       return count ?? 0
     },
   })
+  // The PM's side: confirmed pay not yet put in a request.
+  const { data: toRequest = [] } = usePayableDrafts(!finance)
+  // Workers whose details the site team still has to fill in, or fix (482).
+  const { data: myWorkers = [] } = useMyWorkers(!finance)
+  const detailsReturned = myWorkers.filter(w => w.returned_reason).length
+  const detailsMissing = myWorkers.filter(w => !w.returned_reason && !w.verified && (w.gaps?.length ?? 0) > 0).length
 
   // Labour still open on jobs that are already finished (migration 408).
   const { toast } = useToast()
@@ -74,6 +83,33 @@ export default function LabourHomePage() {
     toast(`${Number(data ?? 0)} labour request${Number(data) === 1 ? '' : 's'} ended`, 'success')
   }
 
+  // Requests with no work recorded for three weeks (migration 476): end
+  // them, or record the work, so "on this job" keeps meaning something.
+  type Quiet = { id: string; role_needed: string; project_name: string | null; work_order: string | null; workers: number; last_day: string | null; created_at: string }
+  const { data: quiet = [], refetch: refetchQuiet } = useQuery({
+    queryKey: ['labour-quiet-requests'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_quiet_requests')
+      if (error) throw error
+      return (data ?? []) as Quiet[]
+    },
+  })
+  const [showQuiet, setShowQuiet] = useState(false)
+  const [ending, setEnding] = useState<string | null>(null)
+  async function endQuiet(ids: string[]) {
+    if (ids.length > 1 && !confirm(`End all ${ids.length} quiet labour requests? Their workers are released from the jobs; days already recorded can still be paid.`)) return
+    setEnding(ids.length > 1 ? 'all' : ids[0])
+    let done = 0
+    for (const id of ids) {
+      const { error } = await supabase.rpc('close_labor_requisition', { p_id: id, p_reason: 'No work recorded for three weeks', p_end_workers: true })
+      if (error) { toast(error.message, 'error'); break }
+      done++
+    }
+    setEnding(null)
+    refetchQuiet()
+    if (done) toast(`${done} labour request${done === 1 ? '' : 's'} ended`, 'success')
+  }
+
   // Everyone who isn't an approver or finance sees their own sites' requests.
   const mine = everywhere || finance ? requests : requests.filter(r => siteIds.has(r.project_id))
   const toApprove = approver ? requests.filter(r => r.status === 'pending') : []
@@ -89,7 +125,10 @@ export default function LabourHomePage() {
     ...(toApprove.length ? [{ to: '#waiting', label: 'Requests to approve', n: toApprove.length, tone: 'bg-amber-500' }] : []),
     ...(toConfirm.length ? [{ to: '/labour/pay', label: 'Weeks to confirm for pay', n: toConfirm.length, tone: 'bg-blue-600' }] : []),
     ...(noWorkers.length ? [{ to: '#active', label: 'Approved, no workers added yet', n: noWorkers.length, tone: 'bg-slate-500' }] : []),
-    ...(financeWaiting ? [{ to: '/finance/labor-expense-drafts', label: 'Confirmed pay waiting for finance', n: financeWaiting, tone: 'bg-emerald-600' }] : []),
+    ...(detailsReturned ? [{ to: '/labour/workers', label: 'Worker details sent back by HR', n: detailsReturned, tone: 'bg-red-600' }] : []),
+    ...(detailsMissing ? [{ to: '/labour/workers', label: 'Workers with details missing (their pay waits)', n: detailsMissing, tone: 'bg-amber-500' }] : []),
+    ...(toRequest.length ? [{ to: '/labour/requests?view=mine', label: 'Confirmed pay to send in a payment request', n: toRequest.length, tone: 'bg-blue-600' }] : []),
+    ...(financeWaiting ? [{ to: '/labour/requests', label: 'Payment requests to approve or pay', n: financeWaiting, tone: 'bg-emerald-600' }] : []),
   ]
 
   return (
@@ -111,9 +150,14 @@ export default function LabourHomePage() {
           {toConfirm.length > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{toConfirm.length}</span>}
         </Link>
       </div>
-      <Link to="/labour/overtime" className="flex items-center justify-center gap-1.5 text-xs text-slate-500 hover:text-brand">
-        <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
-      </Link>
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        <Link to="/labour/record/week" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><CalendarDays className="h-3.5 w-3.5" /> Record a week</Link>
+        <Link to="/labour/workers" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><IdCard className="h-3.5 w-3.5" /> Worker details</Link>
+        <Link to="/labour/requests" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><FileCheck2 className="h-3.5 w-3.5" /> Payment requests</Link>
+        <Link to="/labour/overtime" className="flex min-w-0 items-center gap-1.5 hover:text-brand">
+          <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
+        </Link>
+      </div>
 
       {canBulkClose && onFinished > 0 && (
         <div className={`${card} flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10`}>
@@ -124,6 +168,45 @@ export default function LabourHomePage() {
             {closing ? 'Ending…' : 'End them'}
           </button>
         </div>
+      )}
+
+      {quiet.length > 0 && (
+        <section className={card}>
+          <button onClick={() => setShowQuiet(v => !v)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+            <span className="min-w-[1.75rem] rounded-full bg-slate-500 px-2 py-0.5 text-center text-xs font-bold text-white">{quiet.length}</span>
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Gone quiet</span>
+              <span className="block text-xs text-slate-500">Approved labour with no work recorded for three weeks — end it, or record the work.</span>
+            </span>
+            <span className="text-xs text-brand">{showQuiet ? 'Hide' : 'Show'}</span>
+          </button>
+          {showQuiet && (
+            <>
+              <ul className="divide-y border-t dark:divide-slate-700 dark:border-slate-700">
+                {quiet.map(r => (
+                  <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <Link to={`/labour/${r.id}`} className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.role_needed} <span className="font-normal text-slate-500">· {r.project_name}</span></p>
+                      <p className="truncate text-xs text-slate-500">
+                        {r.work_order ?? 'No work order'} · {r.workers} worker{r.workers === 1 ? '' : 's'} · {r.last_day ? `last worked ${dayLabel(r.last_day)}` : 'never worked'}
+                      </p>
+                    </Link>
+                    <button onClick={() => endQuiet([r.id])} disabled={!!ending}
+                      className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300">
+                      {ending === r.id ? 'Ending…' : 'End'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex justify-end border-t px-4 py-2.5 dark:border-slate-700">
+                <button onClick={() => endQuiet(quiet.map(r => r.id))} disabled={!!ending}
+                  className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                  {ending === 'all' ? 'Ending…' : `End all ${quiet.length}`}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
       )}
 
       {todo.length > 0 && (

@@ -126,3 +126,85 @@ export function useMyJobIds() {
   return query.data ?? EMPTY_IDS
 }
 const EMPTY_IDS: ReadonlySet<string> = new Set()
+
+// ── Project → work order → people → work done (migration 476) ─────────
+
+/** Someone on a work order's crew, or recorded on it. */
+export interface WorkOrderPerson {
+  staff_id: string | null
+  name: string
+  trade: string | null
+  casual: boolean | null
+  role: string | null
+  is_lead: boolean | null
+  on_crew: boolean
+  since: string | null
+  days: number
+  hours: number
+  overtime_hours: number
+  quantity: number | null
+  today: number | null
+  first_day: string | null
+  last_day: string | null
+  /** null when this viewer doesn't see labour costs */
+  cost: number | null
+  unconfirmed: number | null
+  requests: { id: string; role: string; open: boolean }[]
+}
+
+export function useWorkOrderPeople(workOrderId: string | undefined) {
+  return useQuery({
+    queryKey: ['work-order-people', workOrderId],
+    enabled: !!workOrderId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('work_order_people', { p_wo: workOrderId })
+      if (error) throw error
+      const d = (data ?? {}) as { people?: WorkOrderPerson[]; costs_visible?: boolean }
+      return { people: d.people ?? [], costsVisible: !!d.costs_visible }
+    },
+  })
+}
+
+export type WorkFlag = 'no_progress' | 'behind' | 'idle' | 'overdue'
+export const WORK_FLAG: Record<WorkFlag, { label: string; hint: string; tone: Tone }> = {
+  no_progress: { label: 'No progress logged', hint: 'Worked on in the last two weeks, but nobody has updated its progress', tone: 'amber' },
+  behind: { label: 'Labour ahead of progress', hint: 'More of the planned labour is spent than the job is done', tone: 'red' },
+  idle: { label: 'Crew idle', hint: 'People on the crew, but no work recorded for two weeks', tone: 'slate' },
+  overdue: { label: 'Overdue', hint: 'Past its target date', tone: 'red' },
+}
+
+/** One work order on the project's work board. */
+export interface ProjectWorkRow {
+  id: string
+  title: string
+  status: string
+  progress: number | null
+  due: string | null
+  lead: string | null
+  crew: number
+  today: number
+  week_days: number
+  person_days: number
+  cost: number | null
+  planned: number | null
+  spent_pct: number | null
+  last_worked: string | null
+  last_update: string | null
+  flags: WorkFlag[]
+}
+
+export function useProjectWorkBoard(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-work-board', projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('project_work_board', { p_project: projectId })
+      if (error) throw error
+      const d = (data ?? {}) as {
+        orders?: ProjectWorkRow[]; costs_visible?: boolean
+        unlinked?: { requests: number; person_days: number; cost: number | null; last_worked: string | null }
+      }
+      return { orders: d.orders ?? [], unlinked: d.unlinked ?? null, costsVisible: !!d.costs_visible }
+    },
+  })
+}

@@ -10,8 +10,6 @@ import { StarRating } from '@/components/shared/StarRating'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId, useMySiteForemanProjects } from '@/hooks/useMyStaff'
-import { useTradeRoster, useAllRolling } from '@/hooks/useTier2Workers'
-import { RosterRequestPickerModal } from '@/components/shared/RosterRequestPickerModal'
 import {
   useWorkOrderTeam, useWorkOrderRatings, useUpsertWorkOrderRating, useDeleteWorkOrderRating,
   type WorkOrderRatingRow,
@@ -20,10 +18,11 @@ import { Pill } from '@/components/record/Record'
 import { WO_STATUS, useMyJobIds, type WorkOrderBoardRow } from '@/lib/workOrders'
 import { blockerEffect } from '@/lib/workOrderBlockers'
 import { BlockersCard } from './WorkOrderBlockers'
-import { ItemsCard, LabourCard, StatusActions, SubcontractedCard, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
+import { ItemsCard, StatusActions, SubcontractedCard, UpdateProgressSheet, UpdatesTimeline } from './WorkOrderParts'
+import { WorkOrderPeopleCard } from './WorkOrderPeople'
 import { SUBCONTRACT_WRITE_ROLES, useWorkOrderSubcontracts } from '@/lib/subcontracts'
-import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, WorkOrderCrew, WoAttendanceLog, SiteMaterialReceipt } from '@/types/database'
-import { ArrowLeft, Pencil, Plus, Star, Trash2, X, Users, Clock, TrendingUp, Package, Camera, UserMinus, UserPlus2, Send } from 'lucide-react'
+import type { WorkOrder, WorkOrderCostRow, LaborAllocation, StockIssue, SiteMaterialReceipt } from '@/types/database'
+import { ArrowLeft, Pencil, Plus, Star, Trash2, X, TrendingUp, Package, Camera } from 'lucide-react'
 
 type WorkOrderDetail = WorkOrder & {
   projects: { project_name: string } | null
@@ -59,7 +58,6 @@ export default function WorkOrderDetailPage() {
   // access to `staff` at all.
   const { data: staffDirectory = [] } = useStaffDirectory()
   const staffNameById = useMemo(() => new Map((staffDirectory as { id: string; employee_name: string }[]).map(s => [s.id, s.employee_name])), [staffDirectory])
-  const staffDirectoryById = useMemo(() => new Map((staffDirectory as { id: string }[]).map(s => [s.id, s])), [staffDirectory])
 
   const { data: cost } = useQuery({
     queryKey: ['work-order-cost', id],
@@ -161,10 +159,9 @@ export default function WorkOrderDetailPage() {
 
       <BlockersCard wo={wo} board={board} canAct={canRecord} />
       <ItemsCard wo={wo} canUpdate={canRecord} canEdit={canWrite} onUpdate={() => setUpdating(true)} />
-      <SubcontractedCard wo={wo} canAdd={canSubcontract} />
-      <LabourCard wo={wo} canUpdate={canUpdate} />
+      <WorkOrderPeopleCard workOrderId={wo.id} projectId={wo.project_id} canManage={canUpdate} canAskForLabour={canUpdate} />
       <UpdatesTimeline workOrderId={wo.id} />
-      <CrewSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} leadStaffId={wo.assigned_lead_staff_id ?? null} staffNameById={staffNameById} staffDirectoryById={staffDirectoryById} />
+      <SubcontractedCard wo={wo} canAdd={canSubcontract} />
       <MaterialReceiptsSection workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
       <PhotosGrid workOrderId={wo.id} />
       {lower(wo.status) === 'completed' && (
@@ -172,9 +169,8 @@ export default function WorkOrderDetailPage() {
       )}
 
       <details className="rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">Older records — attendance, linked allocations and stock issues</summary>
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">Older records — linked allocations and stock issues</summary>
         <div className="space-y-4 p-4 pt-0">
-          <TodayActivitySection workOrderId={wo.id} staffNameById={staffNameById} />
           <LinkedLabor workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} staffNameById={staffNameById} />
           <LinkedMaterials workOrderId={wo.id} projectId={wo.project_id} canWrite={canWrite} />
         </div>
@@ -702,272 +698,6 @@ function RatingRow({ label, value, onChange }: { label: string; value: number; o
           </button>
         ))}
       </div>
-    </div>
-  )
-}
-
-// ── Crew section: work_order_crew (Tier 1 + Tier 2 assignment layer) ──
-type CrewRow = WorkOrderCrew & { staff: { employee_name: string; employment_type: string | null; trade_tag: string | null; codename_amharic: string | null; codename_english: string | null } | null }
-
-function Tier2MiniBadge({ employeeName, tradeTag, codenameAmharic, codenameEnglish, score }: { employeeName: string | null; tradeTag: string | null; codenameAmharic: string | null; codenameEnglish: string | null; score: number | null }) {
-  const { data: roster = [] } = useTradeRoster()
-  const trade = roster.find(t => t.trade_tag === tradeTag)
-  const accent = trade?.color_accent ?? '#7a7f8c'
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] dark:border-slate-600" style={{ borderColor: accent }}>
-      <span>{trade?.icon_emoji ?? '🛠️'}</span>
-      <span className="font-medium text-slate-700 dark:text-slate-200">{employeeName ?? codenameAmharic ?? trade?.codename_amharic ?? codenameEnglish ?? 'Tier 2'}</span>
-      <span className="text-slate-400">{codenameAmharic ?? trade?.codename_amharic ?? codenameEnglish ?? ''}</span>
-      <span className="font-mono text-slate-400">{score != null ? `${score}/100` : '—'}</span>
-    </span>
-  )
-}
-
-function CrewSection({ workOrderId, projectId, canWrite, leadStaffId, staffNameById, staffDirectoryById }: {
-  workOrderId: string; projectId: string; canWrite: boolean; leadStaffId: string | null; staffNameById: Map<string, string>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  staffDirectoryById: Map<string, any>
-}) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const { data: mySelf } = useMyStaffId()
-  const canManage = useCanWriteWoOps(projectId, canWrite)
-  const [showAdd, setShowAdd] = useState(false)
-  const [showRosterPicker, setShowRosterPicker] = useState(false)
-  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null)
-  const [roleOnWo, setRoleOnWo] = useState('')
-  const [saving, setSaving] = useState(false)
-  const { data: rolling = [] } = useAllRolling()
-  const rollingByStaff = useMemo(() => new Map(rolling.map(r => [r.staff_id, r.overall_score_100])), [rolling])
-
-  const { data: crew = [], isLoading } = useQuery({
-    queryKey: ['work-order-crew', workOrderId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('work_order_crew')
-        .select('*, staff!work_order_crew_staff_id_fkey(employee_name, employment_type, trade_tag, codename_amharic, codename_english)')
-        .eq('work_order_id', workOrderId)
-        .is('removed_at', null)
-      if (error) throw error
-      return data as unknown as CrewRow[]
-    },
-  })
-
-  const { data: candidatePool = [] } = useQuery({
-    queryKey: ['wo-crew-candidates', projectId],
-    queryFn: async () => {
-      const [assignments, allocations] = await Promise.all([
-        supabase.from('staff_assignments').select('staff_id, staff:staff_id(employee_name)').eq('project_id', projectId).eq('active', true),
-        supabase.from('labor_allocations').select('staff_id, staff:staff_id(employee_name)').eq('project_id', projectId).eq('status', 'active'),
-      ])
-      if (assignments.error) throw assignments.error
-      if (allocations.error) throw allocations.error
-      const merged = new Map<string, string>()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const r of [...(assignments.data ?? []), ...(allocations.data ?? [])] as any[]) {
-        if (r.staff_id) merged.set(r.staff_id, r.staff?.employee_name ?? staffNameById.get(r.staff_id) ?? '—')
-      }
-      return Array.from(merged.entries()).map(([id, label]) => ({ id, label }))
-    },
-    enabled: showAdd,
-  })
-
-  const alreadyOnCrew = new Set(crew.map(c => c.staff_id))
-  const addOptions = candidatePool.filter(o => !alreadyOnCrew.has(o.id))
-
-  async function handleAdd() {
-    if (!selectedStaffId) return
-    setSaving(true)
-    const { error } = await supabase.from('work_order_crew').insert([{
-      work_order_id: workOrderId, staff_id: selectedStaffId, role_on_wo: roleOnWo.trim() || null,
-      assigned_by_staff_id: mySelf?.id ?? null,
-    }])
-    setSaving(false)
-    if (error) {
-      // 23505 = unique_violation on uq_wo_crew_active — someone else's
-      // recent add hadn't reached this browser's cached crew list yet.
-      // Refetch so the dropdown drops the stale option, and say so
-      // plainly instead of surfacing the raw constraint name.
-      qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
-      toast(error.code === '23505' ? 'This person is already on the crew for this work order' : error.message, 'error')
-      return
-    }
-    qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
-    setSelectedStaffId(null); setRoleOnWo(''); setShowAdd(false)
-    toast('Crew member added', 'success')
-  }
-
-  async function handleRemove(rowId: string) {
-    const { error } = await supabase.from('work_order_crew')
-      .update({ removed_at: new Date().toISOString(), removed_by_staff_id: mySelf?.id ?? null })
-      .eq('id', rowId)
-    if (error) { toast(error.message, 'error'); return }
-    qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
-    toast('Removed from crew', 'success')
-  }
-
-  return (
-    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-3">
-      {showRosterPicker && (
-        <RosterRequestPickerModal
-          projectId={projectId} workOrderId={workOrderId}
-          excludeStaffIds={alreadyOnCrew}
-          onClose={() => setShowRosterPicker(false)}
-        />
-      )}
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Users className="h-4 w-4" /> Crew ({crew.length})</h2>
-        {canManage && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowRosterPicker(true)}
-              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-            >
-              <Send className="h-3.5 w-3.5" /> Request from Roster
-            </button>
-            <Link to={`/labor-requisitions/new?project_id=${projectId}&work_order_id=${workOrderId}`} className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <UserPlus2 className="h-3.5 w-3.5" /> Request New/Casual Labor
-            </Link>
-            <button
-              onClick={() => {
-                if (!showAdd) qc.invalidateQueries({ queryKey: ['work-order-crew', workOrderId] })
-                setShowAdd(s => !s)
-              }}
-              className="flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-            >
-              {showAdd ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {showAdd ? 'Cancel' : 'Add Crew'}
-            </button>
-          </div>
-        )}
-      </div>
-      {showAdd && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex-1"><SearchableSelect value={selectedStaffId} onChange={setSelectedStaffId} options={addOptions} placeholder="Select staff allocated to this project…" /></div>
-          <input value={roleOnWo} onChange={e => setRoleOnWo(e.target.value)} placeholder="Role on WO (optional)" className="rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 sm:w-48" />
-          <button onClick={handleAdd} disabled={saving || !selectedStaffId} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-60">{saving ? 'Adding…' : 'Add'}</button>
-        </div>
-      )}
-      {isLoading ? (
-        <div className="py-6 text-center text-sm text-slate-400">Loading…</div>
-      ) : crew.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-400">No crew assigned yet.</p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {crew.map(c => {
-            const fallback = staffDirectoryById.get(c.staff_id)
-            const employmentType = c.staff?.employment_type ?? fallback?.employment_type ?? null
-            return (
-            <div key={c.id} className="flex items-center gap-2 rounded-full border px-2.5 py-1.5 dark:border-slate-600">
-              {employmentType === 'tier_2_casual' ? (
-                <Tier2MiniBadge
-                  employeeName={c.staff?.employee_name ?? fallback?.employee_name ?? staffNameById.get(c.staff_id) ?? null}
-                  tradeTag={c.staff?.trade_tag ?? fallback?.trade_tag ?? null}
-                  codenameAmharic={c.staff?.codename_amharic ?? fallback?.codename_amharic ?? null}
-                  codenameEnglish={c.staff?.codename_english ?? fallback?.codename_english ?? null}
-                  score={rollingByStaff.get(c.staff_id) ?? null}
-                />
-              ) : (
-                <span className="text-sm text-slate-700 dark:text-slate-200">{c.staff?.employee_name ?? staffNameById.get(c.staff_id) ?? '—'}</span>
-              )}
-              {c.staff_id === leadStaffId && <span className="rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 font-semibold">Lead</span>}
-              {c.role_on_wo && <span className="text-[10px] text-slate-400">{c.role_on_wo}</span>}
-              {canManage && (
-                <button onClick={() => handleRemove(c.id)} className="text-slate-400 hover:text-red-500" title="Remove"><UserMinus className="h-3.5 w-3.5" /></button>
-              )}
-            </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Today's activity: hours logged today + who logged in ────────────
-// Total work logged on this WO to date, not just today — the old
-// version only ever summed today's hours_logged, so a WO that had been
-// running for weeks still read as "0 hrs" the moment today ticked over
-// with nothing freshly logged, and never reflected volume-paid work
-// (volume_completed) at all. Today's activity is kept as a secondary
-// "+X today" detail rather than dropped, since it's still useful.
-function TodayActivitySection({ workOrderId, staffNameById }: { workOrderId: string; staffNameById: Map<string, string> }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const { data: rows = [] } = useQuery({
-    queryKey: ['wo-attendance-all', workOrderId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('wo_attendance_log')
-        .select('*, staff:staff_id(employee_name), labor_requisitions(role_needed, volume_unit)')
-        .eq('work_order_id', workOrderId)
-      if (error) throw error
-      return data as unknown as (WoAttendanceLog & { staff: { employee_name: string } | null; labor_requisitions: { role_needed: string; volume_unit: string | null } | null })[]
-    },
-  })
-
-  const totalHours = rows.reduce((sum, r) => sum + Number(r.hours_logged ?? 0), 0)
-  const todayHours = rows.filter(r => r.log_date === today).reduce((sum, r) => sum + Number(r.hours_logged ?? 0), 0)
-
-  // Volume-paid work doesn't share a unit across tasks (m², pcs, lm…),
-  // so it's totalled per unit rather than lumped into one number.
-  const volumeByUnit = new Map<string, { total: number; today: number }>()
-  for (const r of rows) {
-    const vol = Number(r.volume_completed ?? 0)
-    if (vol <= 0) continue
-    const unit = r.labor_requisitions?.volume_unit ?? 'units'
-    const bucket = volumeByUnit.get(unit) ?? { total: 0, today: 0 }
-    bucket.total += vol
-    if (r.log_date === today) bucket.today += vol
-    volumeByUnit.set(unit, bucket)
-  }
-
-  // Per-worker cumulative totals — hours and/or volume, whichever this
-  // person actually logged, each with a "today" sub-figure alongside.
-  type WorkerTotal = { name: string; hours: number; hoursToday: number; volume: number; volumeToday: number; unit: string | null }
-  const byWorker = new Map<string, WorkerTotal>()
-  for (const r of rows) {
-    const name = r.staff?.employee_name ?? staffNameById.get(r.staff_id) ?? '—'
-    const w = byWorker.get(r.staff_id) ?? { name, hours: 0, hoursToday: 0, volume: 0, volumeToday: 0, unit: null }
-    const isToday = r.log_date === today
-    w.hours += Number(r.hours_logged ?? 0)
-    if (isToday) w.hoursToday += Number(r.hours_logged ?? 0)
-    const vol = Number(r.volume_completed ?? 0)
-    if (vol > 0) {
-      w.volume += vol
-      if (isToday) w.volumeToday += vol
-      w.unit = r.labor_requisitions?.volume_unit ?? w.unit ?? 'units'
-    }
-    byWorker.set(r.staff_id, w)
-  }
-
-  const hasAnyRows = rows.length > 0
-
-  return (
-    <div className="rounded-xl border bg-white p-5 dark:bg-slate-800 dark:border-slate-700 space-y-2">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300"><Clock className="h-4 w-4" /> Work Logged</h2>
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <p className="text-lg font-bold text-slate-800 dark:text-slate-100">
-          {totalHours} hrs <span className="text-xs font-normal text-slate-400">total{todayHours > 0 ? ` · +${todayHours}h today` : ''}</span>
-        </p>
-        {Array.from(volumeByUnit.entries()).map(([unit, v]) => (
-          <p key={unit} className="text-lg font-bold text-slate-800 dark:text-slate-100">
-            {v.total} {unit} <span className="text-xs font-normal text-slate-400">total{v.today > 0 ? ` · +${v.today} today` : ''}</span>
-          </p>
-        ))}
-      </div>
-      {!hasAnyRows ? (
-        <p className="text-sm text-slate-400">No work logged yet.</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {Array.from(byWorker.values()).map(w => (
-            <span key={w.name} className="rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300">
-              {w.name} ·{w.hours > 0 && ` ${w.hours}h`}{w.volume > 0 && ` ${w.volume} ${w.unit}`}
-              {(w.hoursToday > 0 || w.volumeToday > 0) && (
-                <span className="text-slate-400"> (+{w.hoursToday > 0 ? `${w.hoursToday}h` : `${w.volumeToday} ${w.unit}`} today)</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

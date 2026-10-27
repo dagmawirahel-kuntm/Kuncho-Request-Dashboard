@@ -3,14 +3,13 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
-import { Pill } from '@/components/record/Record'
 import type { WorkOrder } from '@/types/database'
-import { itemDone, itemShare, itemsProgress, useWorkOrderItems, type WorkOrderItem, type WorkOrderLabourRow, type WorkOrderLabourHistoryRow } from '@/lib/workOrders'
+import { itemDone, itemShare, itemsProgress, useWorkOrderItems, type WorkOrderItem } from '@/lib/workOrders'
 import { BLOCKER_KIND, useBlockedItems } from '@/lib/workOrderBlockers'
 import { useSubcontractedParts, useWorkOrderSubcontracts, STATUS_LABEL as SUB_STATUS } from '@/lib/subcontracts'
-import { Check, CheckCircle2, ClipboardCheck, HardHat, Minus, Plus, RotateCcw, TrendingUp, X, Ban, Handshake } from 'lucide-react'
+import { Check, CheckCircle2, Minus, Plus, RotateCcw, TrendingUp, X, Ban, Handshake } from 'lucide-react'
 
 const card = 'rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const fmtQty = (n: number | null | undefined) => n == null ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -237,9 +236,8 @@ export function StatusActions({ wo, canUpdate }: { wo: WorkOrder; canUpdate: boo
   const [ask, setAsk] = useState<null | 'completed' | 'cancelled' | 'in_progress'>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
-  const [endLabour, setEndLabour] = useState(true)
   // Labour requests still running on this order — finishing the job ends
-  // them too (finish_work_order, migration 408), unless unticked.
+  // them and releases its crew (migration 475).
   const { data: openLabour = 0 } = useQuery({
     queryKey: ['work-order-open-labour', wo.id],
     queryFn: async () => {
@@ -257,7 +255,7 @@ export function StatusActions({ wo, canUpdate }: { wo: WorkOrder; canUpdate: boo
     setBusy(true)
     const finishing = ask === 'completed' || ask === 'cancelled'
     const { data, error } = finishing
-      ? await supabase.rpc('finish_work_order', { p_wo: wo.id, p_status: ask, p_note: note.trim() || null, p_close_labour: endLabour && openLabour > 0 })
+      ? await supabase.rpc('finish_work_order', { p_wo: wo.id, p_status: ask, p_note: note.trim() || null })
       : await supabase.rpc('set_work_order_status', { p_wo: wo.id, p_status: ask, p_note: note.trim() || null })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
@@ -289,11 +287,11 @@ export function StatusActions({ wo, canUpdate }: { wo: WorkOrder; canUpdate: boo
             )}
             <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder={ask === 'cancelled' ? 'Why? (needed)' : 'Note (optional)'}
               className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800" />
-            {(ask === 'completed' || ask === 'cancelled') && openLabour > 0 && (
-              <label className="mt-2 flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
-                <input type="checkbox" className="mt-0.5 accent-brand" checked={endLabour} onChange={e => setEndLabour(e.target.checked)} />
-                <span>Also end the {openLabour} labour request{openLabour === 1 ? '' : 's'} on this job — workers are released and nothing more is booked to it. Days already recorded can still be paid.</span>
-              </label>
+            {(ask === 'completed' || ask === 'cancelled') && (
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                {openLabour > 0 ? `Its ${openLabour} labour request${openLabour === 1 ? ' ends' : 's end'} and the crew is released. ` : 'The crew is released. '}
+                Days already recorded can still be paid.
+              </p>
             )}
             <div className="mt-3 flex gap-2">
               <button onClick={() => setAsk(null)} className="flex-1 rounded-lg border py-2.5 text-sm dark:border-slate-600">Back</button>
@@ -303,93 +301,6 @@ export function StatusActions({ wo, canUpdate }: { wo: WorkOrder; canUpdate: boo
         </div>
       )}
     </>
-  )
-}
-
-// ── Labour on the job ────────────────────────────────────────────────
-export function LabourCard({ wo, canUpdate }: { wo: WorkOrder; canUpdate: boolean }) {
-  const { data: rows = [] } = useQuery({
-    queryKey: ['work-order-labour', wo.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('v_work_order_labour').select('*').eq('work_order_id', wo.id)
-      if (error) throw error
-      return (data ?? []) as WorkOrderLabourRow[]
-    },
-  })
-  const { data: history = [] } = useQuery({
-    queryKey: ['work-order-labour-history', wo.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('v_work_order_labour_history').select('*').eq('work_order_id', wo.id).order('cost', { ascending: false })
-      if (error) throw error
-      return (data ?? []) as WorkOrderLabourHistoryRow[]
-    },
-  })
-  const [showHistory, setShowHistory] = useState(false)
-  const historyCost = history.reduce((s, h) => s + Number(h.cost), 0)
-  const historyDays = history.reduce((s, h) => s + Number(h.days), 0)
-  const elsewhere = history.reduce((s, h) => s + Number(h.paid_under_other_order), 0)
-  const total = rows.reduce((s, r) => s + Number(r.confirmed_cost) + Number(r.recorded_cost), 0) + historyCost
-  return (
-    <section className={card}>
-      <div className="flex items-center justify-between border-b px-4 py-3 dark:border-slate-700">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200"><HardHat className="h-4 w-4" /> Labour <span className="font-normal text-slate-400">{formatCurrency(total)}</span></h2>
-        <div className="flex gap-2">
-          <Link to={`/labour/record?site=${wo.project_id}`} className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium dark:border-slate-600"><ClipboardCheck className="h-3.5 w-3.5" /> Record today</Link>
-          {canUpdate && <Link to={`/labour/new?project=${wo.project_id}&work_order=${wo.id}`} className="inline-flex items-center gap-1 rounded-md bg-brand/10 px-2.5 py-1 text-xs font-semibold text-brand"><Plus className="h-3.5 w-3.5" /> Ask for labour</Link>}
-        </div>
-      </div>
-      {rows.length === 0 && history.length === 0 ? <p className="p-5 text-center text-sm text-slate-400">No labour asked for on this job yet.</p> : rows.length === 0 ? null : (
-        <ul className="divide-y dark:divide-slate-700">
-          {rows.map(r => (
-            <li key={r.labor_requisition_id}>
-              <Link to={`/labour/${r.labor_requisition_id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.role_needed}{r.headcount > 1 ? ` × ${r.headcount}` : ''}</p>
-                  <p className="text-xs text-slate-500">{r.days_recorded} day{r.days_recorded === 1 ? '' : 's'} recorded{r.last_recorded ? ` · last ${formatDate(r.last_recorded)}` : ''}</p>
-                </div>
-                <Pill tone={r.status === 'pending' ? 'amber' : r.status === 'rejected' ? 'red' : r.closed_at ? 'slate' : 'green'}>
-                  {r.status === 'pending' ? 'Waiting' : r.status === 'rejected' ? 'Declined' : r.closed_at ? 'Ended' : 'Active'}
-                </Pill>
-                <div className="w-28 text-right text-xs">
-                  <p className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(Number(r.confirmed_cost) + Number(r.recorded_cost))}</p>
-                  {Number(r.recorded_cost) > 0 && <p className="text-slate-400">{formatCurrency(r.recorded_cost)} not yet confirmed</p>}
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-      {history.length > 0 && (
-        <div className="border-t dark:border-slate-700">
-          <button onClick={() => setShowHistory(v => !v)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">Attendance logged before the labour screens</p>
-              <p className="text-xs text-slate-500">{history.length} worker{history.length === 1 ? '' : 's'} · {historyDays} day{historyDays === 1 ? '' : 's'} · {formatDate(history.reduce((m, h) => h.first_day < m ? h.first_day : m, history[0].first_day))} – {formatDate(history.reduce((m, h) => h.last_day > m ? h.last_day : m, history[0].last_day))}</p>
-            </div>
-            <div className="w-28 text-right text-xs">
-              <p className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(historyCost)}</p>
-              <p className="text-slate-400">{showHistory ? 'Hide' : 'Show'} workers</p>
-            </div>
-          </button>
-          {elsewhere > 0 && (
-            <p className="mx-4 mb-2 rounded-md bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-              {formatCurrency(elsewhere)} of it was paid under another job's labour request — counted here, where the work was done.
-            </p>
-          )}
-          {showHistory && (
-            <ul className="divide-y border-t text-sm dark:divide-slate-700 dark:border-slate-700">
-              {history.map(h => (
-                <li key={h.staff_id} className="flex items-center gap-3 px-4 py-2">
-                  <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{h.worker_name ?? 'Worker'}</span>
-                  <span className="text-xs text-slate-500">{h.days} day{h.days === 1 ? '' : 's'}</span>
-                  <span className="w-24 text-right text-xs tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(h.cost)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </section>
   )
 }
 

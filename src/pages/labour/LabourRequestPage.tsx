@@ -6,6 +6,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Pill } from '@/components/record/Record'
+import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { setWorkerPhoto, useWorkerPhotos } from '@/lib/workerPhotos'
+import { hasDetails, saveWorkerDetails, stateOf, useMyWorkers, type DetailsInput, type Who } from '@/lib/workerDetails'
+import { DetailsFields, WorkerDetailsSheet } from '@/components/labour/WorkerDetails'
 import { buildPaySheetHtml, type PayLine } from '@/lib/documents/labourPay'
 import { printHtml } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
@@ -86,6 +90,13 @@ export default function LabourRequestPage() {
       return (data ?? []) as Person[]
     },
   })
+  const { data: photos = {} } = useWorkerPhotos(people.map(p => p.staff_id), people.map(p => p.candidate_id))
+  // Where each person's details stand (482) — for the site team, who fill them in.
+  const { data: myWorkers = [] } = useMyWorkers()
+  const detailState = (p: Person) => {
+    const w = myWorkers.find(x => x.id === (p.staff_id ?? p.candidate_id))
+    return w ? stateOf(w) : null
+  }
   const { data: events = [] } = useQuery({
     queryKey: ['labour-request-events', id],
     queryFn: async () => {
@@ -120,7 +131,8 @@ export default function LabourRequestPage() {
   const [comment, setComment] = useState('')
   const [addMode, setAddMode] = useState<'roster' | 'new'>('roster')
   const [pick, setPick] = useState<string | null>(null)
-  const [person, setPerson] = useState({ name: '', phone: '' })
+  const [person, setPerson] = useState<{ name: string; phone: string; photo: string | null; details: DetailsInput }>({ name: '', phone: '', photo: null, details: {} })
+  const [detailsOf, setDetailsOf] = useState<Person | null>(null)
 
   const { data: roster = [] } = useQuery({
     queryKey: ['labour-roster-workers'],
@@ -207,9 +219,23 @@ export default function LabourRequestPage() {
       if (await run(() => supabase.rpc('labour_add_worker', { p_req: id, p_staff_id: pick }), 'Worker added')) setPick(null)
     } else {
       if (!person.name.trim()) { toast('Give the name', 'error'); return }
-      if (await run(() => supabase.rpc('labour_add_new_worker', { p_req: id, p_name: person.name.trim(), p_phone: person.phone.trim() || null, p_day_rate: null }),
-        req!.status === 'approved' ? `${person.name.trim()} is on the request` : `${person.name.trim()} will be hired when the request is approved`)) setPerson({ name: '', phone: '' })
+      if (await run(async () => {
+        const r = await supabase.rpc('labour_add_person', { p_req: id, p_name: person.name.trim(), p_phone: person.phone.trim() || null, p_day_rate: null, p_photo: person.photo })
+        if (!r.error && hasDetails(person.details)) {
+          try { await saveWorkerDetails(r.data as Who, person.details) } catch (e) { return { data: null, error: e as Error } }
+        }
+        return r
+      }, req!.status === 'approved' ? `${person.name.trim()} is on the request` : `${person.name.trim()} will be hired when the request is approved`)) {
+        setPerson({ name: '', phone: '', photo: null, details: {} })
+        qc.invalidateQueries({ queryKey: ['my-workers-details'] })
+        qc.invalidateQueries({ queryKey: ['worker-photos'] })
+      }
     }
+  }
+  async function savePhoto(p: Person, url: string) {
+    await setWorkerPhoto(p, url)
+    qc.invalidateQueries({ queryKey: ['worker-photos'] })
+    toast(`${p.name}'s photo saved`, 'success')
   }
   async function remove(p: Person) {
     if (!p.staff_id || !confirm(`Take ${p.name} off this request?`)) return
@@ -281,6 +307,9 @@ export default function LabourRequestPage() {
           <ul className="divide-y dark:divide-slate-700">
             {[...onSite, ...waitingPeople, ...people.filter(p => p.state === 'left')].map(p => (
               <li key={p.staff_id ?? p.candidate_id} className={`flex items-center gap-3 px-4 py-2.5 ${p.state === 'left' ? 'opacity-50' : ''}`}>
+                {open_ && canManage && p.state !== 'left'
+                  ? <PhotoButton url={photos[p.staff_id ?? p.candidate_id ?? '']} name={p.name} onPhoto={url => savePhoto(p, url)} />
+                  : <WorkerAvatar url={photos[p.staff_id ?? p.candidate_id ?? '']} name={p.name} />}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{p.name}</p>
                   <p className="text-xs text-slate-500">
@@ -288,7 +317,14 @@ export default function LabourRequestPage() {
                     {p.day_rate && req.payment_basis === 'per_day' ? ` · ${fmtMoney(p.day_rate)}/day` : ''}
                   </p>
                 </div>
-                <Pill tone={PERSON_STATE[p.state].tone}>{PERSON_STATE[p.state].label}</Pill>
+                <div className="flex flex-col items-end gap-1">
+                  <Pill tone={PERSON_STATE[p.state].tone}>{PERSON_STATE[p.state].label}</Pill>
+                  {detailState(p) && p.state !== 'left' && (
+                    <button onClick={() => setDetailsOf(p)} className="text-[11px] font-medium text-brand hover:underline">
+                      {detailState(p) === 'verified' ? 'Details ✓' : detailState(p) === 'with_hr' ? 'Details · with HR' : detailState(p) === 'returned' ? 'Details · sent back' : 'Fill in details'}
+                    </button>
+                  )}
+                </div>
                 {open_ && canManage && p.staff_id && p.state !== 'left' && (
                   <button onClick={() => remove(p)} className="rounded p-1.5 text-slate-400 hover:text-red-600" aria-label={`Remove ${p.name}`}><UserMinus className="h-4 w-4" /></button>
                 )}
@@ -377,6 +413,7 @@ export default function LabourRequestPage() {
       )}
 
       {/* Dialogs: a bottom sheet on a phone */}
+      {detailsOf && <WorkerDetailsSheet who={{ staff_id: detailsOf.staff_id, candidate_id: detailsOf.candidate_id }} name={detailsOf.name} onClose={() => setDetailsOf(null)} />}
       {dialog && (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => !busy && setDialog(null)}>
           <div className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl dark:bg-slate-800 sm:rounded-2xl" onClick={e => e.stopPropagation()}>
@@ -393,8 +430,16 @@ export default function LabourRequestPage() {
                     options={roster.filter(w => !people.some(p => p.staff_id === w.id && p.state !== 'left')).map(w => ({ id: w.id, label: w.employee_name, sub: [w.role, w.phone_number].filter(Boolean).join(' · ') }))} />
                 ) : (
                   <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <PhotoButton size="lg" url={person.photo} name={person.name} onPhoto={url => setPerson(p => ({ ...p, photo: url }))} />
+                      <p className="text-xs text-slate-500">{person.photo ? 'Photo added — tap it to change.' : 'Add their photo: take it now, or choose one from your files.'}</p>
+                    </div>
                     <input className={input} value={person.name} onChange={e => setPerson(p => ({ ...p, name: e.target.value }))} placeholder="Full name" autoFocus />
                     <input className={input} value={person.phone} onChange={e => setPerson(p => ({ ...p, phone: e.target.value }))} placeholder="Phone (so they can be found again)" inputMode="tel" />
+                    <details className="rounded-lg border p-2 text-sm dark:border-slate-600">
+                      <summary className="cursor-pointer text-xs font-medium text-brand">Their ID and bank account — now, or later from Worker details</summary>
+                      <div className="mt-2"><DetailsFields withIdentity={false} withRate={false} value={person.details} onChange={patch => setPerson(p => ({ ...p, details: { ...p.details, ...patch } }))} /></div>
+                    </details>
                   </div>
                 )}
                 <p className="mt-2 text-xs text-slate-500">{req.status === 'approved' ? 'They are on the request from today and can be recorded straight away.' : 'They start once the request is approved.'}</p>

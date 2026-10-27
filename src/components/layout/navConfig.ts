@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Banknote, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
-  Boxes,
+  Boxes, CalendarRange, IdCard,
   GitPullRequestArrow,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -104,6 +104,7 @@ export const navGroups: NavGroup[] = [
     to: '/management',
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
+      { label: 'This Week on Site', to: '/projects/this-week', icon: CalendarRange, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       // Matches sdr_pm_read/sdr_exec_all on site_daily_reports — finance
       // has no read grant on that table, so it's left off here. Anyone who
       // manages a project sees it whatever their app role.
@@ -126,6 +127,8 @@ export const navGroups: NavGroup[] = [
       // fire — the derived flag must match.
       { subgroup: 'On site', label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'Record Labour', to: '/labour/record', icon: Clock, roles: [], showIfSiteForeman: true },
+      { subgroup: 'On site', label: 'Worker Details', to: '/labour/workers', icon: IdCard, roles: [], showIfSiteForeman: true },
+      { subgroup: 'My sites', label: 'Worker Details', to: '/labour/workers', icon: IdCard, roles: ['project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
       { subgroup: 'On site', label: 'Log Material Receipt', to: '/site-foreman/log-material-receipt', icon: Package, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, roles: [], showIfSiteForeman: true },
@@ -193,6 +196,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Pay', label: 'Vendor Receipts (VRF)', to: '/vendor-receipts', icon: ArrowLeftRight, roles: ['admin', 'executive'], showIfVrfManager: true },
       { subgroup: 'Pay', label: 'Petty Cash', to: '/petty-cash', icon: Wallet, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       { subgroup: 'Pay', label: 'Site Petty Cash Requests', to: '/finance/site-petty-cash-requests', icon: Wallet, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Pay', label: 'Labour Payment Requests', to: '/labour/requests', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Pay', label: 'Labour Pay', to: '/finance/labor-expense-drafts', icon: HardHat, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Collect', label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { subgroup: 'Collect', label: 'Package Receipts', to: '/package-receipts', icon: Boxes, roles: ['admin', 'finance'] },
@@ -232,6 +236,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { subgroup: 'People', label: 'Staff', to: '/staff', icon: Users, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { subgroup: 'People', label: 'Casual Workers', to: '/hr/casual-workers', icon: HardHat, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
+      { subgroup: 'People', label: 'Worker register', to: '/hr/worker-register', icon: ShieldCheck, roles: ['admin', 'executive', 'finance', 'hr_officer'] },
       { subgroup: 'People', label: 'Onboarding', to: '/onboarding-tasks', icon: UserCheck },
       { subgroup: 'People', label: 'Leave Requests', to: '/leave-requests', icon: CalendarClock, roles: ['admin', 'hr_officer'] },
       { subgroup: 'People', label: 'Performance Reviews', to: '/performance-reviews', icon: ClipboardCheck, roles: ['admin', 'hr_officer'] },

@@ -61,7 +61,7 @@ export default function LabourPayPage() {
       <Link to="/labour" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Labour</Link>
       <div>
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><Wallet className="h-5 w-5 text-brand" /> Confirm pay</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Check what was recorded and confirm it. It goes to finance as a payable — nobody retypes anything.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Check what was recorded and confirm it. Then send it to finance in a <Link to="/labour/requests?view=mine" className="text-brand">payment request</Link> with the signed attendance sheet.</p>
       </div>
 
       {current ? (
@@ -155,7 +155,7 @@ function Confirm({ u, allowed, onBack, onDone, toast }: {
     const { error } = await supabase.rpc('confirm_labour_pay', { p_req: u.labor_requisition_id, p_to: to, p_note: note.trim() || null })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
-    toast(`${fmtMoney(total)} sent to finance`, 'success')
+    toast(`${fmtMoney(total)} confirmed — put it in a payment request for finance`, 'success')
     onDone()
   }
 
@@ -199,7 +199,7 @@ function Confirm({ u, allowed, onBack, onDone, toast }: {
         ) : lines.length > 0 && <>
           <textarea className={input} rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="Note for finance (optional)" />
           <button onClick={confirm} disabled={busy || total <= 0} className="w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white disabled:opacity-40">
-            {busy ? 'Sending…' : `Confirm ${fmtMoney(total)} and send to finance`}
+            {busy ? 'Confirming…' : `Confirm ${fmtMoney(total)}`}
           </button>
           <p className="text-center text-xs text-slate-400">You can take it back until finance acts on it.</p>
         </>}

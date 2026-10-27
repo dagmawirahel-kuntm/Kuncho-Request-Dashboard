@@ -323,6 +323,9 @@ export default function LaborExpenseDraftsPage() {
         <p className="max-w-3xl text-sm text-slate-500 dark:text-slate-400">
           Work recorded on site becomes a draft to approve and pay. Draft what is owed, approve it, then pay it on its own or in a batch.
         </p>
+        <Link to="/labour/requests" className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/15">
+          Payment requests from project managers →
+        </Link>
       </div>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
