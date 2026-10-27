@@ -17,6 +17,7 @@ import {
   ArrowLeft, Check, ClipboardCheck, Clock, FileText, MessageSquare, Printer, Send, Smartphone, UserMinus, UserPlus, Wallet, X,
   CalendarPlus, Ban, Undo2, Users, Timer,
 } from 'lucide-react'
+import { EmailDocumentButton } from '@/components/documents/EmailDocumentDialog'
 
 type Person = { staff_id: string | null; candidate_id: string | null; name: string; phone: string | null; day_rate: number | null; state: 'on_site' | 'left' | 'named' | 'new'; since: string | null }
 type Event = { id: string; kind: string; body: string | null; actor_name: string | null; created_at: string }
@@ -176,14 +177,16 @@ export default function LabourRequestPage() {
     : stage === 'active' ? { who: 'Site team', what: onSite.length ? 'to record work each day' : 'to add the workers who came', tone: 'green' as const }
     : null
 
+  const sheetHtml = (s: Sheet) => buildPaySheetHtml({
+    code: s.code, project_name: req!.projects?.project_name ?? null, role_needed: req!.role_needed,
+    payment_basis: req!.payment_basis, volume_unit: req!.volume_unit, crew_leader: req!.vendors?.vendor_name ?? null,
+    period_start: s.period_start, period_end: s.period_end, total: s.total, lines: s.lines, note: s.note,
+    confirmed_by_name: s.confirmed_by_name, confirmed_at: s.confirmed_at, finance_status: financeStatus(s.expenses),
+  })
+  const sheetName = (s: Sheet) => `${s.code} ${req!.role_needed} ${req!.projects?.project_name ?? ''}`.trim()
   async function sendSheet(s: Sheet, asFile: boolean) {
-    const html = buildPaySheetHtml({
-      code: s.code, project_name: req!.projects?.project_name ?? null, role_needed: req!.role_needed,
-      payment_basis: req!.payment_basis, volume_unit: req!.volume_unit, crew_leader: req!.vendors?.vendor_name ?? null,
-      period_start: s.period_start, period_end: s.period_end, total: s.total, lines: s.lines, note: s.note,
-      confirmed_by_name: s.confirmed_by_name, confirmed_at: s.confirmed_at, finance_status: financeStatus(s.expenses),
-    })
-    const name = `${s.code} ${req!.role_needed} ${req!.projects?.project_name ?? ''}`
+    const html = sheetHtml(s)
+    const name = sheetName(s)
     if (!asFile) { printHtml(html, name); return }
     const r = await shareHtmlFile(html, name, `Labour pay sheet ${s.code} · ${fmtMoney(s.total)}`)
     if (r === 'downloaded') toast('Pay sheet saved as a file', 'success')
@@ -323,6 +326,9 @@ export default function LabourRequestPage() {
                     <Pill tone={financeTone(fs)}>{fs}</Pill>
                     <button onClick={() => sendSheet(s, true)} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium dark:border-slate-600"><Smartphone className="h-3.5 w-3.5" /> Send file</button>
                     <button onClick={() => sendSheet(s, false)} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium dark:border-slate-600"><Printer className="h-3.5 w-3.5" /> Print</button>
+                    <EmailDocumentButton kind="labour_pay_sheet" sourceId={s.id} title={`labour pay sheet ${s.code}`} fileName={sheetName(s)}
+                      party={req.vendors?.vendor_name} prepare={() => ({ html: sheetHtml(s) })}
+                      className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium dark:border-slate-600 [&>svg]:h-3.5 [&>svg]:w-3.5" />
                     {(fs === 'Waiting for finance' || fs.startsWith('Sent back')) && (canRun || approver) && (
                       <button onClick={() => reopen(s)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-amber-700"><Undo2 className="h-3.5 w-3.5" /> Take back</button>
                     )}

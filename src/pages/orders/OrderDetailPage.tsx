@@ -15,10 +15,12 @@ import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { printHtml } from '@/lib/documents/issue'
 import { buildPurchaseRequestHtml } from '@/lib/documents/purchaseRequestDocument'
+import { EmailDocumentDialog } from '@/components/documents/EmailDocumentDialog'
 import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
   ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList, Printer, Truck, TrendingUp,
+  AtSign,
 } from 'lucide-react'
 import { useMarkEntityRead } from '@/lib/notifications'
 
@@ -129,6 +131,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   useCompanyProfile()
 
   const [rejecting, setRejecting]         = useState(false)
+  const [emailing, setEmailing]           = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
   const [expanded, setExpanded]           = useState<Set<string>>(new Set())
 
@@ -244,16 +247,16 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const unfilledCount = items.filter(i => i.status === 'unfulfilled').length
 
   // The request as a page, in the same frame as the purchase order it becomes.
-  function printRequest() {
-    printHtml(buildPurchaseRequestHtml({
-      code: order.request_code, title: order.order_name || 'Purchase request', description: order.item_service_description,
-      projectName: order.project_id ? projectName : null, requestedBy: requestedByName, procurementOfficer: order.staff_id ? procOfficerName : null,
-      neededBy: order.required_by_date, priority: order.priority, submitted: order.created_at,
-      notes: order.notes, vendorNotes: order.vendor_recommendation,
-      rejected: approvalStatus === 'rejected' ? { reason: order.rejection_reason ?? null } : null,
-      lines: items.map(i => ({ name: i.item_name, specifications: i.specifications, quantity: i.quantity, unit: i.unit, estUnitPrice: i.unit_price_est, status: `${(ITEM_S[i.status] ?? ITEM_S.pending).label}${poByItem.get(i.id)?.sourcing_bundles ? ` · ${poByItem.get(i.id)!.sourcing_bundles!.bundle_code}` : ''}` })),
-    }), `${order.request_code ?? 'Purchase request'} - ${order.order_name ?? ''}`.trim())
-  }
+  const requestFileName = `${order.request_code ?? 'Purchase request'} - ${order.order_name ?? ''}`.trim()
+  const requestHtml = () => buildPurchaseRequestHtml({
+    code: order.request_code, title: order.order_name || 'Purchase request', description: order.item_service_description,
+    projectName: order.project_id ? projectName : null, requestedBy: requestedByName, procurementOfficer: order.staff_id ? procOfficerName : null,
+    neededBy: order.required_by_date, priority: order.priority, submitted: order.created_at,
+    notes: order.notes, vendorNotes: order.vendor_recommendation,
+    rejected: approvalStatus === 'rejected' ? { reason: order.rejection_reason ?? null } : null,
+    lines: items.map(i => ({ name: i.item_name, specifications: i.specifications, quantity: i.quantity, unit: i.unit, estUnitPrice: i.unit_price_est, status: `${(ITEM_S[i.status] ?? ITEM_S.pending).label}${poByItem.get(i.id)?.sourcing_bundles ? ` · ${poByItem.get(i.id)!.sourcing_bundles!.bundle_code}` : ''}` })),
+  })
+  const printRequest = () => printHtml(requestHtml(), requestFileName)
 
   const rest = fulfillment.total - fulfillment.fulfilled - fulfillment.partial - fulfillment.blocked
   const seg = (n: number) => `${Math.max((n / Math.max(fulfillment.total, 1)) * 100, n > 0 ? 4 : 0)}%`
@@ -283,10 +286,16 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
         actions={[
           { label: 'Reopen request', onClick: () => handleApproval('pending', { rejection_reason: null }), primary: true, hidden: !(approvalStatus === 'rejected' && canCancelRequest) },
           { label: 'Print', icon: Printer, onClick: printRequest },
+          { label: 'Email', icon: AtSign, onClick: () => setEmailing(true) },
           { label: 'Edit', icon: Pencil, to: `/purchase-requests/${order.id}/edit`, hidden: !canCreate },
           { label: "Reject — don't source", icon: XCircle, onClick: () => setRejecting(true), danger: true, hidden: !(approvalStatus !== 'rejected' && canCancelRequest) },
         ]}
       />
+
+      {emailing && (
+        <EmailDocumentDialog kind="purchase_request" sourceId={order.id} title={`purchase request ${order.request_code ?? ''}`.trim()} fileName={requestFileName}
+          prepare={() => ({ html: requestHtml() })} onClose={() => setEmailing(false)} />
+      )}
 
       <div className="space-y-4">
         <TrainerHintBanner entityType="purchase_request" entityId={order.id} hint={orderHint} />

@@ -34,7 +34,7 @@ export function ActionDialog({ title, description, children, confirmLabel, onCon
           </div>
           <button onClick={onClose} disabled={busy} aria-label="Close" className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
         </div>
-        {children && <div className="space-y-3 px-5 py-4">{children}</div>}
+        {children && <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-4">{children}</div>}
         <div className="flex justify-end gap-2 border-t px-5 py-3 dark:border-slate-700">
           <button onClick={onClose} disabled={busy} className="rounded-md border px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Cancel</button>
           <button onClick={onConfirm} disabled={busy || !canConfirm}

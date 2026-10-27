@@ -9,6 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { buildStatementHtml } from '@/lib/documents/statement'
 import { printHtml } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
+import { EmailDocumentButton } from '@/components/documents/EmailDocumentDialog'
 import { ArrowLeft, Printer, Smartphone, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 // The sub-ledgers (381): each control account's balance per vendor, client
@@ -158,6 +159,17 @@ function Statement({ ledger, party, onBack }: { ledger: typeof LEDGERS[number]; 
       return (data ?? []) as Line[]
     },
   })
+  // Where to email the statement: the vendor's or client's address on file.
+  const { data: partyEmail } = useQuery({
+    queryKey: ['party-email', party.party_type, party.party_id],
+    enabled: !!party.party_id && (party.party_type === 'vendor' || party.party_type === 'client'),
+    queryFn: async () => {
+      const { data } = party.party_type === 'vendor'
+        ? await supabase.from('vendors').select('email').eq('id', party.party_id!).maybeSingle()
+        : await supabase.from('clients').select('email').eq('id', party.party_id!).maybeSingle()
+      return (data as { email: string | null } | null)?.email ?? null
+    },
+  })
   const sign = ledger.liability ? -1 : 1
   const code = `STM-${ledger.key.toUpperCase()}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`
 
@@ -206,6 +218,9 @@ function Statement({ ledger, party, onBack }: { ledger: typeof LEDGERS[number]; 
         {party.party_id && lines.length > 0 && (
           <div className="flex gap-2">
             <button onClick={send} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium dark:border-slate-600"><Smartphone className="h-3.5 w-3.5" /> Send file</button>
+            <EmailDocumentButton kind="ledger_statement" sourceId={party.party_id} title="statement of account" fileName={`Statement ${party.party_name}`}
+              party={party.party_name} defaultTo={partyEmail} prepare={() => ({ html: document() })}
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium dark:border-slate-600 [&>svg]:h-3.5 [&>svg]:w-3.5" />
             <button onClick={() => printHtml(document(), `Statement ${party.party_name}`)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium dark:border-slate-600"><Printer className="h-3.5 w-3.5" /> Print</button>
           </div>
         )}

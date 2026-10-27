@@ -14,7 +14,8 @@ import { PhotoUploader } from '@/components/shared/PhotoUploader'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/record/Record'
 import { SDN_STATUS } from '@/lib/siteDeliveries'
 import type { DeliveryPhoto, SiteDeliveryNote, SiteDeliveryNoteItem } from '@/types/database'
-import { Truck, Printer, Smartphone, XCircle, PenLine, CheckCircle2, AlertTriangle, MapPin, ClipboardCheck, Package, FileText } from 'lucide-react'
+import { Truck, Printer, Smartphone, XCircle, PenLine, CheckCircle2, AlertTriangle, MapPin, ClipboardCheck, Package, FileText, AtSign } from 'lucide-react'
+import { EmailDocumentDialog } from '@/components/documents/EmailDocumentDialog'
 
 type Sdn = SiteDeliveryNote & { site_delivery_note_items: SiteDeliveryNoteItem[] }
 type LineDraft = { received: string; damaged: string; rejected: string; notes: string }
@@ -47,6 +48,7 @@ export default function SiteDeliveryNotePage() {
   const [notes, setNotes] = useState('')
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [emailing, setEmailing] = useState(false)
 
   const items = [...(sdn?.site_delivery_note_items ?? [])].sort((a, b) => a.sort_order - b.sort_order)
 
@@ -145,9 +147,15 @@ export default function SiteDeliveryNotePage() {
           { label: busy ? 'Saving…' : 'Confirm and record GRN', icon: CheckCircle2, onClick: confirm, primary: true, disabled: busy, hidden: !confirming },
           { label: 'Print', icon: Printer, onClick: print },
           { label: 'Send file', icon: Smartphone, onClick: () => shareHtmlFile(buildSdnHtml({ ...sdn, items }), sdn.sdn_code) },
+          { label: 'Email', icon: AtSign, onClick: () => setEmailing(true) },
           { label: 'Cancel delivery note', icon: XCircle, onClick: cancel, danger: true, hidden: !(canIssue && ['issued', 'exceptions'].includes(sdn.status)) },
         ]}
       />
+
+      {emailing && (
+        <EmailDocumentDialog kind="site_delivery_note" sourceId={sdn.id} title={`delivery note ${sdn.sdn_code}`} fileName={sdn.sdn_code}
+          party={sdn.vendor_name} prepare={() => ({ html: buildSdnHtml({ ...sdn, items }) })} onClose={() => setEmailing(false)} />
+      )}
 
       <RecordLayout
         main={<>

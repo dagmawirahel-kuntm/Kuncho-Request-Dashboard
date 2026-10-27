@@ -16,7 +16,8 @@ import { buildVariationAddendumHtml } from '@/lib/documents/variationDocument'
 import {
   useVariation, useVariations, useContractSum, useVoSettings, VO_STATUS, VO_ORIGIN, VO_MANAGE_ROLES, VO_APPROVER_ROLES, BASE_SOURCE_LABEL,
 } from '@/lib/variations'
-import { Pencil, Send, CheckCircle2, XCircle, Printer, FileSignature, ShieldCheck, Undo2, Ban, Gift, ExternalLink } from 'lucide-react'
+import { Pencil, Send, CheckCircle2, XCircle, Printer, FileSignature, ShieldCheck, Undo2, Ban, Gift, ExternalLink, AtSign } from 'lucide-react'
+import { EmailDocumentDialog } from '@/components/documents/EmailDocumentDialog'
 
 const formatCurrency = (n: number) => fmtMoney(n).replace(/\.00$/, '')
 
@@ -24,7 +25,7 @@ const formatCurrency = (n: number) => fmtMoney(n).replace(/\.00$/, '')
 // to price → (executive) → ready → with the client → agreed — the addendum
 // to print and send, and the signed copy once it's back (migration 459).
 
-type Dialog = null | 'submit' | 'approve' | 'reject' | 'sent' | 'agreed' | 'declined' | 'absorbed' | 'cancelled'
+type Dialog = null | 'submit' | 'approve' | 'reject' | 'sent' | 'agreed' | 'declined' | 'absorbed' | 'cancelled' | 'email'
 
 export default function VariationDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -92,7 +93,8 @@ export default function VariationDetailPage() {
     { label: 'Submit', icon: Send, primary: true, onClick: () => setDialog('submit'), hidden: !canManage || !editable || vo.amount === 0 },
     { label: 'Approve', icon: ShieldCheck, primary: true, onClick: () => setDialog('approve'), hidden: !canApprove || vo.status !== 'awaiting_exec' },
     { label: 'Send back', icon: Undo2, onClick: () => setDialog('reject'), hidden: !canApprove || vo.status !== 'awaiting_exec' },
-    { label: 'Print addendum', icon: Printer, primary: vo.status === 'ready', onClick: print, hidden: !sendable && vo.status !== 'agreed' },
+    { label: 'Email to client', icon: AtSign, primary: vo.status === 'ready', onClick: () => setDialog('email'), hidden: !sendable && vo.status !== 'agreed' },
+    { label: 'Print addendum', icon: Printer, onClick: print, hidden: !sendable && vo.status !== 'agreed' },
     { label: 'Mark sent to client', icon: Send, onClick: () => setDialog('sent'), hidden: !canManage || vo.status !== 'ready' },
     { label: 'Client agreed', icon: FileSignature, primary: vo.status === 'sent', onClick: () => setDialog('agreed'), hidden: !canManage || !sendable },
     { label: 'Client declined', icon: XCircle, onClick: () => setDialog('declined'), hidden: !canManage || !sendable },
@@ -163,7 +165,10 @@ export default function VariationDetailPage() {
           </Panel>
 
           {(vo.status !== 'draft' || vo.amount !== 0) && (
-            <Panel title="Addendum" icon={FileSignature} action={<button onClick={print} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"><Printer className="h-3.5 w-3.5" /> Print</button>} padded={false}>
+            <Panel title="Addendum" icon={FileSignature} action={<span className="flex items-center gap-3">
+              {(sendable || vo.status === 'agreed') && <button onClick={() => setDialog('email')} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"><AtSign className="h-3.5 w-3.5" /> Email</button>}
+              <button onClick={print} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"><Printer className="h-3.5 w-3.5" /> Print</button>
+            </span>} padded={false}>
               <div className="h-[34rem]"><DocumentFrame html={preview} title="Variation addendum" /></div>
             </Panel>
           )}
@@ -207,6 +212,17 @@ export default function VariationDetailPage() {
       {dialog === 'sent' && (
         <NoteDialog title="Sent to the client" label="To whom / how" placeholder="e.g. Emailed to Ato Bereket" confirm="Mark sent" optional onClose={() => setDialog(null)}
           onConfirm={note => run(() => supabase.rpc('mark_variation_sent', { p_id: vo.id, p_sent_to: note || null }), 'Marked sent')} />
+      )}
+      {dialog === 'email' && docInput && (
+        <EmailDocumentDialog kind="variation" sourceId={vo.id} title={`variation order ${vo.vo_code}`} fileName={`${vo.vo_code} ${vo.project_name}`}
+          party={client?.client_name ?? vo.client_name} defaultTo={client?.email}
+          prepare={() => ({ html: buildVariationAddendumHtml(docInput) })}
+          // Emailing a VO that is ready to go is sending it to the client.
+          onSent={async to => {
+            if (vo.status === 'ready' && canManage) await supabase.rpc('mark_variation_sent', { p_id: vo.id, p_sent_to: `Emailed to ${to.join(', ')}` })
+            refresh()
+          }}
+          onClose={() => setDialog(null)} />
       )}
       {dialog === 'agreed' && <AgreedDialog code={vo.vo_code} onClose={() => setDialog(null)}
         onConfirm={(url, note, on) => run(() => supabase.rpc('record_variation_agreement', { p_id: vo.id, p_evidence_url: url, p_note: note, p_agreed_on: on }), `${vo.vo_code} agreed — the contract sum is updated`)} />}
