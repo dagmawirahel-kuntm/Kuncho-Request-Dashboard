@@ -9,6 +9,8 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerPicker } from '@/components/labour/WorkerPicker'
 import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { useWorkerPhotos } from '@/lib/workerPhotos'
+import { hasDetails, saveWorkerDetails, type DetailsInput, type Who } from '@/lib/workerDetails'
+import { DetailsFields } from '@/components/labour/WorkerDetails'
 import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
 import { ArrowLeft, ArrowRight, Check, HardHat, Plus, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
@@ -16,7 +18,7 @@ const input = 'w-full rounded-lg border px-3 py-2.5 text-base sm:text-sm outline
 const COMMON_WORK = ['Daily labourer', 'Mason', 'Carpenter', 'Painter', 'Plasterer', 'Tile fixer', 'Electrician', 'Plumber', 'Welder', 'Gypsum fixer']
 const UNITS = ['m²', 'm', 'm³', 'pcs', 'points', 'rooms']
 
-type NewPerson = { name: string; phone: string; photo: string | null }
+type NewPerson = { name: string; phone: string; photo: string | null; details: DetailsInput }
 
 function Label({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
@@ -63,7 +65,8 @@ export default function LabourRequestFormPage() {
 
   const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
   const [people, setPeople] = useState<NewPerson[]>([])
-  const [draft, setDraft] = useState<NewPerson>({ name: '', phone: '', photo: null })
+  const [draft, setDraft] = useState<NewPerson>({ name: '', phone: '', photo: null, details: {} })
+  const [moreDetails, setMoreDetails] = useState(false)
   const [extra, setExtra] = useState('0')
   const [crew, setCrew] = useState(false)
   const [leader, setLeader] = useState<string | null>(null)
@@ -118,8 +121,9 @@ export default function LabourRequestFormPage() {
 
   function addPerson() {
     if (!draft.name.trim()) return
-    setPeople(p => [...p, { name: draft.name.trim(), phone: draft.phone.trim(), photo: draft.photo }])
-    setDraft({ name: '', phone: '', photo: null })
+    setPeople(p => [...p, { name: draft.name.trim(), phone: draft.phone.trim(), photo: draft.photo, details: draft.details }])
+    setDraft({ name: '', phone: '', photo: null, details: {} })
+    setMoreDetails(false)
   }
 
   async function submit() {
@@ -151,8 +155,10 @@ export default function LabourRequestFormPage() {
         if (e) throw e
       }
       for (const p of people) {
-        const { error: e } = await supabase.rpc('labour_add_person', { p_req: req.id, p_name: p.name, p_phone: p.phone || null, p_day_rate: null, p_photo: p.photo })
+        const { data: added, error: e } = await supabase.rpc('labour_add_person', { p_req: req.id, p_name: p.name, p_phone: p.phone || null, p_day_rate: null, p_photo: p.photo })
         if (e) throw e
+        // ID and bank filled in now go with them; HR confirms once they are hired.
+        if (hasDetails(p.details)) await saveWorkerDetails(added as Who, p.details)
       }
       qc.invalidateQueries({ queryKey: ['labour-requests'] })
       toast('Sent for approval — you can follow it on the request', 'success')
@@ -251,6 +257,14 @@ export default function LabourRequestFormPage() {
                 <button type="button" onClick={addPerson} className="shrink-0 rounded-lg bg-brand px-3 text-white disabled:opacity-40" disabled={!draft.name.trim()} aria-label="Add"><Plus className="h-4 w-4" /></button>
               </div>
             </div>
+            {draft.name.trim() && (moreDetails ? (
+              <div className="mt-2 rounded-lg border bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-900/30">
+                <p className="mb-2 text-xs text-slate-500">You fill these in; HR only checks and confirms them. Leave any you don't have yet.</p>
+                <DetailsFields withIdentity={false} withRate={false} value={draft.details} onChange={patch => setDraft(d => ({ ...d, details: { ...d.details, ...patch } }))} />
+              </div>
+            ) : (
+              <button type="button" onClick={() => setMoreDetails(true)} className="mt-1.5 text-xs font-medium text-brand">+ Their ID and bank account (now, or later from Worker details)</button>
+            ))}
           </div>
           {(roster.length > 0 || people.length > 0) && (
             <ul className="divide-y rounded-lg border dark:divide-slate-700 dark:border-slate-700">
@@ -262,7 +276,7 @@ export default function LabourRequestFormPage() {
               ))}
               {people.map((p, i) => (
                 <li key={`${p.name}-${i}`} className="flex items-center gap-2 px-3 py-2 text-sm">
-                  <PhotoButton size="sm" url={p.photo} name={p.name} onPhoto={url => setPeople(x => x.map((q, j) => (j === i ? { ...q, photo: url } : q)))} /><span className="flex-1">{p.name}{p.phone ? <span className="text-slate-400"> · {p.phone}</span> : ''} <span className="text-[10px] font-semibold text-emerald-600">NEW</span></span>
+                  <PhotoButton size="sm" url={p.photo} name={p.name} onPhoto={url => setPeople(x => x.map((q, j) => (j === i ? { ...q, photo: url } : q)))} /><span className="flex-1">{p.name}{p.phone ? <span className="text-slate-400"> · {p.phone}</span> : ''} <span className="text-[10px] font-semibold text-emerald-600">NEW</span>{hasDetails(p.details) ? <span className="ml-1 text-[10px] text-slate-400">· ID/bank added</span> : null}</span>
                   <button type="button" onClick={() => setPeople(x => x.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
                 </li>
               ))}

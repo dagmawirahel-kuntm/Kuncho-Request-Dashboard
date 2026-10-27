@@ -6,8 +6,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { usePayableDrafts } from '@/lib/labourPayRequests'
+import { useMyWorkers } from '@/lib/workerDetails'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { CalendarDays, ChevronRight, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
+import { CalendarDays, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -53,6 +54,10 @@ export default function LabourHomePage() {
   })
   // The PM's side: confirmed pay not yet put in a request.
   const { data: toRequest = [] } = usePayableDrafts(!finance)
+  // Workers whose details the site team still has to fill in, or fix (482).
+  const { data: myWorkers = [] } = useMyWorkers(!finance)
+  const detailsReturned = myWorkers.filter(w => w.returned_reason).length
+  const detailsMissing = myWorkers.filter(w => !w.returned_reason && !w.verified && (w.gaps?.length ?? 0) > 0).length
 
   // Labour still open on jobs that are already finished (migration 408).
   const { toast } = useToast()
@@ -120,6 +125,8 @@ export default function LabourHomePage() {
     ...(toApprove.length ? [{ to: '#waiting', label: 'Requests to approve', n: toApprove.length, tone: 'bg-amber-500' }] : []),
     ...(toConfirm.length ? [{ to: '/labour/pay', label: 'Weeks to confirm for pay', n: toConfirm.length, tone: 'bg-blue-600' }] : []),
     ...(noWorkers.length ? [{ to: '#active', label: 'Approved, no workers added yet', n: noWorkers.length, tone: 'bg-slate-500' }] : []),
+    ...(detailsReturned ? [{ to: '/labour/workers', label: 'Worker details sent back by HR', n: detailsReturned, tone: 'bg-red-600' }] : []),
+    ...(detailsMissing ? [{ to: '/labour/workers', label: 'Workers with details missing (their pay waits)', n: detailsMissing, tone: 'bg-amber-500' }] : []),
     ...(toRequest.length ? [{ to: '/labour/requests?view=mine', label: 'Confirmed pay to send in a payment request', n: toRequest.length, tone: 'bg-blue-600' }] : []),
     ...(financeWaiting ? [{ to: '/labour/requests', label: 'Payment requests to approve or pay', n: financeWaiting, tone: 'bg-emerald-600' }] : []),
   ]
@@ -145,6 +152,7 @@ export default function LabourHomePage() {
       </div>
       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
         <Link to="/labour/record/week" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><CalendarDays className="h-3.5 w-3.5" /> Record a week</Link>
+        <Link to="/labour/workers" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><IdCard className="h-3.5 w-3.5" /> Worker details</Link>
         <Link to="/labour/requests" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><FileCheck2 className="h-3.5 w-3.5" /> Payment requests</Link>
         <Link to="/labour/overtime" className="flex min-w-0 items-center gap-1.5 hover:text-brand">
           <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
