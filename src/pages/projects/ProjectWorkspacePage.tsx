@@ -13,6 +13,7 @@ import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
 import { ScheduleSection } from '@/components/projects/ScheduleSection'
 import { BoqSection } from '@/components/projects/BoqSection'
 import { PaymentMilestonesSection } from '@/components/projects/PaymentMilestonesSection'
+import { ProjectVariationsPanel } from '@/components/projects/ProjectVariationsPanel'
 import { ProjectClientsPanel } from '@/components/projects/ProjectClientsPanel'
 import { resolveHint } from '@/lib/trainerHints'
 import { useTabParam } from '@/lib/useTabParam'
@@ -32,6 +33,7 @@ import {
   Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
   Trash2, UserPlus, PackageOpen, Wrench, Hammer,
   LayoutDashboard, Layers, Banknote, Users, Boxes, Activity, ShoppingCart, Flag,
+  GitPullRequestArrow,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -51,7 +53,7 @@ const STAGE_STEPS: { stage: ProjectStage; label: string; icon: React.ReactNode }
   { stage: 'quality_snagging_handover',      label: 'Snagging',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   { stage: 'closeout_final_accounts',        label: 'Closeout',        icon: <FileCheck2 className="h-3.5 w-3.5" /> },
 ]
-const PROJECT_TABS = ['overview', 'budget', 'boq', 'payments', 'team', 'materials', 'activity'] as const
+const PROJECT_TABS = ['overview', 'budget', 'boq', 'variations', 'payments', 'team', 'materials', 'activity'] as const
 type ProjectTab = typeof PROJECT_TABS[number]
 const HEALTH_OPTIONS: ProjectHealth[] = ['On Track', 'At Risk', 'Off Track']
 
@@ -1082,6 +1084,7 @@ export default function ProjectWorkspacePage() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'budget', label: 'Budget', icon: Wallet, count: pendingVariations.length },
     { id: 'boq', label: boqStatus?.needs_boq && boqStatus.boq_status === 'none' ? 'BOQ & Schedule · missing' : 'BOQ & Schedule', icon: Layers },
+    { id: 'variations', label: 'Variations', icon: GitPullRequestArrow },
     { id: 'payments', label: 'Payments', icon: Banknote },
     { id: 'team', label: 'Team & work', icon: Users },
     { id: 'materials', label: 'Materials', icon: Boxes },
@@ -1314,6 +1317,11 @@ export default function ProjectWorkspacePage() {
             <BoqSection projectId={id!} projectName={project.project_name} />
             <ScheduleSection projectId={id!} projectName={project.project_name} />
           </>
+        )}
+
+        {/* ── Variations: the original agreement plus each agreed addendum ── */}
+        {tab === 'variations' && (
+          <ProjectVariationsPanel projectId={id!} projectName={project.project_name} clientId={project.client_id ?? null} />
         )}
 
         {/* ── Payments ─────────────────────────────────────────────────── */}

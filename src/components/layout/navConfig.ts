@@ -1,6 +1,7 @@
 import {
   LayoutDashboard, Banknote, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
   Boxes,
+  GitPullRequestArrow,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -107,6 +108,7 @@ export const navGroups: NavGroup[] = [
       // has no read grant on that table, so it's left off here. Anyone who
       // manages a project sees it whatever their app role.
       { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
+      { label: 'Variations', to: '/variations', icon: GitPullRequestArrow, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'sales'] },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager', 'procurement_officer', 'operations_manager'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'technician'] },
       { label: 'Design Packages', to: '/design', icon: PenTool },
