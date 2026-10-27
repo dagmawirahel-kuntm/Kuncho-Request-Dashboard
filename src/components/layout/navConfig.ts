@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Banknote, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
-  Boxes,
+  Boxes, CalendarRange,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -103,6 +103,7 @@ export const navGroups: NavGroup[] = [
     to: '/management',
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
+      { label: 'This Week on Site', to: '/projects/this-week', icon: CalendarRange, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       // Matches sdr_pm_read/sdr_exec_all on site_daily_reports — finance
       // has no read grant on that table, so it's left off here. Anyone who
       // manages a project sees it whatever their app role.

@@ -69,6 +69,7 @@ import VendorReviewPage from '@/pages/vendors/VendorReviewPage'
 import ProjectsPage from '@/pages/projects/ProjectsPage'
 import ProjectFormPage from '@/pages/projects/ProjectFormPage'
 import ProjectWorkspacePage from '@/pages/projects/ProjectWorkspacePage'
+import ProjectsWeekPage from '@/pages/projects/ProjectsWeekPage'
 import AccountsPage from '@/pages/accounts/AccountsPage'
 import AccountFormPage from '@/pages/accounts/AccountFormPage'
 import AccountDetailPage from '@/pages/accounts/AccountDetailPage'
@@ -641,6 +642,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'management', element: <ManagementDashboardPage /> },
               { path: 'projects', element: <ProjectsPage /> },
+              { path: 'projects/this-week', element: <ProjectsWeekPage /> },
               { path: 'projects/:id/edit', element: <ProjectFormPage /> },
             ],
           },
