@@ -192,6 +192,7 @@ export default function LabourRecordPage() {
       <div className="mb-4">
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><ClipboardCheck className="h-5 w-5 text-brand" /> Record work</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">Job by job: hours for day workers (8 is a full day), quantity for work by the unit, % done for fixed-price tasks — then how far the job got.</p>
+        <Link to={`/labour/record/week${site ? `?site=${site}` : ''}`} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-brand">Catching up from the paper sheet? Record the whole week →</Link>
       </div>
 
       <div className="mb-4 space-y-2 rounded-2xl border bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
