@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { tradesFor, useLabourCandidates, type Candidate } from '@/lib/labourCandidates'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useTradeRoster } from '@/hooks/useTier2Workers'
+import { useWorkerPhotos } from '@/lib/workerPhotos'
+import { WorkerAvatar } from './WorkerPhoto'
 import { BadgeCheck, Check, Search, Star } from 'lucide-react'
 
 /** Who can do this job (migration 478): the casual workers, best fits first —
@@ -14,6 +16,7 @@ export function WorkerPicker({ projectId, workOrderId, work, picked, onToggle, e
 }) {
   const { data: all = [], isLoading } = useLabourCandidates(projectId, workOrderId)
   const { data: roster = [] } = useTradeRoster()
+  const { data: photos = {} } = useWorkerPhotos(all.map(c => c.staff_id))
   const suggested = useMemo(() => tradesFor(work ?? ''), [work])
   const [trade, setTrade] = useState<string | null | undefined>(undefined)
   const activeTrades = useMemo(() => trade === undefined ? suggested : trade ? [trade] : [], [trade, suggested])
@@ -65,6 +68,7 @@ export function WorkerPicker({ projectId, workOrderId, work, picked, onToggle, e
                 <button type="button" onClick={() => onToggle(c)} disabled={c.on_this_job}
                   className={`flex w-full items-start gap-3 px-3 py-2.5 text-left disabled:opacity-50 ${on ? 'bg-brand/5' : 'hover:bg-slate-50 dark:hover:bg-slate-700/40'}`}>
                   <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${on ? 'border-brand bg-brand text-white' : 'dark:border-slate-600'}`}>{on && <Check className="h-3.5 w-3.5" />}</span>
+                  <WorkerAvatar url={photos[c.staff_id]} name={c.name} />
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-100">
                       {c.name}

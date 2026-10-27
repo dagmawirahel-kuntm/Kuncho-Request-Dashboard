@@ -8,6 +8,8 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
 import { useTradeRoster } from '@/hooks/useTier2Workers'
+import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { setWorkerPhoto, useWorkerPhotos } from '@/lib/workerPhotos'
 import { BadgeCheck, ChevronDown, ChevronRight, Copy, ShieldAlert, UserCheck } from 'lucide-react'
 
 type Card = {
@@ -48,6 +50,7 @@ export default function WorkerRegisterPage() {
     },
   })
   const refresh = () => qc.invalidateQueries({ queryKey: ['worker-register'] })
+  const { data: photos = {} } = useWorkerPhotos([...(data?.to_verify ?? []), ...(data?.verified ?? []), ...(data?.duplicates ?? []).flatMap(d => [d.a, d.b])].map(w => w.id))
 
   async function setHold(d: string) {
     const { error } = await supabase.rpc('set_labour_pay_hold_from', { p_date: d })
@@ -94,7 +97,7 @@ export default function WorkerRegisterPage() {
       </div>
 
       {tab === 'duplicates' ? (
-        <Duplicates pairs={data.duplicates} canAct={isHr} onDone={refresh} />
+        <Duplicates pairs={data.duplicates} canAct={isHr} onDone={refresh} photos={photos} />
       ) : (
         <section className={card}>
           {list.length === 0 ? <p className="p-6 text-center text-sm text-slate-400">{tab === 'verify' ? 'Everyone is verified.' : 'Nobody verified yet.'}</p> : (
@@ -103,11 +106,13 @@ export default function WorkerRegisterPage() {
                 <li key={w.id}>
                   <button onClick={() => setOpen(open === w.id ? null : w.id)} className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/30">
                     {open === w.id ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />}
+                    <WorkerAvatar url={photos[w.id]} name={w.name} />
                     <div className="min-w-0 flex-1">
                       <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-100">
                         {w.name}
                         {w.verified_at && <BadgeCheck className="h-4 w-4 text-emerald-600" />}
                         {w.gaps.map(g => <span key={g} className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/20 dark:text-red-300">no {g}</span>)}
+                        {!photos[w.id] && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">no photo</span>}
                         {!w.verified_at && w.gaps.length === 0 && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">ready to verify</span>}
                       </p>
                       <p className="text-xs text-slate-500">
@@ -151,11 +156,19 @@ function Editor({ id, canEdit, verified, onDone }: { id: string; canEdit: boolea
   const { data: rec } = useQuery({
     queryKey: ['worker-register-staff', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('staff').select('employee_name, phone_number, national_id, id_document_url, id_document_name, trade_tag, day_rate').eq('id', id).single()
+      const { data, error } = await supabase.from('staff').select('employee_name, phone_number, national_id, id_document_url, id_document_name, trade_tag, day_rate, photo_url').eq('id', id).single()
       if (error) throw error
-      return data as StaffEdit
+      return data as StaffEdit & { photo_url: string | null }
     },
   })
+  const qc = useQueryClient()
+  async function savePhoto(url: string) {
+    await setWorkerPhoto({ staff_id: id }, url)
+    qc.invalidateQueries({ queryKey: ['worker-register-staff', id] })
+    qc.invalidateQueries({ queryKey: ['worker-photos'] })
+    toast(verified && rec?.photo_url ? 'Photo changed — verify them again' : 'Photo saved', 'success')
+    onDone()
+  }
   const [f, setF] = useState<StaffEdit | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -189,6 +202,10 @@ function Editor({ id, canEdit, verified, onDone }: { id: string; canEdit: boolea
 
   return (
     <div className="space-y-3 border-t bg-slate-50/60 px-4 py-4 sm:pl-11 dark:border-slate-700 dark:bg-slate-900/30">
+      <div className="flex items-center gap-3">
+        {canEdit ? <PhotoButton size="lg" url={rec?.photo_url} name={v.employee_name} onPhoto={savePhoto} /> : <WorkerAvatar size="lg" url={rec?.photo_url} name={v.employee_name} />}
+        <p className="text-xs text-slate-500">{rec?.photo_url ? 'Check the photo is this person. Tap it to take a new one or choose a file.' : 'No photo yet — tap to take one, or choose a picture from your files.'}</p>
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="text-xs text-slate-500">Full name<input className={input} disabled={!canEdit} value={v.employee_name} onChange={e => set({ employee_name: e.target.value })} /></label>
         <label className="text-xs text-slate-500">Phone<input className={input} disabled={!canEdit} inputMode="tel" value={v.phone_number ?? ''} onChange={e => set({ phone_number: e.target.value })} placeholder="09…" /></label>
@@ -223,7 +240,7 @@ function Editor({ id, canEdit, verified, onDone }: { id: string; canEdit: boolea
   )
 }
 
-function Duplicates({ pairs, canAct, onDone }: { pairs: Register['duplicates']; canAct: boolean; onDone: () => void }) {
+function Duplicates({ pairs, canAct, onDone, photos }: { pairs: Register['duplicates']; canAct: boolean; onDone: () => void; photos: Record<string, string> }) {
   const { toast } = useToast()
   const [busy, setBusy] = useState<string | null>(null)
   if (pairs.length === 0) return <section className={`${card} p-6 text-center text-sm text-slate-400`}>No look-alike records.</section>
@@ -258,7 +275,10 @@ function Duplicates({ pairs, canAct, onDone }: { pairs: Register['duplicates']; 
               const other = i === 0 ? p.b : p.a
               return (
                 <div key={w.id} className="space-y-1 px-4 py-3 text-sm">
-                  <p className="font-medium text-slate-800 dark:text-slate-100">{w.name} {w.verified_at && <BadgeCheck className="inline h-4 w-4 text-emerald-600" />}</p>
+                  <div className="flex items-center gap-3">
+                    <WorkerAvatar size="lg" url={photos[w.id]} name={w.name} />
+                    <p className="font-medium text-slate-800 dark:text-slate-100">{w.name} {w.verified_at && <BadgeCheck className="inline h-4 w-4 text-emerald-600" />}{!photos[w.id] && <span className="block text-[11px] font-normal text-slate-400">no photo</span>}</p>
+                  </div>
                   <p className="text-xs text-slate-500">{[w.trade, w.day_rate ? `${formatCurrency(w.day_rate)}/day` : null, w.phone].filter(Boolean).join(' · ') || '—'}</p>
                   <p className="text-xs text-slate-500">{w.bank ? `${w.bank.bank ?? ''} ${w.bank.number}` : 'No bank account'}{w.national_id ? ` · ID ${w.national_id}` : ''}</p>
                   <p className="text-[11px] text-slate-400">{w.last_worked ? `Last worked ${formatDate(w.last_worked)}${w.last_site ? ` · ${w.last_site}` : ''}` : 'No work recorded'}{w.pay_waiting ? ` · ${formatCurrency(w.pay_waiting)} waiting` : ''}</p>

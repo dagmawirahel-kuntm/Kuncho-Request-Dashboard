@@ -6,6 +6,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { addDays, dayLabel, fmtMoney, isoDay, overtimeAmount, overtimeRateLabel, useLabourSites, type OvertimeDayRates } from '@/lib/labour'
 import { UpdateProgressSheet } from '@/pages/work-orders/WorkOrderParts'
+import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { useWorkerPhotos } from '@/lib/workerPhotos'
 import type { WorkOrder } from '@/types/database'
 import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Lock, Plus, Save, HardHat, Timer, TrendingUp } from 'lucide-react'
 
@@ -82,6 +84,7 @@ export default function LabourRecordPage() {
     },
   })
   const [updatingWo, setUpdatingWo] = useState<WorkOrder | null>(null)
+  const { data: photos = {} } = useWorkerPhotos(rows.map(r => r.staff_id))
 
   // Overtime (migration 458): the rates in force on each request today, and
   // what each entry already holds beyond the day sheet's columns.
@@ -276,7 +279,7 @@ export default function LabourRecordPage() {
                     return (
                       <li key={key(r)} className={`px-4 py-3 ${r.locked ? 'opacity-60' : ''}`}>
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{r.worker_name}</p>
+                          <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-100">{r.staff_id && <WorkerAvatar size="sm" url={photos[r.staff_id]} name={r.worker_name} />}<span className="truncate">{r.worker_name}</span></p>
                           {r.locked && <span className="flex items-center gap-1 text-[11px] text-slate-500"><Lock className="h-3 w-3" /> on a pay sheet</span>}
                         </div>
                         {(doubled(r) || clash) && (
