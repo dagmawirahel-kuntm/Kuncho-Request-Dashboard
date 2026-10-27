@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Banknote, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, Camera, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
-  Boxes, CalendarRange,
+  Boxes, CalendarRange, IdCard,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -125,6 +125,8 @@ export const navGroups: NavGroup[] = [
       // fire — the derived flag must match.
       { subgroup: 'On site', label: 'Daily Site Report', to: '/site-foreman/daily-report', icon: ClipboardCheck, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'Record Labour', to: '/labour/record', icon: Clock, roles: [], showIfSiteForeman: true },
+      { subgroup: 'On site', label: 'Worker Details', to: '/labour/workers', icon: IdCard, roles: [], showIfSiteForeman: true },
+      { subgroup: 'My sites', label: 'Worker Details', to: '/labour/workers', icon: IdCard, roles: ['project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
       { subgroup: 'On site', label: 'Log Material Receipt', to: '/site-foreman/log-material-receipt', icon: Package, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'My Site Float Request', to: '/site-foreman/float-request', icon: Wallet, roles: [], showIfSiteForeman: true },
       { subgroup: 'On site', label: 'Materials Requested', to: '/site-foreman/materials', icon: Package, roles: [], showIfSiteForeman: true },
