@@ -107,8 +107,8 @@ BEGIN
   RETURN NEW;
 END $function$;
 
-DROP TRIGGER IF EXISTS lrw_check_id_needed ON labor_requisition_workers;
-CREATE TRIGGER lrw_check_id_needed AFTER INSERT ON labor_requisition_workers
+
+CREATE OR REPLACE TRIGGER lrw_check_id_needed AFTER INSERT ON labor_requisition_workers
   FOR EACH ROW EXECUTE FUNCTION trg_lrw_check_id_needed();
 
 CREATE OR REPLACE FUNCTION public.trg_labreq_check_id_needed()
@@ -124,8 +124,8 @@ BEGIN
   RETURN NEW;
 END $function$;
 
-DROP TRIGGER IF EXISTS labreq_check_id_needed ON labor_requisitions;
-CREATE TRIGGER labreq_check_id_needed AFTER UPDATE OF status ON labor_requisitions
+
+CREATE OR REPLACE TRIGGER labreq_check_id_needed AFTER UPDATE OF status ON labor_requisitions
   FOR EACH ROW EXECUTE FUNCTION trg_labreq_check_id_needed();
 
 GRANT EXECUTE ON FUNCTION worker_hire_count(uuid), worker_id_needed(uuid) TO authenticated;
