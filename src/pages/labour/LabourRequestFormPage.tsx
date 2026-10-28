@@ -248,12 +248,12 @@ export default function LabourRequestFormPage() {
               onToggle={c => setRoster(r => r.some(x => x.id === c.staff_id) ? r.filter(x => x.id !== c.staff_id) : [...r, { id: c.staff_id, name: c.name }])} />
           </div>
           <div>
-            <Label hint="Their photo, name and phone. HR verifies them (ID, bank account) before they can be paid.">Someone new</Label>
+            <Label hint="Their photo and name; the phone if you have it. Their bank account is needed before they can be paid; phone and ID from their 4th hire.">Someone new</Label>
             <div className="flex flex-wrap items-center gap-2">
               <PhotoButton url={draft.photo} name={draft.name} onPhoto={url => setDraft(d => ({ ...d, photo: url }))} />
               <input className={`${input} min-w-0 flex-1`} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Full name" />
               <div className="flex w-full gap-2 sm:w-auto">
-                <input className={`${input} min-w-0 flex-1 sm:w-36 sm:flex-none`} inputMode="tel" value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="Phone" />
+                <input className={`${input} min-w-0 flex-1 sm:w-36 sm:flex-none`} inputMode="tel" value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="Phone (optional)" />
                 <button type="button" onClick={addPerson} className="shrink-0 rounded-lg bg-brand px-3 text-white disabled:opacity-40" disabled={!draft.name.trim()} aria-label="Add"><Plus className="h-4 w-4" /></button>
               </div>
             </div>
