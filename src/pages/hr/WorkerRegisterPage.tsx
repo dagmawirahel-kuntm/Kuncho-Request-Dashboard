@@ -15,12 +15,13 @@ import { BadgeCheck, ChevronDown, ChevronRight, Copy, ShieldAlert, UserCheck } f
 type Card = {
   id: string; name: string; phone: string | null; national_id: string | null; has_id_photo: boolean
   trade: string | null; day_rate: number | null; bank: { bank: string | null; number: string; holder: string | null } | null
+  shares_with?: string[]
   verified_at: string | null; verified_by: string | null; note: string | null; gaps: string[]
   last_worked: string | null; last_site: string | null; pay_waiting: number; first_engaged_at: string | null
 }
 type Register = {
   hold_from: string
-  counts: { active: number; verified: number; ready: number; pay_waiting_unverified: number }
+  counts: { active: number; verified: number; ready: number; pay_waiting_unverified: number; shared_accounts?: number }
   to_verify: Card[]; verified: Card[]; duplicates: { why: 'name' | 'bank'; a: Card; b: Card }[]
 }
 
@@ -92,6 +93,12 @@ export default function WorkerRegisterPage() {
         {canSetHold && <input type="date" className="rounded-md border px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800" value={data.hold_from} onChange={e => e.target.value && setHold(e.target.value)} aria-label="Hold pay from" />}
       </div>
 
+      {(c.shared_accounts ?? 0) > 0 && (
+        <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-sky-200">
+          <b>{c.shared_accounts} workers</b> are paid into a bank account someone else also uses. That's fine for now and their pay goes ahead — but Kuncho should encourage them to open an account of their own.
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {([['confirm', `To confirm · ${toConfirm.length}`], ['waiting', `Waiting on the site · ${waiting.length}`], ['duplicates', `Possible duplicates · ${data.duplicates.length}`], ['verified', `Verified · ${data.verified.length}`]] as [Tab, string][]).map(([t, l]) => (
           <button key={t} onClick={() => setTab(t)} className={`rounded-full border px-3 py-1.5 text-sm ${tab === t ? 'border-brand bg-brand text-white' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>{l}</button>
@@ -115,6 +122,7 @@ export default function WorkerRegisterPage() {
                         {w.name}
                         {w.verified_at && <BadgeCheck className="h-4 w-4 text-emerald-600" />}
                         {w.gaps.map(g => <span key={g} className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/20 dark:text-red-300">no {g}</span>)}
+                        {(w.shares_with?.length ?? 0) > 0 && <span title={`Also used by ${w.shares_with!.join(', ')} — encourage them to open an account of their own`} className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">shared account</span>}
                         {!photos[w.id] && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">no photo</span>}
                         {!w.verified_at && w.gaps.length === 0 && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">ready to confirm</span>}
                       </p>
@@ -207,6 +215,7 @@ function Review({ id, canAct, verified, onDone }: { id: string; canAct: boolean;
         {d.returned_reason && <span className="text-red-600"> Sent back{d.returned_by_name ? ` by ${d.returned_by_name}` : ''}: {d.returned_reason}</span>}
         {d.verification_note && !d.returned_reason && <span> Note: {d.verification_note}</span>}
       </p>
+      {(d.shares_with?.length ?? 0) > 0 && <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/20 dark:text-sky-300">This account is also used by {d.shares_with!.join(', ')}. Fine for now — verify as usual — but encourage them to open an account of their own.</p>}
       {d.account_holder && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">Paid into someone else's account ({d.account_holder}) — check this is agreed with the worker.</p>}
       {canAct && (sendingBack ? (
         <div className="space-y-2">

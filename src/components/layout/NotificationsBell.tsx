@@ -45,7 +45,9 @@ export function NotificationsBell() {
   const { data: todo = [] } = useQuery({
     queryKey: ['notifications-todo', user?.id, r, taxReader, profile?.is_vrf_manager],
     enabled: !!user,
-    refetchInterval: 120_000,
+    // Ten counts per refresh: every 5 minutes is plenty for a to-do list and
+    // keeps slow connections free for the page itself.
+    refetchInterval: 300_000,
     queryFn: async () => {
       const none = Promise.resolve({ count: 0 })
       const money = is('admin', 'executive', 'finance')

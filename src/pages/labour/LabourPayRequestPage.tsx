@@ -245,13 +245,14 @@ function Sheets({ id, items, editable, onChange }: { id: string; items: Item[]; 
 function Lines({ id, lines, editable, holdFrom, status, onChange }: {
   id: string; lines: RequestLine[]; editable: boolean; holdFrom: string | null; status: string; onChange: () => void
 }) {
-  // The same bank account on two different workers is the first sign of a
-  // padded crew — say so on both lines.
+  // Workers paid into the same bank account: common, so only a flag (485) —
+  // a nudge to encourage each of them to open an account of their own.
   const shared = useMemo(() => {
     const m = new Map<string, string[]>()
     for (const l of lines) if (l.account_number && !l.crew_leader) m.set(l.account_number, [...(m.get(l.account_number) ?? []), l.name])
     return m
   }, [lines])
+  const sharing = lines.filter(l => l.account_number && !l.crew_leader && (shared.get(l.account_number)?.length ?? 0) > 1).length
   const unverified = lines.filter(l => !l.verified).length
   const held = lines.filter(l => l.held).length
   const beforeApproval = status === 'draft' || status === 'returned' || status === 'submitted'
@@ -264,6 +265,9 @@ function Lines({ id, lines, editable, holdFrom, status, onChange }: {
       ) : unverified > 0 && holdFrom ? (
         <p className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-slate-700 dark:bg-amber-900/10 dark:text-amber-300">{unverified} worker{unverified === 1 ? '' : 's'} not verified by HR yet. From {dayLabel(holdFrom)} their pay will be held until HR verifies them.</p>
       ) : null)}
+      {sharing > 0 && (
+        <p className="border-b bg-sky-50 px-4 py-2 text-xs text-sky-800 dark:border-slate-700 dark:bg-sky-900/10 dark:text-sky-300">{sharing} workers here share a bank account. Their pay goes ahead — but encourage them to open an account of their own.</p>
+      )}
       <ul className="divide-y dark:divide-slate-700">
         {lines.map(l => <Line key={l.staff_id ?? `crew-${l.name}`} id={id} l={l} editable={editable && !l.crew_leader && !!l.staff_id}
           sharedWith={(shared.get(l.account_number ?? '') ?? []).filter(n => n !== l.name)} onChange={onChange} />)}
@@ -299,7 +303,7 @@ function Line({ id, l, editable, sharedWith, onChange }: { id: string; l: Reques
           </p>
           <div className="mt-0.5 flex flex-wrap gap-1">
             {l.held ? <Pill tone="red">Pay held — HR to verify</Pill> : !l.verified && <Pill tone="amber">Not verified by HR</Pill>}
-            {sharedWith.length > 0 && <Pill tone="red">Same account as {sharedWith.join(', ')}</Pill>}
+            {sharedWith.length > 0 && <Pill tone="blue" title="Fine for now — encourage them to open an account of their own">Shares account with {sharedWith.join(', ')}</Pill>}
           </div>
         </div>
         <div className="text-right">

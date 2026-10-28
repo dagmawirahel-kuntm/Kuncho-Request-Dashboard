@@ -1,6 +1,6 @@
 import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
 import { useCompanyProfile } from '@/lib/companyProfile'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
 import { PagePalette } from './PagePalette'
@@ -340,7 +340,10 @@ export function AppShell() {
           {LANDING_PATHS.has(location.pathname) && <div className="mb-4 empty:hidden print:hidden"><TaxImpactNudge /></div>}
           <div key={location.pathname} className="animate-fade-in">
             <AtmosphereContext.Provider value={slot}>
-              <Outlet />
+              {/* Pages load on first open: the shell stays while one loads. */}
+              <Suspense fallback={<p className="py-16 text-center text-sm text-slate-400">Loading…</p>}>
+                <Outlet />
+              </Suspense>
             </AtmosphereContext.Provider>
           </div>
         </main>

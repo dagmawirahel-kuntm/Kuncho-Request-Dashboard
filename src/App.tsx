@@ -1,9 +1,11 @@
+import { Suspense } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { FiscalYearProvider } from '@/contexts/FiscalYearContext'
 import { router } from '@/router'
+import { LoadingScreen } from '@/components/shared/LoadingScreen'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +19,9 @@ export default function App() {
       <AuthProvider>
         <FiscalYearProvider>
           <ToastProvider>
-            <RouterProvider router={router} />
+            <Suspense fallback={<LoadingScreen />}>
+              <RouterProvider router={router} />
+            </Suspense>
           </ToastProvider>
         </FiscalYearProvider>
       </AuthProvider>
