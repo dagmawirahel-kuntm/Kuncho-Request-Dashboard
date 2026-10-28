@@ -18,12 +18,14 @@ export function DetailsStatePill({ state }: { state: DetailsState }) {
 }
 
 /** The details the person hiring fills in: ID, trade, rate, bank. Name,
- *  phone and photo are included unless the caller already asks for them. */
-export function DetailsFields({ value, onChange, withIdentity = true, withRate = true }: {
-  value: DetailsInput; onChange: (patch: DetailsInput) => void; withIdentity?: boolean; withRate?: boolean
+ *  phone and photo are included unless the caller already asks for them.
+ *  Phone and ID are optional until the worker's 4th hire (483). */
+export function DetailsFields({ value, onChange, withIdentity = true, withRate = true, idNeeded = false }: {
+  value: DetailsInput; onChange: (patch: DetailsInput) => void; withIdentity?: boolean; withRate?: boolean; idNeeded?: boolean
 }) {
   const { data: banks = [] } = useBanks()
   const { data: trades = [] } = useTradeRoster()
+  const optional = idNeeded ? null : <span className="font-normal text-slate-400"> — optional until their 4th hire</span>
   return (
     <div className="space-y-3">
       {withIdentity && <>
@@ -33,14 +35,14 @@ export function DetailsFields({ value, onChange, withIdentity = true, withRate =
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className={label}>Full name<input className={input} value={value.name ?? ''} onChange={e => onChange({ name: e.target.value })} /></label>
-          <label className={label}>Phone<input className={input} inputMode="tel" value={value.phone ?? ''} onChange={e => onChange({ phone: e.target.value })} placeholder="09…" /></label>
+          <label className={label}>Phone{optional}<input className={input} inputMode="tel" value={value.phone ?? ''} onChange={e => onChange({ phone: e.target.value })} placeholder="09…" /></label>
         </div>
       </>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className={label}>National ID / kebele ID number
+        <label className={label}>National ID / kebele ID number{optional}
           <input className={input} value={value.national_id ?? ''} onChange={e => onChange({ national_id: e.target.value })} />
         </label>
-        <div className={label}>Photo of the ID
+        <div className={label}>Photo of the ID{optional}
           <FileUpload bucket="staff-documents" folder="onboarding" privateBucket label="Take or upload the ID" accept="image/*,application/pdf"
             fileUrl={value.id_document_url ?? null} fileName={value.id_document_name ?? null}
             onUpload={(url, n) => onChange({ id_document_url: url, id_document_name: n })} onClear={() => onChange({ id_document_url: null, id_document_name: null })} />
@@ -125,7 +127,10 @@ export function WorkerDetailsSheet({ who, name, onClose }: { who: Who; name: str
             ) : !d.returned_reason && d.details_at && (
               <p className="flex items-center gap-2 text-xs text-sky-700 dark:text-sky-300"><CheckCircle2 className="h-4 w-4" /> Complete — with HR to confirm</p>
             )}
-            <DetailsFields value={v} onChange={p => setPatch(x => ({ ...x, ...p }))} withRate={!!who.staff_id} />
+            {who.staff_id && (d.hires ?? 0) > 0 && (
+              <p className="text-xs text-slate-500">Hired {d.hires} time{d.hires === 1 ? '' : 's'} so far{d.id_needed ? ' — their phone and ID are needed now.' : '. Phone and ID are needed from their 4th hire.'}</p>
+            )}
+            <DetailsFields value={v} onChange={p => setPatch(x => ({ ...x, ...p }))} withRate={!!who.staff_id} idNeeded={!!d.id_needed} />
             {d.details_by_name && <p className="text-[11px] text-slate-400">Last filled in by {d.details_by_name}{d.details_at ? ` on ${formatDate(d.details_at)}` : ''}.</p>}
             {touchesIdentity && <p className="text-xs text-amber-700 dark:text-amber-300">Changing the name, ID, photo or bank account sends them back to HR to confirm again; their pay waits until then.</p>}
           </>}

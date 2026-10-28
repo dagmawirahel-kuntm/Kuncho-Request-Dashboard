@@ -16,6 +16,8 @@ export type DetailsInput = {
 
 export type WorkerDetails = DetailsInput & {
   bank: string | null; gaps: string[]
+  /** Approved labour requests they were on; phone and ID are needed from the 4th. */
+  hires?: number; id_needed?: boolean
   verified_at?: string | null; verified_by_name?: string | null; verification_note?: string | null
   details_at: string | null; details_by_name: string | null
   returned_at?: string | null; returned_reason?: string | null; returned_by_name?: string | null
