@@ -1,233 +1,243 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import DailySiteReportPage from '@/pages/site-foreman/DailySiteReportPage'
-import SiteDailyReportsViewerPage from '@/pages/site-foreman/SiteDailyReportsViewerPage'
-import LogMaterialReceiptPage from '@/pages/site-foreman/LogMaterialReceiptPage'
-import SiteFloatRequestPage from '@/pages/site-foreman/SiteFloatRequestPage'
-import { FinanceSitePettyCashQueuePage, PMSitePettyCashQueuePage } from '@/pages/site-foreman/SitePettyCashQueue'
-import { PmBoqChangeOrderQueuePage, FinanceBoqChangeOrderQueuePage, ExecBoqChangeOrderQueuePage } from '@/pages/projects/BoqChangeOrderQueue'
-import { MaterialsRequestedPage, HseLogPage, WorkOrdersOnMySitesPage, MyProjectsPage } from '@/pages/site-foreman/ScopedListPages'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LandingRedirect } from './LandingRedirect'
 import { AppShell } from '@/components/layout/AppShell'
-import LoginPage from '@/pages/auth/LoginPage'
-import SignupPage from '@/pages/auth/SignupPage'
-import UpdatePasswordPage from '@/pages/auth/UpdatePasswordPage'
-import DashboardPage from '@/pages/dashboard/DashboardPage'
-import MyDashboardPage from '@/pages/home/MyDashboardPage'
-import OpsHealthPage from '@/pages/ops/OpsHealthPage'
-import MyRequestsDashboardPage from '@/pages/dashboard/MyRequestsDashboardPage'
-import RequestsDashboardPage from '@/pages/dashboard/RequestsDashboardPage'
-import ProcurementDashboardPage from '@/pages/dashboard/ProcurementDashboardPage'
-import FinanceDashboardPage from '@/pages/dashboard/FinanceDashboardPage'
-import PaymentsPage from '@/pages/payments/PaymentsPage'
-import GeneralLedgerPage from '@/pages/dashboard/GeneralLedgerPage'
-import HRDashboardPage from '@/pages/dashboard/HRDashboardPage'
-import ManagementDashboardPage from '@/pages/dashboard/ManagementDashboardPage'
-import ExpensesPage from '@/pages/expenses/ExpensesPage'
-import ExpenseFormPage from '@/pages/expenses/ExpenseFormPage'
-import ExpenseDetailPage from '@/pages/expenses/ExpenseDetailPage'
-import FuelRequestFormPage from '@/pages/expenses/FuelRequestFormPage'
-import ExpenseApprovalQueuePage from '@/pages/expenses/ExpenseApprovalQueuePage'
-import ExpenseFixPage from '@/pages/expenses/ExpenseFixPage'
-import OrdersPage from '@/pages/orders/OrdersPage'
-import OrderFormPage from '@/pages/orders/OrderFormPage'
-import OrderDetailPage from '@/pages/orders/OrderDetailPage'
-import StockItemsPage from '@/pages/stock/StockItemsPage'
-import StockItemFormPage from '@/pages/stock/StockItemFormPage'
-import StockItemDetailPage from '@/pages/stock/StockItemDetailPage'
-import StockMovementPage from '@/pages/stock/StockMovementPage'
-import StockToolsPage from '@/pages/stock/StockToolsPage'
-import TransportationPage from '@/pages/transportation/TransportationPage'
-import VariationsPage from '@/pages/variations/VariationsPage'
-import VariationFormPage from '@/pages/variations/VariationFormPage'
-import VariationDetailPage from '@/pages/variations/VariationDetailPage'
-import TransportFormPage from '@/pages/transportation/TransportFormPage'
-import TransportPaymentFormPage from '@/pages/transportation/TransportPaymentFormPage'
-import PayOutPage from '@/pages/finance/PayOutPage'
-import DriversPage from '@/pages/transportation/DriversPage'
-import TripEstimatorPage from '@/pages/transportation/TripEstimatorPage'
-import StaffPage from '@/pages/staff/StaffPage'
-import StaffDetailPage from '@/pages/staff/StaffDetailPage'
-import StaffFormPage from '@/pages/staff/StaffFormPage'
-import CasualWorkersPage from '@/pages/hr/CasualWorkersPage'
-import WorkerRegisterPage from '@/pages/hr/WorkerRegisterPage'
-import CompetencyHubPage from '@/pages/hr/CompetencyHubPage'
-import LaborExpenseDraftsPage from '@/pages/finance/LaborExpenseDraftsPage'
-import MarketTrendsPage from '@/pages/procurement/MarketTrendsPage'
-import PriceCheckRequestsPage from '@/pages/procurement/PriceCheckRequestsPage'
-import MyPriceCheckRequestsPage from '@/pages/procurement/MyPriceCheckRequestsPage'
-import VolatilitySettingsPage from '@/pages/procurement/VolatilitySettingsPage'
-import ItemBrandsPage from '@/pages/procurement/ItemBrandsPage'
-import PayrollPage from '@/pages/payroll/PayrollPage'
-import PayrollFormPage from '@/pages/payroll/PayrollFormPage'
-import PayrollDetailPage from '@/pages/payroll/PayrollDetailPage'
-import VendorsPage from '@/pages/vendors/VendorsPage'
-import VendorFormPage from '@/pages/vendors/VendorFormPage'
-import VendorDetailPage from '@/pages/vendors/VendorDetailPage'
-import VendorCreditsPage from '@/pages/vendors/VendorCreditsPage'
-import PaymentRequestsPage from '@/pages/finance/PaymentRequestsPage'
-import PaymentRequestDetailPage from '@/pages/finance/PaymentRequestDetailPage'
-import VendorContractPage from '@/pages/vendors/VendorContractPage'
-import VendorReviewPage from '@/pages/vendors/VendorReviewPage'
-import ProjectsPage from '@/pages/projects/ProjectsPage'
-import ProjectFormPage from '@/pages/projects/ProjectFormPage'
-import ProjectWorkspacePage from '@/pages/projects/ProjectWorkspacePage'
-import ProjectsWeekPage from '@/pages/projects/ProjectsWeekPage'
-import AccountsPage from '@/pages/accounts/AccountsPage'
-import AccountFormPage from '@/pages/accounts/AccountFormPage'
-import AccountDetailPage from '@/pages/accounts/AccountDetailPage'
-import TransfersPage from '@/pages/transfers/TransfersPage'
-import TransferFormPage from '@/pages/transfers/TransferFormPage'
-import BankReconciliationPage from '@/pages/bank/BankReconciliationPage'
-import CashForecastPage from '@/pages/finance/CashForecastPage'
-import MonthEndPage from '@/pages/finance/MonthEndPage'
-import PLReportPage from '@/pages/reports/PLReportPage'
-import BalanceSheetPage from '@/pages/reports/BalanceSheetPage'
-import HistoricalArchivePage from '@/pages/reports/HistoricalArchivePage'
-import GovernmentStatementPage from '@/pages/reports/GovernmentStatementPage'
-import SalesPage from '@/pages/sales/SalesPage'
-import PackageReceiptsPage from '@/pages/sales/PackageReceiptsPage'
-import SalesJourneyPage from '@/pages/sales/SalesJourneyPage'
-import ClientHistoryPage from '@/pages/sales/client-history/ClientHistoryPage'
-import SaleFormPage from '@/pages/sales/SaleFormPage'
-import SaleDetailPage from '@/pages/sales/SaleDetailPage'
-import ProformasPage from '@/pages/sales/ProformasPage'
-import ClientsPage from '@/pages/clients/ClientsPage'
-import ClientDetailPage from '@/pages/clients/ClientDetailPage'
-import ClientFormPage from '@/pages/clients/ClientFormPage'
-import ProformaInvoicePage from '@/pages/clients/ProformaInvoicePage'
-import ProformaDetailPage from '@/pages/sales/ProformaDetailPage'
-import InvoiceDocumentPage from '@/pages/invoices/InvoiceDocumentPage'
-import CompanyProfilePage from '@/pages/settings/CompanyProfilePage'
-import VerifyDocumentPage from '@/pages/public/VerifyDocumentPage'
-import PaymentRequestPage from '@/pages/clients/PaymentRequestPage'
-import InvoicesPage from '@/pages/invoices/InvoicesPage'
-import CarriedForwardPage from '@/pages/invoices/CarriedForwardPage'
-import GeneralLedgerDashboardPage from '@/pages/general-ledger/GeneralLedgerDashboardPage'
-import GeneralLedgerFormPage from '@/pages/general-ledger/GeneralLedgerFormPage'
-import SubLedgerFormPage from '@/pages/general-ledger/SubLedgerFormPage'
-import PurchaseAllocationPage from '@/pages/purchase-allocation/PurchaseAllocationPage'
-import AllocationFormPage from '@/pages/purchase-allocation/AllocationFormPage'
-import AttendancePage from '@/pages/attendance/AttendancePage'
-import CashAdvancesPage from '@/pages/cash-advances/CashAdvancesPage'
-import CashAdvanceFormPage from '@/pages/cash-advances/CashAdvanceFormPage'
-import TaxManagementPage from '@/pages/tax-summary/TaxManagementPage'
-import TaxFilingsPage from '@/pages/tax-filings/TaxFilingsPage'
-import TaxPlanPage from '@/pages/tax-plan/TaxPlanPage'
-import TaxImpactPage from '@/pages/tax-plan/TaxImpactPage'
-import TaxReceiptsPage from '@/pages/tax-receipts/TaxReceiptsPage'
-import TaxReceiptFormPage from '@/pages/tax-receipts/TaxReceiptFormPage'
-import VatReceiptTrackerPage from '@/pages/tax-receipts/VatReceiptTrackerPage'
-import SalesReceiptFormPage from '@/pages/tax-receipts/SalesReceiptFormPage'
-import BatchPaymentsPage from '@/pages/batch-payments/BatchPaymentsPage'
-import BatchPaymentFormPage from '@/pages/batch-payments/BatchPaymentFormPage'
-import BatchPaymentDetailPage from '@/pages/batch-payments/BatchPaymentDetailPage'
-import CpoBondsPage from '@/pages/cpo-bonds/CpoBondsPage'
-import CpoBondFormPage from '@/pages/cpo-bonds/CpoBondFormPage'
-import ServicesCatalogPage from '@/pages/catalog/ServicesCatalogPage'
-import EmergencyPayrollPage from '@/pages/emergency-payroll/EmergencyPayrollPage'
-import EmergencyPayrollFormPage from '@/pages/emergency-payroll/EmergencyPayrollFormPage'
-import VendorReceiptsPage from '@/pages/vendor-receipts/VendorReceiptsPage'
-import VendorReceiptFormPage from '@/pages/vendor-receipts/VendorReceiptFormPage'
-import VendorReceiptDetailPage from '@/pages/vendor-receipts/VendorReceiptDetailPage'
-import LocationsPage from '@/pages/locations/LocationsPage'
-import LocationFormPage from '@/pages/locations/LocationFormPage'
-import OverviewDashboardPage from '@/pages/dashboard/OverviewDashboardPage'
-import UsersPage from '@/pages/users/UsersPage'
-import CalendarPage from '@/pages/calendar/CalendarPage'
-import FleetPage from '@/pages/logistics/FleetPage'
-import MyTripsPage from '@/pages/logistics/MyTripsPage'
-import VehicleDetailPage from '@/pages/logistics/VehicleDetailPage'
-import LocationsMapPage from '@/pages/locations/LocationsMapPage'
-import LocationsTidyPage from '@/pages/locations/LocationsTidyPage'
-import TransportInsightsPage from '@/pages/logistics/TransportInsightsPage'
-import SourcingBundlesPage from '@/pages/sourcing/SourcingBundlesPage'
-import SourcingBundleFormPage from '@/pages/sourcing/SourcingBundleFormPage'
-import PurchaseOrderPage from '@/pages/sourcing/PurchaseOrderPage'
-import GoodsReceivedNoteFormPage from '@/pages/sourcing/GoodsReceivedNoteFormPage'
-import GrnRegisterPage from '@/pages/sourcing/GrnRegisterPage'
-import GrnDetailPage from '@/pages/sourcing/GrnDetailPage'
-import ItemVariantsPage from '@/pages/procurement/ItemVariantsPage'
-import SiteDeliveryNoteFormPage from '@/pages/sourcing/SiteDeliveryNoteFormPage'
-import SiteDeliveriesPage from '@/pages/sourcing/SiteDeliveriesPage'
-import SiteDeliveryNotePage from '@/pages/sourcing/SiteDeliveryNotePage'
-import DepartmentsPage from '@/pages/departments/DepartmentsPage'
-import DepartmentOrgChartPage from '@/pages/departments/DepartmentOrgChartPage'
-import DesignPackagesPage from '@/pages/design/DesignPackagesPage'
-import DesignPackageFormPage from '@/pages/design/DesignPackageFormPage'
-import DesignPackageDetailPage from '@/pages/design/DesignPackageDetailPage'
-import FixedAssetsPage from '@/pages/finance/FixedAssetsPage'
-import FixedAssetFormPage from '@/pages/finance/FixedAssetFormPage'
-import ContractsPage from '@/pages/bd/ContractsPage'
-import ContractFormPage from '@/pages/bd/ContractFormPage'
-import OpportunitiesPage from '@/pages/bd/OpportunitiesPage'
-import OpportunityFormPage from '@/pages/bd/OpportunityFormPage'
-import LeaveRequestsPage from '@/pages/leave-requests/LeaveRequestsPage'
-import LeaveRequestFormPage from '@/pages/leave-requests/LeaveRequestFormPage'
-import MyLeavePage from '@/pages/leave-requests/MyLeavePage'
-import PerformanceReviewsPage from '@/pages/performance-reviews/PerformanceReviewsPage'
-import PerformanceReviewFormPage from '@/pages/performance-reviews/PerformanceReviewFormPage'
-import SettingsPage from '@/pages/settings/SettingsPage'
-import NotificationSettingsPage from '@/pages/settings/NotificationSettingsPage'
-import NotificationsPage from '@/pages/notifications/NotificationsPage'
-import OnboardingTasksPage from '@/pages/onboarding-tasks/OnboardingTasksPage'
-import OnboardingTaskFormPage from '@/pages/onboarding-tasks/OnboardingTaskFormPage'
-import DisciplinaryRecordsPage from '@/pages/disciplinary-records/DisciplinaryRecordsPage'
-import DisciplinaryRecordFormPage from '@/pages/disciplinary-records/DisciplinaryRecordFormPage'
-import HseIncidentsPage from '@/pages/hse-incidents/HseIncidentsPage'
-import HseIncidentFormPage from '@/pages/hse-incidents/HseIncidentFormPage'
-import HseInductionsPage from '@/pages/hse-inductions/HseInductionsPage'
-import HseInductionFormPage from '@/pages/hse-inductions/HseInductionFormPage'
-import Tier2CandidatesPage from '@/pages/hr/Tier2CandidatesPage'
-import PettyCashPage from '@/pages/petty-cash/PettyCashPage'
-import PettyCashFloatFormPage from '@/pages/petty-cash/PettyCashFloatFormPage'
-import PettyCashDetailPage from '@/pages/petty-cash/PettyCashDetailPage'
-import VehicleMaintenancePage from '@/pages/fleet/VehicleMaintenancePage'
-import VehicleMaintenanceFormPage from '@/pages/fleet/VehicleMaintenanceFormPage'
-import VehiclePenaltiesPage from '@/pages/fleet/VehiclePenaltiesPage'
-import VehiclePenaltyFormPage from '@/pages/fleet/VehiclePenaltyFormPage'
-import ReceiptPickupQueuePage from '@/pages/logistics/ReceiptPickupQueuePage'
-import LabourHomePage from '@/pages/labour/LabourHomePage'
-import LabourRequestFormPage from '@/pages/labour/LabourRequestFormPage'
-import LabourRequestPage from '@/pages/labour/LabourRequestPage'
-import LabourRecordPage from '@/pages/labour/LabourRecordPage'
-import LabourOvertimePage from '@/pages/labour/LabourOvertimePage'
-import LabourPayPage from '@/pages/labour/LabourPayPage'
-import LabourRedirect from '@/pages/labour/LabourRedirect'
-import LabourPayRequestsPage from '@/pages/labour/LabourPayRequestsPage'
-import LabourWeekPage from '@/pages/labour/LabourWeekPage'
-import LabourWorkersPage from '@/pages/labour/LabourWorkersPage'
-import LabourPayRequestPage from '@/pages/labour/LabourPayRequestPage'
-import SubcontractsPage from '@/pages/subcontracts/SubcontractsPage'
-import SubcontractFormPage from '@/pages/subcontracts/SubcontractFormPage'
-import SubcontractDetailPage from '@/pages/subcontracts/SubcontractDetailPage'
-import StockPendingSetupPage from '@/pages/stock/StockPendingSetupPage'
-import StockDuplicatesPage from '@/pages/stock/StockDuplicatesPage'
-import StockDispatchQueuePage from '@/pages/stock/StockDispatchQueuePage'
-import StockIssuePage from '@/pages/stock/StockIssuePage'
-import StockCountsPage from '@/pages/stock/StockCountsPage'
-import StockCountPage from '@/pages/stock/StockCountPage'
-import ProjectManagerViewPage from '@/pages/views/ProjectManagerViewPage'
-import OperationsManagerViewPage from '@/pages/views/OperationsManagerViewPage'
-import StockManagerViewPage from '@/pages/views/StockManagerViewPage'
-import LogisticsOfficerViewPage from '@/pages/views/LogisticsOfficerViewPage'
-import WorkshopViewPage from '@/pages/views/WorkshopViewPage'
-import DesignViewPage from '@/pages/views/DesignViewPage'
-import BdSalesViewPage from '@/pages/views/BdSalesViewPage'
-import HrPeopleViewPage from '@/pages/views/HrPeopleViewPage'
-import HseViewPage from '@/pages/views/HseViewPage'
-import NoDepartmentPage from '@/pages/dashboard/NoDepartmentPage'
-import RentPage from '@/pages/properties/RentPage'
-import PropertyFormPage from '@/pages/properties/PropertyFormPage'
-import WorkOrdersPage from '@/pages/work-orders/WorkOrdersPage'
-import WorkOrderFormPage from '@/pages/work-orders/WorkOrderFormPage'
-import WorkOrderDetailPage from '@/pages/work-orders/WorkOrderDetailPage'
-import RolesPage from '@/pages/roles/RolesPage'
-import RolePrintPage from '@/pages/roles/RolePrintPage'
-import PersonSkillsPage from '@/pages/roles/PersonSkillsPage'
-import OldSkillsRedirect from '@/pages/roles/OldSkillsRedirect'
-import ExecDashboardPage from '@/pages/exec/ExecDashboardPage'
-import TradeCatalogPage from '@/pages/hr/TradeCatalogPage'
+import { lazyPage } from './lazyPage'
+
+// Each page loads when it is first opened, so the app starts with only
+// the shell (see AppShell's Suspense); lazyPage reloads once after a deploy.
+const DailySiteReportPage = lazyPage(() => import('@/pages/site-foreman/DailySiteReportPage'))
+const SiteDailyReportsViewerPage = lazyPage(() => import('@/pages/site-foreman/SiteDailyReportsViewerPage'))
+const LogMaterialReceiptPage = lazyPage(() => import('@/pages/site-foreman/LogMaterialReceiptPage'))
+const SiteFloatRequestPage = lazyPage(() => import('@/pages/site-foreman/SiteFloatRequestPage'))
+const FinanceSitePettyCashQueuePage = lazyPage(() => import('@/pages/site-foreman/SitePettyCashQueue').then(m => ({ default: m.FinanceSitePettyCashQueuePage })))
+const PMSitePettyCashQueuePage = lazyPage(() => import('@/pages/site-foreman/SitePettyCashQueue').then(m => ({ default: m.PMSitePettyCashQueuePage })))
+const PmBoqChangeOrderQueuePage = lazyPage(() => import('@/pages/projects/BoqChangeOrderQueue').then(m => ({ default: m.PmBoqChangeOrderQueuePage })))
+const FinanceBoqChangeOrderQueuePage = lazyPage(() => import('@/pages/projects/BoqChangeOrderQueue').then(m => ({ default: m.FinanceBoqChangeOrderQueuePage })))
+const ExecBoqChangeOrderQueuePage = lazyPage(() => import('@/pages/projects/BoqChangeOrderQueue').then(m => ({ default: m.ExecBoqChangeOrderQueuePage })))
+const MaterialsRequestedPage = lazyPage(() => import('@/pages/site-foreman/ScopedListPages').then(m => ({ default: m.MaterialsRequestedPage })))
+const HseLogPage = lazyPage(() => import('@/pages/site-foreman/ScopedListPages').then(m => ({ default: m.HseLogPage })))
+const WorkOrdersOnMySitesPage = lazyPage(() => import('@/pages/site-foreman/ScopedListPages').then(m => ({ default: m.WorkOrdersOnMySitesPage })))
+const MyProjectsPage = lazyPage(() => import('@/pages/site-foreman/ScopedListPages').then(m => ({ default: m.MyProjectsPage })))
+const LoginPage = lazyPage(() => import('@/pages/auth/LoginPage'))
+const SignupPage = lazyPage(() => import('@/pages/auth/SignupPage'))
+const UpdatePasswordPage = lazyPage(() => import('@/pages/auth/UpdatePasswordPage'))
+const DashboardPage = lazyPage(() => import('@/pages/dashboard/DashboardPage'))
+const MyDashboardPage = lazyPage(() => import('@/pages/home/MyDashboardPage'))
+const OpsHealthPage = lazyPage(() => import('@/pages/ops/OpsHealthPage'))
+const MyRequestsDashboardPage = lazyPage(() => import('@/pages/dashboard/MyRequestsDashboardPage'))
+const RequestsDashboardPage = lazyPage(() => import('@/pages/dashboard/RequestsDashboardPage'))
+const ProcurementDashboardPage = lazyPage(() => import('@/pages/dashboard/ProcurementDashboardPage'))
+const FinanceDashboardPage = lazyPage(() => import('@/pages/dashboard/FinanceDashboardPage'))
+const PaymentsPage = lazyPage(() => import('@/pages/payments/PaymentsPage'))
+const GeneralLedgerPage = lazyPage(() => import('@/pages/dashboard/GeneralLedgerPage'))
+const HRDashboardPage = lazyPage(() => import('@/pages/dashboard/HRDashboardPage'))
+const ManagementDashboardPage = lazyPage(() => import('@/pages/dashboard/ManagementDashboardPage'))
+const ExpensesPage = lazyPage(() => import('@/pages/expenses/ExpensesPage'))
+const ExpenseFormPage = lazyPage(() => import('@/pages/expenses/ExpenseFormPage'))
+const ExpenseDetailPage = lazyPage(() => import('@/pages/expenses/ExpenseDetailPage'))
+const FuelRequestFormPage = lazyPage(() => import('@/pages/expenses/FuelRequestFormPage'))
+const ExpenseApprovalQueuePage = lazyPage(() => import('@/pages/expenses/ExpenseApprovalQueuePage'))
+const ExpenseFixPage = lazyPage(() => import('@/pages/expenses/ExpenseFixPage'))
+const OrdersPage = lazyPage(() => import('@/pages/orders/OrdersPage'))
+const OrderFormPage = lazyPage(() => import('@/pages/orders/OrderFormPage'))
+const OrderDetailPage = lazyPage(() => import('@/pages/orders/OrderDetailPage'))
+const StockItemsPage = lazyPage(() => import('@/pages/stock/StockItemsPage'))
+const StockItemFormPage = lazyPage(() => import('@/pages/stock/StockItemFormPage'))
+const StockItemDetailPage = lazyPage(() => import('@/pages/stock/StockItemDetailPage'))
+const StockMovementPage = lazyPage(() => import('@/pages/stock/StockMovementPage'))
+const StockToolsPage = lazyPage(() => import('@/pages/stock/StockToolsPage'))
+const TransportationPage = lazyPage(() => import('@/pages/transportation/TransportationPage'))
+const VariationsPage = lazyPage(() => import('@/pages/variations/VariationsPage'))
+const VariationFormPage = lazyPage(() => import('@/pages/variations/VariationFormPage'))
+const VariationDetailPage = lazyPage(() => import('@/pages/variations/VariationDetailPage'))
+const TransportFormPage = lazyPage(() => import('@/pages/transportation/TransportFormPage'))
+const TransportPaymentFormPage = lazyPage(() => import('@/pages/transportation/TransportPaymentFormPage'))
+const PayOutPage = lazyPage(() => import('@/pages/finance/PayOutPage'))
+const DriversPage = lazyPage(() => import('@/pages/transportation/DriversPage'))
+const TripEstimatorPage = lazyPage(() => import('@/pages/transportation/TripEstimatorPage'))
+const StaffPage = lazyPage(() => import('@/pages/staff/StaffPage'))
+const StaffDetailPage = lazyPage(() => import('@/pages/staff/StaffDetailPage'))
+const StaffFormPage = lazyPage(() => import('@/pages/staff/StaffFormPage'))
+const CasualWorkersPage = lazyPage(() => import('@/pages/hr/CasualWorkersPage'))
+const WorkerRegisterPage = lazyPage(() => import('@/pages/hr/WorkerRegisterPage'))
+const CompetencyHubPage = lazyPage(() => import('@/pages/hr/CompetencyHubPage'))
+const LaborExpenseDraftsPage = lazyPage(() => import('@/pages/finance/LaborExpenseDraftsPage'))
+const MarketTrendsPage = lazyPage(() => import('@/pages/procurement/MarketTrendsPage'))
+const PriceCheckRequestsPage = lazyPage(() => import('@/pages/procurement/PriceCheckRequestsPage'))
+const MyPriceCheckRequestsPage = lazyPage(() => import('@/pages/procurement/MyPriceCheckRequestsPage'))
+const VolatilitySettingsPage = lazyPage(() => import('@/pages/procurement/VolatilitySettingsPage'))
+const ItemBrandsPage = lazyPage(() => import('@/pages/procurement/ItemBrandsPage'))
+const PayrollPage = lazyPage(() => import('@/pages/payroll/PayrollPage'))
+const PayrollFormPage = lazyPage(() => import('@/pages/payroll/PayrollFormPage'))
+const PayrollDetailPage = lazyPage(() => import('@/pages/payroll/PayrollDetailPage'))
+const VendorsPage = lazyPage(() => import('@/pages/vendors/VendorsPage'))
+const VendorFormPage = lazyPage(() => import('@/pages/vendors/VendorFormPage'))
+const VendorDetailPage = lazyPage(() => import('@/pages/vendors/VendorDetailPage'))
+const VendorCreditsPage = lazyPage(() => import('@/pages/vendors/VendorCreditsPage'))
+const PaymentRequestsPage = lazyPage(() => import('@/pages/finance/PaymentRequestsPage'))
+const PaymentRequestDetailPage = lazyPage(() => import('@/pages/finance/PaymentRequestDetailPage'))
+const VendorContractPage = lazyPage(() => import('@/pages/vendors/VendorContractPage'))
+const VendorReviewPage = lazyPage(() => import('@/pages/vendors/VendorReviewPage'))
+const ProjectsPage = lazyPage(() => import('@/pages/projects/ProjectsPage'))
+const ProjectFormPage = lazyPage(() => import('@/pages/projects/ProjectFormPage'))
+const ProjectWorkspacePage = lazyPage(() => import('@/pages/projects/ProjectWorkspacePage'))
+const ProjectsWeekPage = lazyPage(() => import('@/pages/projects/ProjectsWeekPage'))
+const AccountsPage = lazyPage(() => import('@/pages/accounts/AccountsPage'))
+const AccountFormPage = lazyPage(() => import('@/pages/accounts/AccountFormPage'))
+const AccountDetailPage = lazyPage(() => import('@/pages/accounts/AccountDetailPage'))
+const TransfersPage = lazyPage(() => import('@/pages/transfers/TransfersPage'))
+const TransferFormPage = lazyPage(() => import('@/pages/transfers/TransferFormPage'))
+const BankReconciliationPage = lazyPage(() => import('@/pages/bank/BankReconciliationPage'))
+const CashForecastPage = lazyPage(() => import('@/pages/finance/CashForecastPage'))
+const MonthEndPage = lazyPage(() => import('@/pages/finance/MonthEndPage'))
+const PLReportPage = lazyPage(() => import('@/pages/reports/PLReportPage'))
+const BalanceSheetPage = lazyPage(() => import('@/pages/reports/BalanceSheetPage'))
+const HistoricalArchivePage = lazyPage(() => import('@/pages/reports/HistoricalArchivePage'))
+const GovernmentStatementPage = lazyPage(() => import('@/pages/reports/GovernmentStatementPage'))
+const SalesPage = lazyPage(() => import('@/pages/sales/SalesPage'))
+const PackageReceiptsPage = lazyPage(() => import('@/pages/sales/PackageReceiptsPage'))
+const SalesJourneyPage = lazyPage(() => import('@/pages/sales/SalesJourneyPage'))
+const ClientHistoryPage = lazyPage(() => import('@/pages/sales/client-history/ClientHistoryPage'))
+const SaleFormPage = lazyPage(() => import('@/pages/sales/SaleFormPage'))
+const SaleDetailPage = lazyPage(() => import('@/pages/sales/SaleDetailPage'))
+const ProformasPage = lazyPage(() => import('@/pages/sales/ProformasPage'))
+const ClientsPage = lazyPage(() => import('@/pages/clients/ClientsPage'))
+const ClientDetailPage = lazyPage(() => import('@/pages/clients/ClientDetailPage'))
+const ClientFormPage = lazyPage(() => import('@/pages/clients/ClientFormPage'))
+const ProformaInvoicePage = lazyPage(() => import('@/pages/clients/ProformaInvoicePage'))
+const ProformaDetailPage = lazyPage(() => import('@/pages/sales/ProformaDetailPage'))
+const InvoiceDocumentPage = lazyPage(() => import('@/pages/invoices/InvoiceDocumentPage'))
+const CompanyProfilePage = lazyPage(() => import('@/pages/settings/CompanyProfilePage'))
+const VerifyDocumentPage = lazyPage(() => import('@/pages/public/VerifyDocumentPage'))
+const PaymentRequestPage = lazyPage(() => import('@/pages/clients/PaymentRequestPage'))
+const InvoicesPage = lazyPage(() => import('@/pages/invoices/InvoicesPage'))
+const CarriedForwardPage = lazyPage(() => import('@/pages/invoices/CarriedForwardPage'))
+const GeneralLedgerDashboardPage = lazyPage(() => import('@/pages/general-ledger/GeneralLedgerDashboardPage'))
+const GeneralLedgerFormPage = lazyPage(() => import('@/pages/general-ledger/GeneralLedgerFormPage'))
+const SubLedgerFormPage = lazyPage(() => import('@/pages/general-ledger/SubLedgerFormPage'))
+const PurchaseAllocationPage = lazyPage(() => import('@/pages/purchase-allocation/PurchaseAllocationPage'))
+const AllocationFormPage = lazyPage(() => import('@/pages/purchase-allocation/AllocationFormPage'))
+const AttendancePage = lazyPage(() => import('@/pages/attendance/AttendancePage'))
+const CashAdvancesPage = lazyPage(() => import('@/pages/cash-advances/CashAdvancesPage'))
+const CashAdvanceFormPage = lazyPage(() => import('@/pages/cash-advances/CashAdvanceFormPage'))
+const TaxManagementPage = lazyPage(() => import('@/pages/tax-summary/TaxManagementPage'))
+const TaxFilingsPage = lazyPage(() => import('@/pages/tax-filings/TaxFilingsPage'))
+const TaxPlanPage = lazyPage(() => import('@/pages/tax-plan/TaxPlanPage'))
+const TaxImpactPage = lazyPage(() => import('@/pages/tax-plan/TaxImpactPage'))
+const TaxReceiptsPage = lazyPage(() => import('@/pages/tax-receipts/TaxReceiptsPage'))
+const TaxReceiptFormPage = lazyPage(() => import('@/pages/tax-receipts/TaxReceiptFormPage'))
+const VatReceiptTrackerPage = lazyPage(() => import('@/pages/tax-receipts/VatReceiptTrackerPage'))
+const SalesReceiptFormPage = lazyPage(() => import('@/pages/tax-receipts/SalesReceiptFormPage'))
+const BatchPaymentsPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentsPage'))
+const BatchPaymentFormPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentFormPage'))
+const BatchPaymentDetailPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentDetailPage'))
+const CpoBondsPage = lazyPage(() => import('@/pages/cpo-bonds/CpoBondsPage'))
+const CpoBondFormPage = lazyPage(() => import('@/pages/cpo-bonds/CpoBondFormPage'))
+const ServicesCatalogPage = lazyPage(() => import('@/pages/catalog/ServicesCatalogPage'))
+const EmergencyPayrollPage = lazyPage(() => import('@/pages/emergency-payroll/EmergencyPayrollPage'))
+const EmergencyPayrollFormPage = lazyPage(() => import('@/pages/emergency-payroll/EmergencyPayrollFormPage'))
+const VendorReceiptsPage = lazyPage(() => import('@/pages/vendor-receipts/VendorReceiptsPage'))
+const VendorReceiptFormPage = lazyPage(() => import('@/pages/vendor-receipts/VendorReceiptFormPage'))
+const VendorReceiptDetailPage = lazyPage(() => import('@/pages/vendor-receipts/VendorReceiptDetailPage'))
+const LocationsPage = lazyPage(() => import('@/pages/locations/LocationsPage'))
+const LocationFormPage = lazyPage(() => import('@/pages/locations/LocationFormPage'))
+const OverviewDashboardPage = lazyPage(() => import('@/pages/dashboard/OverviewDashboardPage'))
+const UsersPage = lazyPage(() => import('@/pages/users/UsersPage'))
+const CalendarPage = lazyPage(() => import('@/pages/calendar/CalendarPage'))
+const FleetPage = lazyPage(() => import('@/pages/logistics/FleetPage'))
+const MyTripsPage = lazyPage(() => import('@/pages/logistics/MyTripsPage'))
+const VehicleDetailPage = lazyPage(() => import('@/pages/logistics/VehicleDetailPage'))
+const LocationsMapPage = lazyPage(() => import('@/pages/locations/LocationsMapPage'))
+const LocationsTidyPage = lazyPage(() => import('@/pages/locations/LocationsTidyPage'))
+const TransportInsightsPage = lazyPage(() => import('@/pages/logistics/TransportInsightsPage'))
+const SourcingBundlesPage = lazyPage(() => import('@/pages/sourcing/SourcingBundlesPage'))
+const SourcingBundleFormPage = lazyPage(() => import('@/pages/sourcing/SourcingBundleFormPage'))
+const PurchaseOrderPage = lazyPage(() => import('@/pages/sourcing/PurchaseOrderPage'))
+const GoodsReceivedNoteFormPage = lazyPage(() => import('@/pages/sourcing/GoodsReceivedNoteFormPage'))
+const GrnRegisterPage = lazyPage(() => import('@/pages/sourcing/GrnRegisterPage'))
+const GrnDetailPage = lazyPage(() => import('@/pages/sourcing/GrnDetailPage'))
+const ItemVariantsPage = lazyPage(() => import('@/pages/procurement/ItemVariantsPage'))
+const SiteDeliveryNoteFormPage = lazyPage(() => import('@/pages/sourcing/SiteDeliveryNoteFormPage'))
+const SiteDeliveriesPage = lazyPage(() => import('@/pages/sourcing/SiteDeliveriesPage'))
+const SiteDeliveryNotePage = lazyPage(() => import('@/pages/sourcing/SiteDeliveryNotePage'))
+const DepartmentsPage = lazyPage(() => import('@/pages/departments/DepartmentsPage'))
+const DepartmentOrgChartPage = lazyPage(() => import('@/pages/departments/DepartmentOrgChartPage'))
+const DesignPackagesPage = lazyPage(() => import('@/pages/design/DesignPackagesPage'))
+const DesignPackageFormPage = lazyPage(() => import('@/pages/design/DesignPackageFormPage'))
+const DesignPackageDetailPage = lazyPage(() => import('@/pages/design/DesignPackageDetailPage'))
+const FixedAssetsPage = lazyPage(() => import('@/pages/finance/FixedAssetsPage'))
+const FixedAssetFormPage = lazyPage(() => import('@/pages/finance/FixedAssetFormPage'))
+const ContractsPage = lazyPage(() => import('@/pages/bd/ContractsPage'))
+const ContractFormPage = lazyPage(() => import('@/pages/bd/ContractFormPage'))
+const OpportunitiesPage = lazyPage(() => import('@/pages/bd/OpportunitiesPage'))
+const OpportunityFormPage = lazyPage(() => import('@/pages/bd/OpportunityFormPage'))
+const LeaveRequestsPage = lazyPage(() => import('@/pages/leave-requests/LeaveRequestsPage'))
+const LeaveRequestFormPage = lazyPage(() => import('@/pages/leave-requests/LeaveRequestFormPage'))
+const MyLeavePage = lazyPage(() => import('@/pages/leave-requests/MyLeavePage'))
+const PerformanceReviewsPage = lazyPage(() => import('@/pages/performance-reviews/PerformanceReviewsPage'))
+const PerformanceReviewFormPage = lazyPage(() => import('@/pages/performance-reviews/PerformanceReviewFormPage'))
+const SettingsPage = lazyPage(() => import('@/pages/settings/SettingsPage'))
+const NotificationSettingsPage = lazyPage(() => import('@/pages/settings/NotificationSettingsPage'))
+const NotificationsPage = lazyPage(() => import('@/pages/notifications/NotificationsPage'))
+const OnboardingTasksPage = lazyPage(() => import('@/pages/onboarding-tasks/OnboardingTasksPage'))
+const OnboardingTaskFormPage = lazyPage(() => import('@/pages/onboarding-tasks/OnboardingTaskFormPage'))
+const DisciplinaryRecordsPage = lazyPage(() => import('@/pages/disciplinary-records/DisciplinaryRecordsPage'))
+const DisciplinaryRecordFormPage = lazyPage(() => import('@/pages/disciplinary-records/DisciplinaryRecordFormPage'))
+const HseIncidentsPage = lazyPage(() => import('@/pages/hse-incidents/HseIncidentsPage'))
+const HseIncidentFormPage = lazyPage(() => import('@/pages/hse-incidents/HseIncidentFormPage'))
+const HseInductionsPage = lazyPage(() => import('@/pages/hse-inductions/HseInductionsPage'))
+const HseInductionFormPage = lazyPage(() => import('@/pages/hse-inductions/HseInductionFormPage'))
+const Tier2CandidatesPage = lazyPage(() => import('@/pages/hr/Tier2CandidatesPage'))
+const PettyCashPage = lazyPage(() => import('@/pages/petty-cash/PettyCashPage'))
+const PettyCashFloatFormPage = lazyPage(() => import('@/pages/petty-cash/PettyCashFloatFormPage'))
+const PettyCashDetailPage = lazyPage(() => import('@/pages/petty-cash/PettyCashDetailPage'))
+const VehicleMaintenancePage = lazyPage(() => import('@/pages/fleet/VehicleMaintenancePage'))
+const VehicleMaintenanceFormPage = lazyPage(() => import('@/pages/fleet/VehicleMaintenanceFormPage'))
+const VehiclePenaltiesPage = lazyPage(() => import('@/pages/fleet/VehiclePenaltiesPage'))
+const VehiclePenaltyFormPage = lazyPage(() => import('@/pages/fleet/VehiclePenaltyFormPage'))
+const ReceiptPickupQueuePage = lazyPage(() => import('@/pages/logistics/ReceiptPickupQueuePage'))
+const LabourHomePage = lazyPage(() => import('@/pages/labour/LabourHomePage'))
+const LabourRequestFormPage = lazyPage(() => import('@/pages/labour/LabourRequestFormPage'))
+const LabourRequestPage = lazyPage(() => import('@/pages/labour/LabourRequestPage'))
+const LabourRecordPage = lazyPage(() => import('@/pages/labour/LabourRecordPage'))
+const LabourOvertimePage = lazyPage(() => import('@/pages/labour/LabourOvertimePage'))
+const LabourPayPage = lazyPage(() => import('@/pages/labour/LabourPayPage'))
+const LabourRedirect = lazyPage(() => import('@/pages/labour/LabourRedirect'))
+const LabourPayRequestsPage = lazyPage(() => import('@/pages/labour/LabourPayRequestsPage'))
+const LabourWeekPage = lazyPage(() => import('@/pages/labour/LabourWeekPage'))
+const LabourWorkersPage = lazyPage(() => import('@/pages/labour/LabourWorkersPage'))
+const LabourPayRequestPage = lazyPage(() => import('@/pages/labour/LabourPayRequestPage'))
+const SubcontractsPage = lazyPage(() => import('@/pages/subcontracts/SubcontractsPage'))
+const SubcontractFormPage = lazyPage(() => import('@/pages/subcontracts/SubcontractFormPage'))
+const SubcontractDetailPage = lazyPage(() => import('@/pages/subcontracts/SubcontractDetailPage'))
+const StockPendingSetupPage = lazyPage(() => import('@/pages/stock/StockPendingSetupPage'))
+const StockDuplicatesPage = lazyPage(() => import('@/pages/stock/StockDuplicatesPage'))
+const StockDispatchQueuePage = lazyPage(() => import('@/pages/stock/StockDispatchQueuePage'))
+const StockIssuePage = lazyPage(() => import('@/pages/stock/StockIssuePage'))
+const StockCountsPage = lazyPage(() => import('@/pages/stock/StockCountsPage'))
+const StockCountPage = lazyPage(() => import('@/pages/stock/StockCountPage'))
+const ProjectManagerViewPage = lazyPage(() => import('@/pages/views/ProjectManagerViewPage'))
+const OperationsManagerViewPage = lazyPage(() => import('@/pages/views/OperationsManagerViewPage'))
+const StockManagerViewPage = lazyPage(() => import('@/pages/views/StockManagerViewPage'))
+const LogisticsOfficerViewPage = lazyPage(() => import('@/pages/views/LogisticsOfficerViewPage'))
+const WorkshopViewPage = lazyPage(() => import('@/pages/views/WorkshopViewPage'))
+const DesignViewPage = lazyPage(() => import('@/pages/views/DesignViewPage'))
+const BdSalesViewPage = lazyPage(() => import('@/pages/views/BdSalesViewPage'))
+const HrPeopleViewPage = lazyPage(() => import('@/pages/views/HrPeopleViewPage'))
+const HseViewPage = lazyPage(() => import('@/pages/views/HseViewPage'))
+const NoDepartmentPage = lazyPage(() => import('@/pages/dashboard/NoDepartmentPage'))
+const RentPage = lazyPage(() => import('@/pages/properties/RentPage'))
+const PropertyFormPage = lazyPage(() => import('@/pages/properties/PropertyFormPage'))
+const WorkOrdersPage = lazyPage(() => import('@/pages/work-orders/WorkOrdersPage'))
+const WorkOrderFormPage = lazyPage(() => import('@/pages/work-orders/WorkOrderFormPage'))
+const WorkOrderDetailPage = lazyPage(() => import('@/pages/work-orders/WorkOrderDetailPage'))
+const RolesPage = lazyPage(() => import('@/pages/roles/RolesPage'))
+const RolePrintPage = lazyPage(() => import('@/pages/roles/RolePrintPage'))
+const PersonSkillsPage = lazyPage(() => import('@/pages/roles/PersonSkillsPage'))
+const OldSkillsRedirect = lazyPage(() => import('@/pages/roles/OldSkillsRedirect'))
+const ExecDashboardPage = lazyPage(() => import('@/pages/exec/ExecDashboardPage'))
+const TradeCatalogPage = lazyPage(() => import('@/pages/hr/TradeCatalogPage'))
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
