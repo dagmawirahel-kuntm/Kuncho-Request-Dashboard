@@ -131,6 +131,11 @@ export function WorkerDetailsSheet({ who, name, onClose }: { who: Who; name: str
               <p className="text-xs text-slate-500">Hired {d.hires} time{d.hires === 1 ? '' : 's'} on requests since 28 Oct 2026{d.id_needed ? ' — their phone and ID are needed now.' : '. Phone and ID are needed from their 4th hire.'}</p>
             )}
             <DetailsFields value={v} onChange={p => setPatch(x => ({ ...x, ...p }))} withRate={!!who.staff_id} idNeeded={!!d.id_needed} />
+            {(d.shares_with?.length ?? 0) > 0 && (
+              <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+                This account is also used by {d.shares_with!.join(', ')}. That's fine for now, but please encourage them to open an account of their own.
+              </p>
+            )}
             {d.details_by_name && <p className="text-[11px] text-slate-400">Last filled in by {d.details_by_name}{d.details_at ? ` on ${formatDate(d.details_at)}` : ''}.</p>}
             {touchesIdentity && <p className="text-xs text-amber-700 dark:text-amber-300">Changing the name, ID, photo or bank account sends them back to HR to confirm again; their pay waits until then.</p>}
           </>}

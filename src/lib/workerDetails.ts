@@ -16,6 +16,8 @@ export type DetailsInput = {
 
 export type WorkerDetails = DetailsInput & {
   bank: string | null; gaps: string[]
+  /** Other active workers paid into the same account (485): a flag, not a block. */
+  shares_with?: string[]
   /** Approved labour requests made since 28 Oct 2026 they were on; phone and ID are needed from the 4th. */
   hires?: number; id_needed?: boolean
   verified_at?: string | null; verified_by_name?: string | null; verification_note?: string | null
