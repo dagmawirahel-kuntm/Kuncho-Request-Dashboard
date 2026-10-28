@@ -128,7 +128,7 @@ export function WorkerDetailsSheet({ who, name, onClose }: { who: Who; name: str
               <p className="flex items-center gap-2 text-xs text-sky-700 dark:text-sky-300"><CheckCircle2 className="h-4 w-4" /> Complete — with HR to confirm</p>
             )}
             {who.staff_id && (d.hires ?? 0) > 0 && (
-              <p className="text-xs text-slate-500">Hired {d.hires} time{d.hires === 1 ? '' : 's'} so far{d.id_needed ? ' — their phone and ID are needed now.' : '. Phone and ID are needed from their 4th hire.'}</p>
+              <p className="text-xs text-slate-500">Hired {d.hires} time{d.hires === 1 ? '' : 's'} on requests since 28 Oct 2026{d.id_needed ? ' — their phone and ID are needed now.' : '. Phone and ID are needed from their 4th hire.'}</p>
             )}
             <DetailsFields value={v} onChange={p => setPatch(x => ({ ...x, ...p }))} withRate={!!who.staff_id} idNeeded={!!d.id_needed} />
             {d.details_by_name && <p className="text-[11px] text-slate-400">Last filled in by {d.details_by_name}{d.details_at ? ` on ${formatDate(d.details_at)}` : ''}.</p>}

@@ -16,7 +16,7 @@ export type DetailsInput = {
 
 export type WorkerDetails = DetailsInput & {
   bank: string | null; gaps: string[]
-  /** Approved labour requests they were on; phone and ID are needed from the 4th. */
+  /** Approved labour requests made since 28 Oct 2026 they were on; phone and ID are needed from the 4th. */
   hires?: number; id_needed?: boolean
   verified_at?: string | null; verified_by_name?: string | null; verification_note?: string | null
   details_at: string | null; details_by_name: string | null
