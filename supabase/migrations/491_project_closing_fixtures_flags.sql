@@ -374,7 +374,7 @@ BEGIN
   IF c.status = 'inspected' THEN RAISE EXCEPTION 'Already inspected'; END IF;
   FOR l IN SELECT * FROM fixture_check_lines WHERE check_id = p_check LOOP
     SELECT y INTO x FROM jsonb_array_elements(COALESCE(p_lines, '[]'::jsonb)) y WHERE y->>'fixture_id' = l.fixture_id::text;
-    v_ok := COALESCE(NULLIF(x->>'ok_qty', '')::numeric, CASE WHEN x IS NULL THEN NULL END);
+    v_ok := NULLIF(x->>'ok_qty', '')::numeric;
     v_dmg := COALESCE(NULLIF(x->>'damaged_qty', '')::numeric, 0);
     IF v_ok IS NULL THEN RAISE EXCEPTION 'Inspect every fixture on this return — % is missing', (SELECT name FROM project_fixtures WHERE id = l.fixture_id); END IF;
     IF v_ok + v_dmg <> l.quantity THEN
