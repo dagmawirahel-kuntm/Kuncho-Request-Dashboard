@@ -11,6 +11,7 @@ import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { useWorkerPhotos } from '@/lib/workerPhotos'
 import { hasDetails, saveWorkerDetails, type DetailsInput, type Who } from '@/lib/workerDetails'
 import { DetailsFields } from '@/components/labour/WorkerDetails'
+import { useDaySettings } from '@/lib/labourDay'
 import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
 import { ArrowLeft, ArrowRight, Check, HardHat, Plus, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
@@ -71,13 +72,19 @@ export default function LabourRequestFormPage() {
   const [crew, setCrew] = useState(false)
   const [leader, setLeader] = useState<string | null>(null)
 
-  const [basis, setBasis] = useState<PayBasis>('per_day')
+  const [chosenBasis, setBasis] = useState<PayBasis>('per_day')
   const [dayRate, setDayRate] = useState('')
   const [days, setDays] = useState('')
   const [unit, setUnit] = useState('m²')
   const [unitRate, setUnitRate] = useState('')
   const [totalQty, setTotalQty] = useState('')
   const [price, setPrice] = useState('')
+  // From the day-sheet start date, day-rate workers paid one by one are
+  // asked for in the daily request (489); work orders keep volume,
+  // fixed-price and crew-leader labour.
+  const { data: daySettings } = useDaySettings()
+  const dayMoved = !!daySettings?.starts_on && !crew && (start || isoDay(new Date())) >= daySettings.starts_on
+  const basis: PayBasis = dayMoved && chosenBasis === 'per_day' ? 'per_volume' : chosenBasis
   const [notes, setNotes] = useState('')
   // Overtime on a day-rate request (migration 458): the company's rates
   // unless a different deal was struck with these workers.
@@ -112,12 +119,13 @@ export default function LabourRequestFormPage() {
       if (basis === 'per_volume' && !(parseFloat(unitRate) > 0)) return 'Give the price per unit'
       if (basis === 'per_volume' && !(parseFloat(totalQty) > 0)) return 'About how much work in total?'
       if (basis === 'fixed_price' && !(parseFloat(price) > 0)) return 'Give the agreed price'
+      if (basis === 'per_day' && dayMoved) return 'Day-rate workers are asked for in the daily request now'
       if (basis === 'per_day' && dayRate && !(parseFloat(dayRate) > 0)) return 'The day rate must be more than 0'
       if (basis === 'per_day' && otRule === 'multiplier' && !(parseFloat(otValue) >= 1 && parseFloat(otValue) <= 5)) return 'The overtime multiplier is between 1× and 5×'
       if (basis === 'per_day' && otRule === 'per_hour' && !(parseFloat(otValue) > 0)) return 'Give the birr per overtime hour'
     }
     return null
-  }, [step, site, workOrder, siteOrders.length, work, start, end, named, extra, crew, leader, basis, unitRate, totalQty, price, dayRate, otRule, otValue])
+  }, [step, site, workOrder, siteOrders.length, work, start, end, named, extra, crew, leader, basis, dayMoved, unitRate, totalQty, price, dayRate, otRule, otValue])
 
   function addPerson() {
     if (!draft.name.trim()) return
@@ -304,7 +312,12 @@ export default function LabourRequestFormPage() {
           <div>
             <Label>How are they paid?</Label>
             <div className="grid gap-2">
-              {(['per_day', 'per_volume', 'fixed_price'] as PayBasis[]).map(b => {
+              {dayMoved && (
+                <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-800/40 dark:bg-blue-900/10 dark:text-blue-200">
+                  Day-rate workers are asked for in the <Link to="/labour/day-requests" className="font-semibold underline">daily request</Link> and recorded on your day sheet, against the project. Here: by volume, a fixed price, or a crew leader.
+                </p>
+              )}
+              {(['per_day', 'per_volume', 'fixed_price'] as PayBasis[]).filter(b => !(dayMoved && b === 'per_day')).map(b => {
                 const Icon = b === 'per_day' ? CalendarDays : b === 'per_volume' ? Ruler : Tag
                 return (
                   <button key={b} type="button" onClick={() => setBasis(b)}

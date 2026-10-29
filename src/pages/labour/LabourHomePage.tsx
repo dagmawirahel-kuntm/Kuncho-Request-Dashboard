@@ -7,8 +7,10 @@ import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { usePayableDrafts } from '@/lib/labourPayRequests'
 import { useMyWorkers } from '@/lib/workerDetails'
+import { useDayPeople, useDaySettings } from '@/lib/labourDay'
+import { LabourFlagsPanel } from '@/components/labour/LabourFlagsPanel'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { CalendarDays, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Wallet, Inbox } from 'lucide-react'
+import { CalendarCheck, CalendarDays, CalendarPlus, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Sheet, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -58,6 +60,27 @@ export default function LabourHomePage() {
   const { data: myWorkers = [] } = useMyWorkers(!finance)
   const detailsReturned = myWorkers.filter(w => w.returned_reason).length
   const detailsMissing = myWorkers.filter(w => !w.returned_reason && !w.verified && (w.gaps?.length ?? 0) > 0).length
+
+  // Day-rate labour by day (489): asked for by trade, recorded on the PM's
+  // day sheet against projects, locked by operations. Dormant until the
+  // start date is set.
+  const { data: daySettings } = useDaySettings()
+  const dayStarted = !!daySettings?.starts_on
+  const { me, approver: dayApprover } = useDayPeople()
+  const { data: dayTodo } = useQuery({
+    queryKey: ['labour-day-todo', dayApprover, me?.id],
+    enabled: dayStarted,
+    queryFn: async () => {
+      const [req, days, unpaidDays] = await Promise.all([
+        dayApprover ? supabase.from('labour_day_requests').select('id', { count: 'exact', head: true }).eq('status', 'submitted') : Promise.resolve({ count: 0 }),
+        dayApprover ? supabase.from('labour_days').select('id', { count: 'exact', head: true }).eq('status', 'submitted') : Promise.resolve({ count: 0 }),
+        supabase.rpc('labour_day_unpaid'),
+      ])
+      const pay = ((unpaidDays.data ?? []) as { pm_staff_id: string; locked_days: number }[])
+        .filter(u => u.locked_days > 0 && (dayApprover || u.pm_staff_id === me?.id)).length
+      return { requests: req.count ?? 0, days: days.count ?? 0, pay }
+    },
+  })
 
   // Labour still open on jobs that are already finished (migration 408).
   const { toast } = useToast()
@@ -123,6 +146,9 @@ export default function LabourHomePage() {
 
   const todo: { to: string; label: string; n: number; tone: string }[] = [
     ...(toApprove.length ? [{ to: '#waiting', label: 'Requests to approve', n: toApprove.length, tone: 'bg-amber-500' }] : []),
+    ...(dayTodo?.requests ? [{ to: '/labour/day-requests', label: 'Daily requests to approve', n: dayTodo.requests, tone: 'bg-amber-500' }] : []),
+    ...(dayTodo?.days ? [{ to: '/labour/days', label: 'Day sheets to review and lock', n: dayTodo.days, tone: 'bg-blue-600' }] : []),
+    ...(dayTodo?.pay ? [{ to: '/labour/pay', label: 'Locked day sheets to confirm for pay', n: dayTodo.pay, tone: 'bg-blue-600' }] : []),
     ...(toConfirm.length ? [{ to: '/labour/pay', label: 'Weeks to confirm for pay', n: toConfirm.length, tone: 'bg-blue-600' }] : []),
     ...(noWorkers.length ? [{ to: '#active', label: 'Approved, no workers added yet', n: noWorkers.length, tone: 'bg-slate-500' }] : []),
     ...(detailsReturned ? [{ to: '/labour/workers', label: 'Worker details sent back by HR', n: detailsReturned, tone: 'bg-red-600' }] : []),
@@ -150,6 +176,25 @@ export default function LabourHomePage() {
           {toConfirm.length > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{toConfirm.length}</span>}
         </Link>
       </div>
+      {dayStarted ? (
+        <div className="grid grid-cols-3 gap-2">
+          <Link to="/labour/day-requests" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
+            <CalendarPlus className="h-4 w-4 text-brand" /> Daily request
+          </Link>
+          <Link to="/labour/day" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
+            <Sheet className="h-4 w-4 text-brand" /> Day sheet
+          </Link>
+          <Link to="/labour/days" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
+            <CalendarCheck className="h-4 w-4 text-brand" /> Review days
+          </Link>
+        </div>
+      ) : hasRole('admin', 'operations_manager') && (
+        <Link to="/labour/days" className={`${card} flex items-center gap-3 px-4 py-3 text-sm hover:border-brand`}>
+          <Sheet className="h-4 w-4 shrink-0 text-brand" />
+          <span className="flex-1 text-slate-700 dark:text-slate-200">Day sheets aren't started yet — day-rate workers are still asked for and recorded on work orders. <span className="text-brand">Set a start date</span></span>
+          <ChevronRight className="h-4 w-4 text-slate-300" />
+        </Link>
+      )}
       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
         <Link to="/labour/record/week" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><CalendarDays className="h-3.5 w-3.5" /> Record a week</Link>
         <Link to="/labour/workers" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><IdCard className="h-3.5 w-3.5" /> Worker details</Link>
@@ -208,6 +253,8 @@ export default function LabourHomePage() {
           )}
         </section>
       )}
+
+      {dayApprover && <LabourFlagsPanel compact />}
 
       {todo.length > 0 && (
         <section className={card}>
