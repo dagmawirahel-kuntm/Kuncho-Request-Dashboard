@@ -80,9 +80,11 @@ export default function LabourRequestFormPage() {
   const [totalQty, setTotalQty] = useState('')
   const [price, setPrice] = useState('')
   // From the day-sheet start date, day-rate workers paid one by one are
-  // asked for in the daily request (489); work orders keep volume,
-  // fixed-price and crew-leader labour.
+  // asked for in the crew request (489, 492); this form is for volume,
+  // fixed-price and crew-leader jobs, recorded on the PM's day sheet, and a
+  // work order is optional.
   const { data: daySettings } = useDaySettings()
+  const daySheetsOn = !!daySettings?.starts_on && (start || isoDay(new Date())) >= daySettings.starts_on
   const dayMoved = !!daySettings?.starts_on && !crew && (start || isoDay(new Date())) >= daySettings.starts_on
   const basis: PayBasis = dayMoved && chosenBasis === 'per_day' ? 'per_volume' : chosenBasis
   const [notes, setNotes] = useState('')
@@ -106,7 +108,7 @@ export default function LabourRequestFormPage() {
     if (step === 0) {
       if (!site) return 'Choose the site'
       // Labour is asked for a job, so its days count where the work is done (476).
-      if (!workOrder) return siteOrders.length ? 'Choose the work order this labour is for' : 'This site has no open work order — create one first'
+      if (!workOrder && !daySheetsOn) return siteOrders.length ? 'Choose the work order this labour is for' : 'This site has no open work order — create one first'
       if (!work.trim()) return 'Say what work is needed'
       if (!start) return 'When should they start?'
       if (end && end < start) return 'The end date is before the start'
@@ -119,13 +121,13 @@ export default function LabourRequestFormPage() {
       if (basis === 'per_volume' && !(parseFloat(unitRate) > 0)) return 'Give the price per unit'
       if (basis === 'per_volume' && !(parseFloat(totalQty) > 0)) return 'About how much work in total?'
       if (basis === 'fixed_price' && !(parseFloat(price) > 0)) return 'Give the agreed price'
-      if (basis === 'per_day' && dayMoved) return 'Day-rate workers are asked for in the daily request now'
+      if (basis === 'per_day' && dayMoved) return 'Day-rate workers are asked for in the crew request now'
       if (basis === 'per_day' && dayRate && !(parseFloat(dayRate) > 0)) return 'The day rate must be more than 0'
       if (basis === 'per_day' && otRule === 'multiplier' && !(parseFloat(otValue) >= 1 && parseFloat(otValue) <= 5)) return 'The overtime multiplier is between 1× and 5×'
       if (basis === 'per_day' && otRule === 'per_hour' && !(parseFloat(otValue) > 0)) return 'Give the birr per overtime hour'
     }
     return null
-  }, [step, site, workOrder, siteOrders.length, work, start, end, named, extra, crew, leader, basis, dayMoved, unitRate, totalQty, price, dayRate, otRule, otValue])
+  }, [step, site, workOrder, siteOrders.length, daySheetsOn, work, start, end, named, extra, crew, leader, basis, dayMoved, unitRate, totalQty, price, dayRate, otRule, otValue])
 
   function addPerson() {
     if (!draft.name.trim()) return
@@ -208,11 +210,13 @@ export default function LabourRequestFormPage() {
           </div>
           {site && (
             <div>
-              <Label hint="Its days and cost count on that job, and the workers join its crew.">For which job?</Label>
+              <Label hint={daySheetsOn ? 'Optional. With a work order, its progress counts there; the cost goes to the project either way.' : 'Its days and cost count on that job, and the workers join its crew.'}>For which job?</Label>
               {siteOrders.length > 0 ? (
                 <SearchableSelect value={workOrder} onChange={setWoId}
                   options={siteOrders.map(o => ({ id: o.id, label: o.title || (o.scope_of_work ?? 'Work order').slice(0, 60), sub: o.status === 'in_progress' ? 'in progress' : 'not started' }))}
                   placeholder="Choose the work order…" />
+              ) : daySheetsOn ? (
+                <p className="text-sm text-slate-500">No open work order on this site — that's fine, the job goes to the project.</p>
               ) : (
                 <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                   This site has no open work order. <Link to={`/work-orders/new?project_id=${site}`} className="font-semibold underline">Create the work order</Link> first, then ask for labour from it.
@@ -314,7 +318,7 @@ export default function LabourRequestFormPage() {
             <div className="grid gap-2">
               {dayMoved && (
                 <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-800/40 dark:bg-blue-900/10 dark:text-blue-200">
-                  Day-rate workers are asked for in the <Link to="/labour/day-requests" className="font-semibold underline">daily request</Link> and recorded on your day sheet, against the project. Here: by volume, a fixed price, or a crew leader.
+                  Day-rate workers are asked for in the <Link to="/labour/day-requests" className="font-semibold underline">crew request</Link>. Here: a job by volume, a fixed price, or a crew leader. Its progress is recorded on your day sheet.
                 </p>
               )}
               {(['per_day', 'per_volume', 'fixed_price'] as PayBasis[]).filter(b => !(dayMoved && b === 'per_day')).map(b => {

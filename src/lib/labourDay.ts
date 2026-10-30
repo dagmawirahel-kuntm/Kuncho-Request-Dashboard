@@ -61,14 +61,61 @@ export type DaySheet = {
   buckets: Record<'workshop' | 'stock' | 'idle', { id: string; name: string } | null>
   request: null | {
     id: string; code: string; status: RequestStatus; decided_by_name: string | null; decision_note: string | null
+    starts_on: string; ends_on: string | null; weekdays: number[]; works_today: boolean
     lines: { trade: string; headcount: number }[]
   }
+  jobs: PieceJob[]
+}
+
+/** A volume or fixed-price job on the PM's day sheet (492). */
+export type PieceJob = {
+  id: string; what: string; scope: string | null; basis: 'per_volume' | 'fixed_price'
+  project_id: string; project: string; work_order_id: string | null; work_order: string | null
+  unit: string | null; unit_rate: number | null; fixed_price: number | null; planned_volume: number | null
+  crew_leader: string | null
+  /** Volume measured, or % done, before this day. */
+  done_before: number
+  /** Volume measured, or % added, on this day. */
+  today: number | null
+  today_paid: boolean
+  crew: { staff_id: string; name: string; present: boolean }[]
+}
+
+/** A PM's standing crew (492): from work_date, on weekdays, until ends_on (or changed). */
+export type CrewRequest = {
+  id: string; code: string; pm_staff_id: string; work_date: string; ends_on: string | null; weekdays: number[]; status: RequestStatus; note: string | null
+  created_by_name: string | null; submitted_at: string | null; decided_by_name: string | null; decided_at: string | null; decision_note: string | null
+  staff: { employee_name: string } | null
+  labour_day_request_lines: { trade_tag: string; headcount: number }[]
+}
+export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+/** "Mon–Sat", "Mon Wed Fri", "every day". */
+export function weekdaysLabel(days: number[]) {
+  const d = [...days].sort()
+  if (d.length === 7) return 'every day'
+  if (d.join() === '1,2,3,4,5,6') return 'Mon–Sat'
+  if (d.join() === '1,2,3,4,5') return 'Mon–Fri'
+  return d.map(x => WEEKDAYS[x - 1]).join(' ')
+}
+const shortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+/** "From Mon 3 Nov, Mon–Sat, until changed" / "Only Wed 5 Nov" / "Mon 3 Nov – Sat 15 Nov, Mon–Sat". */
+export function crewSpan(r: Pick<CrewRequest, 'work_date' | 'ends_on' | 'weekdays' | 'labour_day_request_lines'>) {
+  if (!r.labour_day_request_lines.length) return `No crew from ${shortDay(r.work_date)}`
+  if (r.ends_on === r.work_date) return `Only ${shortDay(r.work_date)}`
+  if (r.ends_on) return `${shortDay(r.work_date)} – ${shortDay(r.ends_on)}, ${weekdaysLabel(r.weekdays)}`
+  return `From ${shortDay(r.work_date)}, ${weekdaysLabel(r.weekdays)}, until changed`
+}
+/** The approved request that sets the crew on a day: the latest-starting one whose range covers it (as labour_day_expected). */
+export function crewInEffect(list: CrewRequest[], date: string) {
+  return list.filter(r => r.status === 'approved' && r.work_date <= date && (!r.ends_on || r.ends_on >= date))
+    .sort((a, b) => b.work_date.localeCompare(a.work_date))[0] ?? null
 }
 
 export type BoardRow = {
   pm_staff_id: string; pm_name: string; work_date: string; day_id: string | null; status: DayStatus
   workers: number; paid_days: number; allocated_days: number; mismatched: number
   request_id: string | null; request_code: string | null; request_status: RequestStatus | null; requested: number; changes: number
+  jobs: number
 }
 
 export type DaySettings = {

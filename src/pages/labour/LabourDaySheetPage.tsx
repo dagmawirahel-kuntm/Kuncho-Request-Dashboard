@@ -8,13 +8,15 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
-  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople,
-  type Alloc, type Bucket, type DaySheet, type SheetWorker,
+  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople, weekdaysLabel,
+  type Alloc, type Bucket, type DaySheet, type PieceJob, type SheetWorker,
 } from '@/lib/labourDay'
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Lock, Plus, Save, Send, Sheet, Trash2, Undo2, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Hammer, Lock, Plus, Ruler, Save, Send, Sheet, Tag, Trash2, Undo2, X } from 'lucide-react'
 
 type Row = Omit<SheetWorker, 'alloc'> & { cells: Record<string, number> }
 type Col = { key: string; bucket: Bucket; project_id: string | null; project: string; group: string }
+/** A piece job as edited: who of its crew was there, and what was measured (volume) or how far along it is now (fixed price). */
+type JobRow = PieceJob & { present: string[]; measured: string }
 
 const cellKey = (bucket: Bucket, project: string | null) => (project ? `${project}:${bucket}` : bucket)
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
@@ -22,7 +24,9 @@ const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-80
 // One sheet per PM per day: who was paid for the day (a half or a whole),
 // and where that day went — a project's build or post-event repair, the
 // workshop, stock production, or idle time. Each row must add up before it
-// can be sent; operations locks it after review (migration 489).
+// can be sent; operations locks it after review (migration 489). Volume and
+// fixed-price jobs sit under it: who of the crew was there, and how much was
+// done when it's measured (492).
 export default function LabourDaySheetPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -75,6 +79,7 @@ export default function LabourDaySheetPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
   const [addingProject, setAddingProject] = useState<string | null>(null)
+  const [jobs, setJobs] = useState<JobRow[]>([])
 
   // Seed the grid from each sheet the server sends back.
   const [seeded, setSeeded] = useState<typeof sheet>(undefined)
@@ -86,6 +91,11 @@ export default function LabourDaySheetPage() {
       overtime_hours: Number(w.overtime_hours) || 0,
       overtime_night_hours: Number(w.overtime_night_hours) || 0,
       cells: Object.fromEntries(w.alloc.map((a: Alloc) => [PROJECT_BUCKETS.includes(a.bucket) ? cellKey(a.bucket, a.project_id) : a.bucket, Number(a.days)])),
+    })))
+    setJobs((sheet.jobs ?? []).map(j => ({
+      ...j,
+      present: j.crew.filter(c => c.present).map(c => c.staff_id),
+      measured: j.today == null ? '' : String(j.basis === 'per_volume' ? Number(j.today) : Number(j.done_before) + Number(j.today)),
     })))
     setExtra([])
     setDirty(false)
@@ -143,6 +153,12 @@ export default function LabourDaySheetPage() {
     staff_id: r.staff_id, paid_days: r.paid_days, overtime_hours: r.overtime_hours || 0, overtime_night_hours: r.overtime_night_hours || 0, note: r.note,
     alloc: cols.filter(c => (r.cells[c.key] ?? 0) > 0).map(c => ({ bucket: c.bucket, project_id: c.project_id, days: r.cells[c.key] })),
   }))
+  const updateJob = (id: string, f: (j: JobRow) => JobRow) => { setJobs(js => js.map(j => (j.id === id ? f(j) : j))); setDirty(true) }
+  const jobPayload = () => jobs.filter(j => j.present.length || j.measured !== '').map(j => ({
+    id: j.id, present: j.present,
+    ...(j.basis === 'per_volume' ? { quantity: j.measured === '' ? null : Number(j.measured) } : { percent_total: j.measured === '' ? null : Number(j.measured) }),
+  }))
+  const jobsActive = jobs.some(j => j.present.length || j.measured !== '')
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['labour-day', pm, date] })
     qc.invalidateQueries({ queryKey: ['labour-day-board'] })
@@ -152,7 +168,7 @@ export default function LabourDaySheetPage() {
   async function save(submit: boolean) {
     setBusy(submit ? 'send' : 'save')
     const { data, error } = await supabase.rpc('labour_day_save', {
-      p_pm: pm, p_date: date, p_workers: payload(), p_submit: submit, p_reason: locked ? reason.trim() || null : null,
+      p_pm: pm, p_date: date, p_workers: payload(), p_submit: submit, p_reason: locked ? reason.trim() || null : null, p_jobs: jobPayload(),
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
@@ -196,7 +212,7 @@ export default function LabourDaySheetPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Who was paid for the day, and where the day went.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Daily requests</Link>
+          <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Crew request</Link>
           {approver && <Link to="/labour/days" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Review days</Link>}
         </div>
       </div>
@@ -245,9 +261,11 @@ export default function LabourDaySheetPage() {
           <div className={`${card} flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-sm`}>
             {sheet.request ? (
               <span className="text-slate-600 dark:text-slate-300">
-                Request {sheet.request.code} <Pill tone={REQUEST_STATUS[sheet.request.status].tone}>{REQUEST_STATUS[sheet.request.status].label}</Pill>
+                Crew {sheet.request.code} <Pill tone={REQUEST_STATUS[sheet.request.status].tone}>{REQUEST_STATUS[sheet.request.status].label}</Pill>
+                <span className="text-xs text-slate-500"> · {weekdaysLabel(sheet.request.weekdays)}</span>
+                {!sheet.request.works_today && <span className="text-xs text-amber-700 dark:text-amber-300"> · not one of the crew's working days</span>}
               </span>
-            ) : <span className="text-slate-500">No daily request for this day.</span>}
+            ) : <span className="text-slate-500">No approved crew for this day.</span>}
             {askedVsCame.map(([t, v]) => (
               <span key={t} className={`rounded-full px-2 py-0.5 text-xs ${v.came > v.asked ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                 {tradeName(t === 'none' ? null : t)}: {v.came}{v.asked ? ` of ${v.asked}` : ''}
@@ -369,6 +387,8 @@ export default function LabourDaySheetPage() {
             )}
           </div>
 
+          <PieceWork jobs={jobs} canEdit={canEdit} update={updateJob} />
+
           {mismatched.length > 0 && (
             <p className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -397,7 +417,7 @@ export default function LabourDaySheetPage() {
                         className="flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200">
                         <Save className="h-4 w-4" /> {busy === 'save' ? 'Saving…' : 'Save'}
                       </button>
-                      <button onClick={() => save(true)} disabled={!!busy || rows.length === 0 || mismatched.length > 0 || (status === 'submitted' && !dirty)}
+                      <button onClick={() => save(true)} disabled={!!busy || (rows.length === 0 && !jobsActive) || mismatched.length > 0 || (status === 'submitted' && !dirty)}
                         className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
                         <Send className="h-4 w-4" /> {busy === 'send' ? 'Sending…' : status === 'submitted' && !dirty ? 'Sent' : 'Send for review'}
                       </button>
@@ -445,3 +465,71 @@ function Banner({ tone, children }: { tone: 'amber' | 'red' | 'blue' | 'green'; 
   }[tone]
   return <p className={`rounded-xl border px-4 py-2.5 text-sm ${cls}`}>{children}</p>
 }
+
+// Volume and fixed-price jobs on the PM's projects: tick who of the crew was
+// there, and enter the amount only when it's measured.
+function PieceWork({ jobs, canEdit, update }: { jobs: JobRow[]; canEdit: boolean; update: (id: string, f: (j: JobRow) => JobRow) => void }) {
+  return (
+    <section className={card}>
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 dark:border-slate-700">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><Hammer className="h-4 w-4 text-slate-400" /> Piece work</h2>
+        <p className="flex-1 text-xs text-slate-500">By volume or a fixed price. Tick who was there; enter the amount only on the day it's measured.</p>
+        {canEdit && <Link to="/labour/new" className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><Plus className="h-3.5 w-3.5" /> New piece job</Link>}
+      </div>
+      {jobs.length === 0 ? (
+        <p className="p-5 text-center text-sm text-slate-400">No open piece jobs on your projects.</p>
+      ) : (
+        <ul className="divide-y dark:divide-slate-700">
+          {jobs.map(j => {
+            const vol = j.basis === 'per_volume'
+            const before = Number(j.done_before) || 0
+            const m = j.measured === '' ? null : Number(j.measured)
+            const amount = m == null ? 0 : vol ? m * Number(j.unit_rate ?? 0) : Math.max(0, m - before) / 100 * Number(j.fixed_price ?? 0)
+            const bad = m != null && (vol ? m < 0 : m < before || m > 100)
+            return (
+              <li key={j.id} className="space-y-2 px-4 py-3">
+                <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      {vol ? <Ruler className="h-3.5 w-3.5 text-slate-400" /> : <Tag className="h-3.5 w-3.5 text-slate-400" />}
+                      {j.what} <span className="font-normal text-slate-500">· {j.project}{j.work_order ? ` · ${j.work_order}` : ''}</span>
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {vol ? `${Number(j.unit_rate ?? 0).toLocaleString()} ETB per ${j.unit ?? 'unit'}` : `Fixed price ${fmtMoney(j.fixed_price ?? 0)}`}
+                      {j.crew_leader ? ` · paid to ${j.crew_leader}` : ''}
+                      {' · '}{vol ? `${trim(before)} ${j.unit ?? ''} measured so far${j.planned_volume ? ` of about ${trim(Number(j.planned_volume))}` : ''}` : `${trim(before)}% done so far`}
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                    {vol ? 'Measured today' : 'Done now'}
+                    <input type="number" inputMode="decimal" min={vol ? 0 : before} max={vol ? undefined : 100} step="any" disabled={!canEdit || j.today_paid}
+                      value={j.measured} placeholder={vol ? '—' : String(trim(before))}
+                      onChange={e => update(j.id, x => ({ ...x, measured: e.target.value }))}
+                      className={`w-24 rounded-lg border px-2 py-1.5 text-right text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100 ${bad ? 'border-red-400' : 'dark:border-slate-600'}`} />
+                    <span className="w-8">{vol ? j.unit ?? '' : '%'}</span>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {j.crew.length === 0 && <span className="text-xs text-slate-400">No crew named on this job.</span>}
+                  {j.crew.map(c => {
+                    const on = j.present.includes(c.staff_id)
+                    return (
+                      <button key={c.staff_id} type="button" disabled={!canEdit} aria-pressed={on}
+                        onClick={() => update(j.id, x => ({ ...x, present: on ? x.present.filter(s => s !== c.staff_id) : [...x.present, c.staff_id] }))}
+                        className={`rounded-full border px-2.5 py-1 text-xs ${on ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'text-slate-500 dark:border-slate-600'} disabled:cursor-default`}>
+                        {on ? '✓ ' : ''}{c.name}
+                      </button>
+                    )
+                  })}
+                  {amount > 0 && !bad && <span className="ml-auto text-xs font-medium text-slate-600 dark:text-slate-300">{fmtMoney(amount)} today</span>}
+                  {bad && <span className="ml-auto text-xs text-red-600">{vol ? 'Can\'t be negative' : `Between ${trim(before)} and 100%`}</span>}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+const trim = (n: number) => Math.round(n * 100) / 100

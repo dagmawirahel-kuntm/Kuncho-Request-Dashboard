@@ -57,7 +57,7 @@ export default function LabourDaysReviewPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Every PM's day sheet: asked for, recorded, adds up — then locked.</p>
         </div>
         <div className="flex gap-2">
-          <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300">Daily requests</Link>
+          <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300">Crew requests</Link>
           <Link to="/labour/day" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300">Day sheet</Link>
         </div>
       </div>
@@ -92,8 +92,9 @@ export default function LabourDaysReviewPage() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.pm_name}</p>
                           <p className="truncate text-xs text-slate-500">
-                            {r.request_status ? `Asked ${r.requested} (${REQUEST_STATUS[r.request_status].label.toLowerCase()})` : 'No request'}
-                            {' · '}{r.workers ? `${r.workers} on the sheet, ${halfDays(Number(r.paid_days))} days` : 'nothing recorded'}
+                            {r.request_status ? `Crew ${r.requested} (${REQUEST_STATUS[r.request_status].label.toLowerCase()})` : 'No crew request'}
+                            {' · '}{r.workers ? `${r.workers} on the sheet, ${halfDays(Number(r.paid_days))} days` : r.jobs ? '' : 'nothing recorded'}
+                            {r.jobs ? `${r.workers ? ' · ' : ''}${r.jobs} piece job${r.jobs === 1 ? '' : 's'}` : ''}
                             {r.changes ? ` · ${r.changes} change${r.changes === 1 ? '' : 's'} logged` : ''}
                           </p>
                         </div>
@@ -145,7 +146,7 @@ function DaySettingsPanel() {
   const opts = internal.map(p => ({ id: p.id, label: p.project_name.trim() }))
 
   async function save() {
-    if (f.starts_on && !s?.starts_on && !confirm(`Start the daily request and day sheet on ${dayLabel(f.starts_on)}? From then, day-rate workers can't be asked for or recorded on work orders — volume and fixed-price jobs stay there.`)) return
+    if (f.starts_on && !s?.starts_on && !confirm(`Start crew requests and day sheets on ${dayLabel(f.starts_on)}? From then, day-rate workers are asked for in the crew request, and all casual labour (day-rate and piece work) is recorded on the PMs' day sheets, not on work orders.`)) return
     setSaving(true)
     const { error } = await supabase.rpc('set_labour_day_settings', {
       p_starts_on: f.starts_on || null, p_workshop: f.workshop, p_stock: f.stock, p_idle: f.idle, p_costing_open_days: f.days,
@@ -164,7 +165,7 @@ function DaySettingsPanel() {
         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Start date
           <input type="date" value={f.starts_on} onChange={e => setF(x => ({ ...x, starts_on: e.target.value }))}
             className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
-          <span className="mt-1 block font-normal text-slate-500">{f.starts_on ? 'From this day, day-rate workers go on the daily request and day sheet.' : 'Not started — nothing has changed for anyone yet.'}</span>
+          <span className="mt-1 block font-normal text-slate-500">{f.starts_on ? 'From this day, casual labour is asked for in the crew request and recorded on the day sheet.' : 'Not started — nothing has changed for anyone yet.'}</span>
         </label>
         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Flag delivered projects not closed after
           <div className="mt-1 flex items-center gap-2">

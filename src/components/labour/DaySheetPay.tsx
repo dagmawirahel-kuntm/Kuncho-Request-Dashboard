@@ -13,14 +13,15 @@ type Preview = {
   from: string | null; last: string | null; total: number; days: number; not_locked: number
   workers: { staff_id: string; name: string; days: number; rate: number; overtime_hours: number; overtime: number; amount: number; verified: boolean; held: boolean; no_rate: boolean }[]
   projects: { project_id: string; name: string; internal: boolean; amount: number; build_days: number | null; repair_days: number | null; other_days: number | null }[]
+  jobs: { id: string; what: string; project: string; basis: 'per_volume' | 'fixed_price'; unit: string | null; quantity: number | null; percent: number | null; rate: number; amount: number; paid_to: string }[]
 }
 type Run = { id: string; code: string; pm_staff_id: string; period_start: string; period_end: string; total: number; confirmed_by_name: string | null; confirmed_at: string; staff: { employee_name: string } | null }
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 
-// Pay from the day sheets (490): the PM confirms their locked days up to a
-// date — each worker's own day rate, overtime at company rates — and it
-// becomes one payable per project the days went to, ready for a payment
-// request.
+// Pay from the day sheets (490, 492): the PM confirms their locked days up
+// to a date — each worker's own day rate, overtime at company rates, and
+// the piece work measured on those days — as one payable per project for
+// the day workers and one per piece job, ready for a payment request.
 export function DaySheetPay() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -104,10 +105,10 @@ export function DaySheetPay() {
               {preview.not_locked > 0 && (
                 <p className="text-xs text-amber-700 dark:text-amber-300">{preview.not_locked} day{preview.not_locked === 1 ? ' isn\'t' : 's aren\'t'} locked yet and won't be paid now — <Link to="/labour/days" className="underline">review them</Link>.</p>
               )}
-              {preview.workers.length === 0 ? <p className="text-sm text-slate-500">Nothing locked to pay up to {dayLabel(to)}.</p> : (
+              {preview.workers.length === 0 && (preview.jobs ?? []).length === 0 ? <p className="text-sm text-slate-500">Nothing locked to pay up to {dayLabel(to)}.</p> : (
                 <>
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-left text-xs text-slate-500"><th className="py-1">Worker</th><th className="py-1 text-right">Days</th><th className="py-1 text-right">Rate</th><th className="py-1 text-right">Overtime</th><th className="py-1 text-right">Pay</th></tr></thead>
+                  {preview.workers.length > 0 && <table className="w-full text-sm">
+                    <thead><tr className="text-left text-xs text-slate-500"><th className="py-1">Worker</th><th className="py-1 pl-3 text-right">Days</th><th className="py-1 pl-3 text-right">Rate</th><th className="py-1 pl-3 text-right">Overtime</th><th className="py-1 pl-3 text-right">Pay</th></tr></thead>
                     <tbody className="divide-y dark:divide-slate-700">
                       {preview.workers.map(w => (
                         <tr key={w.staff_id}>
@@ -116,16 +117,31 @@ export function DaySheetPay() {
                             {w.no_rate && <Pill tone="red">No day rate</Pill>}
                             {w.held && <Pill tone="amber">Held: not verified</Pill>}
                           </td>
-                          <td className="py-1.5 text-right tabular-nums">{halfDays(Number(w.days))}</td>
-                          <td className="py-1.5 text-right tabular-nums">{Number(w.rate).toLocaleString()}</td>
-                          <td className="py-1.5 text-right tabular-nums">{Number(w.overtime) ? `${Number(w.overtime_hours)}h · ${Number(w.overtime).toLocaleString()}` : '—'}</td>
-                          <td className="py-1.5 text-right font-medium tabular-nums">{fmtMoney(w.amount)}</td>
+                          <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{halfDays(Number(w.days))}</td>
+                          <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{Number(w.rate).toLocaleString()}</td>
+                          <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{Number(w.overtime) ? `${Number(w.overtime_hours)}h · ${Number(w.overtime).toLocaleString()}` : '—'}</td>
+                          <td className="whitespace-nowrap py-1.5 pl-3 text-right font-medium tabular-nums">{fmtMoney(w.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                  <div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900/40">
-                    <p className="mb-1 font-semibold text-slate-600 dark:text-slate-300">Costed to</p>
+                  </table>}
+                  {(preview.jobs ?? []).length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-xs text-slate-500"><th className="py-1">Piece work</th><th className="py-1 pl-3 text-right">Done</th><th className="py-1 pl-3 text-right">Rate</th><th className="py-1 pl-3 text-right">Pay</th></tr></thead>
+                      <tbody className="divide-y dark:divide-slate-700">
+                        {preview.jobs.map(j => (
+                          <tr key={j.id}>
+                            <td className="py-1.5"><span className="text-slate-800 dark:text-slate-100">{j.what}</span> <span className="text-xs text-slate-500">· {j.project} · paid to {j.paid_to}</span></td>
+                            <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{j.basis === 'per_volume' ? `${Number(j.quantity)} ${j.unit ?? ''}` : `${Number(j.percent)}%`}</td>
+                            <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{Number(j.rate).toLocaleString()}</td>
+                            <td className="whitespace-nowrap py-1.5 pl-3 text-right font-medium tabular-nums">{fmtMoney(j.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {preview.projects.length > 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900/40">
+                    <p className="mb-1 font-semibold text-slate-600 dark:text-slate-300">Day workers costed to</p>
                     <ul className="space-y-0.5">
                       {preview.projects.map(p => (
                         <li key={p.project_id} className="flex justify-between gap-3">
@@ -136,7 +152,7 @@ export function DaySheetPay() {
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </div>}
                   <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)"
                     className="w-full rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
                   <div className="flex items-center justify-between gap-2">

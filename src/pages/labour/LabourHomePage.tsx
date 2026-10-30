@@ -146,7 +146,7 @@ export default function LabourHomePage() {
 
   const todo: { to: string; label: string; n: number; tone: string }[] = [
     ...(toApprove.length ? [{ to: '#waiting', label: 'Requests to approve', n: toApprove.length, tone: 'bg-amber-500' }] : []),
-    ...(dayTodo?.requests ? [{ to: '/labour/day-requests', label: 'Daily requests to approve', n: dayTodo.requests, tone: 'bg-amber-500' }] : []),
+    ...(dayTodo?.requests ? [{ to: '/labour/day-requests', label: 'Crew changes to approve', n: dayTodo.requests, tone: 'bg-amber-500' }] : []),
     ...(dayTodo?.days ? [{ to: '/labour/days', label: 'Day sheets to review and lock', n: dayTodo.days, tone: 'bg-blue-600' }] : []),
     ...(dayTodo?.pay ? [{ to: '/labour/pay', label: 'Locked day sheets to confirm for pay', n: dayTodo.pay, tone: 'bg-blue-600' }] : []),
     ...(toConfirm.length ? [{ to: '/labour/pay', label: 'Weeks to confirm for pay', n: toConfirm.length, tone: 'bg-blue-600' }] : []),
@@ -179,7 +179,7 @@ export default function LabourHomePage() {
       {dayStarted ? (
         <div className="grid grid-cols-3 gap-2">
           <Link to="/labour/day-requests" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-            <CalendarPlus className="h-4 w-4 text-brand" /> Daily request
+            <CalendarPlus className="h-4 w-4 text-brand" /> Crew request
           </Link>
           <Link to="/labour/day" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
             <Sheet className="h-4 w-4 text-brand" /> Day sheet
