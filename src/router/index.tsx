@@ -211,6 +211,7 @@ const LabourPayRequestPage = lazyPage(() => import('@/pages/labour/LabourPayRequ
 const LabourDaySheetPage = lazyPage(() => import('@/pages/labour/LabourDaySheetPage'))
 const LabourDayRequestsPage = lazyPage(() => import('@/pages/labour/LabourDayRequestsPage'))
 const LabourDaysReviewPage = lazyPage(() => import('@/pages/labour/LabourDaysReviewPage'))
+const LabourWeekSheetPage = lazyPage(() => import('@/pages/labour/LabourWeekSheetPage'))
 const SubcontractsPage = lazyPage(() => import('@/pages/subcontracts/SubcontractsPage'))
 const SubcontractFormPage = lazyPage(() => import('@/pages/subcontracts/SubcontractFormPage'))
 const SubcontractDetailPage = lazyPage(() => import('@/pages/subcontracts/SubcontractDetailPage'))
@@ -813,6 +814,7 @@ export const router = createBrowserRouter([
           { path: 'labour/requests', element: <LabourPayRequestsPage /> },
           { path: 'labour/requests/:id', element: <LabourPayRequestPage /> },
           { path: 'labour/day', element: <LabourDaySheetPage /> },
+          { path: 'labour/week-sheet', element: <LabourWeekSheetPage /> },
           { path: 'labour/day-requests', element: <LabourDayRequestsPage /> },
           { path: 'labour/days', element: <LabourDaysReviewPage /> },
           { path: 'labour/:id', element: <LabourRequestPage /> },

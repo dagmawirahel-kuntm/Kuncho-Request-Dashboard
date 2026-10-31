@@ -7,7 +7,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { addDays, dayLabel, isoDay } from '@/lib/labour'
-import { DAY_STATUS, REQUEST_STATUS, halfDays, useDayPeople, useDaySettings, type BoardRow } from '@/lib/labourDay'
+import { DAY_STATUS, REQUEST_STATUS, WEEKDAYS, halfDays, useDayPeople, useDaySettings, type BoardRow } from '@/lib/labourDay'
 import { LabourFlagsPanel } from '@/components/labour/LabourFlagsPanel'
 import { CalendarCheck, ChevronRight, Lock, Settings } from 'lucide-react'
 
@@ -46,6 +46,17 @@ export default function LabourDaysReviewPage() {
   }
 
   const waiting = board.filter(r => r.status === 'submitted')
+  const lockable = waiting.filter(r => r.mismatched === 0 && r.day_id)
+  // A week comes in at once (494): lock every sent day that adds up together.
+  async function lockAll() {
+    setBusy('all')
+    const { data, error } = await supabase.rpc('labour_days_lock_many', { p_days: lockable.map(r => r.day_id), p_note: null })
+    setBusy(null)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`${Number(data)} day${Number(data) === 1 ? '' : 's'} locked`, 'success')
+    qc.invalidateQueries({ queryKey: ['labour-day-board'] })
+    qc.invalidateQueries({ queryKey: ['labour-flags'] })
+  }
   const byDate = new Map<string, BoardRow[]>()
   for (const r of board) byDate.set(r.work_date, [...(byDate.get(r.work_date) ?? []), r])
 
@@ -67,6 +78,11 @@ export default function LabourDaysReviewPage() {
       {approver && waiting.length > 0 && (
         <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900 dark:border-blue-800/40 dark:bg-blue-900/10 dark:text-blue-200">
           {waiting.length} day{waiting.length === 1 ? '' : 's'} sent for review. Open one to check it, or lock it here if it adds up.
+          {lockable.length > 1 && (
+            <button onClick={lockAll} disabled={!!busy} className="ml-2 rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+              {busy === 'all' ? 'Locking…' : `Lock all ${lockable.length} that add up`}
+            </button>
+          )}
         </p>
       )}
 
@@ -136,12 +152,12 @@ function DaySettingsPanel() {
       return (data ?? []) as { id: string; project_name: string }[]
     },
   })
-  const [f, setF] = useState({ starts_on: '', workshop: null as string | null, stock: null as string | null, idle: null as string | null, days: 14 })
+  const [f, setF] = useState({ starts_on: '', workshop: null as string | null, stock: null as string | null, idle: null as string | null, days: 14, due: 6 })
   const [saving, setSaving] = useState(false)
   const [prev, setPrev] = useState<typeof s>(undefined)
   if (s && prev !== s) {
     setPrev(s)
-    setF({ starts_on: s.starts_on ?? '', workshop: s.workshop_project_id, stock: s.stock_project_id, idle: s.idle_project_id, days: s.costing_open_days })
+    setF({ starts_on: s.starts_on ?? '', workshop: s.workshop_project_id, stock: s.stock_project_id, idle: s.idle_project_id, days: s.costing_open_days, due: s.week_due_dow ?? 6 })
   }
   const opts = internal.map(p => ({ id: p.id, label: p.project_name.trim() }))
 
@@ -153,6 +169,10 @@ function DaySettingsPanel() {
     })
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
+    if (f.due !== (s?.week_due_dow ?? 6)) {
+      const { error: e2 } = await supabase.rpc('set_labour_week_due', { p_dow: f.due })
+      if (e2) { toast(e2.message, 'error'); return }
+    }
     toast('Settings saved', 'success')
     qc.invalidateQueries({ queryKey: ['labour-day-settings'] })
     qc.invalidateQueries({ queryKey: ['labour-day'] })
@@ -166,6 +186,13 @@ function DaySettingsPanel() {
           <input type="date" value={f.starts_on} onChange={e => setF(x => ({ ...x, starts_on: e.target.value }))}
             className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
           <span className="mt-1 block font-normal text-slate-500">{f.starts_on ? 'From this day, casual labour is asked for in the crew request and recorded on the day sheet.' : 'Not started — nothing has changed for anyone yet.'}</span>
+        </label>
+        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Each week's days are due by the end of
+          <select value={f.due} onChange={e => setF(x => ({ ...x, due: Number(e.target.value) }))}
+            className="mt-1 block w-full rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+            {WEEKDAYS.map((w, i) => <option key={w} value={i + 1}>{w}</option>)}
+          </select>
+          <span className="mt-1 block font-normal text-slate-500">Days not sent by then are flagged.</span>
         </label>
         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Flag delivered projects not closed after
           <div className="mt-1 flex items-center gap-2">
