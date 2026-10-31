@@ -181,8 +181,8 @@ export default function LabourHomePage() {
           <Link to="/labour/day-requests" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
             <CalendarPlus className="h-4 w-4 text-brand" /> Crew request
           </Link>
-          <Link to="/labour/day" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-            <Sheet className="h-4 w-4 text-brand" /> Day sheet
+          <Link to="/labour/week-sheet" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
+            <Sheet className="h-4 w-4 text-brand" /> Week sheet
           </Link>
           <Link to="/labour/days" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
             <CalendarCheck className="h-4 w-4 text-brand" /> Review days

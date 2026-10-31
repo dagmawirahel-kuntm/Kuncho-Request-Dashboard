@@ -121,6 +121,8 @@ export type BoardRow = {
 export type DaySettings = {
   starts_on: string | null; workshop_project_id: string | null; stock_project_id: string | null; idle_project_id: string | null
   costing_open_days: number; updated_at: string
+  /** The weekday (1 Mon … 7 Sun) each week's days are due by (494). */
+  week_due_dow?: number
 }
 
 export function useDaySettings() {
