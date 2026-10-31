@@ -208,6 +208,9 @@ const LabourPayRequestsPage = lazyPage(() => import('@/pages/labour/LabourPayReq
 const LabourWeekPage = lazyPage(() => import('@/pages/labour/LabourWeekPage'))
 const LabourWorkersPage = lazyPage(() => import('@/pages/labour/LabourWorkersPage'))
 const LabourPayRequestPage = lazyPage(() => import('@/pages/labour/LabourPayRequestPage'))
+const LabourDaySheetPage = lazyPage(() => import('@/pages/labour/LabourDaySheetPage'))
+const LabourDayRequestsPage = lazyPage(() => import('@/pages/labour/LabourDayRequestsPage'))
+const LabourDaysReviewPage = lazyPage(() => import('@/pages/labour/LabourDaysReviewPage'))
 const SubcontractsPage = lazyPage(() => import('@/pages/subcontracts/SubcontractsPage'))
 const SubcontractFormPage = lazyPage(() => import('@/pages/subcontracts/SubcontractFormPage'))
 const SubcontractDetailPage = lazyPage(() => import('@/pages/subcontracts/SubcontractDetailPage'))
@@ -809,6 +812,9 @@ export const router = createBrowserRouter([
           { path: 'labour/overtime', element: <LabourOvertimePage /> },
           { path: 'labour/requests', element: <LabourPayRequestsPage /> },
           { path: 'labour/requests/:id', element: <LabourPayRequestPage /> },
+          { path: 'labour/day', element: <LabourDaySheetPage /> },
+          { path: 'labour/day-requests', element: <LabourDayRequestsPage /> },
+          { path: 'labour/days', element: <LabourDaysReviewPage /> },
           { path: 'labour/:id', element: <LabourRequestPage /> },
           { path: 'labor-requisitions', element: <Navigate to="/labour" replace /> },
           { path: 'labor-requisitions/new', element: <Navigate to="/labour/new" replace /> },

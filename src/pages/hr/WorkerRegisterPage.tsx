@@ -168,6 +168,7 @@ function Review({ id, canAct, verified, onDone }: { id: string; canAct: boolean;
   const [sendingBack, setSendingBack] = useState(false)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  const [rate, setRate] = useState<string | null>(null)
   if (!d) return <p className="px-11 pb-4 text-xs text-slate-400">Loading…</p>
   const trade = trades.find(t => t.trade_tag === d.trade)
 
@@ -177,6 +178,14 @@ function Review({ id, canAct, verified, onDone }: { id: string; canAct: boolean;
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
     toast(`${d!.name} verified — their pay is no longer held`, 'success'); onDone()
+  }
+  // The site proposes the day rate (493); HR confirms or corrects it here.
+  async function saveRate() {
+    setBusy(true)
+    const { error } = await supabase.rpc('worker_set_day_rate', { p_staff: id, p_rate: Number(rate) })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Day rate changed', 'success'); setRate(null); onDone()
   }
   async function sendBack() {
     setBusy(true)
@@ -206,7 +215,19 @@ function Review({ id, canAct, verified, onDone }: { id: string; canAct: boolean;
           {row('ID number', d.national_id || (d.id_document_url ? '—' : 'missing'), !d.national_id && !d.id_document_url)}
           {row('ID photo', d.id_document_url ? <PrivateDocLink path={d.id_document_url} bucket="staff-documents" title="Open the ID photo" className="text-brand hover:underline">Open the ID photo</PrivateDocLink> : 'none')}
           {row('Trade', trade ? `${trade.icon_emoji} ${trade.codename_english}` : d.trade?.replace(/_/g, ' ') || 'missing', !d.trade)}
-          {row('Day rate', d.day_rate ? formatCurrency(d.day_rate) : 'missing', !d.day_rate)}
+          {rate === null ? (
+            <div className="flex items-center gap-2">
+              {row('Day rate', d.day_rate ? `${formatCurrency(d.day_rate)}${verified ? '' : ' · proposed by the site'}` : 'missing', !d.day_rate)}
+              {canAct && <button onClick={() => setRate(d.day_rate ? String(d.day_rate) : '')} className="text-xs text-brand hover:underline">Change</button>}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-28 shrink-0 text-xs text-slate-500">Day rate</span>
+              <input className="w-28 rounded-md border px-2 py-1 text-right text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800" inputMode="decimal" autoFocus value={rate} onChange={e => setRate(e.target.value)} />
+              <button onClick={saveRate} disabled={busy || !(Number(rate) > 0)} className="rounded-md bg-brand px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50">Save</button>
+              <button onClick={() => setRate(null)} className="text-xs text-slate-500">Cancel</button>
+            </div>
+          )}
           {row('Bank', d.account_number ? `${d.bank ?? 'bank?'} · ${d.account_number}${d.account_holder ? ` (holder: ${d.account_holder})` : ''}` : 'missing', !d.account_number)}
         </div>
       </div>

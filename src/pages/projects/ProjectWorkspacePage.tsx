@@ -19,6 +19,7 @@ import { resolveHint } from '@/lib/trainerHints'
 import { useTabParam } from '@/lib/useTabParam'
 import { ProjectWorkBoard } from './ProjectWorkBoard'
 import { ProjectWeekSummary } from '@/components/projects/ProjectWeekSummary'
+import { ProjectClosingPanel } from '@/components/projects/ProjectClosingPanel'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, RecordTabs, Stat, StatusSteps, type TabDef } from '@/components/record/Record'
 import { useStaff, useStaffDirectory } from '@/hooks/useLookups'
 import { useMyStaffId } from '@/hooks/useMyStaff'
@@ -34,7 +35,7 @@ import {
   Handshake, PenTool, ClipboardList, HardHat, CheckCircle2, FileCheck2, Pencil, X, Plus, History, Check,
   Trash2, UserPlus, PackageOpen, Hammer,
   LayoutDashboard, CalendarRange, Layers, Banknote, Users, Boxes, Activity, ShoppingCart, Flag,
-  GitPullRequestArrow,
+  GitPullRequestArrow, PackageCheck,
 } from 'lucide-react'
 
 type ProjectDetail = Project & {
@@ -54,7 +55,7 @@ const STAGE_STEPS: { stage: ProjectStage; label: string; icon: React.ReactNode }
   { stage: 'quality_snagging_handover',      label: 'Snagging',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   { stage: 'closeout_final_accounts',        label: 'Closeout',        icon: <FileCheck2 className="h-3.5 w-3.5" /> },
 ]
-const PROJECT_TABS = ['overview', 'summary', 'budget', 'boq', 'variations', 'payments', 'team', 'materials', 'activity'] as const
+const PROJECT_TABS = ['overview', 'summary', 'budget', 'boq', 'variations', 'payments', 'team', 'materials', 'closing', 'activity'] as const
 type ProjectTab = typeof PROJECT_TABS[number]
 const HEALTH_OPTIONS: ProjectHealth[] = ['On Track', 'At Risk', 'Off Track']
 
@@ -907,6 +908,7 @@ export default function ProjectWorkspacePage() {
     { id: 'payments', label: 'Payments', icon: Banknote },
     { id: 'team', label: 'Work', icon: Users },
     { id: 'materials', label: 'Materials', icon: Boxes },
+    { id: 'closing', label: 'Closing', icon: PackageCheck },
     { id: 'activity', label: 'Activity', icon: Activity },
   ]
 
@@ -1172,6 +1174,9 @@ export default function ProjectWorkspacePage() {
             <ReturnToStockSection projectId={id!} projectManagerId={project.project_manager_id ?? null} />
           </>
         )}
+
+        {/* ── Closing: delivered, fixtures back, costing closed ─────────── */}
+        {tab === 'closing' && <ProjectClosingPanel projectId={id!} />}
 
         {/* ── Activity ─────────────────────────────────────────────────── */}
         {tab === 'activity' && (

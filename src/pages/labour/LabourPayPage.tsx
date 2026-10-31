@@ -7,6 +7,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import type { PayLine } from '@/lib/documents/labourPay'
 import { BASIS_LABEL, dayLabel, financeStatus, financeTone, fmtMoney, isoDay, useLabourSites, type PayBasis } from '@/lib/labour'
+import { DaySheetPay } from '@/components/labour/DaySheetPay'
 import { ArrowLeft, CheckCircle2, ChevronRight, Wallet } from 'lucide-react'
 
 type Unpaid = {
@@ -15,8 +16,9 @@ type Unpaid = {
   first_day: string; last_day: string; days_recorded: number; workers: number; ready: boolean; suggested_to: string
 }
 type Sheet = {
-  id: string; code: string; labor_requisition_id: string; period_start: string; period_end: string; total: number; confirmed_at: string
+  id: string; code: string; labor_requisition_id: string | null; day_pay_run_id: string | null; period_start: string; period_end: string; total: number; confirmed_at: string
   labor_requisitions: { role_needed: string; projects: { project_name: string } | null } | null
+  projects: { project_name: string } | null
   expenses: { approval_status: string; payment_state: string } | null
 }
 
@@ -46,7 +48,7 @@ export default function LabourPayPage() {
     queryKey: ['labour-pay-sheets-recent'],
     queryFn: async () => {
       const { data, error } = await supabase.from('labour_pay_sheets')
-        .select('id, code, labor_requisition_id, period_start, period_end, total, confirmed_at, labor_requisitions(role_needed, projects(project_name)), expenses(approval_status, payment_state)')
+        .select('id, code, labor_requisition_id, day_pay_run_id, period_start, period_end, total, confirmed_at, labor_requisitions(role_needed, projects(project_name)), projects(project_name), expenses(approval_status, payment_state)')
         .order('confirmed_at', { ascending: false }).limit(20)
       if (error) throw error
       return (data ?? []) as unknown as Sheet[]
@@ -69,8 +71,10 @@ export default function LabourPayPage() {
           onDone={() => { select(null); qc.invalidateQueries({ queryKey: ['labour-unpaid'] }); qc.invalidateQueries({ queryKey: ['labour-pay-sheets-recent'] }); qc.invalidateQueries({ queryKey: ['labour-request-sheets', current.labor_requisition_id] }); qc.invalidateQueries({ queryKey: ['labour-request-events', current.labor_requisition_id] }) }}
           toast={toast} />
       ) : (
+        <>
+        <DaySheetPay />
         <section className={card}>
-          <h2 className="border-b px-4 py-3 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">Recorded, not confirmed yet</h2>
+          <h2 className="border-b px-4 py-3 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">Recorded on work orders, not confirmed yet</h2>
           {isLoading ? <p className="p-6 text-center text-sm text-slate-400">Loading…</p> : unpaid.length === 0 ? (
             <p className="flex items-center justify-center gap-2 p-6 text-sm text-slate-500"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Nothing waiting — all recorded work is confirmed.</p>
           ) : (
@@ -90,6 +94,7 @@ export default function LabourPayPage() {
             </ul>
           )}
         </section>
+        </>
       )}
 
       <section className={card}>
@@ -100,10 +105,11 @@ export default function LabourPayPage() {
               const fs = financeStatus(s.expenses)
               return (
                 <li key={s.id}>
-                  <Link to={`/labour/${s.labor_requisition_id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                  {/* Day-sheet pay sheets belong to a pay run, not a request. */}
+                  <Link to={s.labor_requisition_id ? `/labour/${s.labor_requisition_id}` : '/labour/requests?view=mine'} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{s.code} · {s.labor_requisitions?.role_needed}</p>
-                      <p className="truncate text-xs text-slate-500">{s.labor_requisitions?.projects?.project_name} · {dayLabel(s.period_start)} – {dayLabel(s.period_end)}</p>
+                      <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{s.code} · {s.labor_requisitions?.role_needed ?? 'Day sheets'}</p>
+                      <p className="truncate text-xs text-slate-500">{s.labor_requisitions?.projects?.project_name ?? s.projects?.project_name} · {dayLabel(s.period_start)} – {dayLabel(s.period_end)}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold">{fmtMoney(s.total)}</p>
