@@ -322,7 +322,7 @@ export default function PurchaseOrderPage() {
         .from('sourcing_bundles')
         .select(`
           *,
-          vendors(vendor_name, wth_eligible, tin, phone_contact),
+          vendors(vendor_name, wth_eligible, tin, phone_contact, email),
           procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
           expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state,
@@ -539,7 +539,7 @@ export default function PurchaseOrderPage() {
   const whtAmount = whtEligible ? grandTotal * WHT_RATE : 0
   const netPayable = grossTotal - whtAmount
 
-  const vendorRow = (bundle as unknown as { vendors: { tin?: string | null; phone_contact?: string | null } | null }).vendors
+  const vendorRow = (bundle as unknown as { vendors: { tin?: string | null; phone_contact?: string | null; email?: string | null } | null }).vendors
   const poInput = { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable,
     vendorTin: vendorRow?.tin ?? null, vendorPhone: vendorRow?.phone_contact ?? null, signoff: signoff ?? null,
     variantLabels: Object.fromEntries(sortedItems.map(i => [i.id, variantLabel(i)]).filter((e): e is [string, string] => !!e[1])) }
@@ -777,7 +777,7 @@ export default function PurchaseOrderPage() {
         {poIssuable && (
           <div className="flex flex-wrap items-center gap-2">
             <DocumentActions type="purchase_order" sourceId={bundle.id} number={bundle.bundle_code} title="Purchase order" party={vendorDisplay}
-              partyPhone={vendorRow?.phone_contact} total={netPayable} build={verify => buildPoHtml({ ...poInput, verify })} />
+              partyEmail={vendorRow?.email} partyPhone={vendorRow?.phone_contact} total={netPayable} build={verify => buildPoHtml({ ...poInput, verify })} />
           </div>
         )}
         <TrainerHintBanner entityType="purchase_order" entityId={bundle.id} hint={bundleHint} />

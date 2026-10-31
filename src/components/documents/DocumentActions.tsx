@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, FileClock, Mail, MessageCircle, Printer, Share2, ShieldCheck, Smartphone } from 'lucide-react'
+import { AtSign, Check, Copy, FileClock, Mail, MessageCircle, Printer, Share2, ShieldCheck, Smartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -10,12 +10,13 @@ import { Pill } from '@/components/record/Record'
 import type { VerifyInfo } from '@/lib/documentTheme'
 import { canIssue, issueDocument, printHtml, verifyUrl, type IssuedDocType, type IssuedDocument } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
+import { EmailDocumentDialog } from '@/components/documents/EmailDocumentDialog'
 
 const btn = 'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
 const field = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
 /**
- * Print / share / issued copies for one outgoing document. Printing or
+ * Print / share / email / issued copies for one outgoing document. Printing or
  * sharing files the document in the register (migration 368) with a QR
  * code that proves it's ours; printing the same content again reuses the
  * stored copy, and changed content becomes the next version.
@@ -40,6 +41,7 @@ export function DocumentActions({ type, sourceId, number, title, party, partyEma
   const [busy, setBusy] = useState<null | 'print' | 'share' | 'file'>(null)
   const [shared, setShared] = useState<{ doc: IssuedDocument; url: string } | null>(null)
   const [copiesOpen, setCopiesOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
   const fileName = [number, title, party].filter(Boolean).join(' - ')
 
   const { data: copies = [] } = useQuery({
@@ -97,6 +99,9 @@ export function DocumentActions({ type, sourceId, number, title, party, partyEma
           <Share2 className="h-4 w-4" /> {busy === 'share' ? 'Preparing…' : 'Share link'}
         </button>
       )}
+      <button onClick={() => setEmailOpen(true)} disabled={disabled || !!busy} className={btn} title="Email the document from the app">
+        <AtSign className="h-4 w-4" /> Email
+      </button>
       {allowed && copies.length > 0 && (
         <button onClick={() => setCopiesOpen(true)} className={btn} title="Every copy issued">
           <FileClock className="h-4 w-4" /> {compact ? copies.length : `Issued (${copies.length})`}
@@ -105,6 +110,14 @@ export function DocumentActions({ type, sourceId, number, title, party, partyEma
       {shared && (
         <ShareDialog doc={shared.doc} url={shared.url} title={`${title}${number ? ` ${number}` : ''}`} party={party} email={partyEmail} phone={partyPhone}
           onClose={() => setShared(null)} onSent={() => qc.invalidateQueries({ queryKey: ['issued-documents', type, sourceId] })} />
+      )}
+      {emailOpen && (
+        <EmailDocumentDialog kind={type} sourceId={sourceId} title={`${title}${number ? ` ${number}` : ''}`} fileName={fileName} party={party} defaultTo={partyEmail}
+          // The filed copy goes, as printing or sharing would file it; roles
+          // that don't file documents send the page as it is.
+          prepare={async () => (allowed ? { issuedId: (await issue()).doc.id } : { html: build(null) })}
+          onSent={() => qc.invalidateQueries({ queryKey: ['issued-documents', type, sourceId] })}
+          onClose={() => setEmailOpen(false)} />
       )}
       {copiesOpen && <CopiesDialog copies={copies} onClose={() => setCopiesOpen(false)} onChanged={() => qc.invalidateQueries({ queryKey: ['issued-documents', type, sourceId] })} />}
     </>

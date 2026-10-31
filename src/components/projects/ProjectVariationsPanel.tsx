@@ -9,6 +9,7 @@ import { useCompanyProfile } from '@/lib/companyProfile'
 import { buildContractStatementHtml } from '@/lib/documents/variationDocument'
 import { useContractSum, useVariations, VO_STATUS, VO_MANAGE_ROLES, BASE_SOURCE_LABEL, OPEN_STATUSES } from '@/lib/variations'
 import { GitPullRequestArrow, Plus, Printer } from 'lucide-react'
+import { EmailDocumentButton } from '@/components/documents/EmailDocumentDialog'
 
 const formatCurrency = (n: number) => fmtMoney(n).replace(/\.00$/, '')
 
@@ -25,8 +26,8 @@ export function ProjectVariationsPanel({ projectId, projectName, clientId }: { p
     queryKey: ['client-name', clientId],
     enabled: !!clientId,
     queryFn: async () => {
-      const { data } = await supabase.from('clients').select('client_name').eq('id', clientId!).maybeSingle()
-      return (data as { client_name: string } | null) ?? null
+      const { data } = await supabase.from('clients').select('client_name, email').eq('id', clientId!).maybeSingle()
+      return (data as { client_name: string; email: string | null } | null) ?? null
     },
   })
 
@@ -34,13 +35,12 @@ export function ProjectVariationsPanel({ projectId, projectName, clientId }: { p
   const open = vos.filter(v => OPEN_STATUSES.includes(v.status))
   const agreementRef = sum?.base_source === 'contract' || sum?.base_source === 'proforma' ? sum.base_ref : null
 
-  function printStatement() {
-    printHtml(buildContractStatementHtml({
-      projectName, client: client ?? null, agreementRef, original: sum?.base_value ?? null, date: new Date().toISOString().slice(0, 10),
-      variations: agreed.map(v => ({ code: v.vo_code, title: v.title, agreedOn: v.agreed_on, total: v.total, days: v.time_extension_days })),
-      pending: open.filter(v => v.amount !== 0).map(v => ({ code: v.vo_code, title: v.title, status: VO_STATUS[v.status].label, total: v.total })),
-    }), `Contract statement ${projectName}`)
-  }
+  const statement = () => buildContractStatementHtml({
+    projectName, client: client ?? null, agreementRef, original: sum?.base_value ?? null, date: new Date().toISOString().slice(0, 10),
+    variations: agreed.map(v => ({ code: v.vo_code, title: v.title, agreedOn: v.agreed_on, total: v.total, days: v.time_extension_days })),
+    pending: open.filter(v => v.amount !== 0).map(v => ({ code: v.vo_code, title: v.title, status: VO_STATUS[v.status].label, total: v.total })),
+  })
+  const printStatement = () => printHtml(statement(), `Contract statement ${projectName}`)
 
   return (
     <div className="space-y-3">
@@ -53,6 +53,9 @@ export function ProjectVariationsPanel({ projectId, projectName, clientId }: { p
 
       <Panel title="Variations" icon={GitPullRequestArrow} count={vos.length || null} padded={false}
         action={<div className="flex items-center gap-3">
+          {(agreed.length > 0 || open.length > 0) && <EmailDocumentButton kind="contract_statement" sourceId={projectId} title={`contract statement for ${projectName}`}
+            fileName={`Contract statement ${projectName}`} party={client?.client_name} defaultTo={client?.email} prepare={() => ({ html: statement() })}
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-brand dark:text-slate-300 [&>svg]:h-3.5 [&>svg]:w-3.5" />}
           {(agreed.length > 0 || open.length > 0) && <button onClick={printStatement} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-brand dark:text-slate-300"><Printer className="h-3.5 w-3.5" /> Contract statement</button>}
           {canManage && <Link to={`/variations/new?project=${projectId}`} className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-semibold text-white"><Plus className="h-3.5 w-3.5" /> Add variation</Link>}
         </div>}>
