@@ -5,17 +5,17 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { PhotoButton, WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
+import { NewWorkerForm, type NewWorker } from '@/components/labour/NewWorkerForm'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
-  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople, useTrades, weekdaysLabel,
+  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople, weekdaysLabel,
   type Alloc, type Bucket, type DaySheet, type PieceJob, type SheetWorker,
 } from '@/lib/labourDay'
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Hammer, Lock, Plus, Ruler, Save, Send, Sheet, Tag, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 
 type Row = Omit<SheetWorker, 'alloc'> & { cells: Record<string, number> }
 type Col = { key: string; bucket: Bucket; project_id: string | null; project: string; group: string }
-type NewWorker = { name: string; phone: string; trade: string; rate: string; photo: string | null }
 /** A piece job as edited: who of its crew was there, and what was measured (volume) or how far along it is now (fixed price). */
 type JobRow = PieceJob & { present: string[]; measured: string }
 
@@ -236,6 +236,7 @@ export default function LabourDaySheetPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Who was paid for the day, and where the day went.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link to={`/labour/week-sheet?week=${date}${seeAll && pm ? `&pm=${pm}` : ''}`} className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Week</Link>
           <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Crew request</Link>
           {approver && <Link to="/labour/days" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Review days</Link>}
         </div>
@@ -566,39 +567,3 @@ function PieceWork({ jobs, canEdit, update }: { jobs: JobRow[]; canEdit: boolean
   )
 }
 const trim = (n: number) => Math.round(n * 100) / 100
-
-// Someone working for the first time: the essentials to put them on the
-// sheet. The rest (ID, bank) can follow on Worker details.
-function NewWorkerForm({ value: w, onChange, onSave, onCancel, busy }: {
-  value: NewWorker; onChange: (w: NewWorker) => void; onSave: () => void; onCancel: () => void; busy: boolean
-}) {
-  const { data: trades = [] } = useTrades()
-  const set = (patch: Partial<NewWorker>) => onChange({ ...w, ...patch })
-  const ok = w.name.trim().length > 1 && !!w.trade && Number(w.rate) > 0
-  const input = 'rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
-  return (
-    <div className="space-y-3 border-t bg-slate-50 px-3 py-3 dark:border-slate-700 dark:bg-slate-900/40">
-      <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><UserPlus className="h-4 w-4 text-brand" /> New worker</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <PhotoButton url={w.photo} name={w.name || 'New worker'} onPhoto={url => set({ photo: url })} />
-        <input value={w.name} onChange={e => set({ name: e.target.value })} placeholder="Full name" className={`${input} min-w-[12rem] flex-1`} />
-        <input value={w.phone} onChange={e => set({ phone: e.target.value })} inputMode="tel" placeholder="Phone (if they have one)" className={`${input} w-full sm:w-44`} />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchableSelect className="min-w-[12rem] flex-1" value={w.trade || null} onChange={v => set({ trade: v ?? '' })}
-          options={trades.map(t => ({ id: t.trade_tag, label: tradeName(t.trade_tag), sub: t.codename_amharic ?? undefined }))} placeholder="Trade…" />
-        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Day rate
-          <input value={w.rate} onChange={e => set({ rate: e.target.value })} inputMode="decimal" placeholder="e.g. 900" className={`${input} w-28 text-right`} />
-          ETB
-        </label>
-      </div>
-      <p className="text-[11px] text-slate-500">The day rate is your proposal: HR confirms or corrects it when they verify the worker, and their pay waits until then. A phone already on file brings back that person instead of making a new one.</p>
-      <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500">Cancel</button>
-        <button onClick={onSave} disabled={!ok || busy} className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-          <Plus className="h-3.5 w-3.5" /> {busy ? 'Adding…' : 'Add to the sheet'}
-        </button>
-      </div>
-    </div>
-  )
-}
