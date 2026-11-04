@@ -4,6 +4,8 @@ import { Tier2WorkerCard } from '@/components/shared/Tier2WorkerCard'
 import { Tier2WorkerScanTile } from '@/components/shared/Tier2WorkerScanTile'
 import { CasualWorkerDetailModal } from '@/components/shared/CasualWorkerDetailModal'
 import type { CasualWorkerRow } from '@/hooks/useTier2Workers'
+import { ExportButton } from '@/components/shared/ExportButton'
+import { downloadXlsx, fileDate, type XlsxColumn } from '@/lib/xlsxExport'
 import { HardHat, Search, LayoutGrid, Grid3x3 } from 'lucide-react'
 
 type SortKey = 'score_desc' | 'name' | 'days_worked' | 'recent'
@@ -62,6 +64,31 @@ export default function CasualWorkersPage() {
     return arr
   }, [workers, statusFilter, tradeFilter, tierFilter, minScore, q, sort, perfById])
 
+  // The workers shown, as filtered and sorted, with their scores. Contact and
+  // bank details are in the worker register's export.
+  async function handleExport() {
+    const cols: XlsxColumn<CasualWorkerRow>[] = [
+      { header: 'Name', value: w => w.employee_name, width: 28 },
+      { header: 'Codename', value: w => w.codename_english, width: 18 },
+      { header: 'Codename (Amharic)', value: w => w.codename_amharic, width: 18 },
+      { header: 'Trade', value: w => (w.trade_tag ? tradeByTag.get(w.trade_tag)?.codename_english ?? w.trade_tag.replace(/_/g, ' ') : null), width: 16 },
+      { header: 'Day rate', value: w => w.day_rate, kind: 'money' },
+      { header: 'Status', value: w => w.status ?? 'active' },
+      { header: 'Score /100', value: w => perfById.get(w.id)?.overall_score_100, kind: 'number' },
+      { header: 'Tier', value: w => perfById.get(w.id)?.tier_rank ?? 'unranked' },
+      { header: 'Quality', value: w => perfById.get(w.id)?.score_quality, kind: 'number' },
+      { header: 'Timeliness', value: w => perfById.get(w.id)?.score_timeliness, kind: 'number' },
+      { header: 'Safety', value: w => perfById.get(w.id)?.score_safety, kind: 'number' },
+      { header: 'Teamwork', value: w => perfById.get(w.id)?.score_teamwork, kind: 'number' },
+      { header: 'Ratings', value: w => perfById.get(w.id)?.rating_count_all_time ?? 0, kind: 'number' },
+      { header: 'Last rated', value: w => perfById.get(w.id)?.last_rated_at, kind: 'date' },
+      { header: 'Badges', value: w => badgesById.get(w.id)?.badge_count ?? 0, kind: 'number' },
+      { header: 'First engaged', value: w => w.first_engaged_at, kind: 'date', width: 14 },
+      { header: 'Last engaged', value: w => w.last_engaged_at, kind: 'date', width: 14 },
+    ]
+    await downloadXlsx(`casual-workers-${fileDate()}`, 'Casual workers', cols, filtered)
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -73,6 +100,9 @@ export default function CasualWorkersPage() {
             Tier 2 workforce. Every card is a real person with a rolling performance score, badges, and payment history — built on the same rating engine as full-time staff.
           </p>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+        <ExportButton onExport={handleExport} disabled={filtered.length === 0}
+          title={`Download the ${filtered.length} workers shown, with their scores, to Excel`} />
         <div className="flex items-center rounded-md border dark:border-slate-600 overflow-hidden shrink-0">
           <button
             onClick={() => changeView('gallery')}
@@ -92,6 +122,7 @@ export default function CasualWorkersPage() {
           >
             <Grid3x3 className="h-3.5 w-3.5" /> Scan
           </button>
+        </div>
         </div>
       </div>
 
