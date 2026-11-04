@@ -63,7 +63,7 @@ export default function BatchPaymentsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('batch_payments')
-        .select('*, user_profiles(full_name), batch_payment_expenses(expense_id, expenses(amount_etb, wht_amount, credit_applied_etb, payment_state, expense_type))')
+        .select('*, user_profiles!batch_payments_assignee_id_fkey(full_name), batch_payment_expenses(expense_id, expenses(amount_etb, wht_amount, credit_applied_etb, payment_state, expense_type))')
         .order('created_at', { ascending: false })
       if (error) throw error
       // A dissolved batch is kept only for its voided payment-request documents (456).
