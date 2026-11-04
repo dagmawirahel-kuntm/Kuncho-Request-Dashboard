@@ -7,6 +7,8 @@ import type { Staff } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDepartments } from '@/hooks/useLookups'
+import { ExportButton } from '@/components/shared/ExportButton'
+import { downloadXlsx, fileDate, type XlsxColumn } from '@/lib/xlsxExport'
 import { Plus, Pencil, Trash2, Users, Wallet, Search, Phone, CreditCard, Eye, UserX, Network } from 'lucide-react'
 
 // ── Department colour palette (shared) ────────────────────────────────────────
@@ -31,7 +33,7 @@ function StatCard({ label, value, icon, sub }: { label: string; value: string; i
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StaffPage() {
   const { toast } = useToast()
-  const { role } = useAuth()
+  const { role, hasRole } = useAuth()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [deptFilter, setDeptFilter] = useState('All')
@@ -137,6 +139,38 @@ export default function StaffPage() {
     })
   }, [data, deptFilter, unassignedOnly, noManagerOnly, search, showCasual])
 
+  // The list as filtered on screen. Bank account numbers are masked across
+  // the app; only admin and HR, who keep the records, export them in full.
+  async function handleExport() {
+    const fullBank = hasRole('admin', 'hr_officer')
+    const { data: banks, error } = await supabase.from('accounts').select('id, account_name')
+    if (error) throw error
+    const bankName = new Map(((banks ?? []) as { id: string; account_name: string }[]).map(b => [b.id, b.account_name]))
+    const cols: XlsxColumn<Staff>[] = [
+      { header: 'Employee', value: s => s.employee_name, width: 28 },
+      { header: 'Department', value: s => s.staff_type },
+      { header: 'Org department', value: s => (s.department_id ? orgDeptMap.get(s.department_id) : null) ?? 'Unassigned', width: 20 },
+      { header: 'Sub-team', value: s => s.sub_team },
+      { header: 'Reports to', value: s => (s.reports_to_id ? nameById.get(s.reports_to_id) : null), width: 24 },
+      { header: 'Workplace', value: s => s.role, width: 22 },
+      { header: 'Level', value: s => getManagementLevelMeta(s.management_level)?.label },
+      { header: 'Employment', value: s => s.employment_type?.replace(/_/g, ' ') },
+      { header: 'Status', value: s => s.status },
+      { header: 'Paid', value: s => s.payment_frequency },
+      { header: 'Monthly salary', value: s => s.monthly_salary, kind: 'money', width: 15 },
+      { header: 'Day rate', value: s => s.day_rate, kind: 'money' },
+      { header: 'Phone', value: s => s.phone_number, width: 15 },
+      { header: 'Email', value: s => s.email, width: 26 },
+      { header: 'Bank', value: s => (s.bank_id ? bankName.get(s.bank_id) : null), width: 22 },
+      { header: 'Bank account', value: s => (s.bank_account ? (fullBank ? s.bank_account : `•••• ${s.bank_account.slice(-4)}`) : null), width: 20 },
+      { header: 'National ID', value: s => s.national_id, width: 18 },
+      { header: 'Started', value: s => s.starting_date, kind: 'date' },
+      { header: 'Contract ends', value: s => s.contract_end_date, kind: 'date', width: 14 },
+      { header: 'Left', value: s => s.termination_date, kind: 'date' },
+    ]
+    await downloadXlsx(`staff-${fileDate()}`, 'Staff', cols, rows)
+  }
+
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
     const { error } = await supabase.from('staff').delete().eq('id', id)
@@ -223,12 +257,16 @@ export default function StaffPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Staff</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Employee and contractor directory</p>
         </div>
-        <Link
-          to="/staff/new"
-          className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Add Staff
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportButton onExport={handleExport} disabled={rows.length === 0}
+            title={`Download the ${rows.length} staff shown, as filtered, to Excel`} />
+          <Link
+            to="/staff/new"
+            className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Add Staff
+          </Link>
+        </div>
       </div>
 
       {/* Stat cards */}

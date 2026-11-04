@@ -10,6 +10,8 @@ import { useTradeRoster } from '@/hooks/useTier2Workers'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { useWorkerPhotos } from '@/lib/workerPhotos'
 import { useWorkerDetails } from '@/lib/workerDetails'
+import { ExportButton } from '@/components/shared/ExportButton'
+import { downloadXlsx, fileDate, type XlsxColumn } from '@/lib/xlsxExport'
 import { BadgeCheck, ChevronDown, ChevronRight, Copy, ShieldAlert, UserCheck } from 'lucide-react'
 
 type Card = {
@@ -68,13 +70,42 @@ export default function WorkerRegisterPage() {
   const match = (w: Card) => !needle || `${w.name} ${w.phone ?? ''} ${w.trade ?? ''} ${w.last_site ?? ''}`.toLowerCase().includes(needle)
   const toConfirm = data.to_verify.filter(w => w.gaps.length === 0)
   const waiting = data.to_verify.filter(w => w.gaps.length > 0)
+  // Every worker in the register, whichever tab is open (search applied).
+  async function exportRegister() {
+    const all = [...data!.to_verify, ...data!.verified].filter(match).sort((a, b) => a.name.localeCompare(b.name))
+    const cols: XlsxColumn<Card>[] = [
+      { header: 'Name', value: w => w.name, width: 28 },
+      { header: 'Status', value: w => (w.verified_at ? 'Verified' : w.gaps.length ? 'Waiting on the site' : 'Ready to confirm'), width: 18 },
+      { header: 'Missing', value: w => w.gaps.join(', '), width: 20 },
+      { header: 'Phone', value: w => w.phone, width: 15 },
+      { header: 'National ID', value: w => w.national_id, width: 18 },
+      { header: 'ID photo', value: w => (w.has_id_photo ? 'Yes' : 'No') },
+      { header: 'Trade', value: w => w.trade?.replace(/_/g, ' '), width: 16 },
+      { header: 'Day rate', value: w => w.day_rate, kind: 'money' },
+      { header: 'Bank', value: w => w.bank?.bank, width: 22 },
+      { header: 'Account number', value: w => w.bank?.number, width: 20 },
+      { header: 'Account holder', value: w => w.bank?.holder, width: 22 },
+      { header: 'Account also used by', value: w => w.shares_with?.join(', '), width: 24 },
+      { header: 'Last worked', value: w => w.last_worked, kind: 'date' },
+      { header: 'Last site', value: w => w.last_site, width: 22 },
+      { header: 'Pay waiting', value: w => w.pay_waiting || null, kind: 'money' },
+      { header: 'First engaged', value: w => w.first_engaged_at, kind: 'date', width: 14 },
+      { header: 'Verified on', value: w => w.verified_at, kind: 'date' },
+      { header: 'Verified by', value: w => w.verified_by, width: 20 },
+      { header: 'Note', value: w => w.note, width: 30 },
+    ]
+    await downloadXlsx(`worker-register-${fileDate()}`, 'Worker register', cols, all)
+  }
   const list = (tab === 'confirm' ? toConfirm : tab === 'waiting' ? waiting : tab === 'verified' ? data.verified : []).filter(match)
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 pb-10">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-slate-100"><UserCheck className="h-6 w-6 text-brand" /> Worker register</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">The site team fills in each worker's details when they hire them — photo, phone, ID, trade, rate and bank account. HR checks them and accepts, or sends them back saying what to fix.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-slate-100"><UserCheck className="h-6 w-6 text-brand" /> Worker register</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">The site team fills in each worker's details when they hire them — photo, phone, ID, trade, rate and bank account. HR checks them and accepts, or sends them back saying what to fix.</p>
+        </div>
+        <ExportButton onExport={exportRegister} title="Download every worker in the register — verified or not — to Excel" />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
