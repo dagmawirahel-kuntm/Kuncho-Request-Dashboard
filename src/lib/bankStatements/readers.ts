@@ -1,8 +1,11 @@
 // Reading a statement file into a grid of text cells. CSV (CBE's internet
 // banking export, or any bank's), Excel (.xlsx) and PDF are supported; the
-// grid then goes through grid.ts, the same for every format.
+// grid then goes through grid.ts, the same for every format. A PDF from a
+// bank with a profile (profiles.ts) is read the way that bank lays it out.
 
 import { parseDate, type Grid } from './grid'
+import { pdfPages, type PdfItem, type PdfJsLike, type PdfPageText } from './pdfText'
+import { detectBankProfile, readWithProfile, type BankRead } from './profiles'
 
 export type SourceFormat = 'csv' | 'xlsx' | 'pdf'
 
@@ -11,6 +14,8 @@ export interface ReadStatement {
   grid: Grid
   /** The header row for PDFs, where columns are rebuilt from positions. */
   pdfHeaderRow?: number | null
+  /** Read with a bank's profile: its columns are known, with the bank's own figures to check against. */
+  bank?: BankRead
 }
 
 export async function readStatementFile(file: File): Promise<ReadStatement> {
@@ -25,8 +30,8 @@ export async function readStatementFile(file: File): Promise<ReadStatement> {
     throw new Error('Old .xls files can\'t be read — open it in Excel and save it as .xlsx (or CSV), then upload that.')
   }
   if (name.endsWith('.pdf') || file.type === 'application/pdf') {
-    const { grid, headerRow } = await readPdf(await file.arrayBuffer())
-    return { format: 'pdf', grid, pdfHeaderRow: headerRow }
+    const pages = await readPdfPages(await file.arrayBuffer())
+    return readPdfStatement(pages)
   }
   throw new Error('Upload the statement as CSV, Excel (.xlsx) or PDF')
 }
@@ -101,41 +106,43 @@ function cellText(v: unknown): string {
 // under. A description that wraps puts its pieces on the lines above and/or
 // below the line carrying the date; those pieces are joined to the
 // transaction they belong to.
-interface PdfItem { str: string; transform: number[]; width: number; height: number }
 interface Chunk { x: number; x2: number; text: string }
 interface PdfRow { y: number; cells: string[]; inTable: boolean }
 
 const HEADER_HINT = /^(value ?date|date|trans(action)? ?date|post(ing)? ?date|narration|description|particulars|details|debit|credit|withdrawals?|deposits?|balance|reference|ref(erence)? ?no\.?|amount)$/i
 const SUMMARY_ROW = /\b(opening|closing|starting|ending|brought|carried)\b|\btotal/i
 
-async function readPdf(buf: ArrayBuffer): Promise<{ grid: Grid; headerRow: number | null }> {
+async function readPdfPages(buf: ArrayBuffer): Promise<PdfPageText[]> {
   const pdfjs = await import('pdfjs-dist')
   const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default
-  return pdfToGrid(pdfjs, new Uint8Array(buf))
+  return pdfPages(pdfjs, new Uint8Array(buf))
 }
 
-interface PdfJsLike {
-  getDocument(src: { data: Uint8Array }): { promise: Promise<{
-    numPages: number
-    getPage(n: number): Promise<{ getTextContent(): Promise<{ items: unknown[] }> }>
-  }> }
+/** A PDF's pages as a statement: by its bank's profile when there is one, otherwise column by column. */
+export function readPdfStatement(pages: PdfPageText[]): ReadStatement {
+  const profile = detectBankProfile(pages)
+  if (profile) {
+    const { grid, bank } = readWithProfile(profile, pages)
+    // A layout the profile no longer fits (the bank changed it) falls back to the generic reading.
+    if (grid.length > 1) return { format: 'pdf', grid, pdfHeaderRow: 0, bank }
+  }
+  const { grid, headerRow } = pagesToGrid(pages)
+  return { format: 'pdf', grid, pdfHeaderRow: headerRow }
 }
 
 /** Exported so it can be exercised outside the browser with pdf.js's Node build. */
 export async function pdfToGrid(pdfjs: PdfJsLike, data: Uint8Array): Promise<{ grid: Grid; headerRow: number | null }> {
-  const doc = await pdfjs.getDocument({ data }).promise
+  return pagesToGrid(await pdfPages(pdfjs, data))
+}
+
+function pagesToGrid(pages: PdfPageText[]): { grid: Grid; headerRow: number | null } {
   const grid: Grid = []
   let headerRow: number | null = null
   let columns: { start: number; end: number }[] | null = null
   let dateCol = 0
-  let sawText = false
 
-  for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p)
-    const items = ((await page.getTextContent()).items as PdfItem[])
-      .filter(it => typeof it.str === 'string' && it.str.trim() !== '')
-    if (items.length > 0) sawText = true
+  for (const { items } of pages) {
 
     // Words on (nearly) the same baseline form a visual line.
     const baselines: { y: number; items: PdfItem[] }[] = []
@@ -174,9 +181,6 @@ export async function pdfToGrid(pdfjs: PdfJsLike, data: Uint8Array): Promise<{ g
       rows.push({ y: b.y, cells: text, inTable: !SUMMARY_ROW.test(text.join(' ')) })
     }
     grid.push(...joinWrappedRows(rows, dateCol).map(r => r.cells))
-  }
-  if (!sawText) {
-    throw new Error('This PDF is a scanned image with no text in it. Ask the bank for the CSV or Excel export, or a PDF downloaded from internet banking.')
   }
   return { grid, headerRow }
 }

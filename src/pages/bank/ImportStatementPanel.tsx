@@ -6,13 +6,14 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { autoMatchBankLines, type MatchRound } from '@/lib/bankAutoMatch'
 import { readStatementFile, type ReadStatement } from '@/lib/bankStatements/readers'
+import { BANK_PROFILES, sameAccountNumber, statementChecks } from '@/lib/bankStatements/profiles'
 import {
   applyMapping, detectMapping, headerSignature,
   type ColumnMapping, type DateOrder, type ParsedStatement,
 } from '@/lib/bankStatements/grid'
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Info, Settings2, Upload, XCircle } from 'lucide-react'
 
-interface AccountOpt { id: string; account_name: string; status: string | null; has_lines: boolean }
+interface AccountOpt { id: string; account_name: string; account_number: string | null; status: string | null; has_lines: boolean }
 
 interface DryRun {
   total: number
@@ -58,12 +59,12 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
     queryKey: ['bank-import-accounts'],
     queryFn: async () => {
       const [{ data: a, error }, { data: ov }] = await Promise.all([
-        supabase.from('accounts').select('id, account_name, status').order('account_name'),
+        supabase.from('accounts').select('id, account_name, account_number, status').order('account_name'),
         supabase.from('v_bank_account_overview').select('account_id, line_count'),
       ])
       if (error) throw error
       const used = new Set(((ov ?? []) as { account_id: string; line_count: number }[]).filter(o => o.line_count > 0).map(o => o.account_id))
-      return ((a ?? []) as { id: string; account_name: string; status: string | null }[])
+      return ((a ?? []) as { id: string; account_name: string; account_number: string | null; status: string | null }[])
         .map(x => ({ ...x, has_lines: used.has(x.id) }))
         .sort((x, y) => Number(y.has_lines) - Number(x.has_lines)
           || Number((x.status ?? '').toLowerCase() === 'inactive') - Number((y.status ?? '').toLowerCase() === 'inactive')
@@ -90,10 +91,11 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
     ? formats.find(f => f.source_format === read.format && headerSignature(read.grid, f.mapping.headerRow) === f.header_signature) ?? null
     : null, [read, formats])
   const detected = useMemo(() => (read ? detectMapping(read.grid) : null), [read])
+  // A bank with a profile brings its own columns; otherwise the saved layout or the detected one.
   const mapping = useMemo<ColumnMapping | null>(() => (read
-    ? manual ?? saved?.mapping ?? detected ?? { headerRow: read.pdfHeaderRow ?? 0, date: 0, narration: [1], dateOrder: 'dmy' }
+    ? manual ?? read.bank?.mapping ?? saved?.mapping ?? detected ?? { headerRow: read.pdfHeaderRow ?? 0, date: 0, narration: [1], dateOrder: 'dmy' }
     : null), [read, manual, saved, detected])
-  const mappingSource = manual ? 'manual' : saved ? 'saved' : detected ? 'detected' : 'none'
+  const mappingSource = manual ? 'manual' : read?.bank ? 'bank' : saved ? 'saved' : detected ? 'detected' : 'none'
   const mappingOpen = showMapping || mappingSource === 'none'
 
   async function handleFile(file: File) {
@@ -102,7 +104,10 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
       const r = await readStatementFile(file)
       if (r.grid.length === 0) throw new Error('No rows could be read from this file')
       setRead(r)
-      if (r.format !== 'csv') setShowMapping(true)
+      if (r.format !== 'csv' && !r.bank) setShowMapping(true)
+      // The statement names its account: pick it.
+      const mine = r.bank?.accountNumber ? accounts.filter(a => sameAccountNumber(a.account_number, r.bank!.accountNumber)) : []
+      if (mine.length === 1) setAccountId(mine[0].id)
     } catch (e) {
       toast((e as Error).message, 'error')
       setFileName(null)
@@ -140,7 +145,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
     })
     if (error) { setImporting(false); toast(error.message, 'error'); return }
     // Remember a layout that had to be detected or mapped, for this bank's next file.
-    if (mappingSource !== 'saved') {
+    if (mappingSource !== 'saved' && mappingSource !== 'bank') {
       await supabase.from('bank_statement_formats').upsert([{
         account_id: accountId, source_format: read.format,
         header_signature: headerSignature(read.grid, mapping.headerRow), mapping, updated_at: new Date().toISOString(),
@@ -175,6 +180,9 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
     onImported(acct)
   }
 
+  const checks = parsed && read?.bank && mappingSource === 'bank' ? statementChecks(parsed, read.bank) : null
+  const chosen = accounts.find(a => a.id === accountId)
+  const wrongAccount = !!(read?.bank?.accountNumber && chosen?.account_number && !sameAccountNumber(chosen.account_number, read.bank.accountNumber))
   const moneyOut = parsed?.lines.reduce((s, l) => s + (l.debit ?? 0), 0) ?? 0
   const moneyIn = parsed?.lines.reduce((s, l) => s + (l.credit ?? 0), 0) ?? 0
   const columns = read ? columnChoices(read, mapping?.headerRow ?? 0) : []
@@ -193,7 +201,10 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
             <input type="file" accept=".csv,.xlsx,.pdf,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
           </label>
-          <p className="mt-1 text-[11px] text-slate-400">CBE's internet-banking CSV reads itself. Another bank's Excel or PDF is mapped once, then remembered for that account.</p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            CBE's internet-banking CSV reads itself, and so do PDF statements from {BANK_PROFILES.map(b => b.short).join(', ')}.
+            Another bank's file is mapped once, then remembered for that account.
+          </p>
         </div>
       </div>
 
@@ -202,7 +213,8 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <FileSpreadsheet className="h-3.5 w-3.5" />
-              {read.format.toUpperCase()} · columns {mappingSource === 'saved' ? 'from the layout saved for this account' : mappingSource === 'detected' ? 'recognised from the header' : mappingSource === 'manual' ? 'as you set them' : 'not recognised — map them below'}
+              {read.format.toUpperCase()} · {mappingSource === 'bank' ? `read as a ${read.bank!.bank} statement${read.bank!.accountNumber ? ` for account ${read.bank!.accountNumber}` : ''}`
+                : `columns ${mappingSource === 'saved' ? 'from the layout saved for this account' : mappingSource === 'detected' ? 'recognised from the header' : mappingSource === 'manual' ? 'as you set them' : 'not recognised — map them below'}`}
               {parsed.reversed && ' · newest-first statement put in date order'}
             </p>
             <button onClick={() => setShowMapping(v => !v)} className="flex items-center gap-1 text-xs text-brand hover:underline">
@@ -222,6 +234,22 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
             <Stat label="Closing" value={parsed.endingBalance != null ? formatCurrency(parsed.endingBalance) : '—'} />
           </div>
 
+          {wrongAccount && (
+            <Note tone="red" icon={<XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
+              This statement is for account {read.bank!.accountNumber}, but {chosen!.account_name} is {chosen!.account_number}. Check the account before importing.
+            </Note>
+          )}
+          {checks && checks.problems.length > 0 && (
+            <Note tone="red" icon={<XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
+              <p className="font-medium">The lines read don't match the bank's own figures — a line was missed or misread. Don't import this file; send it to whoever maintains the app.</p>
+              <ul className="mt-1 list-inside list-disc">{checks.problems.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            </Note>
+          )}
+          {checks && checks.problems.length === 0 && checks.agreed.length > 0 && (
+            <Note tone="green" icon={<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
+              Matches the bank's own figures: {checks.agreed.join(', ')}.
+            </Note>
+          )}
           {parsed.warnings.length > 0 && (
             <Note tone="amber" icon={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
               <p className="font-medium">{parsed.warnings[0]}</p>
@@ -244,7 +272,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
 
           <div className="flex justify-end">
             <button onClick={handleImport}
-              disabled={importing || !accountId || !dry || dry.new === 0 || dry.in_closed_period > 0 || parsed.lines.length === 0}
+              disabled={importing || !accountId || !dry || dry.new === 0 || dry.in_closed_period > 0 || parsed.lines.length === 0 || wrongAccount || (checks?.problems.length ?? 0) > 0}
               className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
               {matching ? `Matching… ${Math.min(matching.tried, matching.of)} of ${matching.of}` : importing ? 'Importing…' : dry ?`Import ${dry.new} new line${dry.new === 1 ? '' : 's'}` : 'Import'}
             </button>
