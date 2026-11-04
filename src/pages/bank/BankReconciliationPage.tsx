@@ -13,7 +13,8 @@ import { useBankAuditFlags } from '@/lib/bankAudit'
 import { inRange } from '@/lib/bankReconciliation'
 import { brandFor, brandVars, useAccountBrands } from '@/lib/bankBrands'
 import { BankBanner, BankLookEditor, BankMark } from '@/components/bank/BankLook'
-import { CalendarRange, Lock } from 'lucide-react'
+import { useFyFlag } from '@/lib/fiscalFlag'
+import { CalendarRange, CalendarX2, Lock } from 'lucide-react'
 
 type Tab = 'queue' | 'audit' | 'import' | 'statements'
 const TABS: Tab[] = ['queue', 'audit', 'import', 'statements']
@@ -58,6 +59,35 @@ export default function BankReconciliationPage() {
     },
   })
   const withLines = overview.filter(a => a.line_count > 0).sort((a, b) => b.line_count - a.line_count)
+
+  // Lines dated outside the fiscal year being worked in, per account: a
+  // statement reaching back into last year is flagged, not silently counted.
+  const fyFlag = useFyFlag()
+  const { data: otherFy = new Map<string, { n: number; open: number; years: Set<string> }>() } = useQuery({
+    queryKey: ['bank-lines', 'other-fy', fyFlag.fy?.start_date, fyFlag.fy?.end_date],
+    enabled: !!fyFlag.fy,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_bank_line_status').select('account_id, value_date, reconciled_as')
+        .or(`value_date.lt.${fyFlag.fy!.start_date},value_date.gt.${fyFlag.fy!.end_date}`)
+      if (error) throw error
+      const m = new Map<string, { n: number; open: number; years: Set<string> }>()
+      for (const l of (data ?? []) as { account_id: string; value_date: string; reconciled_as: string | null }[]) {
+        const v = m.get(l.account_id) ?? { n: 0, open: 0, years: new Set<string>() }
+        v.n++; if (!l.reconciled_as) v.open++
+        v.years.add(fyFlag.fyOf(l.value_date))
+        m.set(l.account_id, v)
+      }
+      return m
+    },
+  })
+  const otherFyNote = (a: AccountOverview) => {
+    const o = otherFy.get(a.account_id)
+    if (!o || !fyFlag.fy) return null
+    const years = [...o.years].sort().join(', ')
+    return o.n >= a.line_count
+      ? `Every line is from ${years}, not ${fyFlag.fy.label}${o.open ? ` · ${o.open} still open` : ''}`
+      : `${o.n} of ${a.line_count} lines are from ${years}${o.open ? ` · ${o.open} still open` : ''}`
+  }
   const openTotal = withLines.reduce((s, a) => s + a.open_count, 0)
   const accounts = overview.map(a => ({ id: a.account_id, account_name: a.account_name }))
   // Statements & close work on one account: the chosen one, or the busiest.
@@ -112,6 +142,11 @@ export default function BankReconciliationPage() {
                   <Lock className="h-3 w-3" /> {a.closed_through ? `Closed through ${formatDate(a.closed_through)}` : 'Never closed'}
                   {a.oldest_open && <> · oldest open line {formatDate(a.oldest_open)}</>}
                 </p>
+                {otherFyNote(a) && (
+                  <p className="mt-1.5 flex items-start gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                    <CalendarX2 className="mt-px h-3 w-3 shrink-0" /> {otherFyNote(a)}
+                  </p>
+                )}
                 </div>
               </button>
             )
@@ -122,7 +157,7 @@ export default function BankReconciliationPage() {
       <div className={`space-y-5 ${selectedBrand ? 'bank-theme' : ''}`} style={selectedBrand ? brandVars(selectedBrand) : undefined}>
       {selected && selectedBrand && (
         <BankBanner brand={selectedBrand} account={brandRows?.get(selected.account_id)} overview={selected}
-          canEdit={canAct && !!brandRows?.get(selected.account_id)} onEdit={() => setEditingLook(true)} />
+          canEdit={canAct && !!brandRows?.get(selected.account_id)} onEdit={() => setEditingLook(true)} fyNote={otherFyNote(selected)} />
       )}
       <div className="flex gap-1 overflow-x-auto border-b dark:border-slate-700">
         {tabs.map(t => (

@@ -9,6 +9,8 @@ import { readStatementFile, type ReadStatement } from '@/lib/bankStatements/read
 import { BANK_PROFILES, sameAccountNumber, statementChecks } from '@/lib/bankStatements/profiles'
 import { brandFor, brandForProfile, brandVars, useAccountBrands } from '@/lib/bankBrands'
 import { BankMark } from '@/components/bank/BankLook'
+import { useFyFlag, type FyFlag } from '@/lib/fiscalFlag'
+import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
 import {
   applyMapping, detectMapping, headerSignature,
   type ColumnMapping, type DateOrder, type ParsedStatement,
@@ -46,6 +48,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: brandRows } = useAccountBrands()
+  const fyFlag = useFyFlag()
   const [accountId, setAccountId] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [read, setRead] = useState<ReadStatement | null>(null)
@@ -191,6 +194,9 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   const look = read?.bank && mappingSource === 'bank'
     ? (chosenBrand && !wrongAccount ? brandFor(chosenBrand) : brandForProfile(read.bank.profileId, read.bank.bank))
     : chosenBrand ? brandFor(chosenBrand) : null
+  // Lines dated in another fiscal year: imported all the same, but said plainly.
+  const otherFy = parsed?.lines.filter(l => fyFlag.outside(l.valueDate)) ?? []
+  const otherYears = [...new Set(otherFy.map(l => fyFlag.fyOf(l.valueDate)))].sort()
   const moneyOut = parsed?.lines.reduce((s, l) => s + (l.debit ?? 0), 0) ?? 0
   const moneyIn = parsed?.lines.reduce((s, l) => s + (l.credit ?? 0), 0) ?? 0
   const columns = read ? columnChoices(read, mapping?.headerRow ?? 0) : []
@@ -252,7 +258,10 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
             <Stat label="Lines" value={String(parsed.lines.length)} />
             <Stat label="Period" value={parsed.lines.length ? `${formatDate(parsed.lines[0].valueDate)} → ${formatDate(parsed.lines[parsed.lines.length - 1].valueDate)}` : '—'} />
             <Stat label="Opening" value={parsed.startingBalance != null ? formatCurrency(parsed.startingBalance) : '—'} />
-            <Stat label="Money out / in" value={`${formatCurrency(moneyOut)} / ${formatCurrency(moneyIn)}`} />
+            <div>
+              <p className="text-[11px] text-slate-400">DR (out) / CR (in)</p>
+              <p className="text-xs font-semibold"><SignedAmount direction="debit" amount={moneyOut} /> / <SignedAmount direction="credit" amount={moneyIn} /></p>
+            </div>
             <Stat label="Closing" value={parsed.endingBalance != null ? formatCurrency(parsed.endingBalance) : '—'} />
           </div>
 
@@ -272,6 +281,15 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
               Matches the bank's own figures: {checks.agreed.join(', ')}.
             </Note>
           )}
+          {otherFy.length > 0 && fyFlag.fy && (
+            <Note tone="amber" icon={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
+              <p className="font-medium">
+                {otherFy.length === parsed.lines.length ? 'Every line is' : `${otherFy.length} of the ${parsed.lines.length} lines ${otherFy.length === 1 ? 'is' : 'are'}`} dated in {otherYears.join(' and ')}, not {fyFlag.fy.label}
+                {' '}({formatDate(otherFy[0].valueDate)} → {formatDate(otherFy[otherFy.length - 1].valueDate)}).
+              </p>
+              <p className="mt-0.5">They import all the same, but they belong to {otherYears.length === 1 ? "that year's" : "those years'"} books: reconcile and close them there, not in {fyFlag.fy.label}.</p>
+            </Note>
+          )}
           {parsed.warnings.length > 0 && (
             <Note tone="amber" icon={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
               <p className="font-medium">{parsed.warnings[0]}</p>
@@ -284,7 +302,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
             </Note>
           )}
 
-          {parsed.lines.length > 0 && <PreviewTable parsed={parsed} />}
+          {parsed.lines.length > 0 && <PreviewTable parsed={parsed} flag={fyFlag} />}
 
           {accountId && parsed.lines.length > 0 && (
             checking ? <p className="text-xs text-slate-400">Checking against what's already imported…</p>
@@ -335,29 +353,46 @@ function DryRunSummary({ dry }: { dry: DryRun }) {
   )
 }
 
-function PreviewTable({ parsed }: { parsed: ParsedStatement }) {
+function PreviewTable({ parsed, flag }: { parsed: ParsedStatement; flag: FyFlag }) {
   const shown = parsed.lines.length > 10 ? [...parsed.lines.slice(0, 7), null, ...parsed.lines.slice(-2)] : parsed.lines
+  // Each day's totals over the whole statement, for its heading.
+  const days = new Map<string, { out: number; inn: number; n: number }>()
+  for (const l of parsed.lines) {
+    const d = days.get(l.valueDate) ?? { out: 0, inn: 0, n: 0 }
+    days.set(l.valueDate, { out: d.out + (l.debit ?? 0), inn: d.inn + (l.credit ?? 0), n: d.n + 1 })
+  }
+  const rows: React.ReactNode[] = []
+  let lastDate: string | null = null
+  shown.forEach((l, i) => {
+    if (l === null) {
+      rows.push(<tr key={`gap-${i}`}><td colSpan={6} className="px-3 py-1 text-center text-slate-400">… {parsed.lines.length - 9} more …</td></tr>)
+      lastDate = null
+      return
+    }
+    if (l.valueDate !== lastDate) {
+      const d = days.get(l.valueDate)!
+      rows.push(<tr key={`d-${i}`}><td colSpan={6} className="p-0"><DateHeading date={l.valueDate} out={d.out} inn={d.inn} count={d.n} flag={flag} compact /></td></tr>)
+      lastDate = l.valueDate
+    }
+    rows.push(
+      <tr key={i}>
+        <td className="px-3 py-1.5">{(l.debit ?? 0) > 0 ? <DirectionTag direction="debit" size="xs" /> : <DirectionTag direction="credit" size="xs" />}</td>
+        <td className="max-w-[260px] truncate px-3 py-1.5 text-slate-600 dark:text-slate-300">{l.narration ?? '—'}</td>
+        <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500">{l.reference ?? '—'}</td>
+        <td className="px-3 py-1.5 text-right">{l.debit != null ? <SignedAmount direction="debit" amount={l.debit} /> : ''}</td>
+        <td className="px-3 py-1.5 text-right">{l.credit != null ? <SignedAmount direction="credit" amount={l.credit} /> : ''}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{l.balance != null ? formatCurrency(l.balance) : '—'}</td>
+      </tr>,
+    )
+  })
   return (
     <div className="overflow-x-auto rounded-md border bg-white dark:border-slate-700 dark:bg-slate-800">
       <table className="w-full text-xs">
         <thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-          <tr><th className="px-3 py-1.5">Date</th><th className="px-3 py-1.5">Narration</th><th className="px-3 py-1.5">Reference</th>
-            <th className="px-3 py-1.5 text-right">Out</th><th className="px-3 py-1.5 text-right">In</th><th className="px-3 py-1.5 text-right">Balance</th></tr>
+          <tr><th className="px-3 py-1.5"><span className="sr-only">DR or CR</span></th><th className="px-3 py-1.5">Narration</th><th className="px-3 py-1.5">Reference</th>
+            <th className="px-3 py-1.5 text-right">DR · Money out</th><th className="px-3 py-1.5 text-right">CR · Money in</th><th className="px-3 py-1.5 text-right">Balance</th></tr>
         </thead>
-        <tbody className="divide-y dark:divide-slate-700">
-          {shown.map((l, i) => l === null ? (
-            <tr key={`gap-${i}`}><td colSpan={6} className="px-3 py-1 text-center text-slate-400">… {parsed.lines.length - 9} more …</td></tr>
-          ) : (
-            <tr key={i}>
-              <td className="whitespace-nowrap px-3 py-1.5 text-slate-600 dark:text-slate-300">{formatDate(l.valueDate)}</td>
-              <td className="max-w-[260px] truncate px-3 py-1.5 text-slate-600 dark:text-slate-300">{l.narration ?? '—'}</td>
-              <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500">{l.reference ?? '—'}</td>
-              <td className="px-3 py-1.5 text-right tabular-nums text-red-600 dark:text-red-400">{l.debit != null ? formatCurrency(l.debit) : ''}</td>
-              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{l.credit != null ? formatCurrency(l.credit) : ''}</td>
-              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{l.balance != null ? formatCurrency(l.balance) : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
+        <tbody className="divide-y dark:divide-slate-700">{rows}</tbody>
       </table>
     </div>
   )
@@ -377,8 +412,8 @@ const FIELDS: { key: keyof ColumnMapping; label: string; hint?: string }[] = [
   { key: 'date', label: 'Date *', hint: 'The value / transaction date' },
   { key: 'narration', label: 'Narration', hint: 'Description or particulars' },
   { key: 'reference', label: 'Reference' },
-  { key: 'debit', label: 'Money out (debit)' },
-  { key: 'credit', label: 'Money in (credit)' },
+  { key: 'debit', label: 'DR · Money out (debit)' },
+  { key: 'credit', label: 'CR · Money in (credit)' },
   { key: 'amount', label: 'Or: one signed amount', hint: 'Negative = money out' },
   { key: 'drcr', label: 'DR / CR column', hint: 'With a single amount' },
   { key: 'balance', label: 'Running balance' },
