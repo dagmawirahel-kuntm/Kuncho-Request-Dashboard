@@ -11,6 +11,7 @@ import {
 import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
 import { groupByDay } from '@/lib/statementDates'
 import { useFyFlag } from '@/lib/fiscalFlag'
+import { AccountPayerSetting, ReconciliationStatement } from './ReconciliationStatement'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Lock, Trash2, Unlock } from 'lucide-react'
 
 interface ImportRow {
@@ -30,7 +31,9 @@ interface ImportRow {
 export function StatementsPanel({ account }: { account: AccountOverview }) {
   return (
     <div className="space-y-4">
+      <ReconciliationStatement account={account} />
       <ClosePeriod account={account} />
+      <AccountPayerSetting account={account} />
       <ImportHistory accountId={account.account_id} />
       <Rules accountId={account.account_id} />
     </div>

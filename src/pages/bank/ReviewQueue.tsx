@@ -17,9 +17,11 @@ import {
 } from '@/lib/bankReconciliation'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { SeveralPayments } from './SeveralPayments'
+import { PayerSelect, RecordExpenseFromLine } from './RecordFromLine'
+import { useAccountPayer } from '@/lib/bankPayers'
 import {
   ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
-  Repeat, Search, Sparkles, AlertTriangle, Layers,
+  Repeat, Search, Sparkles, AlertTriangle, Layers, FilePlus2,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -195,12 +197,17 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 }
 
 // ── One line, being reconciled ──────────────────────────────────────────
-type Tab = 'suggest' | 'several' | 'find' | 'explain' | 'transfer'
+type Tab = 'suggest' | 'several' | 'find' | 'record' | 'explain' | 'transfer'
 
 function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: { id: string; account_name: string }[]; onDone: () => void }) {
   const { toast } = useToast()
   const [tab, setTab] = useState<Tab>('suggest')
   const [busy, setBusy] = useState(false)
+  // Who made the payment, for an approved expense nobody is recorded as
+  // paying: the account's usual payer unless someone else is picked.
+  const { data: accountPayer = null } = useAccountPayer(line.account_id)
+  const [pickedPayer, setPayer] = useState<string | null>(null)
+  const payer = pickedPayer ?? accountPayer ?? ''
 
   const { data: suggestions = [], isLoading } = useQuery({
     queryKey: ['bank-suggestions', line.line_id],
@@ -225,10 +232,12 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
 
   async function apply(kind: string, targetId: string) {
     setBusy(true)
-    const { error } = await supabase.rpc('apply_bank_line_match', { p_line_id: line.line_id, p_kind: kind, p_target_id: targetId })
+    const { error } = line.direction === 'debit' && payer
+      ? await supabase.rpc('apply_bank_line_match_paid_by', { p_line_id: line.line_id, p_kind: kind, p_target_id: targetId, p_paid_by: payer })
+      : await supabase.rpc('apply_bank_line_match', { p_line_id: line.line_id, p_kind: kind, p_target_id: targetId })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
-    toast('Reconciled', 'success')
+    toast(kind === 'bank_charge' ? 'Settled as a bank charge' : 'Reconciled', 'success')
     onDone()
   }
 
@@ -236,6 +245,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
     { id: 'suggest', label: `Suggestions${suggestions.length ? ` (${suggestions.length})` : ''}`, icon: <Sparkles className="h-3.5 w-3.5" /> },
     ...(line.direction === 'debit' ? [{ id: 'several' as const, label: `Several payments${combos.length ? ` (${combos.length})` : ''}`, icon: <Layers className="h-3.5 w-3.5" /> }] : []),
     { id: 'find', label: 'Find', icon: <Search className="h-3.5 w-3.5" /> },
+    ...(line.direction === 'debit' ? [{ id: 'record' as const, label: 'Record it', icon: <FilePlus2 className="h-3.5 w-3.5" /> }] : []),
     { id: 'explain', label: 'Explain', icon: <Coins className="h-3.5 w-3.5" /> },
     { id: 'transfer', label: 'Between accounts', icon: <Repeat className="h-3.5 w-3.5" /> },
   ]
@@ -251,6 +261,14 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
         ))}
       </div>
 
+      {line.direction === 'debit' && (tab === 'suggest' || tab === 'find') && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-dashed bg-white/60 px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
+          <PayerSelect value={payer} onChange={setPayer} accountPayer={accountPayer} label="Who made this payment" />
+          <span className="text-[11px] text-slate-400">
+            Used when the expense is approved but nobody is recorded as paying it. It can't be whoever approved it.
+          </span>
+        </div>
+      )}
       {tab === 'suggest' && combos.length > 0 && (
         <button onClick={() => setTab('several')}
           className="flex w-full items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-200">
@@ -267,6 +285,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
         : suggestions.length === 0 ? (
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Nothing on record looks like this line. <button onClick={() => setTab('find')} className="text-brand hover:underline">Search</button>,
+            {line.direction === 'debit' && <>{' '}<button onClick={() => setTab('record')} className="text-brand hover:underline">record the expense</button>,</>}
             {' '}<button onClick={() => setTab('explain')} className="text-brand hover:underline">explain it</button> (bank charge, tax, loan…),
             or mark it as a <button onClick={() => setTab('transfer')} className="text-brand hover:underline">transfer between your accounts</button>.
           </p>
@@ -289,10 +308,14 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
                   <Link to={`/sourcing/${s.target_id}`} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
                     Open order <ExternalLink className="h-3 w-3" />
                   </Link>
+                ) : s.kind === 'expense' && notApproved(s) ? (
+                  <Link to={`/expenses/${s.target_id}`} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
+                    Open to approve <ExternalLink className="h-3 w-3" />
+                  </Link>
                 ) : (
                   <button onClick={() => apply(s.kind, s.target_id)} disabled={busy}
                     className="flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
-                    <Link2 className="h-3 w-3" /> Match
+                    {s.kind === 'bank_charge' ? <><Coins className="h-3 w-3" /> Settle as charge</> : <><Link2 className="h-3 w-3" /> Match</>}
                   </button>
                 )}
               </div>
@@ -303,10 +326,16 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
 
       {tab === 'several' && <SeveralPayments line={line} onDone={onDone} />}
       {tab === 'find' && <FindRecord line={line} busy={busy} onPick={apply} />}
+      {tab === 'record' && <RecordExpenseFromLine line={line} accountPayer={accountPayer} onDone={onDone} />}
       {tab === 'explain' && <ExplainLine line={line} onDone={onDone} />}
       {tab === 'transfer' && <TransferLine line={line} accounts={accounts} onDone={onDone} />}
     </div>
   )
+}
+
+/** A suggestion the narration names but that isn't approved for payment yet (498). */
+function notApproved(s: Suggestion) {
+  return /isn't approved/.test(s.reason)
 }
 
 function ScoreDot({ score }: { score: number }) {
