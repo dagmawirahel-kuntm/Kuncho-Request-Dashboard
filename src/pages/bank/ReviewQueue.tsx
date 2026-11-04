@@ -1,7 +1,8 @@
 import { brandFor, useAccountBrands } from '@/lib/bankBrands'
 import { BankChip } from '@/components/bank/BankLook'
 import { useFyFlag } from '@/lib/fiscalFlag'
-import { FyBadge } from '@/components/shared/FyBadge'
+import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
+import { groupByDay } from '@/lib/statementDates'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,7 +18,7 @@ import {
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { SeveralPayments } from './SeveralPayments'
 import {
-  ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
+  ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
   Repeat, Search, Sparkles, AlertTriangle, Layers,
 } from 'lucide-react'
 
@@ -103,7 +104,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
           {(['all', 'debit', 'credit'] as const).map(d => (
             <button key={d} onClick={() => setDirection(d)}
               className={`px-3 py-1.5 ${direction === d ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
-              {d === 'all' ? 'All' : d === 'debit' ? 'Money out' : 'Money in'}
+              {d === 'all' ? 'All' : d === 'debit' ? <><b>DR</b> · Money out</> : <><b>CR</b> · Money in</>}
             </button>
           ))}
         </div>
@@ -137,7 +138,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 
       {!showDone && shown.length > 0 && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          {shown.length} line{shown.length === 1 ? '' : 's'} to reconcile · {formatCurrency(totalOut)} out · {formatCurrency(totalIn)} in.
+          {shown.length} line{shown.length === 1 ? '' : 's'} to reconcile · DR (out) <SignedAmount direction="debit" amount={totalOut} /> · CR (in) <SignedAmount direction="credit" amount={totalIn} />.
           Open a line to see what it probably is.
         </p>
       )}
@@ -149,20 +150,18 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
             {showDone ? 'No reconciled lines yet.' : 'Every line is reconciled.'}{(from || to) && ' (between these dates)'}
           </p>
         ) : (
-          <div className="divide-y dark:divide-slate-700">
-            {shown.map(l => (
+          <div>
+            {groupByDay(shown, l => l.value_date, l => ({ out: l.direction === 'debit' ? Number(l.amount) : 0, in: l.direction === 'credit' ? Number(l.amount) : 0 })).map(g => (
+            <div key={g.date}>
+            <DateHeading date={g.date} out={g.out} inn={g.in} count={g.lines.length} flag={fyFlag} />
+            <div className="divide-y dark:divide-slate-700">
+            {g.lines.map(l => (
               <div key={l.line_id}>
                 <button onClick={() => setOpenId(openId === l.line_id ? null : l.line_id)}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
                   {openId === l.line_id ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
-                  {l.direction === 'debit'
-                    ? <ArrowUpRight className="h-4 w-4 shrink-0 text-red-500" />
-                    : <ArrowDownLeft className="h-4 w-4 shrink-0 text-emerald-500" />}
+                  <DirectionTag direction={l.direction} />
                   {!accountId && <BankChip brand={brandFor(brandRows?.get(l.account_id) ?? { account_name: accountName.get(l.account_id) ?? '' })} />}
-                  <span className="w-20 shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                    {formatDate(l.value_date)}
-                    {fyFlag.outside(l.value_date) && <span className="mt-0.5 block"><FyBadge date={l.value_date} flag={fyFlag} /></span>}
-                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>
                     <span className="block truncate text-[11px] text-slate-400">
@@ -174,9 +173,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
                       {KIND_LABEL[l.reconciled_as!]}: {describeReconciled(l).map(d => d.text).join(', ')}
                     </span>
                   )}
-                  <span className={`w-32 shrink-0 text-right text-sm font-semibold tabular-nums ${l.direction === 'debit' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                    {l.direction === 'debit' ? '−' : '+'}{formatCurrency(Number(l.amount))}
-                  </span>
+                  <SignedAmount direction={l.direction} amount={Number(l.amount)} className="w-32 shrink-0 text-right text-sm font-semibold" />
                 </button>
                 {openId === l.line_id && (
                   showDone
@@ -184,6 +181,9 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
                     : <LineWorkbench line={l} accounts={accounts} onDone={() => { setOpenId(null); invalidateAll(qc) }} />
                 )}
               </div>
+            ))}
+            </div>
+            </div>
             ))}
           </div>
         )}
@@ -453,7 +453,7 @@ function ExplainLine({ line, onDone }: { line: BankLine; onDone: () => void }) {
       <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)" className={`${inputCls} max-w-md`} />
       <label className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
         <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
-        Always treat {line.direction === 'debit' ? 'money out' : 'money in'} on this account containing
+        Always treat {line.direction === 'debit' ? 'money out (DR)' : 'money in (CR)'} on this account containing
         <input value={ruleText} onChange={e => setRuleText(e.target.value)} disabled={!remember}
           className="w-48 rounded-md border px-2 py-1 text-xs disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         this way
@@ -512,7 +512,7 @@ function TransferLine({ line, accounts, onDone }: { line: BankLine; accounts: { 
       </div>
       <label className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
         <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
-        Always treat {line.direction === 'debit' ? 'money out' : 'money in'} containing
+        Always treat {line.direction === 'debit' ? 'money out (DR)' : 'money in (CR)'} containing
         <input value={ruleText} onChange={e => setRuleText(e.target.value)} disabled={!remember}
           className="w-48 rounded-md border px-2 py-1 text-xs disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         as a transfer with this account
@@ -585,7 +585,8 @@ function PaidWithoutBankLine({ accountId }: { accountId: string | null }) {
               <span className="w-20 shrink-0 text-slate-500">{formatDate(r.paid_on)}</span>
               <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{r.code ?? ''} {r.description ?? ''}</span>
               <span className="text-slate-400">{r.account_name}</span>
-              <span className="w-28 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(Number(r.amount))}</span>
+              <DirectionTag direction={r.kind === 'sale' ? 'credit' : 'debit'} size="xs" />
+              <SignedAmount direction={r.kind === 'sale' ? 'credit' : 'debit'} amount={Number(r.amount)} className="w-28 text-right" />
             </Link>
           ))}
         </div>

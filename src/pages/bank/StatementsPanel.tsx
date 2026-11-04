@@ -8,6 +8,9 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import {
   KIND_LABEL, classificationLabel, describeReconciled, type AccountOverview, type BankLine,
 } from '@/lib/bankReconciliation'
+import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
+import { groupByDay } from '@/lib/statementDates'
+import { useFyFlag } from '@/lib/fiscalFlag'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Lock, Trash2, Unlock } from 'lucide-react'
 
 interface ImportRow {
@@ -204,6 +207,7 @@ function ImportHistory({ accountId }: { accountId: string }) {
 }
 
 function LinesTable({ lines }: { lines: BankLine[] }) {
+  const fyFlag = useFyFlag()
   if (lines.length === 0) return <p className="py-4 text-center text-xs text-slate-400">Loading…</p>
   const out = lines.filter(l => l.direction === 'debit').reduce((s, l) => s + Number(l.amount), 0)
   const inn = lines.filter(l => l.direction === 'credit').reduce((s, l) => s + Number(l.amount), 0)
@@ -211,19 +215,21 @@ function LinesTable({ lines }: { lines: BankLine[] }) {
     <div className="overflow-x-auto border-t dark:border-slate-700">
       <table className="w-full text-xs">
         <thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-          <tr><th className="px-4 py-1.5">Date</th><th className="px-4 py-1.5">Narration</th><th className="px-4 py-1.5 text-right">Out</th>
-            <th className="px-4 py-1.5 text-right">In</th><th className="px-4 py-1.5 text-right">Balance</th><th className="px-4 py-1.5">Settles</th></tr>
+          <tr><th className="px-4 py-1.5"><span className="sr-only">Out or in</span></th><th className="px-4 py-1.5">Narration</th><th className="px-4 py-1.5 text-right">Money out (DR)</th>
+            <th className="px-4 py-1.5 text-right">Money in (CR)</th><th className="px-4 py-1.5 text-right">Balance</th><th className="px-4 py-1.5">Settles</th></tr>
         </thead>
         <tbody className="divide-y dark:divide-slate-700">
-          {lines.map(l => (
+          {groupByDay(lines, l => l.value_date, l => ({ out: Number(l.debit_amount ?? 0), in: Number(l.credit_amount ?? 0) })).flatMap(g => [
+            <tr key={`d-${g.date}`}><td colSpan={6} className="p-0"><DateHeading date={g.date} out={g.out} inn={g.in} count={g.lines.length} flag={fyFlag} compact /></td></tr>,
+            ...g.lines.map(l => (
             <tr key={l.line_id}>
-              <td className="whitespace-nowrap px-4 py-1.5 text-slate-600 dark:text-slate-300">{formatDate(l.value_date)}</td>
+              <td className="px-4 py-1.5"><DirectionTag direction={l.direction} size="xs" /></td>
               <td className="max-w-[240px] px-4 py-1.5 text-slate-600 dark:text-slate-300">
                 <span className="block truncate">{l.narration ?? '—'}</span>
                 <span className="block truncate font-mono text-[10px] text-slate-400">{l.reference}</span>
               </td>
-              <td className="px-4 py-1.5 text-right tabular-nums text-red-600 dark:text-red-400">{l.debit_amount != null ? formatCurrency(Number(l.debit_amount)) : ''}</td>
-              <td className="px-4 py-1.5 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{l.credit_amount != null ? formatCurrency(Number(l.credit_amount)) : ''}</td>
+              <td className="px-4 py-1.5 text-right">{l.debit_amount != null ? <SignedAmount direction="debit" amount={Number(l.debit_amount)} /> : ''}</td>
+              <td className="px-4 py-1.5 text-right">{l.credit_amount != null ? <SignedAmount direction="credit" amount={Number(l.credit_amount)} /> : ''}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">{l.running_balance != null ? formatCurrency(Number(l.running_balance)) : '—'}</td>
               <td className="max-w-[260px] px-4 py-1.5">
                 {l.reconciled_as ? (
@@ -236,12 +242,12 @@ function LinesTable({ lines }: { lines: BankLine[] }) {
                 ) : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">To reconcile</span>}
               </td>
             </tr>
-          ))}
+          ))])}
         </tbody>
         <tfoot className="border-t bg-slate-50 font-semibold dark:border-slate-600 dark:bg-slate-900/60">
           <tr><td className="px-4 py-1.5 text-slate-600 dark:text-slate-300" colSpan={2}>{lines.length} lines</td>
-            <td className="px-4 py-1.5 text-right tabular-nums">{formatCurrency(out)}</td>
-            <td className="px-4 py-1.5 text-right tabular-nums">{formatCurrency(inn)}</td><td colSpan={2} /></tr>
+            <td className="px-4 py-1.5 text-right"><SignedAmount direction="debit" amount={out} /></td>
+            <td className="px-4 py-1.5 text-right"><SignedAmount direction="credit" amount={inn} /></td><td colSpan={2} /></tr>
         </tfoot>
       </table>
     </div>
@@ -286,7 +292,7 @@ function Rules({ accountId }: { accountId: string }) {
           {rules.map(r => (
             <div key={r.id} className="flex flex-wrap items-center gap-3 px-4 py-2">
               <span className={r.is_active ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400 line-through'}>
-                {r.direction === 'debit' ? 'Money out' : r.direction === 'credit' ? 'Money in' : 'Any line'} containing <span className="font-mono">"{r.match_text}"</span> →{' '}
+                {r.direction === 'debit' ? 'DR · Money out' : r.direction === 'credit' ? 'CR · Money in' : 'Any line'} containing <span className="font-mono">"{r.match_text}"</span> →{' '}
                 <span className="font-medium">{r.classification === 'internal_transfer' ? `transfer with ${r.counter?.account_name ?? 'another account'}` : classificationLabel(r.classification)}</span>
               </span>
               <span className="text-slate-400">used {r.times_applied}×</span>

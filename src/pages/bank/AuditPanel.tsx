@@ -13,6 +13,7 @@ import {
   FLAG_META, MATCH_KIND, SEVERITY_META, useBankAuditAccounts, useBankAuditFlags, useBankAuditScorecard,
   useBankAuditSettings, useBankChargeRules, useRefreshBankAudit,
 } from '@/lib/bankAudit'
+import { DirectionTag } from '@/components/bank/StatementBits'
 import type { BankAuditFlagKind, BankAuditFlagRow, BankAuditScoreRow, BankAuditSettings, BankFlagSeverity } from '@/types/database'
 import {
   AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FilePlus2, Landmark, Link2, Search, Settings2, Upload,
@@ -244,7 +245,11 @@ function FlagRow({ f, canAct, onOpenLine }: { f: BankAuditFlagRow; canAct: boole
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="font-bold tabular-nums text-slate-800 dark:text-slate-100">{f.amount != null ? formatCurrency(Number(f.amount)) : '—'}</p>
+          <p className="flex items-center justify-end gap-1.5 font-bold tabular-nums text-slate-800 dark:text-slate-100">
+            {/* Money in with no sale, or a sale, is a credit; everything else here is a payment (debit). */}
+            <DirectionTag direction={f.kind === 'money_in_no_sale' || f.record_kind === 'sale' ? 'credit' : 'debit'} size="xs" />
+            {f.amount != null ? formatCurrency(Number(f.amount)) : '—'}
+          </p>
           {f.kind === 'amount_mismatch' && f.expected != null && (
             <p className="text-[11px] tabular-nums text-slate-400">system {formatCurrency(Number(f.expected))}</p>
           )}
