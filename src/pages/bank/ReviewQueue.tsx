@@ -17,7 +17,7 @@ import {
 } from '@/lib/bankReconciliation'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { SeveralPayments } from './SeveralPayments'
-import { PayerSelect, RecordExpenseFromLine } from './RecordFromLine'
+import { PayerSelect, RecordExpenseFromLine, RecordSaleFromLine } from './RecordFromLine'
 import { useAccountPayer } from '@/lib/bankPayers'
 import {
   ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
@@ -245,7 +245,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
     { id: 'suggest', label: `Suggestions${suggestions.length ? ` (${suggestions.length})` : ''}`, icon: <Sparkles className="h-3.5 w-3.5" /> },
     ...(line.direction === 'debit' ? [{ id: 'several' as const, label: `Several payments${combos.length ? ` (${combos.length})` : ''}`, icon: <Layers className="h-3.5 w-3.5" /> }] : []),
     { id: 'find', label: 'Find', icon: <Search className="h-3.5 w-3.5" /> },
-    ...(line.direction === 'debit' ? [{ id: 'record' as const, label: 'Record it', icon: <FilePlus2 className="h-3.5 w-3.5" /> }] : []),
+    { id: 'record', label: 'Record it', icon: <FilePlus2 className="h-3.5 w-3.5" /> },
     { id: 'explain', label: 'Explain', icon: <Coins className="h-3.5 w-3.5" /> },
     { id: 'transfer', label: 'Between accounts', icon: <Repeat className="h-3.5 w-3.5" /> },
   ]
@@ -285,7 +285,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
         : suggestions.length === 0 ? (
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Nothing on record looks like this line. <button onClick={() => setTab('find')} className="text-brand hover:underline">Search</button>,
-            {line.direction === 'debit' && <>{' '}<button onClick={() => setTab('record')} className="text-brand hover:underline">record the expense</button>,</>}
+            {' '}<button onClick={() => setTab('record')} className="text-brand hover:underline">{line.direction === 'debit' ? 'record the expense' : 'record the sale'}</button>,
             {' '}<button onClick={() => setTab('explain')} className="text-brand hover:underline">explain it</button> (bank charge, tax, loan…),
             or mark it as a <button onClick={() => setTab('transfer')} className="text-brand hover:underline">transfer between your accounts</button>.
           </p>
@@ -326,7 +326,9 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
 
       {tab === 'several' && <SeveralPayments line={line} onDone={onDone} />}
       {tab === 'find' && <FindRecord line={line} busy={busy} onPick={apply} />}
-      {tab === 'record' && <RecordExpenseFromLine line={line} accountPayer={accountPayer} onDone={onDone} />}
+      {tab === 'record' && (line.direction === 'debit'
+        ? <RecordExpenseFromLine line={line} accountPayer={accountPayer} onDone={onDone} />
+        : <RecordSaleFromLine line={line} onDone={onDone} />)}
       {tab === 'explain' && <ExplainLine line={line} onDone={onDone} />}
       {tab === 'transfer' && <TransferLine line={line} accounts={accounts} onDone={onDone} />}
     </div>
