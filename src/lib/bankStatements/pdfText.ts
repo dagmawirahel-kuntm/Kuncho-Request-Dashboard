@@ -15,7 +15,30 @@ export interface PdfJsLike {
   }> }
 }
 
+// pdf.js reads a page's text with `for await (… of stream)`. Safari (iPhone,
+// iPad, Mac) can't loop over a ReadableStream that way yet, so it failed with
+// "undefined is not a function". Give the stream the missing iterator.
+function allowStreamIteration() {
+  const proto = (globalThis as { ReadableStream?: { prototype: object } }).ReadableStream?.prototype as
+    | (Record<symbol, unknown> & { getReader(): ReadableStreamDefaultReader<unknown> })
+    | undefined
+  if (!proto || typeof proto[Symbol.asyncIterator] === 'function') return
+  proto[Symbol.asyncIterator] = async function* (this: ReadableStream<unknown>) {
+    const reader = this.getReader()
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) return
+        yield value
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+}
+
 export async function pdfPages(pdfjs: PdfJsLike, data: Uint8Array): Promise<PdfPageText[]> {
+  allowStreamIteration()
   const doc = await pdfjs.getDocument({ data }).promise
   const pages: PdfPageText[] = []
   for (let p = 1; p <= doc.numPages; p++) {
