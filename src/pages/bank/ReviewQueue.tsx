@@ -1,5 +1,7 @@
 import { brandFor, useAccountBrands } from '@/lib/bankBrands'
 import { BankChip } from '@/components/bank/BankLook'
+import { useFyFlag } from '@/lib/fiscalFlag'
+import { FyBadge } from '@/components/shared/FyBadge'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -47,6 +49,9 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   const [running, setRunning] = useState<number | null>(null)
   const accountName = useMemo(() => new Map(accounts.map(a => [a.id, a.account_name])), [accounts])
   const { data: brandRows } = useAccountBrands()
+  // Lines dated in another fiscal year are flagged, and can be set aside.
+  const fyFlag = useFyFlag()
+  const [hideOtherFy, setHideOtherFy] = useState(false)
 
   const { data: lines = [], isLoading } = useQuery({
     queryKey: ['bank-lines', 'queue', accountId, showDone, from, to],
@@ -62,9 +67,18 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
     },
   })
 
-  const shown = lines.filter(l =>
+  const matching = lines.filter(l =>
     (direction === 'all' || l.direction === direction) &&
     (!search.trim() || `${l.narration ?? ''} ${l.reference ?? ''} ${l.amount}`.toLowerCase().includes(search.trim().toLowerCase())))
+  const otherFy = matching.filter(l => fyFlag.outside(l.value_date))
+  const shown = hideOtherFy ? matching.filter(l => !fyFlag.outside(l.value_date)) : matching
+  // Which other years, with how many lines and how much money each.
+  const otherYears = [...otherFy.reduce((m, l) => {
+    const y = fyFlag.fyOf(l.value_date)
+    const v = m.get(y) ?? { n: 0, amount: 0 }
+    m.set(y, { n: v.n + 1, amount: v.amount + Number(l.amount) })
+    return m
+  }, new Map<string, { n: number; amount: number }>())]
 
   async function runAuto() {
     setRunning(0)
@@ -107,6 +121,20 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
         </button>
       </div>
 
+      {(otherFy.length > 0 || hideOtherFy) && fyFlag.fy && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/40 dark:bg-amber-900/10 dark:text-amber-200">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            {otherFy.length} line{otherFy.length === 1 ? ' is' : 's are'} dated outside {fyFlag.fy.label}:{' '}
+            {otherYears.map(([y, v]) => `${v.n} from ${y} (${formatCurrency(v.amount)})`).join(', ')}.
+            {' '}They belong to that year's books{hideOtherFy ? ', and are set aside here.' : ', and are counted in this list.'}
+          </span>
+          <button onClick={() => setHideOtherFy(v => !v)} className="shrink-0 rounded-md border border-amber-300 bg-white px-2 py-1 font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-transparent dark:text-amber-200">
+            {hideOtherFy ? 'Show them' : `Show only ${fyFlag.fy.label}`}
+          </button>
+        </div>
+      )}
+
       {!showDone && shown.length > 0 && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {shown.length} line{shown.length === 1 ? '' : 's'} to reconcile · {formatCurrency(totalOut)} out · {formatCurrency(totalIn)} in.
@@ -131,7 +159,10 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
                     ? <ArrowUpRight className="h-4 w-4 shrink-0 text-red-500" />
                     : <ArrowDownLeft className="h-4 w-4 shrink-0 text-emerald-500" />}
                   {!accountId && <BankChip brand={brandFor(brandRows?.get(l.account_id) ?? { account_name: accountName.get(l.account_id) ?? '' })} />}
-                  <span className="w-20 shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatDate(l.value_date)}</span>
+                  <span className="w-20 shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                    {formatDate(l.value_date)}
+                    {fyFlag.outside(l.value_date) && <span className="mt-0.5 block"><FyBadge date={l.value_date} flag={fyFlag} /></span>}
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>
                     <span className="block truncate text-[11px] text-slate-400">

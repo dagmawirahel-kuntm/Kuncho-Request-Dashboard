@@ -9,6 +9,7 @@ import { readStatementFile, type ReadStatement } from '@/lib/bankStatements/read
 import { BANK_PROFILES, sameAccountNumber, statementChecks } from '@/lib/bankStatements/profiles'
 import { brandFor, brandForProfile, brandVars, useAccountBrands } from '@/lib/bankBrands'
 import { BankMark } from '@/components/bank/BankLook'
+import { useFyFlag } from '@/lib/fiscalFlag'
 import {
   applyMapping, detectMapping, headerSignature,
   type ColumnMapping, type DateOrder, type ParsedStatement,
@@ -46,6 +47,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: brandRows } = useAccountBrands()
+  const fyFlag = useFyFlag()
   const [accountId, setAccountId] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [read, setRead] = useState<ReadStatement | null>(null)
@@ -191,6 +193,9 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   const look = read?.bank && mappingSource === 'bank'
     ? (chosenBrand && !wrongAccount ? brandFor(chosenBrand) : brandForProfile(read.bank.profileId, read.bank.bank))
     : chosenBrand ? brandFor(chosenBrand) : null
+  // Lines dated in another fiscal year: imported all the same, but said plainly.
+  const otherFy = parsed?.lines.filter(l => fyFlag.outside(l.valueDate)) ?? []
+  const otherYears = [...new Set(otherFy.map(l => fyFlag.fyOf(l.valueDate)))].sort()
   const moneyOut = parsed?.lines.reduce((s, l) => s + (l.debit ?? 0), 0) ?? 0
   const moneyIn = parsed?.lines.reduce((s, l) => s + (l.credit ?? 0), 0) ?? 0
   const columns = read ? columnChoices(read, mapping?.headerRow ?? 0) : []
@@ -270,6 +275,15 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
           {checks && checks.problems.length === 0 && checks.agreed.length > 0 && (
             <Note tone="green" icon={<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
               Matches the bank's own figures: {checks.agreed.join(', ')}.
+            </Note>
+          )}
+          {otherFy.length > 0 && fyFlag.fy && (
+            <Note tone="amber" icon={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
+              <p className="font-medium">
+                {otherFy.length === parsed.lines.length ? 'Every line is' : `${otherFy.length} of the ${parsed.lines.length} lines ${otherFy.length === 1 ? 'is' : 'are'}`} dated in {otherYears.join(' and ')}, not {fyFlag.fy.label}
+                {' '}({formatDate(otherFy[0].valueDate)} → {formatDate(otherFy[otherFy.length - 1].valueDate)}).
+              </p>
+              <p className="mt-0.5">They import all the same, but they belong to {otherYears.length === 1 ? "that year's" : "those years'"} books: reconcile and close them there, not in {fyFlag.fy.label}.</p>
             </Note>
           )}
           {parsed.warnings.length > 0 && (

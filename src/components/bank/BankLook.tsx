@@ -6,7 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { brandFor, brandVars, knownBank, type AccountBrandRow, type BankBrand } from '@/lib/bankBrands'
 import type { AccountOverview } from '@/lib/bankReconciliation'
-import { ImagePlus, Lock, Palette, RotateCcw } from 'lucide-react'
+import { CalendarX2, ImagePlus, Lock, Palette, RotateCcw } from 'lucide-react'
 
 /** The bank's logo, or its short name on its second colour when there's no logo. */
 export function BankMark({ brand, size = 'md' }: { brand: BankBrand; size?: 'xs' | 'sm' | 'md' | 'lg' }) {
@@ -36,12 +36,14 @@ export function BankChip({ brand }: { brand: BankBrand }) {
  * bank's internet banking shows an account: the bank's colours and logo, the
  * account and holder, the balance on the statement.
  */
-export function BankBanner({ brand, account, overview, canEdit, onEdit }: {
+export function BankBanner({ brand, account, overview, canEdit, onEdit, fyNote }: {
   brand: BankBrand
   account: AccountBrandRow | undefined
   overview: AccountOverview
   canEdit: boolean
   onEdit: () => void
+  /** Lines dated outside the fiscal year being worked in, said plainly. */
+  fyNote?: string | null
 }) {
   const balance = overview.statement_balance != null ? Number(overview.statement_balance) : null
   return (
@@ -73,6 +75,11 @@ export function BankBanner({ brand, account, overview, canEdit, onEdit }: {
           <Fact label="Statements" value={`${formatDate(overview.first_date)} → ${formatDate(overview.last_date)}`} />
           <Fact label="Closed through" value={overview.closed_through ? formatDate(overview.closed_through) : 'Never closed'} icon />
         </div>
+        {fyNote && (
+          <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold">
+            <CalendarX2 className="h-3.5 w-3.5" /> {fyNote}
+          </p>
+        )}
       </div>
       <div className="bank-banner-stripe h-1.5" />
     </div>
