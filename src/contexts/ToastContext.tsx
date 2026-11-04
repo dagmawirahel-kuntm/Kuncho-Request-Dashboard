@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { nudgeTrail } from '@/lib/returnTrail'
 
 type ToastType = 'success' | 'error' | 'info'
 interface Toast { id: number; message: string; type: ToastType }
@@ -12,6 +13,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const toast = useCallback((message: string, type: ToastType = 'success') => {
     const id = ++nextId.current
+    // Something got done: if a page is waiting for you to come back, say so.
+    if (type === 'success') nudgeTrail()
     setToasts(prev => [...prev, { id, message, type }])
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
   }, [])

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -14,6 +14,7 @@ import { inRange } from '@/lib/bankReconciliation'
 import { brandFor, brandVars, useAccountBrands } from '@/lib/bankBrands'
 import { BankBanner, BankLookEditor, BankMark } from '@/components/bank/BankLook'
 import { useFyFlag } from '@/lib/fiscalFlag'
+import { noteWorkPlace } from '@/lib/returnTrail'
 import { CalendarRange, CalendarX2, Lock } from 'lucide-react'
 
 type Tab = 'queue' | 'audit' | 'import' | 'statements'
@@ -30,7 +31,7 @@ const dateCls = 'rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 f
 export default function BankReconciliationPage() {
   // Links from Accounts, alerts and the month-end checklist open an account
   // (?account=), a tab (?tab=) or a line (?line=).
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const { role } = useAuth()
   const canAct = role === 'admin' || role === 'finance'
   const [tab, setTab] = useState<Tab | null>(() => {
@@ -40,10 +41,27 @@ export default function BankReconciliationPage() {
   const [accountId, setAccountId] = useState<string | null>(() => params.get('account'))
   // The line the queue opens on: from a link (?line=), or a flag on the audit.
   const [focusLineId, setFocusLineId] = useState<string | null>(() => params.get('line'))
+  // The line open in the queue now. Kept in the address with the account and
+  // tab, so a link away and the way back (ReturnTrailBar) land on it again.
+  const [openLine, setOpenLine] = useState<string | null>(() => params.get('line'))
   // The lines (by value date) and the flags (by their date) between two days.
   const [from, setFrom] = useState(() => params.get('from') ?? '')
   const [to, setTo] = useState(() => params.get('to') ?? '')
   const [editingLook, setEditingLook] = useState(false)
+  const onOpenChange = useCallback((lineId: string | null, detail: string | null) => {
+    setOpenLine(lineId)
+    noteWorkPlace('/bank-statement-import', detail)
+  }, [])
+  useEffect(() => {
+    const next = new URLSearchParams()
+    const t = tab ?? (openLine ? 'queue' : null)
+    if (t) next.set('tab', t)
+    if (accountId) next.set('account', accountId)
+    if (openLine && (t ?? 'queue') === 'queue') next.set('line', openLine)
+    if (from) next.set('from', from)
+    if (to) next.set('to', to)
+    if (next.toString() !== new URLSearchParams(window.location.search).toString()) setParams(next, { replace: true })
+  }, [tab, accountId, openLine, from, to, setParams])
   const { data: flags = [] } = useBankAuditFlags()
   // Each bank's look: its colours and logo (bankBrands.ts).
   const { data: brandRows } = useAccountBrands()
@@ -186,7 +204,8 @@ export default function BankReconciliationPage() {
         </div>
       )}
 
-      {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} from={from} to={to} />}
+      {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} from={from} to={to}
+        onOpenChange={onOpenChange} />}
       {activeTab === 'audit' && (
         <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'} from={from} to={to}
           onOpenLine={lineId => { setFocusLineId(lineId); setTab('queue') }}
