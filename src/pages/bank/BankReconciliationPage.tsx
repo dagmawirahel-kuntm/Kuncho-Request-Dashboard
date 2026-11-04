@@ -11,7 +11,9 @@ import { StatementsPanel } from './StatementsPanel'
 import { AuditPanel } from './AuditPanel'
 import { useBankAuditFlags } from '@/lib/bankAudit'
 import { inRange } from '@/lib/bankReconciliation'
-import { CalendarRange, Landmark, Lock } from 'lucide-react'
+import { brandFor, brandVars, useAccountBrands } from '@/lib/bankBrands'
+import { BankBanner, BankLookEditor, BankMark } from '@/components/bank/BankLook'
+import { CalendarRange, Lock } from 'lucide-react'
 
 type Tab = 'queue' | 'audit' | 'import' | 'statements'
 const TABS: Tab[] = ['queue', 'audit', 'import', 'statements']
@@ -40,7 +42,11 @@ export default function BankReconciliationPage() {
   // The lines (by value date) and the flags (by their date) between two days.
   const [from, setFrom] = useState(() => params.get('from') ?? '')
   const [to, setTo] = useState(() => params.get('to') ?? '')
+  const [editingLook, setEditingLook] = useState(false)
   const { data: flags = [] } = useBankAuditFlags()
+  // Each bank's look: its colours and logo (bankBrands.ts).
+  const { data: brandRows } = useAccountBrands()
+  const brandOf = (id: string, name: string) => brandFor(brandRows?.get(id) ?? { account_name: name })
   const flagCount = flags.filter(f => (!accountId || f.account_id === accountId) && inRange(f.ref_date, from, to)).length
 
   const { data: overview = [], isLoading } = useQuery({
@@ -57,6 +63,8 @@ export default function BankReconciliationPage() {
   // Statements & close work on one account: the chosen one, or the busiest.
   const statementAccount = withLines.find(a => a.account_id === accountId) ?? withLines[0] ?? null
   const activeTab: Tab = tab ?? (isLoading || openTotal > 0 ? 'queue' : 'import')
+  const selected = overview.find(a => a.account_id === accountId) ?? null
+  const selectedBrand = selected ? brandOf(selected.account_id, selected.account_name) : null
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'queue', label: `To reconcile${openTotal ? ` (${withLines.filter(a => !accountId || a.account_id === accountId).reduce((s, a) => s + a.open_count, 0)})` : ''}` },
@@ -76,15 +84,22 @@ export default function BankReconciliationPage() {
       </div>
 
       {withLines.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        // A strip to swipe through on a phone, so the chosen bank stays in view.
+        <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3">
           {withLines.map(a => {
             const selected = accountId === a.account_id
+            const brand = brandOf(a.account_id, a.account_name)
             return (
-              <button key={a.account_id} onClick={() => setAccountId(selected ? null : a.account_id)}
-                className={`rounded-xl border bg-white p-3 text-left transition dark:bg-slate-800 ${selected ? 'border-brand ring-2 ring-brand/30' : 'hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-500'}`}>
+              <button key={a.account_id} onClick={() => setAccountId(selected ? null : a.account_id)} style={brandVars(brand)}
+                className={`bank-theme w-72 shrink-0 snap-start overflow-hidden rounded-xl border bg-white text-left transition sm:w-auto dark:bg-slate-800 ${selected ? 'border-brand ring-2 ring-brand/30' : 'hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-500'}`}>
+                <div className="bank-banner h-1.5" />
+                <div className="p-3">
                 <div className="flex items-center gap-2">
-                  <Landmark className="h-4 w-4 text-slate-400" />
-                  <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{a.account_name}</span>
+                  <BankMark brand={brand} size="sm" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{brand.known ? brand.bank : a.account_name}</span>
+                    {brand.known && brand.bank !== a.account_name && <span className="block truncate text-[11px] text-slate-400">{a.account_name}</span>}
+                  </span>
                   {a.open_count > 0
                     ? <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{a.open_count} to reconcile</span>
                     : <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">all reconciled</span>}
@@ -97,12 +112,18 @@ export default function BankReconciliationPage() {
                   <Lock className="h-3 w-3" /> {a.closed_through ? `Closed through ${formatDate(a.closed_through)}` : 'Never closed'}
                   {a.oldest_open && <> · oldest open line {formatDate(a.oldest_open)}</>}
                 </p>
+                </div>
               </button>
             )
           })}
         </div>
       )}
 
+      <div className={`space-y-5 ${selectedBrand ? 'bank-theme' : ''}`} style={selectedBrand ? brandVars(selectedBrand) : undefined}>
+      {selected && selectedBrand && (
+        <BankBanner brand={selectedBrand} account={brandRows?.get(selected.account_id)} overview={selected}
+          canEdit={canAct && !!brandRows?.get(selected.account_id)} onEdit={() => setEditingLook(true)} />
+      )}
       <div className="flex gap-1 overflow-x-auto border-b dark:border-slate-700">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -112,7 +133,7 @@ export default function BankReconciliationPage() {
         ))}
         {accountId && (
           <span className="ml-auto self-center text-xs text-slate-500 dark:text-slate-400">
-            Showing {overview.find(a => a.account_id === accountId)?.account_name} · <button onClick={() => setAccountId(null)} className="text-brand hover:underline">all accounts</button>
+            Showing {selected?.account_name} · <button onClick={() => setAccountId(null)} className="text-brand hover:underline">all accounts</button>
           </span>
         )}
       </div>
@@ -143,6 +164,10 @@ export default function BankReconciliationPage() {
         statementAccount
           ? <StatementsPanel key={statementAccount.account_id} account={statementAccount} />
           : <p className="py-10 text-center text-sm text-slate-400">No statements imported yet.</p>
+      )}
+      </div>
+      {editingLook && selected && brandRows?.get(selected.account_id) && (
+        <BankLookEditor account={brandRows.get(selected.account_id)!} onClose={() => setEditingLook(false)} />
       )}
     </div>
   )
