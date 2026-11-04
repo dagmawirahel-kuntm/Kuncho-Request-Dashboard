@@ -1,19 +1,19 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import { halfDays, useDayPeople } from '@/lib/labourDay'
-import { ChevronRight, Sheet, Undo2, X } from 'lucide-react'
+import { ChevronRight, PauseCircle, Send, Sheet, Undo2, X } from 'lucide-react'
 
 type Unpaid = { pm_staff_id: string; pm_name: string; locked_days: number; first_day: string | null; last_day: string | null; workers: number; amount: number; waiting_review: number; open_days: number }
 type Preview = {
   from: string | null; last: string | null; total: number; days: number; not_locked: number
   workers: { staff_id: string; name: string; days: number; rate: number; overtime_hours: number; overtime: number; amount: number; verified: boolean; held: boolean; no_rate: boolean }[]
   projects: { project_id: string; name: string; internal: boolean; amount: number; build_days: number | null; repair_days: number | null; other_days: number | null }[]
-  jobs: { id: string; what: string; project: string; basis: 'per_volume' | 'fixed_price'; unit: string | null; quantity: number | null; percent: number | null; rate: number; amount: number; paid_to: string }[]
+  jobs: { id: string; what: string; project: string; basis: 'per_volume' | 'fixed_price'; unit: string | null; quantity: number | null; percent: number | null; rate: number; amount: number; paid_to: string; held?: boolean; held_names?: string | null }[]
 }
 type Run = { id: string; code: string; pm_staff_id: string; period_start: string; period_end: string; total: number; confirmed_by_name: string | null; confirmed_at: string; staff: { employee_name: string } | null }
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
@@ -24,6 +24,7 @@ const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-80
 // the day workers and one per piece job, ready for a payment request.
 export function DaySheetPay() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { toast } = useToast()
   const { me, approver } = useDayPeople()
   const [open, setOpen] = useState<string | null>(null)
@@ -37,6 +38,15 @@ export function DaySheetPay() {
       const { data, error } = await supabase.rpc('labour_day_unpaid')
       if (error) throw error
       return (data ?? []) as Unpaid[]
+    },
+  })
+  // HR's pay hold starts on a set date (477); before it, unverified workers are still paid.
+  const { data: holdFrom } = useQuery({
+    queryKey: ['labour-pay-hold-from'],
+    staleTime: 600_000,
+    queryFn: async () => {
+      const { data } = await supabase.from('labour_pay_hold_settings').select('hold_from').limit(1).maybeSingle()
+      return (data?.hold_from as string | undefined) ?? null
     },
   })
   const { data: runs = [] } = useQuery({
@@ -62,16 +72,30 @@ export function DaySheetPay() {
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }))
   const canRun = (pm: string) => approver || pm === me?.id
 
+  // Confirm and put it straight into a payment request (496); the PM then
+  // attaches the signed attendance sheet and sends it.
+  async function confirmAndRequest() {
+    if (!open) return
+    setBusy('request')
+    const { data, error } = await supabase.rpc('labour_day_pay_request', { p_pm: open, p_to: to, p_note: note.trim() || null })
+    setBusy(null)
+    if (error) { toast(error.message, 'error'); return }
+    const r = data as { request_id: string; request_code: string; total: number; held: number; held_names: string | null }
+    toast(`${r.request_code} ready — attach the signed attendance sheet and send it${Number(r.held) ? `. ${fmtMoney(r.held)} held until HR verifies ${r.held_names}` : ''}`, 'success')
+    setOpen(null); setNote('')
+    refresh()
+    qc.invalidateQueries({ queryKey: ['labour-pay-requests'] })
+    navigate(`/labour/requests/${r.request_id}`)
+  }
   async function confirmPay() {
     if (!open) return
     setBusy('confirm')
-    const { data, error } = await supabase.rpc('confirm_labour_day_pay', { p_pm: open, p_to: to, p_note: note.trim() || null })
+    const { error } = await supabase.rpc('confirm_labour_day_pay', { p_pm: open, p_to: to, p_note: note.trim() || null })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
-    toast('Pay confirmed — now send it to finance in a payment request', 'success')
+    toast('Pay confirmed — send it to finance in a payment request', 'success')
     setOpen(null); setNote('')
     refresh()
-    void data
   }
   async function reopen(r: Run) {
     if (!confirm(`Reopen ${r.code}? Its payables are taken back and the days can be changed and confirmed again.`)) return
@@ -131,7 +155,8 @@ export function DaySheetPay() {
                       <tbody className="divide-y dark:divide-slate-700">
                         {preview.jobs.map(j => (
                           <tr key={j.id}>
-                            <td className="py-1.5"><span className="text-slate-800 dark:text-slate-100">{j.what}</span> <span className="text-xs text-slate-500">· {j.project} · paid to {j.paid_to}</span></td>
+                            <td className="py-1.5"><span className="text-slate-800 dark:text-slate-100">{j.what}</span> <span className="text-xs text-slate-500">· {j.project} · paid to {j.paid_to}</span>
+                              {j.held && <Pill tone="amber">Held: {j.held_names ?? 'worker'} not verified</Pill>}</td>
                             <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{j.basis === 'per_volume' ? `${Number(j.quantity)} ${j.unit ?? ''}` : `${Number(j.percent)}%`}</td>
                             <td className="whitespace-nowrap py-1.5 pl-3 text-right tabular-nums">{Number(j.rate).toLocaleString()}</td>
                             <td className="whitespace-nowrap py-1.5 pl-3 text-right font-medium tabular-nums">{fmtMoney(j.amount)}</td>
@@ -153,12 +178,41 @@ export function DaySheetPay() {
                       ))}
                     </ul>
                   </div>}
+                  {(() => {
+                    // What goes out at approval, and what waits for HR.
+                    const heldWorkers = preview.workers.filter(w => w.held)
+                    const heldJobs = (preview.jobs ?? []).filter(j => j.held)
+                    const held = heldWorkers.reduce((s, w) => s + Number(w.amount), 0) + heldJobs.reduce((s, j) => s + Number(j.amount), 0)
+                    const unverified = preview.workers.filter(w => !w.verified && !w.held)
+                    if (!held && unverified.length && holdFrom) return (
+                      <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800/40 dark:bg-amber-900/10 dark:text-amber-200">
+                        {unverified.length} worker{unverified.length === 1 ? ' isn\'t' : 's aren\'t'} verified by HR yet ({unverified.map(w => w.name).join(', ')}). They're paid in full this time; from {dayLabel(holdFrom)} their pay is held until HR verifies them.
+                      </p>
+                    )
+                    if (!held) return null
+                    const names = [...new Set([...heldWorkers.map(w => w.name), ...heldJobs.flatMap(j => (j.held_names ?? '').split(', ').filter(Boolean))])]
+                    return (
+                      <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800/40 dark:bg-amber-900/10 dark:text-amber-200">
+                        <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p><b>{fmtMoney(Number(preview.total) - held)}</b> is paid when finance approves. <b>{fmtMoney(held)}</b> is held until HR verifies {names.join(', ')}.</p>
+                          <p className="mt-0.5 opacity-80">The held part is set aside when finance approves and goes in a later payment request once HR verifies them. <Link to="/labour/workers" className="underline">Worker details</Link> shows what HR still needs.</p>
+                        </div>
+                      </div>
+                    )
+                  })()}
                   <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)"
                     className="w-full rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm text-slate-600 dark:text-slate-300">{preview.days} day{preview.days === 1 ? '' : 's'} · {dayLabel(preview.from!)} – {dayLabel(preview.last!)} · <b>{fmtMoney(preview.total)}</b></p>
-                    <button onClick={confirmPay} disabled={!canRun(open) || !!busy || preview.workers.some(w => w.no_rate)}
-                      className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === 'confirm' ? 'Confirming…' : 'Confirm pay'}</button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button onClick={confirmPay} disabled={!canRun(open) || !!busy || preview.workers.some(w => w.no_rate)}
+                        className="rounded-lg border px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200">{busy === 'confirm' ? 'Confirming…' : 'Confirm only'}</button>
+                      <button onClick={confirmAndRequest} disabled={!canRun(open) || !!busy || preview.workers.some(w => w.no_rate)}
+                        className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                        <Send className="h-4 w-4" /> {busy === 'request' ? 'Preparing…' : 'Confirm & request payment'}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
