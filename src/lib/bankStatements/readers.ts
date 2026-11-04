@@ -112,9 +112,12 @@ interface PdfRow { y: number; cells: string[]; inTable: boolean }
 const HEADER_HINT = /^(value ?date|date|trans(action)? ?date|post(ing)? ?date|narration|description|particulars|details|debit|credit|withdrawals?|deposits?|balance|reference|ref(erence)? ?no\.?|amount)$/i
 const SUMMARY_ROW = /\b(opening|closing|starting|ending|brought|carried)\b|\btotal/i
 
+// pdf.js's legacy build: the modern one relies on JavaScript only the newest
+// browsers have (Map.getOrInsertComputed, Uint8Array.fromBase64/toHex…), and
+// fails in Safari on iPad and iPhone. The legacy build brings its own copies.
 async function readPdfPages(buf: ArrayBuffer): Promise<PdfPageText[]> {
-  const pdfjs = await import('pdfjs-dist')
-  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const worker = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default
   return pdfPages(pdfjs, new Uint8Array(buf))
 }
