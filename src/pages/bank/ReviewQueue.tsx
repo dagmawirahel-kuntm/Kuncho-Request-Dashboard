@@ -1,3 +1,5 @@
+import { brandFor, useAccountBrands } from '@/lib/bankBrands'
+import { BankChip } from '@/components/bank/BankLook'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -44,6 +46,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   // Lines tried so far while automatic matching runs, round by round.
   const [running, setRunning] = useState<number | null>(null)
   const accountName = useMemo(() => new Map(accounts.map(a => [a.id, a.account_name])), [accounts])
+  const { data: brandRows } = useAccountBrands()
 
   const { data: lines = [], isLoading } = useQuery({
     queryKey: ['bank-lines', 'queue', accountId, showDone, from, to],
@@ -127,6 +130,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
                   {l.direction === 'debit'
                     ? <ArrowUpRight className="h-4 w-4 shrink-0 text-red-500" />
                     : <ArrowDownLeft className="h-4 w-4 shrink-0 text-emerald-500" />}
+                  {!accountId && <BankChip brand={brandFor(brandRows?.get(l.account_id) ?? { account_name: accountName.get(l.account_id) ?? '' })} />}
                   <span className="w-20 shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatDate(l.value_date)}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>

@@ -7,6 +7,8 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { autoMatchBankLines, type MatchRound } from '@/lib/bankAutoMatch'
 import { readStatementFile, type ReadStatement } from '@/lib/bankStatements/readers'
 import { BANK_PROFILES, sameAccountNumber, statementChecks } from '@/lib/bankStatements/profiles'
+import { brandFor, brandForProfile, brandVars, useAccountBrands } from '@/lib/bankBrands'
+import { BankMark } from '@/components/bank/BankLook'
 import {
   applyMapping, detectMapping, headerSignature,
   type ColumnMapping, type DateOrder, type ParsedStatement,
@@ -43,6 +45,7 @@ function toRpcLines(p: ParsedStatement) {
 export function ImportStatementPanel({ onImported }: { onImported: (accountId: string) => void }) {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { data: brandRows } = useAccountBrands()
   const [accountId, setAccountId] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [read, setRead] = useState<ReadStatement | null>(null)
@@ -183,6 +186,11 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   const checks = parsed && read?.bank && mappingSource === 'bank' ? statementChecks(parsed, read.bank) : null
   const chosen = accounts.find(a => a.id === accountId)
   const wrongAccount = !!(read?.bank?.accountNumber && chosen?.account_number && !sameAccountNumber(chosen.account_number, read.bank.accountNumber))
+  // The statement in its bank's look: the account's own (if it's this account), else the bank's.
+  const chosenBrand = chosen ? brandRows?.get(chosen.id) : undefined
+  const look = read?.bank && mappingSource === 'bank'
+    ? (chosenBrand && !wrongAccount ? brandFor(chosenBrand) : brandForProfile(read.bank.profileId, read.bank.bank))
+    : chosenBrand ? brandFor(chosenBrand) : null
   const moneyOut = parsed?.lines.reduce((s, l) => s + (l.debit ?? 0), 0) ?? 0
   const moneyIn = parsed?.lines.reduce((s, l) => s + (l.credit ?? 0), 0) ?? 0
   const columns = read ? columnChoices(read, mapping?.headerRow ?? 0) : []
@@ -209,7 +217,21 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
       </div>
 
       {read && mapping && parsed && (
-        <div className="space-y-3 rounded-lg border bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/40">
+        <div className={`space-y-3 overflow-hidden rounded-lg border bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/40 ${look ? 'bank-theme' : ''}`}
+          style={look ? brandVars(look) : undefined}>
+          {look && (
+            <div className="-mx-3 -mt-3">
+              <div className="bank-banner flex flex-wrap items-center gap-2.5 px-3 py-2.5">
+                <BankMark brand={look} size="sm" />
+                <span className="font-bold">{look.bank}</span>
+                <span className="text-xs opacity-80">
+                  statement{read.bank?.accountNumber ? ` · account ${read.bank.accountNumber}` : ''}
+                  {read.bank?.periodFrom && read.bank.periodTo ? ` · ${formatDate(read.bank.periodFrom)} → ${formatDate(read.bank.periodTo)}` : ''}
+                </span>
+              </div>
+              <div className="bank-banner-stripe h-1" />
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <FileSpreadsheet className="h-3.5 w-3.5" />

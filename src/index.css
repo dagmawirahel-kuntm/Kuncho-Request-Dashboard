@@ -102,6 +102,19 @@
 .gold { --season-ground: #3a3025; }
 .dark.meskel { --color-brand: #F4C20D; }
 
+/* ── A bank's look (src/lib/bankBrands.ts) ─────────────────────────────
+   Inside .bank-theme the app's accent is the bank's: its buttons, tabs,
+   rings and links follow. The variables come from brandVars(): the bank
+   colour that reads on light or on dark, with the text that reads on it. */
+.bank-theme { --color-brand: var(--bank-ui); --color-brand-foreground: var(--bank-ui-ink); }
+.dark .bank-theme { --color-brand: var(--bank-ui-dark); --color-brand-foreground: var(--bank-ui-dark-ink); }
+.bank-banner {
+  background: linear-gradient(115deg, var(--bank) 0%, var(--bank) 45%, var(--bank-deep) 100%);
+  color: var(--bank-ink);
+}
+.bank-banner-stripe { background: var(--bank-accent); }
+.bank-tile { background: var(--bank-accent); color: var(--bank-accent-ink); }
+
 .season-greet {
   background: linear-gradient(115deg, #fff8dc 0%, rgba(255,255,255,0) 58%), var(--color-card);
   border-color: #efe0a4;
