@@ -8,6 +8,7 @@ import { NAV_LAYOUTS, useNavData, useNavLayout, type NavLayout } from './navStat
 import { accentVars } from './navAccent'
 import { GlobalSearch } from './GlobalSearch'
 import { NotificationsBell } from './NotificationsBell'
+import { ReturnTrailBar } from './ReturnTrailBar'
 import { AnimatedBackground } from '@/components/shared/AnimatedBackground'
 import { SubmitStampHost } from '@/components/shared/SubmitStamp'
 import { NotificationsLive } from '@/components/notifications/NotificationsLive'
@@ -331,6 +332,8 @@ export function AppShell() {
         <div ref={setLayer} className={`pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden print:hidden ${layout === 'top' ? 'top-14 lg:top-28' : 'top-14'}`} aria-hidden />
 
         {/* Main content */}
+        {/* Above the scrolling page, so it stays in view and never covers a page's own sticky header. */}
+        <ReturnTrailBar />
         <main ref={setScroller} className="relative flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0">
           {season?.greeting && LANDING_PATHS.has(location.pathname) && (
             <div className="print:hidden"><SeasonalGreeting moment={season} /></div>

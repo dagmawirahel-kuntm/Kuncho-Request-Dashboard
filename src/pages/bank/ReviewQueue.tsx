@@ -3,7 +3,7 @@ import { BankChip } from '@/components/bank/BankLook'
 import { useFyFlag } from '@/lib/fiscalFlag'
 import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
 import { groupByDay } from '@/lib/statementDates'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -35,10 +35,12 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   }
 }
 
-export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '' }: {
+export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '', onOpenChange }: {
   accountId: string | null
   accounts: { id: string; account_name: string }[]
   focusLineId?: string | null
+  /** The line opened or closed, and how to name it ("CBE · 12 Oct · 5,000.00 · TRF …"). */
+  onOpenChange?: (lineId: string | null, detail: string | null) => void
   /** Value dates to show, yyyy-mm-dd; blank for no limit. */
   from?: string
   to?: string
@@ -76,6 +78,30 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
     (!search.trim() || `${l.narration ?? ''} ${l.reference ?? ''} ${l.amount}`.toLowerCase().includes(search.trim().toLowerCase())))
   const otherFy = matching.filter(l => fyFlag.outside(l.value_date))
   const shown = hideOtherFy ? matching.filter(l => !fyFlag.outside(l.value_date)) : matching
+
+  // Opened from a link or on coming back: scroll to the line once it's
+  // loaded and light it up for a moment, so it's found without searching.
+  const scrolledTo = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusLineId || scrolledTo.current === focusLineId || !lines.some(l => l.line_id === focusLineId)) return
+    scrolledTo.current = focusLineId
+    const flash = ['bg-amber-50', 'ring-2', 'ring-inset', 'ring-amber-300', 'dark:bg-amber-900/20']
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`bank-line-${focusLineId}`)
+      el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      el?.classList.add(...flash)
+      setTimeout(() => el?.classList.remove(...flash), 2500)
+    })
+  }, [focusLineId, lines])
+
+  // The page keeps the open line in its address, and names it for the way back.
+  useEffect(() => {
+    if (!onOpenChange) return
+    const l = openId ? lines.find(x => x.line_id === openId) : null
+    if (openId && !l) return
+    onOpenChange(openId, l ? [accountName.get(l.account_id), formatDate(l.value_date), formatCurrency(Number(l.amount)), l.narration || l.transaction_type]
+      .filter(Boolean).join(' · ') : null)
+  }, [openId, lines, accountName, onOpenChange])
   // Which other years, with how many lines and how much money each.
   const otherYears = [...otherFy.reduce((m, l) => {
     const y = fyFlag.fyOf(l.value_date)
@@ -159,7 +185,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
             <DateHeading date={g.date} out={g.out} inn={g.in} count={g.lines.length} flag={fyFlag} />
             <div className="divide-y dark:divide-slate-700">
             {g.lines.map(l => (
-              <div key={l.line_id}>
+              <div key={l.line_id} id={`bank-line-${l.line_id}`} className="scroll-mt-20 transition-colors duration-700">
                 <button onClick={() => setOpenId(openId === l.line_id ? null : l.line_id)}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
                   {openId === l.line_id ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
@@ -212,8 +238,11 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
   const [pickedPayer, setPayer] = useState<string | null>(null)
   const payer = pickedPayer ?? accountPayer ?? ''
 
+  // Fresh each time the line opens: coming back after approving an expense
+  // elsewhere, it must show as ready to match, not still "open to approve".
   const { data: suggestions = [], isLoading } = useQuery({
     queryKey: ['bank-suggestions', line.line_id],
+    refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.rpc('suggest_bank_line_matches', { p_line_id: line.line_id })
       if (error) throw error
@@ -225,6 +254,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
   // Several payments tab shows.
   const { data: combos = [] } = useQuery({
     queryKey: ['bank-combinations', line.line_id],
+    refetchOnMount: 'always',
     enabled: line.direction === 'debit',
     queryFn: async () => {
       const { data, error } = await supabase.rpc('suggest_bank_line_combinations', { p_line_id: line.line_id })

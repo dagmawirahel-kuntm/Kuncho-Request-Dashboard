@@ -129,7 +129,8 @@ export function NotificationsBell() {
         )}
       </button>
       {open && (
-        <div className="animate-fade-in-up fixed inset-x-2 top-14 z-40 flex max-h-[min(36rem,calc(100vh-5rem))] flex-col overflow-hidden rounded-xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:w-[24rem] dark:border-slate-700 dark:bg-slate-800">
+        // data-trail: a to-do or notification opened here leaves the way back (ReturnTrailBar).
+        <div data-trail className="animate-fade-in-up fixed inset-x-2 top-14 z-40 flex max-h-[min(36rem,calc(100vh-5rem))] flex-col overflow-hidden rounded-xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:w-[24rem] dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-end justify-between gap-2 border-b px-4 pt-2 dark:border-slate-700">
             <div role="tablist" className="flex gap-4">
               {tabBtn('updates', 'Updates', unread)}
