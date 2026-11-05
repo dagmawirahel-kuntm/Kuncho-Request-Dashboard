@@ -74,6 +74,13 @@ const PAYMENT_STATE_CLS: Record<Exclude<ExpensePaymentState, 'void'>, string> = 
   paid:            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
 }
 
+// The expense columns this page reads — not all 106. `select *` with every
+// embed sent ~2.6 MB per load, and the page loads expenses twice; these
+// columns are ~0.6 MB. A field the page starts to read must be added here.
+const EXPENSE_COLS = 'id, expense_code, item_service_description, amount_etb, payment_status, date, expense_type, '
+  + 'project_name, vendors_name, purchaser_user_id, created_at, account_id, vendor_receipt_facilitation_id, transfer_id, '
+  + 'approval_status, fiscal_period_id, payment_state, vrf_id, is_archived, spot_paid_account_id'
+
 const vendorOf = (e: Expense) => (e as any).vendors?.vendor_name ?? e.vendors_name ?? '—'
 const projectOf = (e: Expense) => (e as any).projects?.project_name ?? '—'
 
@@ -652,16 +659,13 @@ export default function ExpensesPage() {
     queryFn: async () => {
       let q = supabase
         .from('expenses')
-        // accounts through account_id: expenses has a second key to accounts
-        // (spot_paid_account_id, migration 433), so an unqualified embed is
-        // ambiguous and PostgREST rejects the request (PGRST201).
-        .select('*, projects(project_name), accounts:account_id(account_name), vendors(vendor_name)')
+        .select(`${EXPENSE_COLS}, projects(project_name), vendors(vendor_name)`)
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
       if (filterOwn && profile?.id) q = (q as any).eq('purchaser_user_id', profile.id)
       const { data, error } = await q
       if (error) throw error
-      return data as Expense[]
+      return data as unknown as Expense[] // only EXPENSE_COLS are present
     },
   })
 
@@ -802,15 +806,12 @@ export default function ExpensesPage() {
     queryFn: async () => {
       let q = supabase
         .from('expenses')
-        // vendor_receipt_facilitation is embedded through an explicit foreign
-        // key because expenses has two of them to that table — vrf_id and
-        // vendor_receipt_facilitation_id. An unqualified embed is ambiguous,
-        // so PostgREST rejected the whole request (PGRST201) and the tab
-        // rendered "No records found" for every row rather than for none.
-        // vendor_receipt_facilitation_id is the live column: it is set on 13
-        // rows, vrf_id on none. accounts likewise goes through account_id:
-        // spot_paid_account_id (migration 433) is a second key to accounts.
-        .select('*, vendors(vendor_name,bank_account,location), projects(project_name), categories(category_name), sub_categories(item_name), accounts:account_id(account_name), vendor_receipt_facilitation:vendor_receipt_facilitation_id(record_name), transfers(transfer_id_code), locations(location_name)')
+        // Only the vendor and project names are shown; the other embeds
+        // (category, account, VRF, transfer, location) were fetched and never
+        // read. Re-adding one: expenses has two keys to accounts and to
+        // vendor_receipt_facilitation, so name the key (accounts:account_id)
+        // or PostgREST rejects the request as ambiguous (PGRST201).
+        .select(`${EXPENSE_COLS}, vendors(vendor_name), projects(project_name)`)
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
       // fiscal_period_id is stamped by trg_set_fiscal_period as
@@ -824,7 +825,7 @@ export default function ExpensesPage() {
       if (fiscalPeriodId) q = q.or(`fiscal_period_id.eq.${fiscalPeriodId},fiscal_period_id.is.null`)
       const { data, error } = await q
       if (error) throw error
-      return data as Expense[]
+      return data as unknown as Expense[] // only EXPENSE_COLS are present
     },
     enabled: canSeeTable && activeTab === 'records',
   })
