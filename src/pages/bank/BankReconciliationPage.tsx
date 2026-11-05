@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -52,6 +52,29 @@ export default function BankReconciliationPage() {
     setOpenLine(lineId)
     noteWorkPlace('/bank-statement-import', detail)
   }, [])
+  // The address and the page follow each other. A link to this page while
+  // it's open (a to-do, an alert, the browser's back) changes the address:
+  // the page follows it. Opening a line or changing a filter changes the
+  // page: the address follows it, in place. `written` is the address as last
+  // agreed, so neither side undoes the other; the address is written only
+  // when the page itself changes.
+  const written = useRef<string | null>(null)
+  const setParamsRef = useRef(setParams)
+  useEffect(() => { setParamsRef.current = setParams }, [setParams])
+  useEffect(() => {
+    const cur = params.toString()
+    if (cur === written.current) return
+    const first = written.current === null
+    written.current = cur
+    if (first) return
+    const t = params.get('tab') as Tab | null
+    setTab(t && TABS.includes(t) ? t : null)
+    setAccountId(params.get('account'))
+    setFocusLineId(params.get('line'))
+    setOpenLine(params.get('line'))
+    setFrom(params.get('from') ?? '')
+    setTo(params.get('to') ?? '')
+  }, [params])
   useEffect(() => {
     const next = new URLSearchParams()
     const t = tab ?? (openLine ? 'queue' : null)
@@ -60,8 +83,11 @@ export default function BankReconciliationPage() {
     if (openLine && (t ?? 'queue') === 'queue') next.set('line', openLine)
     if (from) next.set('from', from)
     if (to) next.set('to', to)
-    if (next.toString() !== new URLSearchParams(window.location.search).toString()) setParams(next, { replace: true })
-  }, [tab, accountId, openLine, from, to, setParams])
+    const s = next.toString()
+    if (s === written.current) return
+    written.current = s
+    setParamsRef.current(next, { replace: true })
+  }, [tab, accountId, openLine, from, to])
   const { data: flags = [] } = useBankAuditFlags()
   // Each bank's look: its colours and logo (bankBrands.ts).
   const { data: brandRows } = useAccountBrands()
@@ -107,7 +133,8 @@ export default function BankReconciliationPage() {
       : `${o.n} of ${a.line_count} lines are from ${years}${o.open ? ` · ${o.open} still open` : ''}`
   }
   const openTotal = withLines.reduce((s, a) => s + a.open_count, 0)
-  const accounts = overview.map(a => ({ id: a.account_id, account_name: a.account_name }))
+  // Kept the same between renders: the queue names lines from it.
+  const accounts = useMemo(() => overview.map(a => ({ id: a.account_id, account_name: a.account_name })), [overview])
   // Statements & close work on one account: the chosen one, or the busiest.
   const statementAccount = withLines.find(a => a.account_id === accountId) ?? withLines[0] ?? null
   const activeTab: Tab = tab ?? (isLoading || openTotal > 0 ? 'queue' : 'import')
