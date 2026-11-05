@@ -94,12 +94,18 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   }, [focusLineId, lines])
 
   // The page keeps the open line in its address, and names it for the way back.
+  // Told only when the line or its name changes, not on every refresh.
+  const told = useRef<string | null>(null)
   useEffect(() => {
     if (!onOpenChange) return
     const l = openId ? lines.find(x => x.line_id === openId) : null
     if (openId && !l) return
-    onOpenChange(openId, l ? [accountName.get(l.account_id), formatDate(l.value_date), formatCurrency(Number(l.amount)), l.narration || l.transaction_type]
-      .filter(Boolean).join(' · ') : null)
+    const detail = l ? [accountName.get(l.account_id), formatDate(l.value_date), formatCurrency(Number(l.amount)), l.narration || l.transaction_type]
+      .filter(Boolean).join(' · ') : null
+    const key = `${openId ?? ''}|${detail ?? ''}`
+    if (told.current === key) return
+    told.current = key
+    onOpenChange(openId, detail)
   }, [openId, lines, accountName, onOpenChange])
   // Which other years, with how many lines and how much money each.
   const otherYears = [...otherFy.reduce((m, l) => {
