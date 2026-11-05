@@ -7,6 +7,11 @@ import {
 } from '@/lib/returnTrail'
 
 const NUDGE_MS = 20_000
+/** The router's place in the browser's history (createBrowserRouter keeps it in history.state). */
+const historyIdx = (): number | null => {
+  const i = (window.history.state as { idx?: unknown } | null)?.idx
+  return typeof i === 'number' ? i : null
+}
 const NAV_ITEMS = navGroups.flatMap(g => [...(g.to ? [{ to: g.to, label: g.title }] : []), ...g.items.map(i => ({ to: i.to, label: i.label }))])
 
 /** A page's name when it has no heading: its menu entry, or the nearest one above it. */
@@ -45,7 +50,7 @@ export function ReturnTrailBar() {
   const navigate = useNavigate()
   const { trails, nudgedAt } = useTrails()
   // Where a click that may navigate was made, captured before the next page draws.
-  const origin = useRef<{ path: string; label: string; detail: string | null; at: number } | null>(null)
+  const origin = useRef<{ path: string; label: string; detail: string | null; idx: number | null; at: number } | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -55,7 +60,7 @@ export function ReturnTrailBar() {
       const inPage = el.closest('main, [data-trail]') && !el.closest('[data-no-trail]') && !isBackLink(el)
       if (!inPage) { origin.current = null; return }
       const path = window.location.pathname
-      origin.current = { path: path + window.location.search, label: pageLabel(path), detail: workPlaceNote(path), at: Date.now() }
+      origin.current = { path: path + window.location.search, label: pageLabel(path), detail: workPlaceNote(path), idx: historyIdx(), at: Date.now() }
     }
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
@@ -73,7 +78,7 @@ export function ReturnTrailBar() {
     if (!o || Date.now() - o.at > 2000) return
     const from = pathOf(o.path)
     if (from === location.pathname || !canLeaveTrail(from) || isUpFrom(from, location.pathname)) return
-    pushTrail({ to: o.path, label: o.label, detail: o.detail })
+    pushTrail({ to: o.path, label: o.label, detail: o.detail, idx: o.idx })
   }, [location.pathname, location.search])
 
   // A success elsewhere: say "done here? go back" for a while.
@@ -103,7 +108,13 @@ export function ReturnTrailBar() {
             </span>
           )}
         </p>
-        <button onClick={() => navigate(trail.to)}
+        <button onClick={() => {
+          // The page is right behind this one: step back to it, so going back
+          // and forth doesn't pile pages up in the browser's history.
+          const here = historyIdx()
+          if (trail.idx != null && here != null && here === trail.idx + 1) navigate(-1)
+          else navigate(trail.to)
+        }}
           className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 ${nudged
             ? 'bg-emerald-600 ring-2 ring-emerald-300 ring-offset-1 dark:ring-offset-slate-900' : 'bg-brand'}`}>
           <Undo2 className="h-4 w-4" /> Back to it

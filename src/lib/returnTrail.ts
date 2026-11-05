@@ -13,6 +13,8 @@ export interface Trail {
   label: string
   /** What was open there: "CBE Main · 12 Oct · ETB 5,000.00 · TRF …". */
   detail?: string | null
+  /** Where the page was in the browser's history, so going back can step back to it rather than add a page. */
+  idx?: number | null
   at: number
 }
 interface Store { trails: Trail[]; nudgedAt?: number | null }
