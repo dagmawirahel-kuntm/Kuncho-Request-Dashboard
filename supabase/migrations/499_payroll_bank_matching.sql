@@ -19,7 +19,7 @@
 --   · match_bank_line_to_payroll ties a line to the people picked, posts it
 --     (salaries against that bank's cash), and marks the run paid once
 --     everyone is covered and it is approved;
---   · undoing the match frees them and takes the posting back.
+--   · undoing the match frees them and reverses the posting (500).
 -- Automatic matching settles a salary line when its payment request names it.
 
 ALTER TABLE payroll_staff ADD COLUMN IF NOT EXISTS bank_line_id uuid REFERENCES bank_statement_lines(id) ON DELETE SET NULL;
@@ -206,20 +206,6 @@ BEGIN
   END IF;
 END $f$;
 
--- Undoing a salary line frees the people it paid and takes its posting back.
-CREATE OR REPLACE FUNCTION public.release_payroll_bank_line()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $f$
-BEGIN
-  IF TG_OP = 'DELETE' OR (OLD.matched_payroll_id IS NOT NULL AND NEW.matched_payroll_id IS DISTINCT FROM OLD.matched_payroll_id) THEN
-    UPDATE payroll_staff SET bank_line_id = NULL WHERE bank_line_id = OLD.id;
-    DELETE FROM journal_entries WHERE source_table = 'payroll_bank_line' AND source_id = OLD.id;
-  END IF;
-  RETURN NULL;
-END $f$;
-DROP TRIGGER IF EXISTS trg_release_payroll_bank_line ON bank_statement_lines;
-CREATE TRIGGER trg_release_payroll_bank_line AFTER UPDATE OF matched_payroll_id OR DELETE ON bank_statement_lines
-  FOR EACH ROW EXECUTE FUNCTION release_payroll_bank_line();
-
 -- A run paid through its bank lines is posted line by line, not as a whole.
 CREATE OR REPLACE FUNCTION public.post_payroll_payment_to_ledger()
  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
@@ -326,28 +312,6 @@ RETURNS text LANGUAGE sql STABLE SET search_path TO 'public' AS $f$
   FROM payroll p WHERE p.id = p_payroll_id
 $f$;
 
-DO $do$
-DECLARE d text; n text;
-BEGIN
-  d := pg_get_viewdef('public.v_bank_line_status'::regclass, true);
-  n := regexp_replace(d,
-    $re$jsonb_build_object\('id', p\.id, 'label', COALESCE\(p\.payroll_record, 'Payroll'::text\), 'amount', \( SELECT COALESCE\(sum\(ps\.net_amount\), 0::numeric\) AS "coalesce"\s+FROM payroll_staff ps\s+WHERE ps\.payroll_id = p\.id\)\)$re$,
-    $new$jsonb_build_object('id', p.id, 'label', payroll_line_label(b_1.id, p.id), 'amount', payroll_line_amount(b_1.id, p.id))$new$);
-  IF n = d THEN RAISE EXCEPTION 'v_bank_line_status: payroll link not found'; END IF;
-  EXECUTE 'CREATE OR REPLACE VIEW public.v_bank_line_status WITH (security_invoker = true) AS ' || n;
-
-  d := pg_get_viewdef('public.v_bank_line_ledger'::regclass, true);
-  n := replace(d, $o$WHERE je.source_table = 'payroll'::text AND je.source_id = ((s.payroll ->> 'id'::text)::uuid)$o$,
-                  $o$WHERE je.source_table = 'payroll'::text AND je.source_id = ((s.payroll ->> 'id'::text)::uuid) OR je.source_table = 'payroll_bank_line'::text AND je.source_id = s.line_id$o$);
-  IF n = d THEN RAISE EXCEPTION 'v_bank_line_ledger: payroll check not found'; END IF;
-  EXECUTE 'CREATE OR REPLACE VIEW public.v_bank_line_ledger WITH (security_invoker = true) AS ' || n;
-
-  d := pg_get_viewdef('public.v_cash_ledger_lines'::regclass, true);
-  n := replace(d, $o$ARRAY['bank_statement_lines'::text, 'bank_line_charge'::text]$o$,
-                  $o$ARRAY['bank_statement_lines'::text, 'bank_line_charge'::text, 'payroll_bank_line'::text]$o$);
-  IF n = d THEN RAISE EXCEPTION 'v_cash_ledger_lines: on-bank sources not found'; END IF;
-  EXECUTE 'CREATE OR REPLACE VIEW public.v_cash_ledger_lines WITH (security_invoker = true) AS ' || n;
-END $do$;
 
 -- ── Matching ───────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.apply_bank_line_match(p_line_id uuid, p_kind text, p_target_id uuid)

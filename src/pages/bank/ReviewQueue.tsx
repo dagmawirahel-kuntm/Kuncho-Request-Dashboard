@@ -17,11 +17,12 @@ import {
 } from '@/lib/bankReconciliation'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { SeveralPayments } from './SeveralPayments'
+import { PayrollLine } from './PayrollLine'
 import { PayerSelect, RecordExpenseFromLine, RecordSaleFromLine } from './RecordFromLine'
 import { useAccountPayer } from '@/lib/bankPayers'
 import {
   ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
-  Repeat, Search, Sparkles, AlertTriangle, Layers, FilePlus2,
+  Repeat, Search, Sparkles, AlertTriangle, Layers, FilePlus2, Users,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -197,12 +198,14 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 }
 
 // ── One line, being reconciled ──────────────────────────────────────────
-type Tab = 'suggest' | 'several' | 'find' | 'record' | 'explain' | 'transfer'
+type Tab = 'suggest' | 'several' | 'payroll' | 'find' | 'record' | 'explain' | 'transfer'
 
 function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: { id: string; account_name: string }[]; onDone: () => void }) {
   const { toast } = useToast()
   const [tab, setTab] = useState<Tab>('suggest')
   const [busy, setBusy] = useState(false)
+  // The payroll run the Salaries tab opens on, when a suggestion names one.
+  const [payrollRun, setPayrollRun] = useState<string | null>(null)
   // Who made the payment, for an approved expense nobody is recorded as
   // paying: the account's usual payer unless someone else is picked.
   const { data: accountPayer = null } = useAccountPayer(line.account_id)
@@ -244,6 +247,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'suggest', label: `Suggestions${suggestions.length ? ` (${suggestions.length})` : ''}`, icon: <Sparkles className="h-3.5 w-3.5" /> },
     ...(line.direction === 'debit' ? [{ id: 'several' as const, label: `Several payments${combos.length ? ` (${combos.length})` : ''}`, icon: <Layers className="h-3.5 w-3.5" /> }] : []),
+    ...(line.direction === 'debit' ? [{ id: 'payroll' as const, label: 'Salaries', icon: <Users className="h-3.5 w-3.5" /> }] : []),
     { id: 'find', label: 'Find', icon: <Search className="h-3.5 w-3.5" /> },
     { id: 'record', label: 'Record it', icon: <FilePlus2 className="h-3.5 w-3.5" /> },
     { id: 'explain', label: 'Explain', icon: <Coins className="h-3.5 w-3.5" /> },
@@ -308,6 +312,11 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
                   <Link to={`/sourcing/${s.target_id}`} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
                     Open order <ExternalLink className="h-3 w-3" />
                   </Link>
+                ) : s.kind === 'payroll' && s.score < 95 && s.detail === 'pick who this line paid' ? (
+                  <button onClick={() => { setPayrollRun(s.target_id); setTab('payroll') }}
+                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
+                    <Users className="h-3 w-3" /> Pick people
+                  </button>
                 ) : s.kind === 'expense' && notApproved(s) ? (
                   <Link to={`/expenses/${s.target_id}`} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
                     Open to approve <ExternalLink className="h-3 w-3" />
@@ -318,6 +327,12 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
                     {s.kind === 'bank_charge' ? <><Coins className="h-3 w-3" /> Settle as charge</> : <><Link2 className="h-3 w-3" /> Match</>}
                   </button>
                 )}
+                {s.kind === 'payroll' && s.detail !== 'pick who this line paid' && (
+                  <button onClick={() => { setPayrollRun(s.target_id); setTab('payroll') }} title="See or change who this line paid"
+                    className="rounded-md border px-2 py-1 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
+                    <Users className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -325,6 +340,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
       )}
 
       {tab === 'several' && <SeveralPayments line={line} onDone={onDone} />}
+      {tab === 'payroll' && <PayrollLine key={payrollRun ?? 'any'} line={line} accounts={accounts} initialRunId={payrollRun} onDone={onDone} />}
       {tab === 'find' && <FindRecord line={line} busy={busy} onPick={apply} />}
       {tab === 'record' && (line.direction === 'debit'
         ? <RecordExpenseFromLine line={line} accountPayer={accountPayer} onDone={onDone} />
