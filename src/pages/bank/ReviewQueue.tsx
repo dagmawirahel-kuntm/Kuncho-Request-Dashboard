@@ -35,12 +35,15 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   }
 }
 
-export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '', onOpenChange }: {
+export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '', onOpenChange, showDone: shownDone, onShowDoneChange }: {
   accountId: string | null
   accounts: { id: string; account_name: string }[]
   focusLineId?: string | null
   /** The line opened or closed, and how to name it ("CBE · 12 Oct · 5,000.00 · TRF …"). */
   onOpenChange?: (lineId: string | null, detail: string | null) => void
+  /** Show the reconciled lines instead of the open ones; the page keeps it in its address. */
+  showDone?: boolean
+  onShowDoneChange?: (v: boolean) => void
   /** Value dates to show, yyyy-mm-dd; blank for no limit. */
   from?: string
   to?: string
@@ -49,7 +52,9 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   const qc = useQueryClient()
   const [direction, setDirection] = useState<'all' | 'debit' | 'credit'>('all')
   const [search, setSearch] = useState('')
-  const [showDone, setShowDone] = useState(false)
+  const [ownShowDone, setOwnShowDone] = useState(false)
+  const showDone = shownDone ?? ownShowDone
+  const setShowDone = (v: boolean) => { if (onShowDoneChange) onShowDoneChange(v); else setOwnShowDone(v) }
   const [openId, setOpenId] = useState<string | null>(focusLineId)
   // Lines tried so far while automatic matching runs, round by round.
   const [running, setRunning] = useState<number | null>(null)
@@ -60,7 +65,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   const [hideOtherFy, setHideOtherFy] = useState(false)
 
   const { data: lines = [], isLoading } = useQuery({
-    queryKey: ['bank-lines', 'queue', accountId, showDone, from, to],
+    queryKey: ['bank-lines', 'queue', accountId, showDone, from, to, showDone ? focusLineId : null],
     queryFn: async () => {
       let q = supabase.from('v_bank_line_status').select('*').order('value_date', { ascending: !showDone }).order('line_no')
       if (accountId) q = q.eq('account_id', accountId)
@@ -69,7 +74,18 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
       q = showDone ? q.not('reconciled_as', 'is', null).limit(200) : q.is('reconciled_as', null)
       const { data, error } = await q
       if (error) throw error
-      return (data ?? []) as BankLine[]
+      const rows = (data ?? []) as BankLine[]
+      // A link to a reconciled line (from a locked expense) older than the
+      // latest 200: fetch it too, in its place by date.
+      if (showDone && focusLineId && !rows.some(l => l.line_id === focusLineId)) {
+        const { data: one } = await supabase.from('v_bank_line_status').select('*').eq('line_id', focusLineId).not('reconciled_as', 'is', null).maybeSingle()
+        if (one) {
+          const l = one as BankLine
+          const at = rows.findIndex(r => r.value_date < l.value_date)
+          rows.splice(at === -1 ? rows.length : at, 0, l)
+        }
+      }
+      return rows
     },
   })
 

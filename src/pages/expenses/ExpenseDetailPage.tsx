@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { ExpenseBankLocks } from '@/components/expenses/ExpenseBankLocks'
 import { canApproveAsFinance, canIssuePaymentRequest } from '@/lib/expenseAccess'
 import { useToast } from '@/contexts/ToastContext'
 import { TrainerHintBanner } from '@/components/shared/TrainerHintBanner'
@@ -1103,7 +1104,8 @@ export default function ExpenseDetailPage() {
               { label: 'Bank Reference',     value: expense.bank_ref,                                                         icon: null },
               { label: 'WHT',                value: expense.verify_wht ? `Required${expense.wht_handling_method ? ' — ' + expense.wht_handling_method : ''}` : null, icon: null },
               { label: 'Payment Method',     value: expense.payment_method,                                                   icon: null },
-              { label: 'Matched Bank Line',  value: expense.transfers?.transfer_id_code ?? null,                              icon: null },
+              // Finance sees the line itself in "Locked by the bank" below.
+              { label: 'Matched Bank Line',  value: role === 'admin' || role === 'finance' || role === 'executive' ? null : expense.transfers?.transfer_id_code ?? null, icon: null },
               { label: 'Bank Date',          value: expense.bank_date
                   ? `${formatDate(expense.bank_date)} — used for withholding and the books${expense.paid_date && expense.paid_date.slice(0, 10) !== expense.bank_date ? ` (marked paid ${formatDate(expense.paid_date)})` : ''}`
                   : null,                                                                                                       icon: null },
@@ -1132,6 +1134,8 @@ export default function ExpenseDetailPage() {
             )}
           </div>
         </div>
+
+        {id && (role === 'admin' || role === 'finance' || role === 'executive') && <ExpenseBankLocks expenseId={id} />}
 
         {id && (role === 'admin' || role === 'finance' || role === 'executive') && <ExpenseAdminHistory expenseId={id} />}
 

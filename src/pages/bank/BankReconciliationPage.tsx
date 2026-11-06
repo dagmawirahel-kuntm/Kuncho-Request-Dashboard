@@ -44,6 +44,9 @@ export default function BankReconciliationPage() {
   // The line open in the queue now. Kept in the address with the account and
   // tab, so a link away and the way back (ReturnTrailBar) land on it again.
   const [openLine, setOpenLine] = useState<string | null>(() => params.get('line'))
+  // The queue shows the reconciled lines (?done=1): where "Open on the
+  // statement" from a locked expense lands, next to its "Undo match".
+  const [showDone, setShowDone] = useState(() => params.get('done') === '1')
   // The lines (by value date) and the flags (by their date) between two days.
   const [from, setFrom] = useState(() => params.get('from') ?? '')
   const [to, setTo] = useState(() => params.get('to') ?? '')
@@ -72,6 +75,7 @@ export default function BankReconciliationPage() {
     setAccountId(params.get('account'))
     setFocusLineId(params.get('line'))
     setOpenLine(params.get('line'))
+    setShowDone(params.get('done') === '1')
     setFrom(params.get('from') ?? '')
     setTo(params.get('to') ?? '')
   }, [params])
@@ -81,13 +85,14 @@ export default function BankReconciliationPage() {
     if (t) next.set('tab', t)
     if (accountId) next.set('account', accountId)
     if (openLine && (t ?? 'queue') === 'queue') next.set('line', openLine)
+    if (showDone && (t ?? 'queue') === 'queue') next.set('done', '1')
     if (from) next.set('from', from)
     if (to) next.set('to', to)
     const s = next.toString()
     if (s === written.current) return
     written.current = s
     setParamsRef.current(next, { replace: true })
-  }, [tab, accountId, openLine, from, to])
+  }, [tab, accountId, openLine, showDone, from, to])
   const { data: flags = [] } = useBankAuditFlags()
   // Each bank's look: its colours and logo (bankBrands.ts).
   const { data: brandRows } = useAccountBrands()
@@ -232,6 +237,7 @@ export default function BankReconciliationPage() {
       )}
 
       {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} from={from} to={to}
+        showDone={showDone} onShowDoneChange={setShowDone}
         onOpenChange={onOpenChange} />}
       {activeTab === 'audit' && (
         <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'} from={from} to={to}
