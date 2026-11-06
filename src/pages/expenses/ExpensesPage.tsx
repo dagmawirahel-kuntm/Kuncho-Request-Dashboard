@@ -13,10 +13,11 @@ import type { Expense, ExpenseType, CpoBond, ExpensePaymentState } from '@/types
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
+import { LOCK_HOW, useExpenseBankLockIndex } from '@/lib/expenseBankLocks'
 import {
   Plus, Pencil, Trash2, Receipt, Package, ArrowLeftRight, Shield,
   ChevronRight, Clock, CheckCircle2, TruckIcon, FileText, Banknote,
-  ExternalLink, LayoutDashboard, Table2, CalendarDays, List
+  ExternalLink, LayoutDashboard, Table2, CalendarDays, List, Lock
 } from 'lucide-react'
 
 // ── Role helpers ─────────────────────────────────────────────────────────────
@@ -829,6 +830,8 @@ export default function ExpensesPage() {
     },
     enabled: canSeeTable && activeTab === 'records',
   })
+  // Which expenses the bank statement locks, and by which line (501).
+  const { data: bankLocks } = useExpenseBankLockIndex(canSeeTable && activeTab === 'records' && (role === 'admin' || role === 'finance' || role === 'executive'))
 
   // The records table's columns are memoised once, so the role is read
   // through a ref rather than captured from the first render.
@@ -1027,11 +1030,23 @@ export default function ExpensesPage() {
       return taxPeriod(y, m).label
     }},
     { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={(getValue() as string) ?? 'pending'} /> },
-    { accessorKey: 'payment_state', header: 'Payment', filterFn: 'equals', cell: ({ getValue }) => {
+    { accessorKey: 'payment_state', header: 'Payment', filterFn: 'equals', cell: ({ getValue, row }) => {
       const s = getValue() as keyof typeof PAYMENT_STATE_LABEL
       const label = PAYMENT_STATE_LABEL[s]
       if (!label) return <span className="text-slate-400">—</span>
-      return <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAYMENT_STATE_CLS[s]}`}>{label}</span>
+      // Locked by the bank: the statement line that confirms it, on hover.
+      const lock = bankLocks?.get(row.original.id)
+      return (
+        <span className="inline-flex items-center gap-1">
+          <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAYMENT_STATE_CLS[s]}`}>{label}</span>
+          {lock && (
+            <span title={`Locked by the bank: ${lock.account_name} · ${formatDate(lock.value_date)} · ${formatCurrency(Number(lock.amount))}${lock.reference ? ` · ${lock.reference}` : ''} · ${LOCK_HOW[lock.how]}${lock.n > 1 ? ` (${lock.n} lines)` : ''}. Open the expense to see the line.`}
+              aria-label="Locked by the bank" className="text-amber-600 dark:text-amber-400">
+              <Lock className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </span>
+      )
     }},
     { id: 'actions', header: '', cell: ({ row }) => (
       <div className="flex items-center gap-1">
@@ -1040,7 +1055,7 @@ export default function ExpensesPage() {
       </div>
     )},
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [periodOf])
+  ], [periodOf, bankLocks])
 
   // ── Records tab, month by month ───────────────────────────────────────────
 
