@@ -76,7 +76,8 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
   const [busy, setBusy] = useState(false)
 
   const categoryOptions = useMemo(() => categories.map(c => ({ id: c.id, label: c.category_name, sub: c.nature ?? undefined })), [categories])
-  const projectOptions = useMemo(() => projects.map(p => ({ id: p.id, label: p.project_name, sub: p.department ?? undefined })), [projects])
+  // Costing closed: no new expense can go on it (502).
+  const projectOptions = useMemo(() => projects.filter(p => !p.costing_closed_at).map(p => ({ id: p.id, label: p.project_name, sub: p.department ?? undefined })), [projects])
   const vendorOptions = useMemo(() => vendors.map(v => ({ id: v.id, label: v.vendor_name, sub: v.bank_account ?? undefined })), [vendors])
   const staffOptions = useMemo(() => staff.map(s => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
 

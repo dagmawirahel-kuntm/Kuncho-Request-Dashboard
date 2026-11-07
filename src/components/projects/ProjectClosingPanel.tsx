@@ -11,7 +11,7 @@ import {
   type CheckLine, type DamageCharge, type FixtureCheck, type ProjectClosing,
 } from '@/lib/labourDay'
 import type { DeliveryPhoto } from '@/types/database'
-import { Boxes, CheckCircle2, ClipboardCheck, Flag, Hammer, Lock, PackageCheck, PackageOpen, Plus, Receipt, Scale, Trash2, Truck, Undo2, Users } from 'lucide-react'
+import { Ban, Boxes, CheckCircle2, ClipboardCheck, Flag, Hammer, Lock, PackageCheck, PackageOpen, Plus, Receipt, Scale, Trash2, Truck, Undo2, Users, Wallet } from 'lucide-react'
 
 type Draft = { fixture_id: string; quantity: string; missing_qty: string; checklist: { item: string; ok: boolean }[]; photos: DeliveryPhoto[]; note: string }
 type Inspect = { ok_qty: string; damaged_qty: string; checklist: { item: string; ok: boolean }[]; photos: DeliveryPhoto[]; note: string }
@@ -19,11 +19,41 @@ const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs fon
 const field = 'rounded-lg border px-2.5 py-1.5 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
 
-// A project's closing (491): Delivered when the event is done (the PM);
-// Costing Closed when every fixture is back, inspected and repaired and the
-// labour is locked and confirmed (finance). Fixtures are checked out and
-// back here; a return inspection opens repair work on this project and,
-// where the contract allows, a damage charge.
+// A project's closing (491, 502): Delivered when the event is done (the PM);
+// Costing Closed when every fixture is back, inspected and repaired, the
+// labour is locked and confirmed, and no cost is still waiting (finance).
+// Closing is the one way a client project leaves the active lists: from then
+// on no new cost can go on it, while approved costs can still be paid and
+// the client's money received. A project that never went ahead closes
+// without delivery, with a reason. Internal cost buckets are never closed.
+// Fixtures are checked out and back here; a return inspection opens repair
+// work on this project and, where the contract allows, a damage charge.
+type AskKey = 'deliver' | 'undeliver' | 'close' | 'cancel' | 'reopen'
+const ASK: Record<AskKey, { title: string; body: string; note: string; required: boolean; confirm: string; tone: string }> = {
+  deliver: {
+    title: 'Mark delivered', body: 'The event is done and the invoice can go. Costing stays open until finance closes it.',
+    note: 'Note (optional)', required: false, confirm: 'Mark delivered', tone: 'bg-brand text-white',
+  },
+  undeliver: {
+    title: 'Not delivered after all', body: 'It goes back to in progress.',
+    note: 'Why isn\'t it delivered after all?', required: true, confirm: 'Undo delivery', tone: 'bg-slate-700 text-white',
+  },
+  close: {
+    title: 'Close costing',
+    body: 'Labour cost and profit become final. No new expense, purchase request, PO line or stock issue can go on this project, and it drops off the active lists. Approved costs can still be paid and the client\'s money received.',
+    note: 'Note (optional)', required: false, confirm: 'Close costing', tone: 'bg-emerald-600 text-white',
+  },
+  cancel: {
+    title: 'Close without delivery',
+    body: 'For a project that never went ahead. Costing closes as it stands: no new cost can go on it and it drops off the active lists.',
+    note: 'Why did it never go ahead?', required: true, confirm: 'Close without delivery', tone: 'bg-slate-700 text-white',
+  },
+  reopen: {
+    title: 'Reopen costing', body: 'Costs can go on the project again and it is back on the active lists.',
+    note: 'Why reopen costing?', required: true, confirm: 'Reopen costing', tone: 'bg-brand text-white',
+  },
+}
+
 export function ProjectClosingPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -48,10 +78,15 @@ export function ProjectClosingPanel({ projectId }: { projectId: string }) {
     },
   })
   const [busy, setBusy] = useState<string | null>(null)
+  const [ask, setAsk] = useState<AskKey | null>(null)
+  const [note, setNote] = useState('')
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['project-closing', projectId] })
     qc.invalidateQueries({ queryKey: ['project-labour-summary', projectId] })
     qc.invalidateQueries({ queryKey: ['labour-flags'] })
+    qc.invalidateQueries({ queryKey: ['projects'] })
+    qc.invalidateQueries({ queryKey: ['projects-lookup'] })
+    qc.invalidateQueries({ queryKey: ['project-close-review'] })
   }
   async function run(key: string, fn: () => PromiseLike<{ error: { message: string } | null }>, ok: string) {
     setBusy(key)
@@ -62,6 +97,20 @@ export function ProjectClosingPanel({ projectId }: { projectId: string }) {
     refresh()
     return true
   }
+  function open(k: AskKey) { setAsk(k); setNote('') }
+  async function confirm() {
+    if (!ask) return
+    const n = note.trim() || null
+    const calls: Record<AskKey, [() => PromiseLike<{ error: { message: string } | null }>, string]> = {
+      deliver: [() => supabase.rpc('project_mark_delivered', { p_project: projectId, p_note: n }), 'Marked delivered'],
+      undeliver: [() => supabase.rpc('project_undo_delivered', { p_project: projectId, p_reason: n }), 'Delivery undone'],
+      close: [() => supabase.rpc('project_close_costing', { p_project: projectId, p_note: n }), 'Costing closed'],
+      cancel: [() => supabase.rpc('project_close_out', { p_project: projectId, p_delivered: false, p_note: n }), 'Closed without delivery'],
+      reopen: [() => supabase.rpc('project_reopen_costing', { p_project: projectId, p_reason: n }), 'Costing reopened'],
+    }
+    const [fn, ok] = calls[ask]
+    if (await run(ask, fn, ok)) setAsk(null)
+  }
 
   if (isLoading) return <p className="p-6 text-center text-sm text-slate-400">Loading…</p>
   if (error || !c) return <p className="p-6 text-center text-sm text-slate-500">{(error as Error)?.message ?? 'Not available'}</p>
@@ -70,62 +119,112 @@ export function ProjectClosingPanel({ projectId }: { projectId: string }) {
   const returnsToInspect = c.checks.filter(k => k.kind === 'return' && k.status === 'received')
   const inspected = c.checks.filter(k => k.kind === 'return' && k.status === 'inspected')
   const anyOut = c.fixtures.some(f => Number(f.still_out) > 0)
+  const blockers = c.blockers.filter(b => b.kind !== 'not_delivered')
+  const settle = c.settle ?? []
+  const stagePill = c.is_internal ? { label: 'Internal · never closed', tone: 'slate' as const }
+    : c.closed_undelivered ? { label: 'Closed · never went ahead', tone: 'slate' as const } : STAGE_LABEL[c.stage]
+  const a = ask ? ASK[ask] : null
 
   return (
     <div className="space-y-4">
       {/* The two closing points */}
-      <Panel title="Closing" icon={Flag} action={<Pill tone={STAGE_LABEL[c.stage].tone}>{STAGE_LABEL[c.stage].label}</Pill>}>
-        <ol className="mb-3 grid gap-2 sm:grid-cols-3">
-          {([
-            ['In progress', true, null],
-            ['Delivered', !!c.delivered_at, c.delivered_at ? `${fmtDate(c.delivered_at)} · ${c.delivered_by_name ?? ''}` : 'Event done, invoice can go'],
-            ['Costing closed', !!c.costing_closed_at, c.costing_closed_at ? `${fmtDate(c.costing_closed_at)} · ${c.costing_closed_by_name ?? ''}` : 'Labour cost and profit final'],
-          ] as const).map(([label, done, sub]) => (
-            <li key={label} className={`rounded-xl border px-3 py-2 ${done ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800/40 dark:bg-emerald-900/10' : 'dark:border-slate-700'}`}>
-              <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{done && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}{label}</p>
-              {sub && <p className="text-xs text-slate-500">{sub}</p>}
-            </li>
-          ))}
-        </ol>
-        {c.stage === 'delivered' && c.open_for_days != null && (
-          <p className={`mb-3 text-sm ${c.open_for_days > c.costing_open_days ? 'text-red-600' : 'text-slate-600 dark:text-slate-300'}`}>
-            Delivered {c.open_for_days} day{c.open_for_days === 1 ? '' : 's'} ago — costing is flagged after {c.costing_open_days}.
+      <Panel title="Closing" icon={Flag} action={<Pill tone={stagePill.tone}>{stagePill.label}</Pill>}>
+        {c.is_internal ? (
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This is an internal cost bucket, so it is never closed: costs keep landing here all year. Whether it shows on the active lists is set on the project form.
           </p>
+        ) : (
+          <>
+            <ol className="mb-3 grid gap-2 sm:grid-cols-3">
+              {([
+                ['In progress', true, null],
+                c.closed_undelivered
+                  ? ['Never went ahead', true, 'Closed without delivery']
+                  : ['Delivered', !!c.delivered_at, c.delivered_at ? `${fmtDate(c.delivered_at)} · ${c.delivered_by_name ?? ''}` : 'Event done, invoice can go'],
+                ['Costing closed', !!c.costing_closed_at, c.costing_closed_at ? `${fmtDate(c.costing_closed_at)} · ${c.costing_closed_by_name ?? ''}` : 'Costs and profit final'],
+              ] as [string, boolean, string | null][]).map(([label, done, sub]) => (
+                <li key={label} className={`rounded-xl border px-3 py-2 ${done ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800/40 dark:bg-emerald-900/10' : 'dark:border-slate-700'}`}>
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{done && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}{label}</p>
+                  {sub && <p className="text-xs text-slate-500">{sub}</p>}
+                </li>
+              ))}
+            </ol>
+            {c.stage === 'delivered' && c.open_for_days != null && (
+              <p className={`mb-3 text-sm ${c.open_for_days > c.costing_open_days ? 'text-red-600' : 'text-slate-600 dark:text-slate-300'}`}>
+                Delivered {c.open_for_days} day{c.open_for_days === 1 ? '' : 's'} ago — costing is flagged after {c.costing_open_days}.
+              </p>
+            )}
+            {closed && (
+              <p className="mb-3 flex items-start gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                No new cost can go on this project, and it is off the active lists. Approved costs can still be paid and the client's money received.
+              </p>
+            )}
+            {!closed && blockers.length > 0 && (
+              <div className="mb-3 rounded-xl bg-amber-50 p-3 text-sm dark:bg-amber-900/10">
+                <p className="mb-1 font-semibold text-amber-900 dark:text-amber-200">{c.stage === 'active' ? 'Before costing can close (after delivery)' : 'Before costing can close'}</p>
+                <ul className="list-inside list-disc text-amber-900 dark:text-amber-200">
+                  {blockers.map(b => <li key={b.kind}>{b.label} ({b.n})</li>)}
+                </ul>
+              </div>
+            )}
+            {settle.length > 0 && (
+              <div className="mb-3 rounded-xl border p-3 text-sm dark:border-slate-700">
+                <p className="mb-1 flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100"><Wallet className="h-4 w-4 text-slate-400" /> Money still to settle</p>
+                <ul className="divide-y dark:divide-slate-700">
+                  {settle.map(m => (
+                    <li key={m.kind} className="flex items-center justify-between gap-3 py-1.5">
+                      <span className="text-slate-600 dark:text-slate-300">{m.label} <span className="text-slate-400">· {m.n}</span></span>
+                      {m.amount != null && <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{fmtMoney(m.amount)}</span>}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-slate-500">{closed ? 'Settled as it is paid and received; costing stays closed.' : 'This doesn\'t stop closing: it can still be paid and received after costing closes.'}</p>
+              </div>
+            )}
+            {a ? (
+              <div className="rounded-xl border bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{a.title}</p>
+                <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">{a.body}</p>
+                <textarea autoFocus value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder={a.note} aria-label={a.note} className={`${field} w-full`} />
+                <div className="mt-2 flex justify-end gap-2">
+                  <button onClick={() => setAsk(null)} className={`${btn} border text-slate-600 dark:border-slate-600 dark:text-slate-300`}>Cancel</button>
+                  <button onClick={confirm} disabled={!!busy || (a.required && !note.trim())} className={`${btn} ${a.tone}`}>{busy ? 'Saving…' : a.confirm}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {c.stage === 'active' && c.can_deliver && (
+                  <button disabled={!!busy} className={`${btn} bg-brand text-white`} onClick={() => open('deliver')}>
+                    <PackageCheck className="h-3.5 w-3.5" /> Mark delivered
+                  </button>
+                )}
+                {c.stage === 'active' && c.can_close && (
+                  <button disabled={!!busy || blockers.length > 0} title={blockers.length ? 'Clear the list above first' : undefined}
+                    className={`${btn} border text-slate-600 dark:border-slate-600 dark:text-slate-300`} onClick={() => open('cancel')}>
+                    <Ban className="h-3.5 w-3.5" /> Close without delivery
+                  </button>
+                )}
+                {c.stage === 'delivered' && c.can_deliver && (
+                  <button disabled={!!busy} className={`${btn} border text-slate-600 dark:border-slate-600 dark:text-slate-300`} onClick={() => open('undeliver')}>
+                    <Undo2 className="h-3.5 w-3.5" /> Not delivered after all
+                  </button>
+                )}
+                {c.stage === 'delivered' && c.can_close && (
+                  <button disabled={!!busy || blockers.length > 0} className={`${btn} bg-emerald-600 text-white`} title={blockers.length ? 'Clear the list above first' : undefined}
+                    onClick={() => open('close')}>
+                    <Lock className="h-3.5 w-3.5" /> Close costing
+                  </button>
+                )}
+                {closed && c.can_close && (
+                  <button disabled={!!busy} className={`${btn} border text-slate-600 dark:border-slate-600 dark:text-slate-300`} onClick={() => open('reopen')}>
+                    <Undo2 className="h-3.5 w-3.5" /> Reopen costing
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
-        {!closed && c.blockers.length > 0 && c.stage !== 'active' && (
-          <div className="mb-3 rounded-xl bg-amber-50 p-3 text-sm dark:bg-amber-900/10">
-            <p className="mb-1 font-semibold text-amber-900 dark:text-amber-200">Before costing can close</p>
-            <ul className="list-inside list-disc text-amber-900 dark:text-amber-200">
-              {c.blockers.filter(b => b.kind !== 'not_delivered').map(b => <li key={b.kind}>{b.label} ({b.n})</li>)}
-            </ul>
-          </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {c.stage === 'active' && c.can_deliver && (
-            <button disabled={!!busy} className={`${btn} bg-brand text-white`}
-              onClick={() => { const n = prompt('Mark delivered — the event is done and the invoice can go. Note (optional):'); if (n !== null) void run('deliver', () => supabase.rpc('project_mark_delivered', { p_project: projectId, p_note: n || null }), 'Marked delivered') }}>
-              <PackageCheck className="h-3.5 w-3.5" /> Mark delivered
-            </button>
-          )}
-          {c.stage === 'delivered' && c.can_deliver && (
-            <button disabled={!!busy} className={`${btn} border text-slate-600 dark:border-slate-600 dark:text-slate-300`}
-              onClick={() => { const n = prompt('Why isn\'t it delivered after all?'); if (n?.trim()) void run('undeliver', () => supabase.rpc('project_undo_delivered', { p_project: projectId, p_reason: n }), 'Delivery undone') }}>
-              <Undo2 className="h-3.5 w-3.5" /> Not delivered after all
-            </button>
-          )}
-          {c.stage === 'delivered' && c.can_close && (
-            <button disabled={!!busy || c.blockers.length > 0} className={`${btn} bg-emerald-600 text-white`} title={c.blockers.length ? 'Clear the list above first' : undefined}
-              onClick={() => { if (confirm('Close costing? Labour cost and profit become final, and nothing more can be costed to this project.')) void run('close', () => supabase.rpc('project_close_costing', { p_project: projectId, p_note: null }), 'Costing closed') }}>
-              <Lock className="h-3.5 w-3.5" /> Close costing
-            </button>
-          )}
-          {closed && c.can_close && (
-            <button disabled={!!busy} className={`${btn} border text-slate-600 dark:border-slate-600 dark:text-slate-300`}
-              onClick={() => { const n = prompt('Why reopen costing?'); if (n?.trim()) void run('reopen', () => supabase.rpc('project_reopen_costing', { p_project: projectId, p_reason: n }), 'Costing reopened') }}>
-              <Undo2 className="h-3.5 w-3.5" /> Reopen costing
-            </button>
-          )}
-        </div>
         {c.events.length > 0 && (
           <ul className="mt-3 space-y-0.5 border-t pt-2 text-xs text-slate-500 dark:border-slate-700">
             {c.events.map(e => <li key={e.id}>{fmtDate(e.at)} · {e.kind.replace(/_/g, ' ')} · {e.by_name ?? '—'}{e.note ? ` — ${e.note}` : ''}</li>)}

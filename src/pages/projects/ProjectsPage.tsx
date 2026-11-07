@@ -8,6 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Pill, Stat } from '@/components/record/Record'
 import { useProjectBoqStatuses, boqLabel } from '@/lib/boq'
+import { ProjectCloseReview } from '@/components/projects/ProjectCloseReview'
 import { Plus, Pencil, Trash2, Search, ChevronRight, ChevronDown, Building2, User, MapPin, Briefcase, Layers } from 'lucide-react'
 
 type ProjectRow = Project & {
@@ -163,7 +164,11 @@ export default function ProjectsPage() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Link to={`/projects/${p.id}`} onClick={e => e.stopPropagation()} className="truncate text-sm font-semibold text-slate-800 hover:text-brand dark:text-slate-100">{p.project_name}</Link>
             {p.health && <Pill tone={HEALTH_TONE[p.health]}>{p.health}</Pill>}
-            {!p.active_for_year && <Pill>Inactive</Pill>}
+            {p.costing_closed_at
+              ? <Pill tone="slate">{p.delivered_at ? 'Closed' : 'Closed · never went ahead'}</Pill>
+              : !p.active_for_year && (p.is_internal
+                ? <Pill>Off the list</Pill>
+                : <Pill tone="amber" title="Switched off the old way: costs can still land on it until it closes">Off, not closed</Pill>)}
             {(() => {
               const l = boqLabel(boqBy.get(p.id))
               if (!l || l.tone === 'green') return null
@@ -237,6 +242,8 @@ export default function ProjectsPage() {
         )}
       </div>
 
+      <ProjectCloseReview />
+
       {loadError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-700/50 dark:bg-red-900/20 dark:text-red-400">
           Couldn't load projects: {(loadError as { message?: string }).message ?? String(loadError)}
@@ -251,7 +258,7 @@ export default function ProjectsPage() {
               className="w-full rounded-lg border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800" />
           </div>
           <div className="flex gap-1.5">
-            {([['active', 'Active this year'], ['inactive', 'Inactive'], ['all', 'All']] as [Filter, string][]).map(([v, l]) => (
+            {([['active', 'Active'], ['inactive', 'Closed'], ['all', 'All']] as [Filter, string][]).map(([v, l]) => (
               <button key={v} onClick={() => { setFilter(v); setDept(null) }} className={chip(filter === v)}>{l}</button>
             ))}
             {stats.noBoq > 0 && (
@@ -309,7 +316,7 @@ export default function ProjectsPage() {
       )}
       {!isLoading && data.some(p => !p.active_for_year) && filter === 'active' && (
         <p className="text-center text-xs text-slate-400">
-          {(() => { const n = data.filter(p => !p.active_for_year).length; return `${n} inactive project${n === 1 ? ' is' : 's are'} hidden` })()} — <button onClick={() => setFilter('all')} className="text-brand hover:underline">show all</button>
+          {(() => { const n = data.filter(p => !p.active_for_year).length; return `${n} closed or switched-off project${n === 1 ? ' is' : 's are'} hidden` })()} — <button onClick={() => setFilter('all')} className="text-brand hover:underline">show all</button>
         </p>
       )}
     </div>

@@ -225,12 +225,19 @@ export type DamageCharge = {
 }
 export type ProjectClosing = {
   stage: 'active' | 'delivered' | 'closed'
+  /** An internal cost bucket: never closed (502). */
+  is_internal: boolean; active_for_year: boolean
   delivered_at: string | null; delivered_by_name: string | null
   costing_closed_at: string | null; costing_closed_by_name: string | null
+  /** Closed without ever being delivered: it never went ahead (502). */
+  closed_undelivered: boolean
   costing_open_days: number; open_for_days: number | null
   damage_chargeable: boolean; damage_terms: string | null
   can_deliver: boolean; can_close: boolean; can_inspect: boolean; can_set_terms: boolean
   blockers: { kind: string; label: string; n: number }[]
+  /** Money still to settle: shown before closing, never blocks it. Amounts
+   *  only for admin, finance and executives (502). */
+  settle: { kind: string; label: string; n: number; amount: number | null }[]
   fixtures: FixtureRow[]; checks: FixtureCheck[]; charges: DamageCharge[]
   events: { id: string; kind: string; note: string | null; by_name: string | null; at: string }[]
 }

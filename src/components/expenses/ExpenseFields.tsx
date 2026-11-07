@@ -18,10 +18,14 @@ export function ProjectOrOverheadSelect({ value, onChange, disabled, placeholder
   placeholder?: string
 }) {
   const { data: projects = [] } = useProjects()
+  // A project whose costing is closed takes no new cost (502): it is left
+  // out, unless it is already the one chosen.
   const options = useMemo(() => [
     { id: OVERHEAD, label: 'Company overhead — no project', sub: 'Office, fleet, rent, admin' },
-    ...(projects as { id: string; project_name: string }[]).map(p => ({ id: p.id, label: p.project_name })),
-  ], [projects])
+    ...(projects as { id: string; project_name: string; costing_closed_at: string | null }[])
+      .filter(p => !p.costing_closed_at || p.id === value)
+      .map(p => ({ id: p.id, label: p.project_name, sub: p.costing_closed_at ? 'Costing closed' : undefined })),
+  ], [projects, value])
   return <SearchableSelect value={value} onChange={onChange} options={options} placeholder={placeholder} disabled={disabled} />
 }
 

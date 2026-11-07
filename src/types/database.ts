@@ -211,6 +211,9 @@ export interface Project {
   target_handover_date: string | null
   budget_baseline_locked_at: string | null
   budget_version: number
+  /** Set only by the Closing tab (491, 502). */
+  delivered_at?: string | null
+  costing_closed_at?: string | null
   created_at: string
   updated_at: string
 }

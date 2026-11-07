@@ -566,6 +566,8 @@ function PurchaseRequestFormBody({
         : scopeToManaged ? managedProjects : (projects as { id: string; project_name: string }[])
     return source.map(p => ({ id: p.id, label: p.project_name }))
   }, [projects, managedProjects, scopeToManaged, isTechnician, workProjects])
+  // Costing closed: no new purchase request can go on it (502).
+  const closedProjects = useMemo(() => new Set((projects as { id: string; costing_closed_at: string | null }[]).filter(p => p.costing_closed_at).map(p => p.id)), [projects])
   const staffOptions   = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
   const vendorOptions  = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
 
@@ -854,7 +856,7 @@ function PurchaseRequestFormBody({
               </Field>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Project">
-                  <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions} placeholder="Search projects…" />
+                  <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions.filter(o => !closedProjects.has(o.id) || o.id === header.project_id)} placeholder="Search projects…" />
                   {isTechnician ? (
                     <p className="mt-1 text-[11px] text-slate-400">
                       {workProjects.length ? 'The projects you work on.' : 'You are not on a project yet — ask your manager to assign you.'}

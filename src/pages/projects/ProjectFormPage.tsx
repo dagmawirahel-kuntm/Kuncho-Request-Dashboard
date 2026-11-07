@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -88,7 +88,10 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
   async function handleSave() {
     if (!form.project_name?.trim()) { setError('Project name is required'); return }
     if (!form.is_internal && !form.client_id) { setError('Choose the client this project is for, or mark it internal'); return }
-    const payload = form.is_internal ? { ...form, client_id: null } : form
+    // A client project leaves the active lists only by closing (502), so
+    // the form leaves Active for year alone unless it is a cost bucket.
+    const { active_for_year, ...rest } = form
+    const payload = form.is_internal ? { ...form, client_id: null } : isEdit ? rest : { ...rest, active_for_year: active_for_year ?? true }
     setError(''); setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('projects').update(payload as any).eq('id', id!) : supabase.from('projects').insert([payload as any])
@@ -146,11 +149,33 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
           First reviewer on this project's finance sourcing gate — but any finance role holder can still act if unavailable.
         </p>
       </Field>
-      <label className="flex items-center gap-2 cursor-pointer text-sm">
-        <input type="checkbox" checked={!!form.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
-        Active for Year
-      </label>
+      {form.is_internal ? (
+        <label className="flex items-center gap-2 cursor-pointer text-sm">
+          <input type="checkbox" checked={!!form.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
+          Show on the active lists <span className="text-xs text-slate-400">(a cost bucket is never closed)</span>
+        </label>
+      ) : isEdit && record ? (
+        <ProjectOpenStatus id={id!} record={record} />
+      ) : null}
     </FormPage>
   )
 }
 
+/** Where a client project stands, instead of the old Active for year box. */
+function ProjectOpenStatus({ id, record }: { id: string; record: Project }) {
+  const closed = record.costing_closed_at
+  const [tone, text] = closed
+    ? ['border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-900/15 dark:text-emerald-200',
+       `Closed on ${new Date(closed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}: off the active lists, and no new cost can go on it. Finance reopens it from the Closing tab.`]
+    : record.active_for_year
+      ? ['border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200',
+         'Active. It comes off the active lists when it closes from its Closing tab.']
+      : ['border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/50 dark:bg-amber-900/15 dark:text-amber-200',
+         'Switched off the old way, but never closed: costs can still land on it. Close it from its Closing tab, or finance reviews it on the Projects page.']
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${tone}`}>
+      <span>{text}</span>
+      <Link to={`/projects/${id}?tab=closing`} className="shrink-0 text-xs font-semibold text-brand hover:underline">Open the Closing tab</Link>
+    </div>
+  )
+}
