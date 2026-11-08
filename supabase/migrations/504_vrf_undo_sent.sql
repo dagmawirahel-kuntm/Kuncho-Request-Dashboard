@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS public.vrf_sent_undos (
 );
 CREATE INDEX IF NOT EXISTS vrf_sent_undos_vrf_idx ON public.vrf_sent_undos (vrf_id, undone_at DESC);
 ALTER TABLE public.vrf_sent_undos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS vrf_sent_undos_read ON public.vrf_sent_undos;
 CREATE POLICY vrf_sent_undos_read ON public.vrf_sent_undos FOR SELECT TO authenticated
   USING (COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false));
 COMMENT ON TABLE public.vrf_sent_undos IS 'Each time a VRF sent in one go was taken back, and why (504). Written only by undo_vrf_sent.';
