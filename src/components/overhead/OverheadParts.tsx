@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Panel, Pill } from '@/components/record/Record'
 import { formatDate } from '@/lib/utils'
 import {
-  BAND_FILL, BAND_LABEL, FISCAL_MONTHS, againstFor, btnSm as btn, gregMonth, money, monthShare, ratioText, referenceOf, short, useBucketWaiting, varianceBand,
+  BAND_FILL, BAND_LABEL, FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, useBucketRouting, btnSm as btn, gregMonth, money, monthShare, ratioText, referenceOf, short, useBucketWaiting, varianceBand,
   type CompareWith, type OverheadHistory, type VarianceMonth, type VarianceRow,
 } from '@/lib/buckets'
 import { UserCheck } from 'lucide-react'
@@ -141,7 +141,7 @@ export function VarianceGrid({ rows, history }: { rows: VarianceRow[]; history: 
               return (
                 <tr key={r.id ?? 'other'}>
                   <th scope="row" className="sticky left-0 z-10 max-w-[11rem] truncate bg-white px-1 text-left font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    {r.id ? <Link to={`/overhead/${r.id}`} className="hover:text-brand">{r.name}</Link> : r.name}
+                    <Link to={r.id ? `/overhead/${r.id}` : '/overhead/other'} className="hover:text-brand">{r.name}</Link>
                   </th>
                   {r.months.map(m => {
                     const future = m.idx > cur
@@ -198,7 +198,7 @@ export function VarianceGrid({ rows, history }: { rows: VarianceRow[]; history: 
  */
 export function Standouts({ rows, history }: { rows: VarianceRow[]; history: OverheadHistory | undefined }) {
   const usualMonths = history?.usual_months ?? 0
-  const items: { key: string; tone: 'up' | 'new' | 'down'; text: string; to: string | null; size: number }[] = []
+  const items: { key: string; tone: 'up' | 'new' | 'down'; text: string; to: string; size: number }[] = []
   for (const r of rows) {
     const ref = referenceOf(r)
     for (const m of r.months) {
@@ -208,14 +208,14 @@ export function Standouts({ rows, history }: { rows: VarianceRow[]; history: Ove
         const against = againstFor(m, r, history, ref.value)
         const band = varianceBand(m.spent, against)
         if ((band ?? 0) >= 2 && m.spent - against >= 10000) {
-          items.push({ key: `${r.id}-${m.idx}-up`, tone: 'up', size: m.spent - against, to: r.id ? `/overhead/${r.id}` : null,
+          items.push({ key: `${r.id}-${m.idx}-up`, tone: 'up', size: m.spent - against, to: r.id ? `/overhead/${r.id}` : '/overhead/other',
             text: `${where}: ${money(m.spent)}, ${ratioText(m.spent, against)} ${ref.kind === 'budget' ? 'its budget' : 'its usual month'} (${money(ref.value)}${m.idx === r.cur_idx && against < ref.value ? `, ${money(Math.round(against))} by now` : ''})` })
         } else if (m.idx < r.cur_idx && r.in_use && ref.value >= 20000 && m.spent < ref.value * 0.4) {
-          items.push({ key: `${r.id}-${m.idx}-down`, tone: 'down', size: (ref.value - m.spent) / 2, to: r.id ? `/overhead/${r.id}` : null,
+          items.push({ key: `${r.id}-${m.idx}-down`, tone: 'down', size: (ref.value - m.spent) / 2, to: r.id ? `/overhead/${r.id}` : '/overhead/other',
             text: `${where}: ${m.spent ? money(m.spent) : 'nothing recorded'}, against a usual ${money(ref.value)}. A regular cost not entered?` })
         }
       } else if (m.idx === r.cur_idx && m.spent >= 50000) {
-        items.push({ key: `${r.id}-${m.idx}-new`, tone: 'new', size: m.spent * 0.8, to: r.id ? `/overhead/${r.id}` : null,
+        items.push({ key: `${r.id}-${m.idx}-new`, tone: 'new', size: m.spent * 0.8, to: r.id ? `/overhead/${r.id}` : '/overhead/other',
           text: `${where}: ${money(m.spent)} of new spending, with no budget or earlier months to compare it with` })
       }
     }
@@ -231,7 +231,7 @@ export function Standouts({ rows, history }: { rows: VarianceRow[]; history: Ove
         {top.map(i => (
           <li key={i.key} className="flex items-start gap-1.5 text-slate-700 dark:text-slate-200">
             <span className={`mt-px ${tone[i.tone]}`} aria-hidden>{icon[i.tone]}</span>
-            {i.to ? <Link to={i.to} className="hover:text-brand">{i.text}</Link> : <span>{i.text}</span>}
+            <Link to={i.to} className="hover:text-brand">{i.text}</Link>
           </li>
         ))}
       </ul>
@@ -322,3 +322,75 @@ export function OwnerQueue({ bucket }: { bucket?: string } = {}) {
   )
 }
 
+/** The fiscal year in numbers: each month against its reference and last year. */
+export function FiscalTable({ row, history }: { row: VarianceRow; history: OverheadHistory | undefined }) {
+  const ref = referenceOf(row)
+  const hasLastYear = !!history?.has_last_year
+  return (
+    <details className="mt-3 text-xs">
+      <summary className="cursor-pointer select-none font-medium text-slate-600 dark:text-slate-300">The year in numbers</summary>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[440px] text-right tabular-nums">
+          <thead className="text-[11px] text-slate-500">
+            <tr>
+              <th scope="col" className="py-1 text-left font-medium">Month</th>
+              <th scope="col" className="py-1 font-medium">Spent</th>
+              <th scope="col" className="py-1 font-medium">vs {ref?.kind === 'budget' ? 'budget' : 'usual'}</th>
+              <th scope="col" className="py-1 font-medium">Last year</th>
+              <th scope="col" className="py-1 font-medium">vs last year</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y dark:divide-slate-700">
+            {row.months.filter(m => m.idx <= row.cur_idx).map(m => {
+              const against = againstFor(m, row, history, ref?.value)
+              const band = ref ? varianceBand(m.spent, against) : null
+              return (
+                <tr key={m.idx} className="text-slate-700 dark:text-slate-200">
+                  <th scope="row" className="py-1 text-left font-normal">{FISCAL_MONTHS[m.idx]}{m.idx === row.cur_idx ? ' (so far)' : ''} <span className="text-slate-400">· from {gregMonth(m.start)}</span></th>
+                  <td className="py-1 font-semibold">{money(m.spent)}</td>
+                  <td className="py-1">
+                    {ref && m.spent > 0
+                      ? <span className={`rounded px-1.5 py-0.5 ${band != null ? `${BAND_FILL[band]} text-slate-900 dark:text-white` : ''}`}>{ratioText(m.spent, against)}</span>
+                      : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="py-1">{hasLastYear ? money(m.last_year) : <span className="text-slate-400">—</span>}</td>
+                  <td className="py-1">{hasLastYear && m.last_year > 0 ? ratioText(m.spent, againstFor(m, row, history, m.last_year)) : <span className="text-slate-400">—</span>}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  )
+}
+
+/**
+ * The kinds of overhead that land in a bucket by themselves when recorded
+ * with no project (503k). A kind another bucket already takes is shown, but
+ * can't be picked twice.
+ */
+export function ExpenseTypeChips({ bucketId, value, onChange, disabled }: {
+  bucketId: string | null; value: string[]; onChange: (v: string[]) => void; disabled?: boolean
+}) {
+  const { data: taken } = useBucketRouting()
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {ROUTABLE_TYPES.map(({ type, label }) => {
+        const on = value.includes(type)
+        const elsewhere = taken?.get(type)
+        const blocked = !on && !!elsewhere && elsewhere.id !== bucketId
+        return (
+          <button key={type} type="button" disabled={disabled || blocked} aria-pressed={on}
+            onClick={() => onChange(on ? value.filter(t => t !== type) : [...value, type])}
+            title={blocked ? `${elsewhere!.name} takes these` : undefined}
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${on
+              ? 'border-brand bg-brand/10 text-brand dark:border-brand dark:text-slate-100'
+              : 'text-slate-600 hover:border-slate-400 dark:border-slate-600 dark:text-slate-300'}`}>
+            {on ? '✓ ' : ''}{label}{blocked ? ` · ${elsewhere!.name}` : ''}
+          </button>
+        )
+      })}
+    </div>
+  )
+}

@@ -464,3 +464,163 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
           OR (p_project IS NOT NULL AND bucket_owner_of(p_project) = auth.uid()))
    ORDER BY e.date DESC, e.amount_etb DESC;
 $f$;
+
+-- ── 503h (applied on its own) ───────────────────────────────────────────────
+-- Overhead recorded with no bucket gets a page: its spending, newest first,
+-- each with the bucket its category usually goes to, and a way for finance
+-- to put it in the bucket it belongs to.
+CREATE OR REPLACE FUNCTION public.overhead_unbucketed(p_limit integer DEFAULT 100)
+RETURNS TABLE(id uuid, expense_code text, date date, description text, amount numeric, payee text,
+              category_name text, approval_status text, payment_state text, requested_by text,
+              suggested_bucket uuid, suggested_bucket_name text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  WITH usual AS (
+    -- The bucket each category's spending goes to most.
+    SELECT DISTINCT ON (x.category_id) x.category_id, x.project_id
+      FROM expenses x JOIN projects p ON p.id = x.project_id AND p.is_internal AND p.active_for_year
+                    AND (p.kind_sorted_at IS NOT NULL OR COALESCE(p.suggested_kind, 'bucket') = 'bucket')
+     WHERE x.category_id IS NOT NULL AND NOT COALESCE(x.is_archived, false)
+     GROUP BY x.category_id, x.project_id
+     ORDER BY x.category_id, count(*) DESC
+  )
+  SELECT e.id, e.expense_code, e.date, e.item_service_description, e.amount_etb,
+         COALESCE(v.vendor_name, s.employee_name, e.vendors_name), c.category_name, e.approval_status::text, e.payment_state,
+         up.full_name, COALESCE(dp.id, u.project_id), btrim(COALESCE(dp.project_name, up2.project_name))
+    FROM expenses e
+    LEFT JOIN vendors v ON v.id = e.vendor_id LEFT JOIN staff s ON s.id = e.paid_to_staff_id
+    LEFT JOIN categories c ON c.id = e.category_id LEFT JOIN user_profiles up ON up.id = e.purchaser_user_id
+    -- A bucket whose default category is this one wins; else the usual one.
+    LEFT JOIN LATERAL (SELECT p.id, p.project_name FROM projects p
+                        WHERE p.is_internal AND p.active_for_year AND p.bucket_category_id = e.category_id
+                          AND (p.kind_sorted_at IS NOT NULL OR COALESCE(p.suggested_kind, 'bucket') = 'bucket')
+                        ORDER BY p.project_name LIMIT 1) dp ON true
+    LEFT JOIN usual u ON u.category_id = e.category_id
+    LEFT JOIN projects up2 ON up2.id = u.project_id
+   WHERE e.project_id IS NULL AND e.is_overhead AND NOT COALESCE(e.is_archived, false)
+     AND e.approval_status::text <> 'rejected' AND COALESCE(e.payment_state, '') <> 'void'
+     AND COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false)
+   ORDER BY e.date DESC, e.created_at DESC
+   LIMIT LEAST(GREATEST(p_limit, 1), 500);
+$f$;
+
+-- Put overhead expenses in a bucket (finance and admin). Each is moved on its
+-- own, so one refused (a closed period, say) doesn't hold back the rest.
+CREATE OR REPLACE FUNCTION public.expense_move_to_bucket(p_expenses uuid[], p_bucket uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $f$
+DECLARE v_id uuid; v_moved int := 0; v_failed jsonb := '[]'::jsonb; v_code text;
+BEGIN
+  IF NOT COALESCE(get_user_role()::text IN ('admin', 'finance'), false) THEN RAISE EXCEPTION 'Finance puts overhead in its buckets'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM projects WHERE id = p_bucket AND is_internal) THEN RAISE EXCEPTION 'Pick a cost bucket'; END IF;
+  -- Not one the one-time sort is about to turn into a job.
+  IF EXISTS (SELECT 1 FROM projects WHERE id = p_bucket AND kind_sorted_at IS NULL AND suggested_kind IN ('job', 'own', 'test')) THEN
+    RAISE EXCEPTION '% is waiting to be sorted as a job: sort it on the Overhead page first', (SELECT btrim(project_name) FROM projects WHERE id = p_bucket);
+  END IF;
+  FOREACH v_id IN ARRAY p_expenses LOOP
+    SELECT expense_code INTO v_code FROM expenses WHERE id = v_id;
+    BEGIN
+      UPDATE expenses SET project_id = p_bucket WHERE id = v_id AND project_id IS NULL;
+      IF FOUND THEN v_moved := v_moved + 1;
+      ELSE v_failed := v_failed || jsonb_build_object('code', v_code, 'error', 'It is already on a project or bucket'); END IF;
+    EXCEPTION WHEN others THEN
+      v_failed := v_failed || jsonb_build_object('code', v_code, 'error', SQLERRM);
+    END;
+  END LOOP;
+  RETURN jsonb_build_object('moved', v_moved, 'failed', v_failed);
+END $f$;
+
+GRANT EXECUTE ON FUNCTION public.overhead_unbucketed(integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.expense_move_to_bucket(uuid[], uuid) TO authenticated;
+
+-- ── 503j (applied on its own) ───────────────────────────────────────────────
+SET LOCAL lock_timeout = '5s';
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS bucket_expense_types text[] NOT NULL DEFAULT '{}';
+COMMENT ON COLUMN public.projects.bucket_expense_types IS 'Kinds of overhead (expense_type) recorded with no project that land in this cost bucket by themselves (503).';
+
+-- ── 503k (applied on its own) ───────────────────────────────────────────────
+-- Overhead of a kind a bucket takes (fuel and vehicle maintenance to the
+-- vehicles bucket, rent to premises…) lands in it by itself when it is
+-- recorded with no project, instead of piling up as "other overhead".
+CREATE OR REPLACE FUNCTION public.bucket_for_expense_type(p_type text)
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  SELECT id FROM projects
+   WHERE is_internal AND active_for_year AND costing_closed_at IS NULL AND p_type = ANY(bucket_expense_types)
+   ORDER BY project_name LIMIT 1;
+$f$;
+
+CREATE OR REPLACE FUNCTION public.trg_bucket_route_expense()
+RETURNS trigger LANGUAGE plpgsql SET search_path TO 'public' AS $f$
+BEGIN
+  IF NEW.project_id IS NULL AND NEW.expense_type IS NOT NULL THEN
+    NEW.project_id := bucket_for_expense_type(NEW.expense_type::text);
+  END IF;
+  RETURN NEW;
+END $f$;
+
+-- Named to run first: the bucket's default category and the closed-costing
+-- check then see the bucket.
+CREATE OR REPLACE TRIGGER trg_a_bucket_0_route
+  BEFORE INSERT ON public.expenses
+  FOR EACH ROW EXECUTE FUNCTION trg_bucket_route_expense();
+
+-- Suggestions: a bucket that takes this kind of expense comes first.
+CREATE OR REPLACE FUNCTION public.overhead_unbucketed(p_limit integer DEFAULT 100)
+RETURNS TABLE(id uuid, expense_code text, date date, description text, amount numeric, payee text,
+              category_name text, approval_status text, payment_state text, requested_by text,
+              suggested_bucket uuid, suggested_bucket_name text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  WITH usual AS (
+    SELECT DISTINCT ON (x.category_id) x.category_id, x.project_id
+      FROM expenses x JOIN projects p ON p.id = x.project_id AND p.is_internal AND p.active_for_year
+                    AND (p.kind_sorted_at IS NOT NULL OR COALESCE(p.suggested_kind, 'bucket') = 'bucket')
+     WHERE x.category_id IS NOT NULL AND NOT COALESCE(x.is_archived, false)
+     GROUP BY x.category_id, x.project_id
+     ORDER BY x.category_id, count(*) DESC
+  )
+  SELECT e.id, e.expense_code, e.date, e.item_service_description, e.amount_etb,
+         COALESCE(v.vendor_name, s.employee_name, e.vendors_name), c.category_name, e.approval_status::text, e.payment_state,
+         up.full_name, COALESCE(tp.id, dp.id, u.project_id), btrim(COALESCE(tp.project_name, dp.project_name, up2.project_name))
+    FROM expenses e
+    LEFT JOIN vendors v ON v.id = e.vendor_id LEFT JOIN staff s ON s.id = e.paid_to_staff_id
+    LEFT JOIN categories c ON c.id = e.category_id LEFT JOIN user_profiles up ON up.id = e.purchaser_user_id
+    LEFT JOIN projects tp ON tp.id = bucket_for_expense_type(e.expense_type::text)
+    LEFT JOIN LATERAL (SELECT p.id, p.project_name FROM projects p
+                        WHERE p.is_internal AND p.active_for_year AND p.bucket_category_id = e.category_id
+                          AND (p.kind_sorted_at IS NOT NULL OR COALESCE(p.suggested_kind, 'bucket') = 'bucket')
+                        ORDER BY p.project_name LIMIT 1) dp ON true
+    LEFT JOIN usual u ON u.category_id = e.category_id
+    LEFT JOIN projects up2 ON up2.id = u.project_id
+   WHERE e.project_id IS NULL AND e.is_overhead AND NOT COALESCE(e.is_archived, false)
+     AND e.approval_status::text <> 'rejected' AND COALESCE(e.payment_state, '') <> 'void'
+     AND COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false)
+   ORDER BY e.date DESC, e.created_at DESC
+   LIMIT LEAST(GREATEST(p_limit, 1), 500);
+$f$;
+
+-- ── 503l (applied on its own) ───────────────────────────────────────────────
+SET LOCAL lock_timeout = '5s';
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS bucket_counts_as_overhead boolean NOT NULL DEFAULT true;
+COMMENT ON COLUMN public.projects.bucket_counts_as_overhead IS 'False for a bucket whose spending is not a running cost (owner drawings, equipment bought, loan repayments): shown apart and kept out of overhead totals (503).';
+
+-- ── 503m (applied on its own) ───────────────────────────────────────────────
+-- Move overhead with no bucket into a bucket or onto a job (finance and admin).
+-- A job whose costing is closed refuses it (502). Each expense moves on its
+-- own, so one refused doesn't hold back the rest.
+CREATE OR REPLACE FUNCTION public.overhead_move(p_expenses uuid[], p_target uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $f$
+DECLARE v_id uuid; v_moved int := 0; v_failed jsonb := '[]'::jsonb; v_code text;
+BEGIN
+  IF NOT COALESCE(get_user_role()::text IN ('admin', 'finance'), false) THEN RAISE EXCEPTION 'Finance moves overhead'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM projects WHERE id = p_target) THEN RAISE EXCEPTION 'Pick a bucket or a job'; END IF;
+  FOREACH v_id IN ARRAY p_expenses LOOP
+    SELECT expense_code INTO v_code FROM expenses WHERE id = v_id;
+    BEGIN
+      UPDATE expenses SET project_id = p_target WHERE id = v_id AND project_id IS NULL;
+      IF FOUND THEN v_moved := v_moved + 1;
+      ELSE v_failed := v_failed || jsonb_build_object('code', v_code, 'error', 'It is already on a project or bucket'); END IF;
+    EXCEPTION WHEN others THEN
+      v_failed := v_failed || jsonb_build_object('code', v_code, 'error', SQLERRM);
+    END;
+  END LOOP;
+  RETURN jsonb_build_object('moved', v_moved, 'failed', v_failed);
+END $f$;
+GRANT EXECUTE ON FUNCTION public.overhead_move(uuid[], uuid) TO authenticated;

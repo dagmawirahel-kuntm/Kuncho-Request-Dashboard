@@ -103,7 +103,16 @@ export function useOwnsBucket() {
 export interface PickerProject {
   id: string; project_name: string; department?: string | null
   is_internal?: boolean | null; active_for_year?: boolean | null
-  costing_closed_at?: string | null; kind_sorted_at?: string | null
+  costing_closed_at?: string | null; kind_sorted_at?: string | null; suggested_kind?: string | null
+}
+
+/** A bucket overhead can be put in: in use, and not one the one-time sort is
+ *  about to turn into a job. */
+export function isTargetBucket(p: PickerProject) {
+  if (!p.is_internal || p.costing_closed_at) return false
+  // Not sorted yet: a bucket-to-be counts whether or not it's switched on.
+  if (!p.kind_sorted_at && p.suggested_kind) return p.suggested_kind === 'bucket'
+  return !!p.active_for_year
 }
 
 /**
@@ -247,4 +256,47 @@ export function monthShare(history: Pick<OverheadHistory, 'today' | 'cur_month_s
 export function againstFor(m: VarianceMonth, row: VarianceRow, history: OverheadHistory | undefined, base: number | null | undefined) {
   if (!(Number(base) > 0)) return 0
   return Number(base) * (m.idx === row.cur_idx ? monthShare(history, row.cur_idx) : 1)
+}
+
+/** Kinds of overhead a bucket can take by itself when recorded with no project. */
+export const ROUTABLE_TYPES: { type: string; label: string }[] = [
+  { type: 'fuel', label: 'Fuel' },
+  { type: 'maintenance', label: 'Vehicle maintenance & penalties' },
+  { type: 'property_rent', label: 'Property rent' },
+  { type: 'transportation', label: 'Trips & ride hailing' },
+]
+
+/** Which bucket takes each kind, for showing a kind as taken elsewhere. */
+export function useBucketRouting() {
+  return useQuery({
+    queryKey: ['bucket-routing'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('projects').select('id, project_name, bucket_expense_types')
+        .eq('is_internal', true).eq('active_for_year', true)
+      if (error) throw error
+      const by = new Map<string, { id: string; name: string }>()
+      for (const p of (data ?? []) as { id: string; project_name: string; bucket_expense_types: string[] | null }[]) {
+        for (const t of p.bucket_expense_types ?? []) if (!by.has(t)) by.set(t, { id: p.id, name: p.project_name })
+      }
+      return by
+    },
+  })
+}
+
+/**
+ * Buckets whose spending isn't a running cost (owner drawings, equipment
+ * bought, loan repayments): shown apart and kept out of overhead totals.
+ */
+export function useNotRunningCosts() {
+  return useQuery({
+    queryKey: ['bucket-not-running'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('projects').select('id')
+        .eq('is_internal', true).eq('bucket_counts_as_overhead', false)
+      if (error) throw error
+      return new Set(((data ?? []) as { id: string }[]).map(r => r.id))
+    },
+  })
 }

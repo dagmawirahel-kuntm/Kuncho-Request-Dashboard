@@ -7,10 +7,10 @@ import { useToast } from '@/contexts/ToastContext'
 import { useCategories, useUserProfiles } from '@/hooks/useLookups'
 import { Panel, Pill, Stat, type Tone } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { FiscalBars, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
+import { ExpenseTypeChips, FiscalBars, FiscalTable, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
 import {
-  BAND_FILL, FISCAL_MONTHS, againstFor, btnSm as btn, gregMonth, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
-  useOverheadVariance, varianceBand, type OverheadHistory, type VarianceRow,
+  FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, btnSm as btn, gregMonth, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
+  useOverheadVariance, varianceBand,
 } from '@/lib/buckets'
 import { formatDate } from '@/lib/utils'
 import { ArrowLeft, BarChart3, Layers, Receipt, Settings2, ShieldCheck } from 'lucide-react'
@@ -18,6 +18,7 @@ import { ArrowLeft, BarChart3, Layers, Receipt, Settings2, ShieldCheck } from 'l
 type BucketProject = {
   id: string; project_name: string; department: string | null; is_internal: boolean; active_for_year: boolean
   bucket_owner_id: string | null; bucket_monthly_budget: number | null; bucket_category_id: string | null
+  bucket_expense_types: string[] | null; bucket_counts_as_overhead: boolean
 }
 type Recent = {
   id: string; expense_code: string | null; date: string; description: string | null; amount: number; payee: string | null
@@ -50,7 +51,7 @@ export default function BucketPage() {
     queryKey: ['bucket-page', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('projects')
-        .select('id, project_name, department, is_internal, active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id')
+        .select('id, project_name, department, is_internal, active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, bucket_expense_types, bucket_counts_as_overhead')
         .eq('id', id!).single()
       if (error) throw error
       return data as BucketProject
@@ -102,9 +103,12 @@ export default function BucketPage() {
             {project.project_name}
             <Pill tone="slate">Cost bucket</Pill>
             {project.active_for_year ? <Pill tone="green">In use</Pill> : <Pill>Out of use</Pill>}
+            {project.bucket_counts_as_overhead === false && <Pill tone="amber">Not a running cost</Pill>}
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Running costs: it never closes. Each month's spending locks with the fiscal period.
+            {project.bucket_counts_as_overhead === false
+              ? 'Paid through overhead but kept out of the overhead totals: it never closes.'
+              : 'Running costs: it never closes.'} Each month's spending locks with the fiscal period.
             {row?.owner_name ? ` ${row.owner_name} approves its spending before finance.` : ' No owner yet: finance approves its spending alone.'}
           </p>
         </div>
@@ -115,7 +119,7 @@ export default function BucketPage() {
           sub={ref ? `${ratioText(thisMonth, against)} ${ref.kind === 'budget' ? 'the budget' : 'its usual month'}, for the month so far` : 'Nothing to compare with yet'}
           tone={ref && thisMonth > against * (ref.kind === 'budget' ? 1 : 1.4) ? 'red' : undefined} />
         <Stat label={ref?.kind === 'budget' ? 'Monthly budget' : 'Usual month'} value={ref ? money(Math.round(ref.value)) : '—'}
-          sub={ref?.kind === 'budget' ? 'Set in the settings' : usualMonths ? `No budget set: the average of the last ${usualMonths} month${usualMonths === 1 ? '' : 's'}` : 'No completed months yet'} />
+          sub={ref?.kind === 'budget' ? 'Set in the settings' : !ref ? 'No budget, and nothing spent yet to average' : `No budget set: the average of the last ${usualMonths} month${usualMonths === 1 ? '' : 's'}`} />
         <Stat label="Same month last year" value={history?.has_last_year ? money(lastYear) : '—'}
           sub={history?.has_last_year ? (lastYear > 0 ? `${ratioText(thisMonth, lastYearSoFar)} this year, so far` : 'Nothing then') : `No records then: they start ${history?.data_from ? gregMonth(history.data_from) : 'this year'}`} />
         <Stat label={`${v?.fy_label ?? 'Year'} so far`} value={money(v?.fytd ?? 0)}
@@ -199,6 +203,8 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
     project_name: project.project_name, department: project.department ?? '', bucket_owner_id: project.bucket_owner_id,
     bucket_monthly_budget: project.bucket_monthly_budget == null ? '' : String(project.bucket_monthly_budget),
     bucket_category_id: project.bucket_category_id, active_for_year: project.active_for_year,
+    bucket_expense_types: project.bucket_expense_types ?? [],
+    bucket_counts_as_overhead: project.bucket_counts_as_overhead !== false,
   }
   const [f, setF] = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -206,7 +212,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
   const dirty = JSON.stringify(f) !== JSON.stringify(initial)
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF(x => ({ ...x, [k]: v }))
   const refresh = () => {
-    for (const k of ['bucket-page', 'overhead-summary', 'projects-lookup', 'bucket-owners', 'projects', 'owns-bucket']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['bucket-page', 'overhead-summary', 'projects-lookup', 'bucket-owners', 'projects', 'owns-bucket', 'bucket-routing', 'overhead-unbucketed', 'bucket-not-running']) qc.invalidateQueries({ queryKey: [k] })
   }
 
   async function save() {
@@ -216,6 +222,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
       project_name: f.project_name.trim(), department: f.department.trim() || null, bucket_owner_id: f.bucket_owner_id,
       bucket_monthly_budget: f.bucket_monthly_budget === '' ? null : Number(f.bucket_monthly_budget),
       bucket_category_id: f.bucket_category_id, active_for_year: f.active_for_year,
+      bucket_expense_types: f.bucket_expense_types, bucket_counts_as_overhead: f.bucket_counts_as_overhead,
     }).eq('id', project.id)
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
@@ -240,7 +247,10 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
       <Panel title="Settings" icon={Settings2}>
         <dl className="space-y-2 text-sm">
           {[['Owner', ownerName ?? 'No owner'], ['Monthly budget', project.bucket_monthly_budget ? money(project.bucket_monthly_budget) : 'Not set'],
-            ['Default category', categoryName ?? 'Not set'], ['Department', project.department ?? '—'], ['In use', project.active_for_year ? 'Yes' : 'No']].map(([k, v]) => (
+            ['Default category', categoryName ?? 'Not set'],
+            ['Lands here by itself', (project.bucket_expense_types ?? []).map(t => ROUTABLE_TYPES.find(r => r.type === t)?.label ?? t).join(', ') || 'Nothing'],
+            ['Counts as a running cost', project.bucket_counts_as_overhead === false ? 'No: kept out of the totals' : 'Yes'],
+            ['Department', project.department ?? '—'], ['In use', project.active_for_year ? 'Yes' : 'No']].map(([k, v]) => (
             <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className="text-right font-medium text-slate-800 dark:text-slate-100">{v}</dd></div>
           ))}
         </dl>
@@ -273,9 +283,18 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
           <p className={help}>Given to spending here with no category of its own. Purchase orders keep their items' category.</p>
         </div>
         <div>
+          <span className={label}>Lands here by itself</span>
+          <ExpenseTypeChips bucketId={project.id} value={f.bucket_expense_types} onChange={v => set('bucket_expense_types', v)} />
+          <p className={help}>Overhead of these kinds recorded with no project comes straight here, instead of waiting in "Other company overhead".</p>
+        </div>
+        <div>
           <label className={label} htmlFor="bucket-dept">Department</label>
           <input id="bucket-dept" className={field} value={f.department} onChange={e => set('department', e.target.value)} />
         </div>
+        <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input type="checkbox" className="mt-0.5" checked={f.bucket_counts_as_overhead} onChange={e => set('bucket_counts_as_overhead', e.target.checked)} />
+          <span>Counts as a running cost<span className="block text-[11px] text-slate-400">Untick for money paid through overhead that isn't a cost of running the company (owner drawings, equipment bought, loan repayments): it is shown apart and kept out of the overhead totals.</span></span>
+        </label>
         <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input type="checkbox" className="mt-0.5" checked={f.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
           <span>In use<span className="block text-[11px] text-slate-400">Out of use, it is kept but left out of the pickers.</span></span>
@@ -299,48 +318,5 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
         </div>
       </div>
     </Panel>
-  )
-}
-
-/** The fiscal year in numbers: each month against its reference and last year. */
-function FiscalTable({ row, history }: { row: VarianceRow; history: OverheadHistory | undefined }) {
-  const ref = referenceOf(row)
-  const hasLastYear = !!history?.has_last_year
-  return (
-    <details className="mt-3 text-xs">
-      <summary className="cursor-pointer select-none font-medium text-slate-600 dark:text-slate-300">The year in numbers</summary>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[440px] text-right tabular-nums">
-          <thead className="text-[11px] text-slate-500">
-            <tr>
-              <th scope="col" className="py-1 text-left font-medium">Month</th>
-              <th scope="col" className="py-1 font-medium">Spent</th>
-              <th scope="col" className="py-1 font-medium">vs {ref?.kind === 'budget' ? 'budget' : 'usual'}</th>
-              <th scope="col" className="py-1 font-medium">Last year</th>
-              <th scope="col" className="py-1 font-medium">vs last year</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y dark:divide-slate-700">
-            {row.months.filter(m => m.idx <= row.cur_idx).map(m => {
-              const against = againstFor(m, row, history, ref?.value)
-              const band = ref ? varianceBand(m.spent, against) : null
-              return (
-                <tr key={m.idx} className="text-slate-700 dark:text-slate-200">
-                  <th scope="row" className="py-1 text-left font-normal">{FISCAL_MONTHS[m.idx]}{m.idx === row.cur_idx ? ' (so far)' : ''} <span className="text-slate-400">· from {gregMonth(m.start)}</span></th>
-                  <td className="py-1 font-semibold">{money(m.spent)}</td>
-                  <td className="py-1">
-                    {ref && m.spent > 0
-                      ? <span className={`rounded px-1.5 py-0.5 ${band != null ? `${BAND_FILL[band]} text-slate-900 dark:text-white` : ''}`}>{ratioText(m.spent, against)}</span>
-                      : <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className="py-1">{hasLastYear ? money(m.last_year) : <span className="text-slate-400">—</span>}</td>
-                  <td className="py-1">{hasLastYear && m.last_year > 0 ? ratioText(m.spent, againstFor(m, row, history, m.last_year)) : <span className="text-slate-400">—</span>}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </details>
   )
 }
