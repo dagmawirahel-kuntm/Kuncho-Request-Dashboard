@@ -7,10 +7,10 @@ import { useToast } from '@/contexts/ToastContext'
 import { useCategories, useUserProfiles } from '@/hooks/useLookups'
 import { Panel, Pill, Stat, type Tone } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { FiscalBars, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
+import { FiscalBars, FiscalTable, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
 import {
-  BAND_FILL, FISCAL_MONTHS, againstFor, btnSm as btn, gregMonth, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
-  useOverheadVariance, varianceBand, type OverheadHistory, type VarianceRow,
+  FISCAL_MONTHS, againstFor, btnSm as btn, gregMonth, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
+  useOverheadVariance, varianceBand,
 } from '@/lib/buckets'
 import { formatDate } from '@/lib/utils'
 import { ArrowLeft, BarChart3, Layers, Receipt, Settings2, ShieldCheck } from 'lucide-react'
@@ -299,48 +299,5 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
         </div>
       </div>
     </Panel>
-  )
-}
-
-/** The fiscal year in numbers: each month against its reference and last year. */
-function FiscalTable({ row, history }: { row: VarianceRow; history: OverheadHistory | undefined }) {
-  const ref = referenceOf(row)
-  const hasLastYear = !!history?.has_last_year
-  return (
-    <details className="mt-3 text-xs">
-      <summary className="cursor-pointer select-none font-medium text-slate-600 dark:text-slate-300">The year in numbers</summary>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[440px] text-right tabular-nums">
-          <thead className="text-[11px] text-slate-500">
-            <tr>
-              <th scope="col" className="py-1 text-left font-medium">Month</th>
-              <th scope="col" className="py-1 font-medium">Spent</th>
-              <th scope="col" className="py-1 font-medium">vs {ref?.kind === 'budget' ? 'budget' : 'usual'}</th>
-              <th scope="col" className="py-1 font-medium">Last year</th>
-              <th scope="col" className="py-1 font-medium">vs last year</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y dark:divide-slate-700">
-            {row.months.filter(m => m.idx <= row.cur_idx).map(m => {
-              const against = againstFor(m, row, history, ref?.value)
-              const band = ref ? varianceBand(m.spent, against) : null
-              return (
-                <tr key={m.idx} className="text-slate-700 dark:text-slate-200">
-                  <th scope="row" className="py-1 text-left font-normal">{FISCAL_MONTHS[m.idx]}{m.idx === row.cur_idx ? ' (so far)' : ''} <span className="text-slate-400">· from {gregMonth(m.start)}</span></th>
-                  <td className="py-1 font-semibold">{money(m.spent)}</td>
-                  <td className="py-1">
-                    {ref && m.spent > 0
-                      ? <span className={`rounded px-1.5 py-0.5 ${band != null ? `${BAND_FILL[band]} text-slate-900 dark:text-white` : ''}`}>{ratioText(m.spent, against)}</span>
-                      : <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className="py-1">{hasLastYear ? money(m.last_year) : <span className="text-slate-400">—</span>}</td>
-                  <td className="py-1">{hasLastYear && m.last_year > 0 ? ratioText(m.spent, againstFor(m, row, history, m.last_year)) : <span className="text-slate-400">—</span>}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </details>
   )
 }

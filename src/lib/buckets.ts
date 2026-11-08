@@ -103,7 +103,16 @@ export function useOwnsBucket() {
 export interface PickerProject {
   id: string; project_name: string; department?: string | null
   is_internal?: boolean | null; active_for_year?: boolean | null
-  costing_closed_at?: string | null; kind_sorted_at?: string | null
+  costing_closed_at?: string | null; kind_sorted_at?: string | null; suggested_kind?: string | null
+}
+
+/** A bucket overhead can be put in: in use, and not one the one-time sort is
+ *  about to turn into a job. */
+export function isTargetBucket(p: PickerProject) {
+  if (!p.is_internal || p.costing_closed_at) return false
+  // Not sorted yet: a bucket-to-be counts whether or not it's switched on.
+  if (!p.kind_sorted_at && p.suggested_kind) return p.suggested_kind === 'bucket'
+  return !!p.active_for_year
 }
 
 /**

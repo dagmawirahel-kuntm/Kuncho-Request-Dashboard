@@ -146,7 +146,7 @@ function BucketRow({ r, v, history, canEdit }: { r: OverheadRow; v: VarianceRow 
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
         <div className="min-w-[12rem] flex-1">
           <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {r.id ? <Link to={`/overhead/${r.id}`} className="hover:text-brand">{r.name}</Link> : r.name}
+            <Link to={r.id ? `/overhead/${r.id}` : '/overhead/other'} className="hover:text-brand">{r.name}</Link>
             {r.id && !r.in_use && <Pill>Out of use</Pill>}
             {r.waiting_owner > 0 && <Pill tone="amber">{r.waiting_owner} waiting for the owner</Pill>}
           </p>
@@ -156,6 +156,11 @@ function BucketRow({ r, v, history, canEdit }: { r: OverheadRow; v: VarianceRow 
                   {' · '}{r.category_name ? `Category: ${r.category_name}` : 'No default category'}</>
               : 'Recorded as company overhead, with no bucket. Pick a bucket for these where one fits.'}
           </p>
+          {!r.id && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <Link to="/overhead/other" className={`${btn} text-slate-600 dark:text-slate-300`}><Pencil className="h-3 w-3" /> Open · put them in buckets</Link>
+            </div>
+          )}
           {canEdit && r.id && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               <Link to={`/overhead/${r.id}`} className={`${btn} text-slate-600 dark:text-slate-300`}><Pencil className="h-3 w-3" /> Open · settings</Link>
