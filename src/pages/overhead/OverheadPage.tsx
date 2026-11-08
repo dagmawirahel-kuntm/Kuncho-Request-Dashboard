@@ -7,11 +7,11 @@ import { useToast } from '@/contexts/ToastContext'
 import { Panel, Pill, Stat } from '@/components/record/Record'
 import {
   FISCAL_MONTHS, SORT_LABEL, againstFor, btnSm as btn, money, ratioText, referenceOf, short,
-  useBucketWaiting, useOverheadHistory, useOverheadSummary, useOverheadVariance,
+  useBucketWaiting, useNotRunningCosts, useOverheadHistory, useOverheadSummary, useOverheadVariance,
   type OverheadHistory, type OverheadRow, type SortKind, type VarianceRow,
 } from '@/lib/buckets'
 import { FiscalBars, MonthLines, OwnerQueue, Standouts, VarianceGrid } from '@/components/overhead/OverheadParts'
-import { CalendarRange, ChevronDown, ChevronRight, ClipboardList, Layers, Pencil } from 'lucide-react'
+import { CalendarRange, ChevronDown, ChevronRight, ClipboardList, Layers, Pencil, Wallet } from 'lucide-react'
 
 
 /**
@@ -26,16 +26,23 @@ export default function OverheadPage() {
   const { data: rows = [], isLoading } = useOverheadSummary()
   const { data: waiting = [] } = useBucketWaiting()
   // The fiscal year, month by month (503e): fiscal months, Hamle … Sene.
-  const { data: variance = [] } = useOverheadVariance()
+  const { data: allVariance = [] } = useOverheadVariance()
   const { data: history } = useOverheadHistory()
-  const vBy = useMemo(() => new Map(variance.map(v => [v.id ?? 'other', v])), [variance])
+  // Owner drawings, equipment bought, loan repayments: not running costs, so
+  // kept out of the totals and the month-by-month grid (503l).
+  const { data: notRunning = new Set<string>() } = useNotRunningCosts()
+  const variance = useMemo(() => allVariance.filter(v => !v.id || !notRunning.has(v.id)), [allVariance, notRunning])
+  const vBy = useMemo(() => new Map(allVariance.map(v => [v.id ?? 'other', v])), [allVariance])
   const [showOff, setShowOff] = useState(false)
 
   const buckets = rows.filter(r => r.id)
   const other = rows.find(r => !r.id)
   const toSort = buckets.filter(r => r.to_sort)
-  const inUse = buckets.filter(r => r.in_use && !r.to_sort)
-  const offUse = buckets.filter(r => !r.in_use && !r.to_sort)
+  const apart = buckets.filter(r => !r.to_sort && notRunning.has(r.id!) && (r.in_use || r.n_costs > 0))
+  const running = buckets.filter(r => !notRunning.has(r.id!))
+  const inUse = running.filter(r => r.in_use && !r.to_sort)
+  const offUse = buckets.filter(r => !r.in_use && !r.to_sort && !apart.includes(r))
+  const apartFytd = apart.reduce((s, r) => s + (vBy.get(r.id!)?.fytd ?? 0), 0)
   const stats = useMemo(() => {
     const cur = variance[0]?.cur_idx ?? 0
     const thisMonth = (v: VarianceRow) => v.months[cur]?.spent ?? 0
@@ -49,10 +56,10 @@ export default function OverheadPage() {
       heldRef: held.reduce((s, v) => s + againstFor(v.months[cur], v, history, referenceOf(v)!.value), 0),
       fytd: variance.reduce((s, v) => s + v.fytd, 0),
       lastFytd: variance.reduce((s, v) => s + v.last_fytd, 0),
-      budgets: rows.filter(r => r.id && r.in_use && Number(r.monthly_budget ?? 0) > 0).length,
+      budgets: rows.filter(r => r.id && r.in_use && !notRunning.has(r.id) && Number(r.monthly_budget ?? 0) > 0).length,
       noOwner: rows.filter(r => r.id && r.in_use && !r.to_sort && !r.owner_id).length,
     }
-  }, [rows, variance, history])
+  }, [rows, variance, history, notRunning])
   // The grid: buckets in use, and any other bucket with spending this year.
   const gridRows = variance.filter(v => !v.id || v.in_use || v.fytd > 0)
 
@@ -76,7 +83,8 @@ export default function OverheadPage() {
               sub={stats.heldRef > 0 ? `${ratioText(stats.heldSpent, stats.heldRef)} the usual month${stats.budgets ? ' or budget' : ''} by now (${money(Math.round(stats.heldRef))})` : 'Nothing to compare with yet'}
               tone={stats.heldRef > 0 && stats.heldSpent > stats.heldRef * 1.1 ? 'red' : undefined} />
             <Stat label={`${history?.fy_label ?? 'This fiscal year'} so far`} value={money(stats.fytd)}
-              sub={history?.has_last_year && stats.lastFytd > 0 ? `${ratioText(stats.fytd, stats.lastFytd)} on the same stretch last year` : 'No records last year to compare with'} />
+              sub={history?.has_last_year && stats.lastFytd > 0 ? `${ratioText(stats.fytd, stats.lastFytd)} on the same stretch last year`
+                : apartFytd > 0 ? `Leaves out ${short(apartFytd)} that isn't a running cost` : 'No records last year to compare with'} />
             <Stat label="Waiting for an owner" value={waiting.length} sub="Spending owners haven't approved" tone={waiting.length > 0 ? 'amber' : undefined} />
             <Stat label="Buckets with no owner" value={stats.noOwner} sub="Finance approves those alone" tone={stats.noOwner > 0 ? 'amber' : undefined} />
           </div>
@@ -106,6 +114,18 @@ export default function OverheadPage() {
               </ul>
             )}
           </Panel>
+
+          {apart.length > 0 && (
+            <Panel title="Not running costs" icon={Wallet} count={apart.length} padded={false}>
+              <p className="border-b px-4 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                Paid through overhead but not a cost of running the company: owner drawings, equipment bought, loan repayments.
+                Kept out of the totals and the month-by-month comparison above{apartFytd > 0 ? ` (${money(apartFytd)} this fiscal year)` : ''}.
+              </p>
+              <ul className="divide-y dark:divide-slate-700">
+                {apart.map(r => <BucketRow key={r.id} r={r} v={vBy.get(r.id!)} history={history} canEdit={isFinance} />)}
+              </ul>
+            </Panel>
+          )}
 
           {offUse.length > 0 && (
             <section className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">

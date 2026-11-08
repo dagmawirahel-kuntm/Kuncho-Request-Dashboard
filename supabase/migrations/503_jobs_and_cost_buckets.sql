@@ -595,3 +595,32 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
    ORDER BY e.date DESC, e.created_at DESC
    LIMIT LEAST(GREATEST(p_limit, 1), 500);
 $f$;
+
+-- ── 503l (applied on its own) ───────────────────────────────────────────────
+SET LOCAL lock_timeout = '5s';
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS bucket_counts_as_overhead boolean NOT NULL DEFAULT true;
+COMMENT ON COLUMN public.projects.bucket_counts_as_overhead IS 'False for a bucket whose spending is not a running cost (owner drawings, equipment bought, loan repayments): shown apart and kept out of overhead totals (503).';
+
+-- ── 503m (applied on its own) ───────────────────────────────────────────────
+-- Move overhead with no bucket into a bucket or onto a job (finance and admin).
+-- A job whose costing is closed refuses it (502). Each expense moves on its
+-- own, so one refused doesn't hold back the rest.
+CREATE OR REPLACE FUNCTION public.overhead_move(p_expenses uuid[], p_target uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $f$
+DECLARE v_id uuid; v_moved int := 0; v_failed jsonb := '[]'::jsonb; v_code text;
+BEGIN
+  IF NOT COALESCE(get_user_role()::text IN ('admin', 'finance'), false) THEN RAISE EXCEPTION 'Finance moves overhead'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM projects WHERE id = p_target) THEN RAISE EXCEPTION 'Pick a bucket or a job'; END IF;
+  FOREACH v_id IN ARRAY p_expenses LOOP
+    SELECT expense_code INTO v_code FROM expenses WHERE id = v_id;
+    BEGIN
+      UPDATE expenses SET project_id = p_target WHERE id = v_id AND project_id IS NULL;
+      IF FOUND THEN v_moved := v_moved + 1;
+      ELSE v_failed := v_failed || jsonb_build_object('code', v_code, 'error', 'It is already on a project or bucket'); END IF;
+    EXCEPTION WHEN others THEN
+      v_failed := v_failed || jsonb_build_object('code', v_code, 'error', SQLERRM);
+    END;
+  END LOOP;
+  RETURN jsonb_build_object('moved', v_moved, 'failed', v_failed);
+END $f$;
+GRANT EXECUTE ON FUNCTION public.overhead_move(uuid[], uuid) TO authenticated;

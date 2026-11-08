@@ -24,7 +24,8 @@ type Unbucketed = {
 /**
  * Overhead recorded with no bucket (503): read like a bucket, month by month
  * against its usual month, and emptied into the buckets the spending belongs
- * to. Each expense comes with the bucket its category usually goes to.
+ * to, or onto the job it was really for. Each expense comes with the bucket
+ * its category usually goes to.
  */
 export default function OtherOverheadPage() {
   const qc = useQueryClient()
@@ -50,8 +51,16 @@ export default function OtherOverheadPage() {
     enabled: hasRole('admin', 'finance', 'executive'),
   })
   const { data: projects = [] } = useProjects()
-  const bucketOptions = useMemo(() => (projects as PickerProject[]).filter(isTargetBucket)
-    .map(p => ({ id: p.id, label: p.project_name })), [projects])
+  // Buckets first, then the jobs still open for costs (502).
+  const targetOptions = useMemo(() => {
+    const list = projects as PickerProject[]
+    const byName = (a: PickerProject, b: PickerProject) => a.project_name.localeCompare(b.project_name)
+    return [
+      ...list.filter(isTargetBucket).sort(byName).map(p => ({ id: p.id, label: `Overhead · ${p.project_name.trim()}`, sub: 'Cost bucket' })),
+      ...list.filter(p => !p.is_internal && !p.costing_closed_at).sort(byName).map(p => ({ id: p.id, label: p.project_name.trim(), sub: p.department ? `Job · ${p.department}` : 'Job' })),
+    ]
+  }, [projects])
+  const nameOf = (id: string | null, fallback: string) => targetOptions.find(o => o.id === id)?.label ?? fallback
 
   if (!hasRole('admin', 'finance', 'executive')) {
     return <p className="py-16 text-center text-sm text-slate-500">Overhead with no bucket is for finance.</p>
@@ -73,23 +82,24 @@ export default function OtherOverheadPage() {
     return m
   }, new Map<string, { name: string; ids: string[] }>())].sort((a, b) => b[1].ids.length - a[1].ids.length)
 
-  async function move(ids: string[], bucket: string | null, label: string) {
-    if (!bucket || ids.length === 0) return
+  async function move(ids: string[], to: string | null, label: string) {
+    if (!to || ids.length === 0) return
     setBusy(true)
-    const { data, error } = await supabase.rpc('expense_move_to_bucket', { p_expenses: ids, p_bucket: bucket })
+    // A bucket or a job (503m): a job whose costing is closed refuses it.
+    const { data, error } = await supabase.rpc('overhead_move', { p_expenses: ids, p_target: to })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
     const res = data as { moved: number; failed: { code: string | null; error: string }[] }
     if (res.moved) toast(`${res.moved} moved to ${label}`, 'success')
     if (res.failed.length) toast(res.failed.slice(0, 3).map(f => `${f.code ?? 'Expense'}: ${f.error}`).join(' · '), 'error')
     setSelected(new Set())
-    for (const k of ['overhead-unbucketed', 'overhead-variance', 'overhead-summary', 'overhead-month-lines']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['overhead-unbucketed', 'overhead-variance', 'overhead-summary', 'overhead-month-lines', 'project-costs', 'project']) qc.invalidateQueries({ queryKey: [k] })
   }
   /** Each to the bucket picked for it (or suggested), grouped per bucket. */
   async function moveEachToItsBucket(list: Unbucketed[]) {
     const by = new Map<string, string[]>()
     for (const r of list) { const b = target(r); if (b) by.set(b, [...(by.get(b) ?? []), r.id]) }
-    for (const [b, ids] of by) await move(ids, b, bucketOptions.find(o => o.id === b)?.label ?? 'its bucket')
+    for (const [b, ids] of by) await move(ids, b, nameOf(b, 'its bucket'))
   }
 
   return (
@@ -102,7 +112,7 @@ export default function OtherOverheadPage() {
             Other company overhead <Pill tone="amber">No bucket</Pill>
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Spending marked company overhead but not put in a bucket. Put each in the bucket it belongs to: it then counts in that bucket's months, and its owner sees it.
+            Spending marked company overhead but not put in a bucket. Put each in the bucket it belongs to (it then counts in that bucket's months, and its owner sees it), or on the job it was really bought for.
           </p>
         </div>
       </div>
@@ -127,7 +137,7 @@ export default function OtherOverheadPage() {
         </Panel>
       )}
 
-      <Panel title="Put these in their buckets" icon={ArrowRight} count={rows.length} padded={false}>
+      <Panel title="Put these in a bucket, or on their job" icon={ArrowRight} count={rows.length} padded={false}>
         {rows.length === 0 ? <p className="p-4 text-sm text-slate-500">Nothing left: every overhead expense is in a bucket.</p> : (
           <>
             {canMove && bySuggestion.length > 0 && (
@@ -149,11 +159,11 @@ export default function OtherOverheadPage() {
                 {selected.size > 0 ? (
                   <>
                     <span className="text-slate-400">· {selected.size} picked: move to</span>
-                    <div className="w-52"><SearchableSelect value={bulkTo} onChange={setBulkTo} options={bucketOptions} placeholder="Pick a bucket…" /></div>
-                    <button onClick={() => move([...selected], bulkTo, bucketOptions.find(o => o.id === bulkTo)?.label ?? 'the bucket')} disabled={busy || !bulkTo}
+                    <div className="w-52"><SearchableSelect value={bulkTo} onChange={setBulkTo} options={targetOptions} placeholder="A bucket or a job…" /></div>
+                    <button onClick={() => move([...selected], bulkTo, nameOf(bulkTo, 'it'))} disabled={busy || !bulkTo}
                       className={`${btn} border-brand bg-brand text-white`}>Move</button>
                     <button onClick={() => moveEachToItsBucket(rows.filter(r => selected.has(r.id)))} disabled={busy}
-                      className={`${btn} text-slate-700 dark:text-slate-200`}>Each to its suggested bucket</button>
+                      className={`${btn} text-slate-700 dark:text-slate-200`}>Each to the one shown</button>
                   </>
                 ) : withSuggestion.length > 0 && (
                   <button onClick={() => moveEachToItsBucket(withSuggestion)} disabled={busy} className={`${btn} text-slate-700 dark:text-slate-200`}>
@@ -183,10 +193,10 @@ export default function OtherOverheadPage() {
                   {canMove ? (
                     <div className="flex w-full items-center gap-1.5 sm:w-auto">
                       <div className="min-w-0 flex-1 sm:w-48 sm:flex-none">
-                        <SearchableSelect value={target(r)} onChange={b => setChosen(c => ({ ...c, [r.id]: b }))} options={bucketOptions}
-                          placeholder="Which bucket?" />
+                        <SearchableSelect value={target(r)} onChange={b => setChosen(c => ({ ...c, [r.id]: b }))} options={targetOptions}
+                          placeholder="Bucket or job?" />
                       </div>
-                      <button onClick={() => move([r.id], target(r), bucketOptions.find(o => o.id === target(r))?.label ?? 'the bucket')}
+                      <button onClick={() => move([r.id], target(r), nameOf(target(r), 'it'))}
                         disabled={busy || !target(r)} className={`${btn} shrink-0 text-slate-700 dark:text-slate-200`}>Move</button>
                     </div>
                   ) : r.suggested_bucket_name && <span className="text-xs text-slate-500">Usually {r.suggested_bucket_name}</span>}
@@ -195,6 +205,7 @@ export default function OtherOverheadPage() {
             </ul>
             <p className="px-4 py-2 text-[11px] text-slate-400">
               The suggested bucket is the one set to take this kind of expense, else the one whose default category matches, else where spending in the same category usually goes. Check it before moving.
+              Materials bought for a job belong on that job: pick it from the jobs under the buckets. A job whose costing is closed won't take it.
             </p>
           </>
         )}

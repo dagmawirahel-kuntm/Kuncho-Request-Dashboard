@@ -18,7 +18,7 @@ import { ArrowLeft, BarChart3, Layers, Receipt, Settings2, ShieldCheck } from 'l
 type BucketProject = {
   id: string; project_name: string; department: string | null; is_internal: boolean; active_for_year: boolean
   bucket_owner_id: string | null; bucket_monthly_budget: number | null; bucket_category_id: string | null
-  bucket_expense_types: string[] | null
+  bucket_expense_types: string[] | null; bucket_counts_as_overhead: boolean
 }
 type Recent = {
   id: string; expense_code: string | null; date: string; description: string | null; amount: number; payee: string | null
@@ -51,7 +51,7 @@ export default function BucketPage() {
     queryKey: ['bucket-page', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('projects')
-        .select('id, project_name, department, is_internal, active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, bucket_expense_types')
+        .select('id, project_name, department, is_internal, active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, bucket_expense_types, bucket_counts_as_overhead')
         .eq('id', id!).single()
       if (error) throw error
       return data as BucketProject
@@ -103,9 +103,12 @@ export default function BucketPage() {
             {project.project_name}
             <Pill tone="slate">Cost bucket</Pill>
             {project.active_for_year ? <Pill tone="green">In use</Pill> : <Pill>Out of use</Pill>}
+            {project.bucket_counts_as_overhead === false && <Pill tone="amber">Not a running cost</Pill>}
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Running costs: it never closes. Each month's spending locks with the fiscal period.
+            {project.bucket_counts_as_overhead === false
+              ? 'Paid through overhead but kept out of the overhead totals: it never closes.'
+              : 'Running costs: it never closes.'} Each month's spending locks with the fiscal period.
             {row?.owner_name ? ` ${row.owner_name} approves its spending before finance.` : ' No owner yet: finance approves its spending alone.'}
           </p>
         </div>
@@ -201,6 +204,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
     bucket_monthly_budget: project.bucket_monthly_budget == null ? '' : String(project.bucket_monthly_budget),
     bucket_category_id: project.bucket_category_id, active_for_year: project.active_for_year,
     bucket_expense_types: project.bucket_expense_types ?? [],
+    bucket_counts_as_overhead: project.bucket_counts_as_overhead !== false,
   }
   const [f, setF] = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -208,7 +212,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
   const dirty = JSON.stringify(f) !== JSON.stringify(initial)
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF(x => ({ ...x, [k]: v }))
   const refresh = () => {
-    for (const k of ['bucket-page', 'overhead-summary', 'projects-lookup', 'bucket-owners', 'projects', 'owns-bucket', 'bucket-routing', 'overhead-unbucketed']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['bucket-page', 'overhead-summary', 'projects-lookup', 'bucket-owners', 'projects', 'owns-bucket', 'bucket-routing', 'overhead-unbucketed', 'bucket-not-running']) qc.invalidateQueries({ queryKey: [k] })
   }
 
   async function save() {
@@ -218,7 +222,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
       project_name: f.project_name.trim(), department: f.department.trim() || null, bucket_owner_id: f.bucket_owner_id,
       bucket_monthly_budget: f.bucket_monthly_budget === '' ? null : Number(f.bucket_monthly_budget),
       bucket_category_id: f.bucket_category_id, active_for_year: f.active_for_year,
-      bucket_expense_types: f.bucket_expense_types,
+      bucket_expense_types: f.bucket_expense_types, bucket_counts_as_overhead: f.bucket_counts_as_overhead,
     }).eq('id', project.id)
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
@@ -245,6 +249,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
           {[['Owner', ownerName ?? 'No owner'], ['Monthly budget', project.bucket_monthly_budget ? money(project.bucket_monthly_budget) : 'Not set'],
             ['Default category', categoryName ?? 'Not set'],
             ['Lands here by itself', (project.bucket_expense_types ?? []).map(t => ROUTABLE_TYPES.find(r => r.type === t)?.label ?? t).join(', ') || 'Nothing'],
+            ['Counts as a running cost', project.bucket_counts_as_overhead === false ? 'No: kept out of the totals' : 'Yes'],
             ['Department', project.department ?? '—'], ['In use', project.active_for_year ? 'Yes' : 'No']].map(([k, v]) => (
             <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className="text-right font-medium text-slate-800 dark:text-slate-100">{v}</dd></div>
           ))}
@@ -286,6 +291,10 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
           <label className={label} htmlFor="bucket-dept">Department</label>
           <input id="bucket-dept" className={field} value={f.department} onChange={e => set('department', e.target.value)} />
         </div>
+        <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input type="checkbox" className="mt-0.5" checked={f.bucket_counts_as_overhead} onChange={e => set('bucket_counts_as_overhead', e.target.checked)} />
+          <span>Counts as a running cost<span className="block text-[11px] text-slate-400">Untick for money paid through overhead that isn't a cost of running the company (owner drawings, equipment bought, loan repayments): it is shown apart and kept out of the overhead totals.</span></span>
+        </label>
         <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input type="checkbox" className="mt-0.5" checked={f.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
           <span>In use<span className="block text-[11px] text-slate-400">Out of use, it is kept but left out of the pickers.</span></span>

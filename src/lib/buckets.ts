@@ -283,3 +283,20 @@ export function useBucketRouting() {
     },
   })
 }
+
+/**
+ * Buckets whose spending isn't a running cost (owner drawings, equipment
+ * bought, loan repayments): shown apart and kept out of overhead totals.
+ */
+export function useNotRunningCosts() {
+  return useQuery({
+    queryKey: ['bucket-not-running'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('projects').select('id')
+        .eq('is_internal', true).eq('bucket_counts_as_overhead', false)
+      if (error) throw error
+      return new Set(((data ?? []) as { id: string }[]).map(r => r.id))
+    },
+  })
+}
