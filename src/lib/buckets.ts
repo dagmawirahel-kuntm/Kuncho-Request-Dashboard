@@ -136,3 +136,115 @@ export const short = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >
 export const monthName = (iso: string, year = false) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { month: 'short', ...(year ? { year: 'numeric' } : {}) })
 export const btnSm = 'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium disabled:opacity-50 dark:border-slate-600'
+
+// ── Variance through the fiscal year (503e) ─────────────────────────────────
+// Fiscal months run Hamle … Sene (Pagume counted with Nehase). With no budget
+// set, a bucket's usual month (the average of the completed months before
+// this one, up to twelve) stands in as the reference.
+
+export const FISCAL_MONTHS = ['Hamle', 'Nehase', 'Meskerem', 'Tikimt', 'Hidar', 'Tahsas', 'Tir', 'Yekatit', 'Megabit', 'Miyazya', 'Genbot', 'Sene']
+
+export interface VarianceMonth { idx: number; start: string; spent: number; last_year: number }
+export interface VarianceRow {
+  id: string | null; name: string; in_use: boolean; monthly_budget: number | null
+  /** The average completed month before this one; 0 when there is none yet. */
+  usual: number
+  months: VarianceMonth[]
+  fytd: number; last_fytd: number; fy_label: string; cur_idx: number
+}
+export interface OverheadHistory {
+  fy_label: string; fy_start: string; fy_end: string; today: string; data_from: string | null
+  cur_month_start: string
+  /** How many completed months the usual month averages (0: none yet). */
+  usual_months: number
+  /** Whether the records reach back into last fiscal year at all. */
+  has_last_year: boolean
+}
+
+export function useOverheadVariance() {
+  return useQuery({
+    queryKey: ['overhead-variance'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('overhead_variance', {})
+      if (error) throw error
+      return ((data ?? []) as VarianceRow[]).map(r => ({
+        // Whole birr: the usual month is an average, its cents mean nothing.
+        ...r, usual: Math.round(Number(r.usual)), fytd: Number(r.fytd), last_fytd: Number(r.last_fytd),
+        monthly_budget: r.monthly_budget == null ? null : Number(r.monthly_budget),
+        months: r.months.map(m => ({ ...m, spent: Number(m.spent), last_year: Number(m.last_year) })),
+      }))
+    },
+  })
+}
+
+export function useOverheadHistory() {
+  return useQuery({
+    queryKey: ['overhead-history'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('overhead_history', {})
+      if (error) throw error
+      return data as OverheadHistory
+    },
+  })
+}
+
+export type CompareWith = 'reference' | 'last_year'
+
+/** What a month is held against: the budget if set, else the usual month. */
+export function referenceOf(r: Pick<VarianceRow, 'monthly_budget' | 'usual'>): { value: number; kind: 'budget' | 'usual' } | null {
+  if (Number(r.monthly_budget ?? 0) > 0) return { value: Number(r.monthly_budget), kind: 'budget' }
+  if (Number(r.usual) > 0) return { value: Number(r.usual), kind: 'usual' }
+  return null
+}
+
+/** -3 … +3: how far a month sits below or above what it is compared with. */
+export function varianceBand(spent: number, against: number): number | null {
+  if (!(against > 0) || !(spent > 0)) return null
+  const r = spent / against
+  return r >= 2 ? 3 : r >= 1.4 ? 2 : r >= 1.1 ? 1 : r > 0.9 ? 0 : r > 0.7 ? -1 : r > 0.4 ? -2 : -3
+}
+
+/** Diverging fills, blue below ↔ red above, gray for about usual. Ink passes
+ *  4.5:1 on every step: slate-900 in light, white in dark. */
+export const BAND_FILL: Record<number, string> = {
+  [-3]: 'bg-[#3987e5] dark:bg-[#2a6fd0]',
+  [-2]: 'bg-[#86b6ef] dark:bg-[#234d85]',
+  [-1]: 'bg-[#cde2fb] dark:bg-[#1f3554]',
+  0: 'bg-[#f0efec] dark:bg-[#383835]',
+  1: 'bg-[#f8cfce] dark:bg-[#4f2a2a]',
+  2: 'bg-[#ef9493] dark:bg-[#8f3333]',
+  3: 'bg-[#e34948] dark:bg-[#c53b3b]',
+}
+export const BAND_LABEL: Record<number, string> = {
+  [-3]: 'far below', [-2]: 'below', [-1]: 'a bit below', 0: 'about usual', 1: 'a bit above', 2: 'above', 3: 'far above (2× or more)',
+}
+
+/** "1.4×" or "−30%": a month against what it is compared with. */
+export function ratioText(spent: number, against: number) {
+  if (!(against > 0)) return null
+  const r = spent / against
+  if (r >= 1.5) return `${r >= 10 ? Math.round(r) : r.toFixed(1)}×`
+  const pct = Math.round((r - 1) * 100)
+  return pct === 0 ? 'the same' : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}%`
+}
+
+export const gregMonth = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
+/**
+ * How far into the current fiscal month today is (0–1). A month still running
+ * is held against that share of its reference, not a whole month. Fiscal
+ * months are 30 days; Nehase carries Pagume (35 or 36).
+ */
+export function monthShare(history: Pick<OverheadHistory, 'today' | 'cur_month_start'> | undefined, curIdx: number) {
+  if (!history) return 1
+  const len = curIdx === 1 ? 35 : 30
+  const days = Math.round((Date.parse(history.today) - Date.parse(history.cur_month_start)) / 86400000) + 1
+  return Math.min(1, Math.max(days, 1) / len)
+}
+
+/** What one month is held against: its share of the reference while it runs. */
+export function againstFor(m: VarianceMonth, row: VarianceRow, history: OverheadHistory | undefined, base: number | null | undefined) {
+  if (!(Number(base) > 0)) return 0
+  return Number(base) * (m.idx === row.cur_idx ? monthShare(history, row.cur_idx) : 1)
+}

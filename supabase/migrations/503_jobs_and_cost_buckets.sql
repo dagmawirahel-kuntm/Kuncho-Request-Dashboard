@@ -348,3 +348,119 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
    LIMIT LEAST(GREATEST(p_limit, 1), 200);
 $f$;
 GRANT EXECUTE ON FUNCTION public.bucket_recent(uuid, integer) TO authenticated;
+
+-- ── 503e (applied on its own) ───────────────────────────────────────────────
+-- Variance through the fiscal year, for buckets with or without a budget.
+-- Months are fiscal months (Ethiopian: Hamle … Sene, Pagume counted with
+-- Nehase, as fiscal_periods.pagume_attaches_to says). For each bucket the
+-- caller may see, and overhead with no bucket: each month this fiscal year
+-- and the same month last year; the year so far against the same stretch of
+-- last year; and its usual month, which stands in for a budget where none is
+-- set: the average of the completed months before this one, up to twelve,
+-- counting only months the records cover (they start 8 Jul 2026, so early
+-- on the usual month rests on a few months; overhead_history() says how many).
+CREATE OR REPLACE FUNCTION public.fiscal_month_index(p_date date)
+RETURNS integer LANGUAGE sql IMMUTABLE AS $f$
+  SELECT CASE (to_ethiopian(p_date)).month WHEN 11 THEN 0 WHEN 12 THEN 1 WHEN 13 THEN 1 ELSE (to_ethiopian(p_date)).month + 1 END;
+$f$;
+
+-- Months counted from Ethiopian year zero, Pagume with Nehase: the gap
+-- between two dates' values is the number of months between them.
+CREATE OR REPLACE FUNCTION public.fiscal_month_ord(p_date date)
+RETURNS integer LANGUAGE sql IMMUTABLE AS $f$
+  SELECT (to_ethiopian(p_date)).year * 12 + LEAST((to_ethiopian(p_date)).month, 12) - 1;
+$f$;
+
+-- What the comparisons rest on: where the records start, how many months
+-- the usual month averages, and whether last year has any records at all.
+CREATE OR REPLACE FUNCTION public.overhead_history(p_period uuid DEFAULT NULL)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  WITH fy AS (
+    SELECT f.label, f.start_date, f.end_date FROM fiscal_periods f
+     WHERE (p_period IS NULL AND f.is_current) OR f.id = p_period ORDER BY f.start_date DESC LIMIT 1
+  ), t AS (
+    SELECT fy.*, LEAST(bot_today(), fy.end_date) AS today,
+           (SELECT min(date) FROM expenses WHERE NOT COALESCE(is_archived, false)) AS data_from
+      FROM fy
+  ), t2 AS (
+    SELECT t.*, ec_month_start_greg((to_ethiopian(t.today)).year, LEAST((to_ethiopian(t.today)).month, 12)) AS cur_month_start FROM t
+  )
+  SELECT jsonb_build_object(
+    'fy_label', label, 'fy_start', start_date, 'fy_end', end_date, 'today', today, 'data_from', data_from,
+    'cur_month_start', cur_month_start,
+    'usual_months', LEAST(12, GREATEST(0, fiscal_month_ord(cur_month_start) - fiscal_month_ord(GREATEST(data_from, cur_month_start - 365)))),
+    'has_last_year', data_from < start_date)
+    FROM t2;
+$f$;
+
+CREATE OR REPLACE FUNCTION public.overhead_variance(p_period uuid DEFAULT NULL)
+RETURNS TABLE(id uuid, name text, in_use boolean, monthly_budget numeric, usual numeric, months jsonb,
+              fytd numeric, last_fytd numeric, fy_label text, cur_idx integer)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  WITH me AS (
+    SELECT auth.uid() AS uid, COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false) AS sees_all
+  ), fy AS (
+    SELECT f.label, f.start_date, f.end_date FROM fiscal_periods f
+     WHERE (p_period IS NULL AND f.is_current) OR f.id = p_period
+     ORDER BY f.start_date DESC LIMIT 1
+  ), t AS (
+    SELECT fy.label, fy.start_date, fy.end_date, (fy.start_date - interval '1 year')::date AS prev_start,
+           LEAST(bot_today(), fy.end_date) AS today,
+           (to_ethiopian(fy.start_date)).year AS ec_year
+      FROM fy
+  ), t2 AS (
+    SELECT t.*, fiscal_month_index(t.today) AS cur_idx,
+           ec_month_start_greg((to_ethiopian(t.today)).year, LEAST((to_ethiopian(t.today)).month, 12)) AS cur_month_start,
+           GREATEST(1, (overhead_history(p_period)->>'usual_months')::int) AS usual_months
+      FROM t
+  ), b AS (
+    SELECT p.id, btrim(p.project_name) AS name, p.active_for_year AS in_use, p.bucket_monthly_budget
+      FROM projects p, me WHERE p.is_internal AND (me.sees_all OR p.bucket_owner_id = me.uid)
+    UNION ALL
+    SELECT NULL, 'Other company overhead', true, NULL FROM me WHERE me.sees_all
+  ), e AS (
+    SELECT x.project_id, x.date, x.amount_etb, fiscal_month_index(x.date) AS idx,
+           CASE WHEN x.date BETWEEN t2.start_date AND t2.end_date THEN 'cur'
+                WHEN x.date >= t2.prev_start AND x.date < t2.start_date THEN 'prev' END AS yr
+      FROM expenses x, t2
+     WHERE NOT COALESCE(x.is_archived, false) AND x.approval_status::text <> 'rejected' AND COALESCE(x.payment_state, '') <> 'void'
+       AND (x.project_id IN (SELECT id FROM b WHERE id IS NOT NULL) OR (x.project_id IS NULL AND x.is_overhead))
+       AND x.date >= LEAST(t2.prev_start, t2.cur_month_start - 366) AND x.date <= t2.end_date
+  )
+  SELECT b.id, b.name, b.in_use, b.bucket_monthly_budget,
+         round(COALESCE((SELECT sum(e.amount_etb) FROM e WHERE e.project_id IS NOT DISTINCT FROM b.id
+                           AND e.date >= t2.cur_month_start - 365 AND e.date < t2.cur_month_start), 0) / t2.usual_months, 2),
+         (SELECT jsonb_agg(jsonb_build_object(
+                   'idx', k,
+                   'start', ec_month_start_greg(CASE WHEN k < 2 THEN t2.ec_year ELSE t2.ec_year + 1 END, CASE WHEN k < 2 THEN k + 11 ELSE k - 1 END),
+                   'spent', COALESCE((SELECT sum(e.amount_etb) FROM e WHERE e.project_id IS NOT DISTINCT FROM b.id AND e.yr = 'cur' AND e.idx = k), 0),
+                   'last_year', COALESCE((SELECT sum(e.amount_etb) FROM e WHERE e.project_id IS NOT DISTINCT FROM b.id AND e.yr = 'prev' AND e.idx = k), 0))
+                 ORDER BY k)
+            FROM generate_series(0, 11) k),
+         COALESCE((SELECT sum(e.amount_etb) FROM e WHERE e.project_id IS NOT DISTINCT FROM b.id AND e.yr = 'cur' AND e.date <= t2.today), 0),
+         COALESCE((SELECT sum(e.amount_etb) FROM e WHERE e.project_id IS NOT DISTINCT FROM b.id AND e.yr = 'prev'
+                     AND e.date <= t2.prev_start + (t2.today - t2.start_date)), 0),
+         t2.label, t2.cur_idx
+    FROM b, t2
+   ORDER BY b.id IS NULL, b.in_use DESC, 7 DESC, b.name;
+$f$;
+GRANT EXECUTE ON FUNCTION public.overhead_variance(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.overhead_history(uuid) TO authenticated;
+
+-- ── 503g (applied on its own) ───────────────────────────────────────────────
+-- A bucket's spending in one fiscal month (any date inside it), not a calendar month.
+CREATE OR REPLACE FUNCTION public.overhead_month_lines(p_project uuid, p_month date)
+RETURNS TABLE(id uuid, expense_code text, date date, description text, amount numeric, payee text,
+              approval_status text, payment_state text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  SELECT e.id, e.expense_code, e.date, e.item_service_description, e.amount_etb,
+         COALESCE(v.vendor_name, s.employee_name, e.vendors_name), e.approval_status::text, e.payment_state
+    FROM expenses e LEFT JOIN vendors v ON v.id = e.vendor_id LEFT JOIN staff s ON s.id = e.paid_to_staff_id
+   WHERE (CASE WHEN p_project IS NULL THEN e.project_id IS NULL AND e.is_overhead ELSE e.project_id = p_project END)
+     AND e.date BETWEEN p_month - 40 AND p_month + 40
+     AND fiscal_month_ord(e.date) = fiscal_month_ord(p_month)
+     AND NOT COALESCE(e.is_archived, false) AND e.approval_status::text <> 'rejected' AND COALESCE(e.payment_state, '') <> 'void'
+     AND (COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false)
+          OR (p_project IS NOT NULL AND bucket_owner_of(p_project) = auth.uid()))
+   ORDER BY e.date DESC, e.amount_etb DESC;
+$f$;

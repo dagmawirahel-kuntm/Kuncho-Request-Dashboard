@@ -6,11 +6,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Panel, Pill, Stat } from '@/components/record/Record'
 import {
-  SORT_LABEL, btnSm as btn, money, monthName, short, useBucketWaiting, useOverheadSummary,
-  type OverheadRow, type SortKind,
+  FISCAL_MONTHS, SORT_LABEL, againstFor, btnSm as btn, money, ratioText, referenceOf, short,
+  useBucketWaiting, useOverheadHistory, useOverheadSummary, useOverheadVariance,
+  type OverheadHistory, type OverheadRow, type SortKind, type VarianceRow,
 } from '@/lib/buckets'
-import { MonthBars, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
-import { ChevronDown, ChevronRight, ClipboardList, Layers, Pencil } from 'lucide-react'
+import { FiscalBars, MonthLines, OwnerQueue, Standouts, VarianceGrid } from '@/components/overhead/OverheadParts'
+import { CalendarRange, ChevronDown, ChevronRight, ClipboardList, Layers, Pencil } from 'lucide-react'
 
 
 /**
@@ -24,6 +25,10 @@ export default function OverheadPage() {
   const isFinance = hasRole('admin', 'finance')
   const { data: rows = [], isLoading } = useOverheadSummary()
   const { data: waiting = [] } = useBucketWaiting()
+  // The fiscal year, month by month (503e): fiscal months, Hamle … Sene.
+  const { data: variance = [] } = useOverheadVariance()
+  const { data: history } = useOverheadHistory()
+  const vBy = useMemo(() => new Map(variance.map(v => [v.id ?? 'other', v])), [variance])
   const [showOff, setShowOff] = useState(false)
 
   const buckets = rows.filter(r => r.id)
@@ -32,16 +37,24 @@ export default function OverheadPage() {
   const inUse = buckets.filter(r => r.in_use && !r.to_sort)
   const offUse = buckets.filter(r => !r.in_use && !r.to_sort)
   const stats = useMemo(() => {
-    const named = rows.filter(r => r.id)
+    const cur = variance[0]?.cur_idx ?? 0
+    const thisMonth = (v: VarianceRow) => v.months[cur]?.spent ?? 0
+    // Each bucket held against its budget, else its usual month.
+    const held = variance.filter(v => referenceOf(v))
     return {
-      month: rows.reduce((s, r) => s + Number(r.this_month), 0),
-      year: rows.reduce((s, r) => s + Number(r.last_12), 0),
-      budget: named.filter(r => r.in_use).reduce((s, r) => s + Number(r.monthly_budget ?? 0), 0),
-      // Only buckets with a budget are held against one.
-      budgetedSpent: named.filter(r => r.in_use && Number(r.monthly_budget ?? 0) > 0).reduce((s, r) => s + Number(r.this_month), 0),
-      noOwner: named.filter(r => r.in_use && !r.to_sort && !r.owner_id).length,
+      cur,
+      month: variance.reduce((s, v) => s + thisMonth(v), 0),
+      heldSpent: held.reduce((s, v) => s + thisMonth(v), 0),
+      // The month is still running: each reference counts for the share gone.
+      heldRef: held.reduce((s, v) => s + againstFor(v.months[cur], v, history, referenceOf(v)!.value), 0),
+      fytd: variance.reduce((s, v) => s + v.fytd, 0),
+      lastFytd: variance.reduce((s, v) => s + v.last_fytd, 0),
+      budgets: rows.filter(r => r.id && r.in_use && Number(r.monthly_budget ?? 0) > 0).length,
+      noOwner: rows.filter(r => r.id && r.in_use && !r.to_sort && !r.owner_id).length,
     }
-  }, [rows])
+  }, [rows, variance, history])
+  // The grid: buckets in use, and any other bucket with spending this year.
+  const gridRows = variance.filter(v => !v.id || v.in_use || v.fytd > 0)
 
   return (
     <div className="space-y-5">
@@ -59,10 +72,11 @@ export default function OverheadPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="This month" value={money(stats.month)}
-              sub={stats.budget > 0 ? `Budgeted buckets: ${money(stats.budgetedSpent)} of ${money(stats.budget)}` : 'No monthly budgets set yet'}
-              tone={stats.budget > 0 && stats.budgetedSpent > stats.budget ? 'red' : undefined} />
-            <Stat label="Last 12 months" value={money(stats.year)} sub="Every bucket, and overhead with none" />
+            <Stat label={`${FISCAL_MONTHS[stats.cur]} so far`} value={money(stats.month)}
+              sub={stats.heldRef > 0 ? `${ratioText(stats.heldSpent, stats.heldRef)} the usual month${stats.budgets ? ' or budget' : ''} by now (${money(Math.round(stats.heldRef))})` : 'Nothing to compare with yet'}
+              tone={stats.heldRef > 0 && stats.heldSpent > stats.heldRef * 1.1 ? 'red' : undefined} />
+            <Stat label={`${history?.fy_label ?? 'This fiscal year'} so far`} value={money(stats.fytd)}
+              sub={history?.has_last_year && stats.lastFytd > 0 ? `${ratioText(stats.fytd, stats.lastFytd)} on the same stretch last year` : 'No records last year to compare with'} />
             <Stat label="Waiting for an owner" value={waiting.length} sub="Spending owners haven't approved" tone={waiting.length > 0 ? 'amber' : undefined} />
             <Stat label="Buckets with no owner" value={stats.noOwner} sub="Finance approves those alone" tone={stats.noOwner > 0 ? 'amber' : undefined} />
           </div>
@@ -70,11 +84,25 @@ export default function OverheadPage() {
           {waiting.length > 0 && <OwnerQueue />}
           {isFinance && toSort.length > 0 && <SortCard rows={toSort} />}
 
+          {gridRows.length > 0 && (
+            <Panel title={`${history?.fy_label ?? 'This fiscal year'}, month by month`} icon={CalendarRange}>
+              <div className="space-y-4">
+                {stats.budgets === 0 && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/10 dark:text-amber-200">
+                    No bucket has a monthly budget yet, so each month is held against the bucket's usual month instead. Set budgets on each bucket's page to compare against them.
+                  </p>
+                )}
+                <Standouts rows={gridRows} history={history} />
+                <VarianceGrid rows={gridRows} history={history} />
+              </div>
+            </Panel>
+          )}
+
           <Panel title="Cost buckets" icon={Layers} count={inUse.length} padded={false}>
             {isLoading ? <p className="p-6 text-center text-sm text-slate-400">Loading…</p> : (
               <ul className="divide-y dark:divide-slate-700">
-                {inUse.map(r => <BucketRow key={r.id} r={r} canEdit={isFinance} />)}
-                {other && <BucketRow r={other} canEdit={false} />}
+                {inUse.map(r => <BucketRow key={r.id} r={r} v={vBy.get(r.id!)} history={history} canEdit={isFinance} />)}
+                {other && <BucketRow r={other} v={vBy.get('other')} history={history} canEdit={false} />}
               </ul>
             )}
           </Panel>
@@ -85,7 +113,7 @@ export default function OverheadPage() {
                 <span className="inline-flex items-center gap-1.5">{showOff ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />} Out of use · {offUse.length}</span>
                 <span className="font-normal">Kept, but left out of the pickers</span>
               </button>
-              {showOff && <ul className="divide-y border-t dark:divide-slate-700 dark:border-slate-700">{offUse.map(r => <BucketRow key={r.id} r={r} canEdit={isFinance} />)}</ul>}
+              {showOff && <ul className="divide-y border-t dark:divide-slate-700 dark:border-slate-700">{offUse.map(r => <BucketRow key={r.id} r={r} v={vBy.get(r.id!)} history={history} canEdit={isFinance} />)}</ul>}
             </section>
           )}
         </>
@@ -94,13 +122,16 @@ export default function OverheadPage() {
   )
 }
 
-function BucketRow({ r, canEdit }: { r: OverheadRow; canEdit: boolean }) {
+function BucketRow({ r, v, history, canEdit }: { r: OverheadRow; v: VarianceRow | undefined; history: OverheadHistory | undefined; canEdit: boolean }) {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [picked, setPicked] = useState<string | null>(null)
-  const budget = Number(r.monthly_budget ?? 0)
-  const pct = budget > 0 ? (Number(r.this_month) / budget) * 100 : null
-  const vsLastYear = Number(r.same_month_last_year) > 0 ? ((Number(r.this_month) - Number(r.same_month_last_year)) / Number(r.same_month_last_year)) * 100 : null
+  const ref = v ? referenceOf(v) : null
+  const cur = v?.cur_idx ?? 0
+  const thisMonth = v?.months[cur]?.spent ?? 0
+  const lastYear = v?.months[cur]?.last_year ?? 0
+  // The month is still running: held against the share of it gone.
+  const against = v && ref ? againstFor(v.months[cur], v, history, ref.value) : 0
 
   async function toggleUse() {
     const { error } = await supabase.from('projects').update({ active_for_year: !r.in_use }).eq('id', r.id!)
@@ -132,29 +163,31 @@ function BucketRow({ r, canEdit }: { r: OverheadRow; canEdit: boolean }) {
             </div>
           )}
         </div>
-        <div className="w-full sm:w-64">
-          <MonthBars r={r} picked={picked} onPick={m => setPicked(p => (p === m ? null : m))} />
-          <div className="mt-0.5 flex justify-between text-[10px] text-slate-400">
-            <span>{r.months[0] ? monthName(r.months[0].month) : ''}</span>
-            {budget > 0 && <span>- - budget {short(budget)}/month</span>}
-            <span>{r.months.length ? monthName(r.months[r.months.length - 1].month) : ''}</span>
+        {v && (
+          <div className="w-full sm:w-64">
+            <FiscalBars row={v} history={history} picked={picked} onPick={m => setPicked(p => (p === m ? null : m))} />
+            <div className="mt-0.5 flex justify-between text-[10px] text-slate-400">
+              <span>Hamle</span>
+              {ref && <span>- - {ref.kind === 'budget' ? 'budget' : 'usual month'} {short(ref.value)}</span>}
+              <span>Sene</span>
+            </div>
           </div>
-        </div>
+        )}
         <div className="grid w-full grid-cols-3 gap-3 text-right text-xs sm:w-72">
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">This month</p>
-            <p className={`text-sm font-semibold tabular-nums ${pct != null && pct > 100 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>{short(Number(r.this_month))}</p>
-            <p className="text-slate-400">{pct != null ? `${Math.round(pct)}% of budget` : 'no budget'}</p>
+            <p className="text-[10px] uppercase tracking-wide text-slate-400">{FISCAL_MONTHS[cur]} so far</p>
+            <p className={`text-sm font-semibold tabular-nums ${ref && thisMonth > against * (ref.kind === 'budget' ? 1 : 1.4) ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>{short(thisMonth)}</p>
+            <p className="text-slate-400">{ref ? `${ratioText(thisMonth, against)} ${ref.kind === 'budget' ? 'budget' : 'usual'}` : 'nothing to compare'}</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wide text-slate-400">Last year</p>
-            <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{short(Number(r.same_month_last_year))}</p>
-            <p className="text-slate-400">{vsLastYear == null ? 'same month' : `${vsLastYear > 0 ? '+' : ''}${Math.round(vsLastYear)}% now`}</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{history?.has_last_year ? short(lastYear) : '—'}</p>
+            <p className="text-slate-400">{history?.has_last_year ? (lastYear > 0 ? `${ratioText(thisMonth, lastYear)} now` : 'nothing then') : 'no records'}</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">12 months</p>
-            <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{short(Number(r.last_12))}</p>
-            <p className="text-slate-400">{r.n_costs} cost{r.n_costs === 1 ? '' : 's'}</p>
+            <p className="text-[10px] uppercase tracking-wide text-slate-400">Year so far</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{short(v?.fytd ?? 0)}</p>
+            <p className="text-slate-400">{r.n_costs} cost{r.n_costs === 1 ? '' : 's'} in 12 months</p>
           </div>
         </div>
       </div>

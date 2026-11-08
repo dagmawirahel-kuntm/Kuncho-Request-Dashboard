@@ -7,8 +7,11 @@ import { useToast } from '@/contexts/ToastContext'
 import { useCategories, useUserProfiles } from '@/hooks/useLookups'
 import { Panel, Pill, Stat, type Tone } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { MonthBars, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
-import { btnSm as btn, money, useOverheadSummary } from '@/lib/buckets'
+import { FiscalBars, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
+import {
+  BAND_FILL, FISCAL_MONTHS, againstFor, btnSm as btn, gregMonth, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
+  useOverheadVariance, varianceBand, type OverheadHistory, type VarianceRow,
+} from '@/lib/buckets'
 import { formatDate } from '@/lib/utils'
 import { ArrowLeft, BarChart3, Layers, Receipt, Settings2, ShieldCheck } from 'lucide-react'
 
@@ -55,6 +58,10 @@ export default function BucketPage() {
   })
   const { data: summary = [] } = useOverheadSummary()
   const row = summary.find(r => r.id === id)
+  // Its fiscal year, month by month (503e).
+  const { data: variance = [] } = useOverheadVariance()
+  const { data: history } = useOverheadHistory()
+  const v = variance.find(r => r.id === id)
   const { data: recent = [] } = useQuery({
     queryKey: ['bucket-recent', id],
     queryFn: async () => {
@@ -74,13 +81,16 @@ export default function BucketPage() {
     return <p className="py-16 text-center text-sm text-slate-500">This cost bucket's spending is for finance and its owner.</p>
   }
 
-  const budget = Number(project.bucket_monthly_budget ?? 0)
-  const thisMonth = Number(row?.this_month ?? 0)
-  const lastYear = Number(row?.same_month_last_year ?? 0)
-  const last12 = Number(row?.last_12 ?? 0)
-  const avg = last12 / 12
-  const pct = budget > 0 ? (thisMonth / budget) * 100 : null
-  const overMonths = budget > 0 ? (row?.months ?? []).filter(m => Number(m.spent) > budget).length : 0
+  const cur = v?.cur_idx ?? 0
+  const thisMonth = v?.months[cur]?.spent ?? 0
+  const lastYear = v?.months[cur]?.last_year ?? 0
+  const ref = v ? referenceOf(v) : null
+  // The month is still running: held against the share of it gone.
+  const against = v && ref ? againstFor(v.months[cur], v, history, ref.value) : 0
+  const lastYearSoFar = v ? againstFor(v.months[cur], v, history, lastYear) : 0
+  const usualMonths = history?.usual_months ?? 0
+  // Completed months well over what they're held against.
+  const highMonths = v && ref ? v.months.filter(m => m.idx < cur && (ref.kind === 'budget' ? m.spent > ref.value : (varianceBand(m.spent, ref.value) ?? 0) >= 2)).length : 0
 
   return (
     <div className="space-y-5">
@@ -101,25 +111,26 @@ export default function BucketPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="This month" value={money(thisMonth)} sub={pct != null ? `${Math.round(pct)}% of the ${money(budget)} budget` : 'No monthly budget set'}
-          tone={pct != null && pct > 100 ? 'red' : undefined} />
-        <Stat label="Same month last year" value={money(lastYear)}
-          sub={lastYear > 0 ? `${thisMonth >= lastYear ? '+' : ''}${Math.round(((thisMonth - lastYear) / lastYear) * 100)}% this year` : 'Nothing then'} />
-        <Stat label="Last 12 months" value={money(last12)} sub={`${row?.n_costs ?? 0} cost${row?.n_costs === 1 ? '' : 's'}`} />
-        <Stat label="A month, on average" value={money(Math.round(avg))}
-          sub={budget > 0 ? `${overMonths} of 12 months over budget` : 'Set a budget to compare'} tone={overMonths > 0 ? 'amber' : undefined} />
+        <Stat label={`${FISCAL_MONTHS[cur]} so far`} value={money(thisMonth)}
+          sub={ref ? `${ratioText(thisMonth, against)} ${ref.kind === 'budget' ? 'the budget' : 'its usual month'}, for the month so far` : 'Nothing to compare with yet'}
+          tone={ref && thisMonth > against * (ref.kind === 'budget' ? 1 : 1.4) ? 'red' : undefined} />
+        <Stat label={ref?.kind === 'budget' ? 'Monthly budget' : 'Usual month'} value={ref ? money(Math.round(ref.value)) : '—'}
+          sub={ref?.kind === 'budget' ? 'Set in the settings' : usualMonths ? `No budget set: the average of the last ${usualMonths} month${usualMonths === 1 ? '' : 's'}` : 'No completed months yet'} />
+        <Stat label="Same month last year" value={history?.has_last_year ? money(lastYear) : '—'}
+          sub={history?.has_last_year ? (lastYear > 0 ? `${ratioText(thisMonth, lastYearSoFar)} this year, so far` : 'Nothing then') : `No records then: they start ${history?.data_from ? gregMonth(history.data_from) : 'this year'}`} />
+        <Stat label={`${v?.fy_label ?? 'Year'} so far`} value={money(v?.fytd ?? 0)}
+          sub={highMonths ? `${highMonths} month${highMonths === 1 ? '' : 's'} well over ${ref?.kind === 'budget' ? 'budget' : 'usual'}` : history?.has_last_year && (v?.last_fytd ?? 0) > 0 ? `${ratioText(v!.fytd, v!.last_fytd)} on last year` : 'No month well over'}
+          tone={highMonths ? 'amber' : undefined} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">
-          {row && (
-            <Panel title="Month by month" icon={BarChart3}>
-              <MonthBars r={row} tall picked={picked} onPick={m => setPicked(p => (p === m ? null : m))} />
-              <p className="mt-2 text-xs text-slate-500">
-                {budget > 0 ? <>Dashed line: the {money(budget)} monthly budget; red months went over. </> : null}
-                Tap a month to see what was spent.
-              </p>
+          {v && (
+            <Panel title={`${v.fy_label}, month by month`} icon={BarChart3}>
+              <FiscalBars row={v} history={history} tall picked={picked} onPick={m => setPicked(p => (p === m ? null : m))} />
+              <p className="mt-1 text-xs text-slate-500">Tap a month to see what was spent.</p>
               {picked && <MonthLines bucket={project.id} name={project.project_name} month={picked} />}
+              <FiscalTable row={v} history={history} />
             </Panel>
           )}
 
@@ -288,5 +299,48 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
         </div>
       </div>
     </Panel>
+  )
+}
+
+/** The fiscal year in numbers: each month against its reference and last year. */
+function FiscalTable({ row, history }: { row: VarianceRow; history: OverheadHistory | undefined }) {
+  const ref = referenceOf(row)
+  const hasLastYear = !!history?.has_last_year
+  return (
+    <details className="mt-3 text-xs">
+      <summary className="cursor-pointer select-none font-medium text-slate-600 dark:text-slate-300">The year in numbers</summary>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[440px] text-right tabular-nums">
+          <thead className="text-[11px] text-slate-500">
+            <tr>
+              <th scope="col" className="py-1 text-left font-medium">Month</th>
+              <th scope="col" className="py-1 font-medium">Spent</th>
+              <th scope="col" className="py-1 font-medium">vs {ref?.kind === 'budget' ? 'budget' : 'usual'}</th>
+              <th scope="col" className="py-1 font-medium">Last year</th>
+              <th scope="col" className="py-1 font-medium">vs last year</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y dark:divide-slate-700">
+            {row.months.filter(m => m.idx <= row.cur_idx).map(m => {
+              const against = againstFor(m, row, history, ref?.value)
+              const band = ref ? varianceBand(m.spent, against) : null
+              return (
+                <tr key={m.idx} className="text-slate-700 dark:text-slate-200">
+                  <th scope="row" className="py-1 text-left font-normal">{FISCAL_MONTHS[m.idx]}{m.idx === row.cur_idx ? ' (so far)' : ''} <span className="text-slate-400">· from {gregMonth(m.start)}</span></th>
+                  <td className="py-1 font-semibold">{money(m.spent)}</td>
+                  <td className="py-1">
+                    {ref && m.spent > 0
+                      ? <span className={`rounded px-1.5 py-0.5 ${band != null ? `${BAND_FILL[band]} text-slate-900 dark:text-white` : ''}`}>{ratioText(m.spent, against)}</span>
+                      : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="py-1">{hasLastYear ? money(m.last_year) : <span className="text-slate-400">—</span>}</td>
+                  <td className="py-1">{hasLastYear && m.last_year > 0 ? ratioText(m.spent, againstFor(m, row, history, m.last_year)) : <span className="text-slate-400">—</span>}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
