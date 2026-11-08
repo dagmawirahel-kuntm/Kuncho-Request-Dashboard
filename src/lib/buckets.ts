@@ -264,7 +264,35 @@ export const ROUTABLE_TYPES: { type: string; label: string }[] = [
   { type: 'maintenance', label: 'Vehicle maintenance & penalties' },
   { type: 'property_rent', label: 'Property rent' },
   { type: 'transportation', label: 'Trips & ride hailing' },
+  // Not an expense: read from the ledger as the bank reconciliation books it (505).
+  { type: 'bank_charges', label: 'Bank charges from the bank reconciliation' },
 ]
+
+/** A month or latest-spending row that is bank charges, not an expense (505). */
+export const isBankRow = (r: { approval_status: string }) => r.approval_status === 'bank'
+
+/** How far each bank's imported statements go, for buckets fed by the bank (505). */
+export function useStatementsThrough(enabled = true) {
+  return useQuery({
+    queryKey: ['statements-through'],
+    enabled,
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('bank_statement_imports')
+        .select('account_id, period_end, account:accounts(account_name)').eq('status', 'committed')
+      if (error) return []
+      const by = new Map<string, { name: string; through: string }>()
+      for (const r of (data ?? []) as unknown as { account_id: string; period_end: string | null; account: { account_name: string } | null }[]) {
+        if (!r.period_end) continue
+        const cur = by.get(r.account_id)
+        if (!cur || r.period_end > cur.through) by.set(r.account_id, { name: r.account?.account_name ?? 'A bank', through: r.period_end })
+      }
+      // Banks with no statement in the last 200 days are not in use.
+      const since = new Date(Date.now() - 200 * 864e5).toISOString().slice(0, 10)
+      return [...by.values()].filter(b => b.through >= since).sort((a, b) => b.through.localeCompare(a.through))
+    },
+  })
+}
 
 /** Which bucket takes each kind, for showing a kind as taken elsewhere. */
 export function useBucketRouting() {

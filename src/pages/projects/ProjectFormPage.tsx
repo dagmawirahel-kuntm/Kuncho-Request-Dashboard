@@ -161,7 +161,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
           </Field>
           <Field label="Lands here by itself">
             <ExpenseTypeChips bucketId={id ?? null} value={form.bucket_expense_types ?? []} onChange={v => set('bucket_expense_types', v)} />
-            <p className="mt-1 text-[11px] text-slate-400">Overhead of these kinds recorded with no project comes straight here.</p>
+            <p className="mt-1 text-[11px] text-slate-400">Overhead of these kinds recorded with no project comes straight here. Bank charges come from the bank reconciliation as statements are matched.</p>
           </Field>
           <label className="flex items-start gap-2 cursor-pointer text-sm text-slate-700 dark:text-slate-200">
             <input type="checkbox" className="mt-0.5" checked={form.bucket_counts_as_overhead !== false} onChange={e => set('bucket_counts_as_overhead', e.target.checked)} />
