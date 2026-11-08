@@ -9,11 +9,11 @@ import { Panel, Pill, Stat, type Tone } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { ExpenseTypeChips, FiscalBars, FiscalTable, MonthLines, OwnerQueue } from '@/components/overhead/OverheadParts'
 import {
-  FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, btnSm as btn, gregMonth, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
-  useOverheadVariance, varianceBand,
+  FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, btnSm as btn, gregMonth, isBankRow, money, ratioText, referenceOf, useOverheadHistory, useOverheadSummary,
+  useOverheadVariance, useStatementsThrough, varianceBand,
 } from '@/lib/buckets'
 import { formatDate } from '@/lib/utils'
-import { ArrowLeft, BarChart3, Layers, Receipt, Settings2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, BarChart3, Landmark, Layers, Receipt, Settings2, ShieldCheck } from 'lucide-react'
 
 type BucketProject = {
   id: string; project_name: string; department: string | null; is_internal: boolean; active_for_year: boolean
@@ -28,6 +28,7 @@ const field = 'w-full rounded-md border px-3 py-2 text-base sm:text-sm outline-n
 
 /** Where a bucket's expense stands, in the owner-then-finance order (503). */
 function standing(r: Recent, hasOwner: boolean): { label: string; tone: Tone } {
+  if (isBankRow(r)) return { label: 'Taken by the bank', tone: 'slate' }
   if (r.approval_status === 'rejected') return { label: 'Turned down', tone: 'red' }
   if (r.approval_status === 'pending') return hasOwner ? { label: 'Waiting for the owner', tone: 'amber' } : { label: 'Waiting for finance', tone: 'amber' }
   if (r.approval_status === 'manager_approved') return { label: 'Owner approved · with finance', tone: 'blue' }
@@ -138,6 +139,8 @@ export default function BucketPage() {
             </Panel>
           )}
 
+          {(project.bucket_expense_types ?? []).includes('bank_charges') && <FromTheBank />}
+
           <OwnerQueue bucket={project.id} />
 
           <Panel title="Latest spending" icon={Receipt} count={recent.length} padded={false}>
@@ -149,7 +152,9 @@ export default function BucketPage() {
                     <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
                       <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
                         <p className="truncate text-slate-800 dark:text-slate-100">
-                          <Link to={`/expenses/${r.id}`} className="font-mono text-xs text-brand hover:underline">{r.expense_code ?? 'Expense'}</Link>
+                          {isBankRow(r)
+                            ? <Link to="/bank-statement-import" title="Open the bank reconciliation" aria-label="Open the bank reconciliation" className="inline-flex align-[-2px] text-brand"><Landmark className="h-3.5 w-3.5" /></Link>
+                            : <Link to={`/expenses/${r.id}`} className="font-mono text-xs text-brand hover:underline">{r.expense_code ?? 'Expense'}</Link>}
                           {' '}{r.description ?? '—'}
                         </p>
                         <p className="truncate text-xs text-slate-500">
@@ -285,7 +290,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
         <div>
           <span className={label}>Lands here by itself</span>
           <ExpenseTypeChips bucketId={project.id} value={f.bucket_expense_types} onChange={v => set('bucket_expense_types', v)} />
-          <p className={help}>Overhead of these kinds recorded with no project comes straight here, instead of waiting in "Other company overhead".</p>
+          <p className={help}>Overhead of these kinds recorded with no project comes straight here, instead of waiting in "Other company overhead". Bank charges come from the bank reconciliation as statements are matched: no one records them.</p>
         </div>
         <div>
           <label className={label} htmlFor="bucket-dept">Department</label>
@@ -316,6 +321,31 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
             <button onClick={() => setToJob(true)} className="text-xs text-slate-500 hover:text-brand">Not really a bucket? Make it a job</button>
           )}
         </div>
+      </div>
+    </Panel>
+  )
+}
+
+/**
+ * Where a bucket's bank charges come from (505): what the bank reconciliation
+ * books to Bank Charges, by month, so a month counts in full only once every
+ * bank's statement for it is imported and matched.
+ */
+function FromTheBank() {
+  const { data: recent = [] } = useStatementsThrough()
+  return (
+    <Panel title="From the bank reconciliation" icon={Landmark}>
+      <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+        <p>
+          Bank charges count here by themselves as statements are imported and matched: the charge a bank takes with a transfer,
+          charge and VAT-on-charge lines on the statement, and charges kept back from client receipts. They need no approval: the bank has already taken them.
+        </p>
+        {recent.length > 0 && (
+          <p className="text-slate-500 dark:text-slate-400">
+            Statements are in up to {recent.map(b => `${b.name} ${gregMonth(b.through)}`).join(' · ')}. A month counts in full once every bank's statement for it is in.
+          </p>
+        )}
+        <Link to="/bank-statement-import" className="inline-block font-medium text-brand hover:underline">Open the bank reconciliation</Link>
       </div>
     </Panel>
   )

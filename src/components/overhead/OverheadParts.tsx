@@ -6,10 +6,10 @@ import { useToast } from '@/contexts/ToastContext'
 import { Panel, Pill } from '@/components/record/Record'
 import { formatDate } from '@/lib/utils'
 import {
-  BAND_FILL, BAND_LABEL, FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, useBucketRouting, btnSm as btn, gregMonth, money, monthShare, ratioText, referenceOf, short, useBucketWaiting, varianceBand,
+  BAND_FILL, BAND_LABEL, FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, useBucketRouting, btnSm as btn, gregMonth, isBankRow, money, monthShare, ratioText, referenceOf, short, useBucketWaiting, varianceBand,
   type CompareWith, type OverheadHistory, type VarianceMonth, type VarianceRow,
 } from '@/lib/buckets'
-import { UserCheck } from 'lucide-react'
+import { Landmark, UserCheck } from 'lucide-react'
 
 // Pieces shared by the Overhead page and a cost bucket's own page (503).
 
@@ -255,9 +255,11 @@ export function MonthLines({ bucket, name, month }: { bucket: string | null; nam
         <ul className="divide-y dark:divide-slate-700">
           {data.map(l => (
             <li key={l.id} className="flex items-center gap-2 py-1">
-              <Link to={`/expenses/${l.id}`} className="shrink-0 whitespace-nowrap font-mono text-brand hover:underline">{l.expense_code ?? 'Expense'}</Link>
+              {isBankRow(l)
+                ? <Link to="/bank-statement-import" title="Open the bank reconciliation" aria-label="Open the bank reconciliation" className="shrink-0 text-brand"><Landmark className="h-3.5 w-3.5" /></Link>
+                : <Link to={`/expenses/${l.id}`} className="shrink-0 whitespace-nowrap font-mono text-brand hover:underline">{l.expense_code ?? 'Expense'}</Link>}
               <span className="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">{l.description ?? '—'}{l.payee ? ` · ${l.payee}` : ''}</span>
-              {l.approval_status !== 'finance_approved' && <Pill tone="amber">{l.approval_status === 'manager_approved' ? 'Owner approved' : 'Waiting'}</Pill>}
+              {l.approval_status !== 'finance_approved' && !isBankRow(l) && <Pill tone="amber">{l.approval_status === 'manager_approved' ? 'Owner approved' : 'Waiting'}</Pill>}
               <span className="shrink-0 tabular-nums font-semibold text-slate-800 dark:text-slate-100">{money(l.amount)}</span>
             </li>
           ))}
