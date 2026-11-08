@@ -202,7 +202,7 @@ export interface Project {
   finance_contact_id: string | null
   location_id: string | null
   client_id: string | null
-  /** A cost bucket or internal work (Salaries, Workshop…) — no client (migration 330). */
+  /** A cost bucket (Salaries, Workshop, Taxes…): never ends, never closes (330, 503). */
   is_internal: boolean
   contract_value: number | null
   physical_progress: number | null
@@ -214,6 +214,14 @@ export interface Project {
   /** Set only by the Closing tab (491, 502). */
   delivered_at?: string | null
   costing_closed_at?: string | null
+  /** A job that is Kuncho's own work: it never has a client (503). */
+  own_work?: boolean
+  /** A cost bucket's owner (approves its spending first), monthly budget and
+   *  default category (503). */
+  bucket_owner_id?: string | null
+  bucket_monthly_budget?: number | null
+  bucket_category_id?: string | null
+  kind_sorted_at?: string | null
   created_at: string
   updated_at: string
 }

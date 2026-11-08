@@ -227,6 +227,8 @@ export type ProjectClosing = {
   stage: 'active' | 'delivered' | 'closed'
   /** An internal cost bucket: never closed (502). */
   is_internal: boolean; active_for_year: boolean
+  /** A job with no client yet, not our own work: it can't be marked delivered (503). */
+  needs_client: boolean
   delivered_at: string | null; delivered_by_name: string | null
   costing_closed_at: string | null; costing_closed_by_name: string | null
   /** Closed without ever being delivered: it never went ahead (502). */

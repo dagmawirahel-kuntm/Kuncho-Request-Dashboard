@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type { Project, ProjectInsert } from '@/types/database'
-import { useStaff, useLocations, useFinanceContacts, useClients, locationPickerOptions } from '@/hooks/useLookups'
+import { useStaff, useLocations, useFinanceContacts, useClients, useUserProfiles, useCategories, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -58,6 +58,12 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     const staffOptions = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
     const locationOptions = useMemo(() => locationPickerOptions(locations), [locations])
     const financeContactOptions = useMemo(() => financeContacts.map(f => ({ id: f.id, label: f.full_name })), [financeContacts])
+    const { data: users = [] } = useUserProfiles()
+    const { data: categories = [] } = useCategories()
+    const ownerOptions = useMemo(() => (users as { id: string; full_name: string | null; role: string | null }[])
+      .map(u => ({ id: u.id, label: u.full_name ?? 'Unnamed', sub: u.role?.replace(/_/g, ' ') })), [users])
+    const categoryOptions = useMemo(() => (categories as { id: string; category_name: string }[]).map(c => ({ id: c.id, label: c.category_name })), [categories])
+    const closed = !!record?.costing_closed_at
     // Reassignment is admin-only, enforced server-side (147) regardless
     // of this check — this just avoids a confusing "why didn't that save"
     // for anyone else who happens to have projects.UPDATE access.
@@ -75,8 +81,12 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
         location_id: record.location_id,
         client_id: record.client_id,
         is_internal: record.is_internal,
+        own_work: record.own_work ?? false,
+        bucket_owner_id: record.bucket_owner_id ?? null,
+        bucket_monthly_budget: record.bucket_monthly_budget ?? null,
+        bucket_category_id: record.bucket_category_id ?? null,
       }
-      : { active_for_year: true, is_internal: false }
+      : { active_for_year: true, is_internal: false, own_work: false }
   )
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -87,11 +97,14 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
 
   async function handleSave() {
     if (!form.project_name?.trim()) { setError('Project name is required'); return }
-    if (!form.is_internal && !form.client_id) { setError('Choose the client this project is for, or mark it internal'); return }
-    // A client project leaves the active lists only by closing (502), so
-    // the form leaves Active for year alone unless it is a cost bucket.
-    const { active_for_year, ...rest } = form
-    const payload = form.is_internal ? { ...form, client_id: null } : isEdit ? rest : { ...rest, active_for_year: active_for_year ?? true }
+    // A job may have no client yet (503): it is flagged until one is set.
+    // It leaves the active lists only by closing (502), so the form leaves
+    // Active for year alone unless it is a cost bucket.
+    const { active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, ...job } = form
+    const payload = form.is_internal
+      ? { ...form, client_id: null, own_work: false }
+      : { ...job, client_id: form.own_work ? null : job.client_id ?? null, ...(isEdit ? {} : { active_for_year: active_for_year ?? true }) }
+    void bucket_owner_id; void bucket_monthly_budget; void bucket_category_id
     setError(''); setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('projects').update(payload as any).eq('id', id!) : supabase.from('projects').insert([payload as any])
@@ -110,51 +123,96 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
       <Field label="Project Name *">
         <input type="text" className={inputCls} value={form.project_name ?? ''} onChange={e => set('project_name', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label={form.is_internal ? 'Client' : 'Client *'}>
-          <SearchableSelect value={form.client_id ?? null} onChange={id => set('client_id', id)} options={clientOptions}
-            placeholder={form.is_internal ? 'Internal — no client' : 'Select client…'} />
-        </Field>
-        <label className="flex items-end gap-2 pb-2 cursor-pointer text-sm text-slate-600">
-          <input type="checkbox" checked={!!form.is_internal} onChange={e => set('is_internal', e.target.checked)} />
-          Internal (cost bucket or Kuncho's own work — no client)
-        </label>
-      </div>
+      <Field label="What is it?">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="What is it?">
+          {([
+            [false, 'Job', 'Work with a start and an end. It closes from its Closing tab.'],
+            [true, 'Cost bucket', 'Running costs: workshop, taxes, salaries, office. It never closes.'],
+          ] as const).map(([bucket, title, sub]) => (
+            <button key={title} type="button" role="radio" aria-checked={!!form.is_internal === bucket} disabled={closed}
+              onClick={() => set('is_internal', bucket)}
+              className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${!!form.is_internal === bucket ? 'border-brand bg-brand/5 ring-1 ring-brand' : 'hover:border-slate-400 dark:border-slate-600'}`}>
+              <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</span>
+              <span className="block text-xs text-slate-500 dark:text-slate-400">{sub}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+      {form.is_internal ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Owner">
+              <SearchableSelect value={form.bucket_owner_id ?? null} onChange={v => set('bucket_owner_id', v)} options={ownerOptions} placeholder="Who looks after it?" />
+              <p className="mt-1 text-[11px] text-slate-400">Approves its spending before finance. With no owner, finance approves alone.</p>
+            </Field>
+            <Field label="Monthly budget (ETB)">
+              <input type="number" min={0} className={inputCls} value={form.bucket_monthly_budget ?? ''}
+                onChange={e => set('bucket_monthly_budget', e.target.value === '' ? null : Number(e.target.value))} placeholder="e.g. 50000" />
+              <p className="mt-1 text-[11px] text-slate-400">Each month's spending is read against it, and against the same month last year.</p>
+            </Field>
+          </div>
+          <Field label="Default category">
+            <SearchableSelect value={form.bucket_category_id ?? null} onChange={v => set('bucket_category_id', v)} options={categoryOptions} placeholder="The ledger its spending goes to…" />
+            <p className="mt-1 text-[11px] text-slate-400">Given to spending here that has no category of its own. Purchase orders keep their items' category.</p>
+          </Field>
+        </>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Client">
+            <SearchableSelect value={form.own_work ? null : form.client_id ?? null} onChange={id => set('client_id', id)} options={clientOptions}
+              placeholder={form.own_work ? 'Our own work — no client' : 'Select client…'} disabled={!!form.own_work} />
+            {!form.own_work && !form.client_id && (
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Not known yet? Save it anyway: it's flagged until the client is set, and needs one before it's marked delivered.</p>
+            )}
+          </Field>
+          <label className="flex items-end gap-2 pb-2 cursor-pointer text-sm text-slate-600">
+            <input type="checkbox" checked={!!form.own_work} onChange={e => setForm(f => ({ ...f, own_work: e.target.checked, client_id: e.target.checked ? null : f.client_id }))} />
+            Kuncho's own work — it will never have a client
+          </label>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Department">
           <input type="text" className={inputCls} value={form.department ?? ''} onChange={e => set('department', e.target.value)} />
         </Field>
-        <Field label="Start Date">
-          <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Project Manager">
-          <SearchableSelect value={form.project_manager_id ?? null} onChange={id => set('project_manager_id', id)} options={staffOptions} placeholder="Select staff…" />
-        </Field>
-        <Field label="Location">
-          <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
-        </Field>
-      </div>
-      <Field label="Finance Contact">
-        {canEditFinanceContact ? (
-          <SearchableSelect value={form.finance_contact_id ?? null} onChange={id => set('finance_contact_id', id)} options={financeContactOptions} placeholder="Select finance contact…" />
-        ) : (
-          <p className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}>
-            {financeContactOptions.find(f => f.id === form.finance_contact_id)?.label ?? 'Unassigned'}
-            <span className="ml-1.5 text-xs text-slate-400">(admin only)</span>
-          </p>
+        {!form.is_internal && (
+          <Field label="Start Date">
+            <input type="date" className={inputCls} value={form.start_date ?? ''} onChange={e => set('start_date', e.target.value)} />
+          </Field>
         )}
-        <p className="mt-1 text-[11px] text-slate-400">
-          First reviewer on this project's finance sourcing gate — but any finance role holder can still act if unavailable.
-        </p>
-      </Field>
+      </div>
+      {/* A cost bucket has an owner instead of a project manager, site or finance contact. */}
+      {!form.is_internal && (
+        <>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Project Manager">
+            <SearchableSelect value={form.project_manager_id ?? null} onChange={id => set('project_manager_id', id)} options={staffOptions} placeholder="Select staff…" />
+          </Field>
+          <Field label="Location">
+            <SearchableSelect value={form.location_id ?? null} onChange={id => set('location_id', id)} options={locationOptions} placeholder="Select location…" />
+          </Field>
+        </div>
+        <Field label="Finance Contact">
+          {canEditFinanceContact ? (
+            <SearchableSelect value={form.finance_contact_id ?? null} onChange={id => set('finance_contact_id', id)} options={financeContactOptions} placeholder="Select finance contact…" />
+          ) : (
+            <p className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}>
+              {financeContactOptions.find(f => f.id === form.finance_contact_id)?.label ?? 'Unassigned'}
+              <span className="ml-1.5 text-xs text-slate-400">(admin only)</span>
+            </p>
+          )}
+          <p className="mt-1 text-[11px] text-slate-400">
+            First reviewer on this project's finance sourcing gate — but any finance role holder can still act if unavailable.
+          </p>
+        </Field>
+        </>
+      )}
       {form.is_internal ? (
         <label className="flex items-center gap-2 cursor-pointer text-sm">
           <input type="checkbox" checked={!!form.active_for_year} onChange={e => set('active_for_year', e.target.checked)} />
-          Show on the active lists <span className="text-xs text-slate-400">(a cost bucket is never closed)</span>
+          In use <span className="text-xs text-slate-400">(shows in the pickers; a cost bucket is never closed)</span>
         </label>
-      ) : isEdit && record ? (
+      ) : isEdit && record && !record.is_internal ? (
         <ProjectOpenStatus id={id!} record={record} />
       ) : null}
     </FormPage>

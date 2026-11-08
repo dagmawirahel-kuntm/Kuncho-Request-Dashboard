@@ -24,7 +24,7 @@ export function useProjects() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('id,project_name,department,location_id,costing_closed_at')
+        .select('id,project_name,department,location_id,costing_closed_at,is_internal,active_for_year,kind_sorted_at')
         .order('project_name')
       if (error) throw error
       return data ?? []

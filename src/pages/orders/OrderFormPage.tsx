@@ -10,6 +10,7 @@ import type { Order, OrderInsert, OrderPriority, OrderItem, OrderItemStatus } fr
 import {
   useProjects, useStaff, useVendors, useUserProfiles, useSubCategoriesAll, useRecentOrderItems,
 } from '@/hooks/useLookups'
+import { costPickerOption, pickableForCost, type PickerProject } from '@/lib/buckets'
 import { useStockMatches, useStockUnits, canonicalUnit, stockNameKey, FALLBACK_UNITS, type StockMatch } from '@/lib/stockMatch'
 import { StockNameInput } from '@/components/stock/StockNameInput'
 import { UnitSelect } from '@/components/stock/UnitSelect'
@@ -566,8 +567,9 @@ function PurchaseRequestFormBody({
         : scopeToManaged ? managedProjects : (projects as { id: string; project_name: string }[])
     return source.map(p => ({ id: p.id, label: p.project_name }))
   }, [projects, managedProjects, scopeToManaged, isTechnician, workProjects])
-  // Costing closed: no new purchase request can go on it (502).
-  const closedProjects = useMemo(() => new Set((projects as { id: string; costing_closed_at: string | null }[]).filter(p => p.costing_closed_at).map(p => p.id)), [projects])
+  // Costing closed: no new purchase request can go on it (502). A bucket out
+  // of use is left out, and buckets read as overhead (503).
+  const pickerInfo = useMemo(() => new Map((projects as PickerProject[]).map(p => [p.id, p])), [projects])
   const staffOptions   = useMemo(() => staff.map((s: any) => ({ id: s.id, label: s.employee_name })), [staff])
   const vendorOptions  = useMemo(() => vendors.map((v: any) => ({ id: v.id, label: v.vendor_name })), [vendors])
 
@@ -856,7 +858,7 @@ function PurchaseRequestFormBody({
               </Field>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Project">
-                  <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions.filter(o => !closedProjects.has(o.id) || o.id === header.project_id)} placeholder="Search projects…" />
+                  <SearchableSelect value={header.project_id ?? null} onChange={v => setHdr('project_id', v)} options={projectOptions.filter(o => { const p = pickerInfo.get(o.id); return !p || pickableForCost(p, header.project_id) }).map(o => { const p = pickerInfo.get(o.id); return p ? costPickerOption(p) : o })} placeholder="Search projects…" />
                   {isTechnician ? (
                     <p className="mt-1 text-[11px] text-slate-400">
                       {workProjects.length ? 'The projects you work on.' : 'You are not on a project yet — ask your manager to assign you.'}

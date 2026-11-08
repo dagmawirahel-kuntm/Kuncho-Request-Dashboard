@@ -22,6 +22,7 @@ import { useRefreshTaxImpact, useTaxImpact, type ImpactItem } from '@/lib/taxImp
 import { TaxTag } from '@/components/tax/TaxTag'
 import { TaxImpactCountdown, TaxImpactEscalations } from '@/components/tax/TaxImpactBanners'
 import { useScrollMemory } from '@/hooks/useScrollMemory'
+import { useBucketOwners } from '@/lib/buckets'
 
 const pause = (ms: number) => new Promise(r => window.setTimeout(r, ms))
 
@@ -123,11 +124,17 @@ export default function ExpenseApprovalQueuePage() {
   const old = rows.filter(r => r.age_days >= 15).length
   const toFix = rows.filter(blocked).length
   const asked = signalCounts.get('asked') ?? 0
-  const pickedReady = shown.filter(r => picked.has(r.id) && !blocked(r))
+  // Spending on a cost bucket waits for its owner before finance (503).
+  const { data: bucketOwners } = useBucketOwners()
+  const waitsOwner = (r: ApprovalQueueRow) => {
+    const o = r.project_id ? bucketOwners?.get(r.project_id) : undefined
+    return !!o && r.approval_status === 'pending' && o.owner_id !== me && role !== 'admin'
+  }
+  const pickedReady = shown.filter(r => picked.has(r.id) && !blocked(r) && !waitsOwner(r))
   // A bill already in a batch is approved with that batch.
   const pickedToBatch = pickedReady.filter(r => !r.batch_payment_id)
   // Approved together: ready, not waiting on an answer, and not your own.
-  const bulkable = (r: ApprovalQueueRow) => !blocked(r) && !has(r, 'asked') && !has(r, 'mine')
+  const bulkable = (r: ApprovalQueueRow) => !blocked(r) && !waitsOwner(r) && !has(r, 'asked') && !has(r, 'mine')
 
   // Opened from a notification (?expense=): bring that bill into view.
   useEffect(() => {
@@ -449,7 +456,13 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
   const [mode, setMode] = useState<'reject' | 'ask' | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const isBlocked = blocked(r)
+  // A cost bucket's owner approves its spending before finance (503).
+  const { role } = useAuth()
+  const { data: owners } = useBucketOwners()
+  const owner = r.project_id ? owners?.get(r.project_id) : undefined
+  const waitsOwner = !!owner && r.approval_status === 'pending' && owner.owner_id !== me
+  const ownerBlocks = waitsOwner && role !== 'admin'
+  const isBlocked = blocked(r) || ownerBlocks
   const mine = signals.includes('mine')
   const times = timesUsual(r, c)
 
@@ -480,7 +493,7 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
   const actions = canApprove && !mode ? (
     <>
       <button disabled={busy || isBlocked} onClick={() => update({ approval_status: 'finance_approved' }, 'Approved for payment')}
-        title={isBlocked ? 'Fix what is missing first' : mine ? 'You raised this one' : undefined}
+        title={ownerBlocks ? `Waiting for ${owner?.owner_name ?? 'the bucket owner'} to approve it first` : isBlocked ? 'Fix what is missing first' : mine ? 'You raised this one' : undefined}
         className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-40">Approve</button>
       <button disabled={busy || (!!c?.question_id && !c.answered_at) || !r.purchaser_user_id || r.purchaser_user_id === me}
         onClick={() => setMode('ask')}
@@ -497,7 +510,7 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
       <div className="flex items-start gap-3">
         {canApprove && (
           <input type="checkbox" className="mt-1" disabled={isBlocked} checked={picked && !isBlocked} onChange={e => onPick(e.target.checked)}
-            title={isBlocked ? 'Fix what is missing first' : 'Select to approve together, or to put in one batch'} />
+            title={ownerBlocks ? `Waiting for ${owner?.owner_name ?? 'the bucket owner'}` : isBlocked ? 'Fix what is missing first' : 'Select to approve together, or to put in one batch'} />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -573,8 +586,10 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
             </div>
           )}
 
-          {(r.issues.length > 0 || signals.some(s => s === 'unverified' || s === 'unusual' || s === 'first_payment' || s === 'mine' || s === 'waits_delivery')) && (
+          {(r.issues.length > 0 || !!owner || signals.some(s => s === 'unverified' || s === 'unusual' || s === 'first_payment' || s === 'mine' || s === 'waits_delivery')) && (
             <div className="mt-1 flex flex-wrap items-center gap-1">
+              {waitsOwner && <Pill tone="amber" title="The bucket's owner approves its spending first, on the Overhead page">Waiting for {owner?.owner_name ?? 'the owner'}</Pill>}
+              {owner && r.approval_status === 'manager_approved' && <Pill tone="green">Owner approved</Pill>}
               {r.issues.length > 0 && <IssueChips issues={r.issues} />}
               {signals.filter(s => s === 'unverified' || s === 'unusual' || s === 'first_payment' || s === 'waits_delivery' || s === 'mine').map(s => (
                 <Pill key={s} tone={SIGNAL_META[s].tone} title={SIGNAL_META[s].help}>{SIGNAL_META[s].label}</Pill>
@@ -590,7 +605,7 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
       {/* On a phone the buttons go under the bill, not beside it. */}
       {actions && <div className="flex gap-1 sm:hidden">{actions}</div>}
 
-      {canApprove && isBlocked && (
+      {canApprove && blocked(r) && (
         <div className="ml-0 grid grid-cols-1 gap-2 rounded-lg bg-amber-50 p-2 dark:bg-amber-900/10 sm:ml-7 sm:grid-cols-2">
           <p className="flex items-center gap-1 text-[11px] font-medium text-amber-800 dark:text-amber-300 sm:col-span-2"><Wrench className="h-3 w-3" />Fix it here, then approve</p>
           {r.issues.includes('no_project') && (

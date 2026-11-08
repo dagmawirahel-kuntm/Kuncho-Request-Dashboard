@@ -11,7 +11,7 @@ import { StarRating } from '@/components/shared/StarRating'
 import { useAllRollingPerformance } from '@/hooks/useWorkOrderRatings'
 import { useStaffDirectory } from '@/hooks/useLookups'
 
-interface ProjectRow { department: string | null; active_for_year: boolean; start_date: string | null }
+interface ProjectRow { department: string | null; active_for_year: boolean; start_date: string | null; is_internal: boolean }
 interface ProductRow { category: string | null; unit_price: number | null; active: boolean }
 
 export default function ManagementDashboardPage() {
@@ -19,7 +19,7 @@ export default function ManagementDashboardPage() {
     queryKey: ['dashboard-management'],
     queryFn: async () => {
       const [projects, products, locations] = await Promise.all([
-        supabase.from('projects').select('department, active_for_year, start_date'),
+        supabase.from('projects').select('department, active_for_year, start_date, is_internal'),
         supabase.from('products').select('category, unit_price, active'),
         supabase.from('locations').select('location_type'),
       ])
@@ -31,7 +31,8 @@ export default function ManagementDashboardPage() {
     },
   })
 
-  const projects = data?.projects ?? []
+  // Jobs only: cost buckets are on the Overhead page (503).
+  const projects = (data?.projects ?? []).filter(p => !p.is_internal)
   const products = data?.products ?? []
   const locations = data?.locations ?? []
 

@@ -131,7 +131,8 @@ export function ProjectClosingPanel({ projectId }: { projectId: string }) {
       <Panel title="Closing" icon={Flag} action={<Pill tone={stagePill.tone}>{stagePill.label}</Pill>}>
         {c.is_internal ? (
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            This is an internal cost bucket, so it is never closed: costs keep landing here all year. Whether it shows on the active lists is set on the project form.
+            This is a cost bucket: it never closes, and costs keep landing here all year. Its spending is read month by month on
+            the <Link to="/overhead" className="font-medium text-brand hover:underline">Overhead page</Link>, and its months lock with the fiscal period.
           </p>
         ) : (
           <>
@@ -152,6 +153,12 @@ export function ProjectClosingPanel({ projectId }: { projectId: string }) {
             {c.stage === 'delivered' && c.open_for_days != null && (
               <p className={`mb-3 text-sm ${c.open_for_days > c.costing_open_days ? 'text-red-600' : 'text-slate-600 dark:text-slate-300'}`}>
                 Delivered {c.open_for_days} day{c.open_for_days === 1 ? '' : 's'} ago — costing is flagged after {c.costing_open_days}.
+              </p>
+            )}
+            {c.needs_client && c.stage === 'active' && (
+              <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/10 dark:text-amber-200">
+                No client yet. Set it on the <Link to={`/projects/${projectId}/edit`} className="font-semibold underline">project form</Link> before
+                it's marked delivered: the invoice goes to them. If it's Kuncho's own work, say so there.
               </p>
             )}
             {closed && (
@@ -195,7 +202,7 @@ export function ProjectClosingPanel({ projectId }: { projectId: string }) {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {c.stage === 'active' && c.can_deliver && (
-                  <button disabled={!!busy} className={`${btn} bg-brand text-white`} onClick={() => open('deliver')}>
+                  <button disabled={!!busy || c.needs_client} title={c.needs_client ? 'Set the client first' : undefined} className={`${btn} bg-brand text-white`} onClick={() => open('deliver')}>
                     <PackageCheck className="h-3.5 w-3.5" /> Mark delivered
                   </button>
                 )}
