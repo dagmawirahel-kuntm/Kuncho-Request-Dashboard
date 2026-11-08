@@ -12,7 +12,7 @@ import { PAYMENT_CLS, PAYMENT_LABEL } from './vrfPayment'
 import { CheckCircle2, Clock, Plus, Send, Undo2 } from 'lucide-react'
 
 function refreshPayment(qc: ReturnType<typeof useQueryClient>, vrfId: string) {
-  for (const key of [['vrf', vrfId], ['vrf-register'], ['vrf-register', vrfId], ['vendor-receipts'], ['vrf-payments'], ['v-account-cash-position'], ['vrf-parts', vrfId]]) {
+  for (const key of [['vrf', vrfId], ['vrf-register'], ['vrf-register', vrfId], ['vendor-receipts'], ['vrf-payments'], ['v-account-cash-position'], ['vrf-parts', vrfId], ['vrf-sent-undos', vrfId]]) {
     qc.invalidateQueries({ queryKey: key })
   }
 }
@@ -404,7 +404,93 @@ export function VrfPaymentPanel({ reg }: { reg: VrfRegisterRow }) {
           <VrfPartsList reg={reg} canAct={canAct} />
         </div>
       )}
+      {canAct && state === 'sent' && reg.parts_count === 0 && <UndoSent reg={reg} />}
+      <SentUndos vrfId={reg.vrf_id} />
     </div>
+  )
+}
+
+/**
+ * Takes back a VRF marked sent in one go (undo_vrf_sent, migration 504), with
+ * a reason. It goes back to Approved (To pay when it has no paying account);
+ * a bank line matched to it is let go and its ledger entry and WHT drop out.
+ * The database refuses once money came back or was drawn, the bank line's
+ * period is closed, or the month's WHT return is filed.
+ */
+function UndoSent({ reg }: { reg: VrfRegisterRow }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const backTo = reg.initial_account_id ? 'Approved' : 'To pay'
+
+  async function undo() {
+    if (!reason.trim()) { toast('Say why it is being undone', 'error'); return }
+    setBusy(true)
+    const { data, error } = await supabase.rpc('undo_vrf_sent', { p_vrf_id: reg.vrf_id, p_reason: reason.trim() })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    refreshPayment(qc, reg.vrf_id)
+    setOpen(false); setReason('')
+    toast(`${reg.record_name ?? 'VRF'} is back to ${data === 'to_pay' ? 'To pay' : 'Approved'}`, 'success')
+  }
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t px-5 py-2.5 dark:border-slate-700">
+        <p className="text-xs text-slate-500 dark:text-slate-400">Marked sent by mistake, or with the wrong date or account?</p>
+        <button onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-red-300 hover:text-red-600 dark:border-slate-600 dark:text-slate-300">
+          <Undo2 className="h-3.5 w-3.5" /> Undo sent
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2 border-t bg-red-50/50 px-5 py-3 dark:border-slate-700 dark:bg-red-900/10">
+      <p className="text-xs text-slate-700 dark:text-slate-200">
+        It goes back to <b>{backTo}</b>{reg.initial_account_id ? '' : ' (it has no paying account, and approving needs one)'}.
+        {reg.out_transfer_id ? ' Its bank line is let go, so it can be matched again.' : ''} Its ledger entry and its WHT on the WHT return drop out until it is sent again.
+      </p>
+      <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400" htmlFor={`undo-${reg.vrf_id}`}>Why?</label>
+      <input id={`undo-${reg.vrf_id}`} value={reason} onChange={e => setReason(e.target.value)} autoFocus
+        placeholder="e.g. Marked sent before the transfer went out"
+        className="w-full rounded-md border px-3 py-1.5 text-base outline-none focus:ring-2 focus:ring-brand sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+      <div className="flex justify-end gap-2">
+        <button onClick={() => { setOpen(false); setReason('') }} disabled={busy}
+          className="rounded-md border px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300">Cancel</button>
+        <button onClick={undo} disabled={busy || !reason.trim()}
+          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">
+          <Undo2 className="h-3.5 w-3.5" /> {busy ? 'Undoing…' : `Undo sent · back to ${backTo}`}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Each earlier undo of "sent", with who and why (vrf_sent_undos, 504). */
+function SentUndos({ vrfId }: { vrfId: string }) {
+  const { data: rows = [] } = useQuery({
+    queryKey: ['vrf-sent-undos', vrfId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('vrf_sent_undos')
+        .select('id, reason, was_sent_date, back_to, undone_at, by:user_profiles!undone_by(full_name)')
+        .eq('vrf_id', vrfId).order('undone_at', { ascending: false })
+      if (error) return []
+      return (data ?? []) as unknown as { id: string; reason: string; was_sent_date: string | null; back_to: string; undone_at: string; by: { full_name: string | null } | null }[]
+    },
+  })
+  if (rows.length === 0) return null
+  return (
+    <ul className="space-y-1 border-t px-5 py-2.5 text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+      {rows.map(u => (
+        <li key={u.id}>
+          <Undo2 className="mr-1 inline h-3 w-3" />
+          "Sent{u.was_sent_date ? ` ${formatDate(u.was_sent_date)}` : ''}" undone {formatDate(u.undone_at)}{u.by?.full_name ? ` by ${u.by.full_name}` : ''}, back to {u.back_to === 'to_pay' ? 'To pay' : 'Approved'}: {u.reason}
+        </li>
+      ))}
+    </ul>
   )
 }
 
