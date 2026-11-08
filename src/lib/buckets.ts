@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { formatCurrency } from '@/lib/utils'
 
 // Jobs and cost buckets (503). A cost bucket (projects.is_internal) never
 // ends and never closes: it has an owner who approves its spending before
@@ -129,3 +130,9 @@ export function costPickerOptions(projects: PickerProject[], current?: string | 
   const list = projects.filter(p => pickableForCost(p, current))
   return [...list.filter(p => p.is_internal), ...list.filter(p => !p.is_internal)].map(costPickerOption)
 }
+
+export const money = (n: number | null | undefined) => formatCurrency(Number(n ?? 0)).replace(/\.00$/, '')
+export const short = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)))
+export const monthName = (iso: string, year = false) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { month: 'short', ...(year ? { year: 'numeric' } : {}) })
+export const btnSm = 'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium disabled:opacity-50 dark:border-slate-600'

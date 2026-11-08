@@ -329,3 +329,22 @@ BEGIN
     ''needs_client'', NOT p.is_internal AND p.client_id IS NULL AND NOT p.own_work,');
   EXECUTE d;
 END $do$;
+
+-- ── 503d (applied on its own) ───────────────────────────────────────────────
+-- A cost bucket's latest spending, every status, for its own page.
+CREATE OR REPLACE FUNCTION public.bucket_recent(p_project uuid, p_limit integer DEFAULT 40)
+RETURNS TABLE(id uuid, expense_code text, date date, description text, amount numeric, payee text,
+              approval_status text, payment_state text, requested_by text, rejection_reason text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  SELECT e.id, e.expense_code, e.date, e.item_service_description, e.amount_etb,
+         COALESCE(v.vendor_name, s.employee_name, e.vendors_name), e.approval_status::text, e.payment_state,
+         up.full_name, e.rejection_reason
+    FROM expenses e LEFT JOIN vendors v ON v.id = e.vendor_id LEFT JOIN staff s ON s.id = e.paid_to_staff_id
+    LEFT JOIN user_profiles up ON up.id = e.purchaser_user_id
+   WHERE e.project_id = p_project AND NOT COALESCE(e.is_archived, false)
+     AND EXISTS (SELECT 1 FROM projects p WHERE p.id = p_project AND p.is_internal)
+     AND (COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false) OR bucket_owner_of(p_project) = auth.uid())
+   ORDER BY e.date DESC, e.created_at DESC
+   LIMIT LEAST(GREATEST(p_limit, 1), 200);
+$f$;
+GRANT EXECUTE ON FUNCTION public.bucket_recent(uuid, integer) TO authenticated;

@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -837,6 +837,8 @@ export default function ProjectWorkspacePage() {
     )
   }
   if (!project) return <div className="py-16 text-center text-sm text-slate-400">Project not found.</div>
+  // A cost bucket has its own page: no BOQ, budget or Closing tab (503).
+  if (project.is_internal) return <Navigate to={`/overhead/${project.id}`} replace />
 
   const daysLeft = daysUntil(project.target_handover_date)
   const budgetUsedPct = summary && summary.total_budget > 0
