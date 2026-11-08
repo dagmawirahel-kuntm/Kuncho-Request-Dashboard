@@ -7,14 +7,15 @@ import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { NewWorkerForm, type NewWorker } from '@/components/labour/NewWorkerForm'
+import { PasteReportDialog, type PastedWorker } from '@/components/labour/PasteReportDialog'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
   BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, WEEKDAYS, halfDays, tradeName, useDayPeople, useDaySettings,
   type Bucket, type DaySheet, type DayStatus, type PieceJob,
 } from '@/lib/labourDay'
-import { CalendarRange, ChevronLeft, ChevronRight, Copy, Plus, Save, Send, UserPlus, X } from 'lucide-react'
+import { CalendarRange, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Plus, Save, Send, UserPlus, X } from 'lucide-react'
 
-type Col = { key: string; bucket: Bucket; project_id: string | null; label: string; tag: string }
+type Col = { key: string; bucket: Bucket; project_id: string | null; project: string | null; label: string; tag: string }
 type Cell = { paid: number; alloc: Record<string, number>; ot: number; night: number; note: string | null }
 type WRow = { staff_id: string; name: string; trade: string | null; day_rate: number | null; photo_url: string | null; verified: boolean }
 type JobDay = { present: string[]; measured: number | null }
@@ -79,6 +80,7 @@ export default function LabourWeekSheetPage() {
   const [editing, setEditing] = useState<{ staff: string; date: string } | null>(null)
   const [adding, setAdding] = useState(false)
   const [newWorker, setNewWorker] = useState<NewWorker | null>(null)
+  const [pasting, setPasting] = useState(false)
 
   // Load the grid whenever what the server holds for the week changes.
   const loadKey = `${pm}|${week}|` + sheets.map(s => `${s?.day?.id ?? ''}:${s?.day?.saved_at ?? ''}:${s?.day?.status ?? ''}`).join(',')
@@ -115,8 +117,8 @@ export default function LabourWeekSheetPage() {
     for (const s of sheets) for (const p of s?.projects ?? []) projects.set(p.id, p.name)
     const buckets = sheets.find(s => s)?.buckets
     return [
-      ...[...projects].flatMap(([id, name]) => PROJECT_BUCKETS.map(b => ({ key: cellKey(b, id), bucket: b, project_id: id, label: `${name} · ${BUCKET_SHORT[b]}`, tag: `${firstWord(name)} · ${BUCKET_SHORT[b]}` }))),
-      ...OTHER_BUCKETS.filter(b => buckets?.[b as 'workshop']).map(b => ({ key: b, bucket: b, project_id: null, label: BUCKET_LABEL[b], tag: BUCKET_SHORT[b] })),
+      ...[...projects].flatMap(([id, name]) => PROJECT_BUCKETS.map(b => ({ key: cellKey(b, id), bucket: b, project_id: id, project: name, label: `${name} · ${BUCKET_SHORT[b]}`, tag: `${firstWord(name)} · ${BUCKET_SHORT[b]}` }))),
+      ...OTHER_BUCKETS.filter(b => buckets?.[b as 'workshop']).map(b => ({ key: b, bucket: b, project_id: null, project: null, label: BUCKET_LABEL[b], tag: BUCKET_SHORT[b] })),
     ]
   }, [sheets])
   const colTag = (key: string) => cols.find(c => c.key === key)?.tag ?? '?'
@@ -250,6 +252,33 @@ export default function LabourWeekSheetPage() {
     setExtraWorkers(x => [...x, { staff_id: w.id, name: w.employee_name, trade: w.trade_tag, day_rate: w.day_rate, photo_url: w.photo_url, verified: !!w.verified_at }])
   }
 
+  // A pasted report (PasteReportDialog): each worker's days in it replace
+  // theirs on the grid; days it doesn't cover, and locked days, stay.
+  function fillFromReport(rows: PastedWorker[]) {
+    // Only days the report changes count as changed: a blank Sunday stays unsaved.
+    const touched = new Set<string>()
+    const next = { ...cells }
+    for (const r of rows) {
+      const row = { ...(next[r.staff_id] ?? {}) }
+      r.days.forEach((d, i) => {
+        if (d === undefined) return
+        const date = dates[i]
+        const before = row[date]
+        if (!d) { if (before) { delete row[date]; touched.add(date) } return }
+        row[date] = { paid: d.paid, ot: d.ot, night: Math.min(before?.night ?? 0, d.ot), note: before?.note ?? null, alloc: d.where ? { [d.where]: d.paid } : {} }
+        if (JSON.stringify(before) !== JSON.stringify(row[date])) touched.add(date)
+      })
+      next[r.staff_id] = row
+    }
+    setCells(next)
+    const add = rows.filter(r => !workers.some(w => w.staff_id === r.staff_id)).map(r => casual.find(x => x.id === r.staff_id)).filter(x => !!x)
+    if (add.length) setExtraWorkers(x => [...x, ...add.map(w => ({ staff_id: w.id, name: w.employee_name, trade: w.trade_tag, day_rate: w.day_rate, photo_url: w.photo_url, verified: !!w.verified_at }))])
+    setDirtyDays(x => new Set([...x, ...touched]))
+    setPasting(false)
+    toast(`Filled ${rows.length} worker${rows.length === 1 ? '' : 's'} from the report. Check the grid, then Save or Send.`, 'success')
+  }
+  const projectBuild = cols.filter(c => c.bucket === 'build')
+
   const anyEditable = dates.some((_, i) => dayInfo(i).editable)
   const weekCost = workers.reduce((s, w) => s + dates.reduce((t, d) => t + (cells[w.staff_id]?.[d]?.paid ?? 0) * Number(w.day_rate ?? 0), 0), 0)
   const due = (() => { const dow = settings?.week_due_dow ?? 6; return addDays(week, dow - 1) })()
@@ -306,7 +335,7 @@ export default function LabourWeekSheetPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-slate-700">
-                  {workers.length === 0 && <tr><td colSpan={9} className="p-6 text-center text-sm text-slate-400">Nobody this week yet — add who worked.</td></tr>}
+                  {workers.length === 0 && <tr><td colSpan={9} className="p-6 text-center text-sm text-slate-400">Nobody this week yet — add who worked{anyEditable ? <>, or <button onClick={() => setPasting(true)} className="font-medium text-brand hover:underline">paste the PM's report</button></> : null}.</td></tr>}
                   {workers.map(w => (
                     <tr key={w.staff_id}>
                       <td className="sticky left-0 z-10 bg-white px-3 py-2 dark:bg-slate-800">
@@ -354,6 +383,7 @@ export default function LabourWeekSheetPage() {
                 ) : (
                   <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><Plus className="h-3.5 w-3.5" /> Add a worker</button>
                 )}
+                <button onClick={() => setPasting(true)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><ClipboardPaste className="h-3.5 w-3.5" /> Paste a report</button>
                 {!newWorker && (
                   <button onClick={() => setNewWorker({ name: '', phone: '', trade: '', rate: '', photo: null })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><UserPlus className="h-3.5 w-3.5" /> New worker</button>
                 )}
@@ -431,6 +461,15 @@ export default function LabourWeekSheetPage() {
             </div>
           )}
         </>
+      )}
+
+      {pasting && (
+        <PasteReportDialog week={week} cols={cols} colTag={colTag}
+          workers={casual.map(w => ({ id: w.id, name: w.employee_name }))}
+          onSheet={new Set(workers.map(w => w.staff_id))}
+          editable={dates.map((_, i) => dayInfo(i).editable)}
+          defaultWhere={projectBuild.length === 1 ? projectBuild[0].key : null}
+          onClose={() => setPasting(false)} onFill={fillFromReport} />
       )}
 
       {editing && (
