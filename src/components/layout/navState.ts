@@ -132,16 +132,30 @@ export function usePins() {
 // sidebar, the phone drawer and the top bar agree (a pin made in one shows
 // in the others straight away).
 export interface NavData {
+  /** The sections as the sidebar and the top bar list them: no hub-only items. */
   groups: NavGroup[]
+  /** Every page the person can open, hub-only items too: for Ctrl K and pins. */
+  allGroups: NavGroup[]
   active: ActiveNav
   pins: string[]
   togglePin: (to: string) => void
 }
 export function useNavData(): NavData {
-  const groups = useVisibleNav()
-  const active = useActiveNav(groups)
+  const allGroups = useVisibleNav()
+  const groups = useMemo(
+    () => allGroups
+      .map(g => ({ ...g, items: g.items.filter(i => !i.inHub) }))
+      .filter(g => g.items.length > 0),
+    [allGroups],
+  )
+  const found = useActiveNav(allGroups)
+  // On a page that lives on a hub, the hub's entry lights up.
+  const active = useMemo(() => {
+    const hub = found.to ? allGroups.flatMap(g => g.items).find(i => i.to === found.to)?.inHub : undefined
+    return hub ? { ...found, to: hub } : found
+  }, [found, allGroups])
   const { pins, toggle } = usePins()
-  return { groups, active, pins, togglePin: toggle }
+  return { groups, allGroups, active, pins, togglePin: toggle }
 }
 
 // The pseudo-section holding someone's pins, shown ahead of the real ones.

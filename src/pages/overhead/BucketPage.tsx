@@ -13,12 +13,13 @@ import {
   useOverheadVariance, useStatementsThrough, varianceBand,
 } from '@/lib/buckets'
 import { formatDate } from '@/lib/utils'
+import { useTaxBucket } from '@/lib/taxHub'
 import { ArrowLeft, BarChart3, Landmark, Layers, Receipt, Settings2, ShieldCheck } from 'lucide-react'
 
 type BucketProject = {
   id: string; project_name: string; department: string | null; is_internal: boolean; active_for_year: boolean
   bucket_owner_id: string | null; bucket_monthly_budget: number | null; bucket_category_id: string | null
-  bucket_expense_types: string[] | null; bucket_counts_as_overhead: boolean
+  bucket_expense_types: string[] | null; bucket_counts_as_overhead: boolean; bucket_takes_category: boolean
 }
 type Recent = {
   id: string; expense_code: string | null; date: string; description: string | null; amount: number; payee: string | null
@@ -52,13 +53,14 @@ export default function BucketPage() {
     queryKey: ['bucket-page', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('projects')
-        .select('id, project_name, department, is_internal, active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, bucket_expense_types, bucket_counts_as_overhead')
+        .select('id, project_name, department, is_internal, active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, bucket_expense_types, bucket_counts_as_overhead, bucket_takes_category')
         .eq('id', id!).single()
       if (error) throw error
       return data as BucketProject
     },
   })
   const { data: summary = [] } = useOverheadSummary()
+  const { data: taxBucket } = useTaxBucket()
   const row = summary.find(r => r.id === id)
   // Its fiscal year, month by month (503e).
   const { data: variance = [] } = useOverheadVariance()
@@ -96,7 +98,13 @@ export default function BucketPage() {
 
   return (
     <div className="space-y-5">
-      <Link to="/overhead" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Overhead</Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link to="/overhead" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Overhead</Link>
+        {/* The bucket government payments go to: its programs live on the tax hub (506). */}
+        {project.id === taxBucket && (
+          <Link to="/taxes" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"><Landmark className="h-4 w-4" /> Every tax program</Link>
+        )}
+      </div>
       <div className="flex flex-wrap items-start gap-3">
         <div className="rounded-xl bg-slate-100 p-2.5 text-slate-500 dark:bg-slate-700 dark:text-slate-300"><Layers className="h-5 w-5" /></div>
         <div className="min-w-0 flex-1">
@@ -210,6 +218,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
     bucket_category_id: project.bucket_category_id, active_for_year: project.active_for_year,
     bucket_expense_types: project.bucket_expense_types ?? [],
     bucket_counts_as_overhead: project.bucket_counts_as_overhead !== false,
+    bucket_takes_category: !!project.bucket_takes_category,
   }
   const [f, setF] = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -217,7 +226,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
   const dirty = JSON.stringify(f) !== JSON.stringify(initial)
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF(x => ({ ...x, [k]: v }))
   const refresh = () => {
-    for (const k of ['bucket-page', 'overhead-summary', 'projects-lookup', 'bucket-owners', 'projects', 'owns-bucket', 'bucket-routing', 'overhead-unbucketed', 'bucket-not-running']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['bucket-page', 'overhead-summary', 'projects-lookup', 'bucket-owners', 'projects', 'owns-bucket', 'bucket-routing', 'overhead-unbucketed', 'bucket-not-running', 'tax-bucket']) qc.invalidateQueries({ queryKey: [k] })
   }
 
   async function save() {
@@ -228,6 +237,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
       bucket_monthly_budget: f.bucket_monthly_budget === '' ? null : Number(f.bucket_monthly_budget),
       bucket_category_id: f.bucket_category_id, active_for_year: f.active_for_year,
       bucket_expense_types: f.bucket_expense_types, bucket_counts_as_overhead: f.bucket_counts_as_overhead,
+      bucket_takes_category: !!f.bucket_category_id && f.bucket_takes_category,
     }).eq('id', project.id)
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
@@ -252,7 +262,7 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
       <Panel title="Settings" icon={Settings2}>
         <dl className="space-y-2 text-sm">
           {[['Owner', ownerName ?? 'No owner'], ['Monthly budget', project.bucket_monthly_budget ? money(project.bucket_monthly_budget) : 'Not set'],
-            ['Default category', categoryName ?? 'Not set'],
+            ['Default category', categoryName ? `${categoryName}${project.bucket_takes_category ? ': takes it by itself' : ''}` : 'Not set'],
             ['Lands here by itself', (project.bucket_expense_types ?? []).map(t => ROUTABLE_TYPES.find(r => r.type === t)?.label ?? t).join(', ') || 'Nothing'],
             ['Counts as a running cost', project.bucket_counts_as_overhead === false ? 'No: kept out of the totals' : 'Yes'],
             ['Department', project.department ?? '—'], ['In use', project.active_for_year ? 'Yes' : 'No']].map(([k, v]) => (
@@ -286,6 +296,12 @@ function BucketSettings({ project, canEdit }: { project: BucketProject; canEdit:
           <span className={label}>Default category</span>
           <SearchableSelect value={f.bucket_category_id} onChange={v => set('bucket_category_id', v)} options={categoryOptions} placeholder="The ledger its spending goes to…" />
           <p className={help}>Given to spending here with no category of its own. Purchase orders keep their items' category.</p>
+          {f.bucket_category_id && (
+            <label className="mt-2 flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <input type="checkbox" className="mt-0.5" checked={f.bucket_takes_category} onChange={e => set('bucket_takes_category', e.target.checked)} />
+              <span>Takes this category's spending by itself<span className="block text-[11px] text-slate-400">Spending in {categoryName ?? 'this category'} recorded with no project comes straight here.</span></span>
+            </label>
+          )}
         </div>
         <div>
           <span className={label}>Lands here by itself</span>

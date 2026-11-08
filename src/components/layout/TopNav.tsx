@@ -26,7 +26,7 @@ export function TopNav({ nav, theme, festive, onToggleTheme }: {
   festive: boolean
   onToggleTheme: () => void
 }) {
-  const { groups, active, pins, togglePin } = nav
+  const { groups, allGroups, active, pins, togglePin } = nav
   const [open, setOpen] = useState<string | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
@@ -44,7 +44,7 @@ export function TopNav({ nav, theme, festive, onToggleTheme }: {
     }
   }, [open])
 
-  const entries = [{ title: PINNED, icon: Pin, to: undefined, items: pinnedItems(groups, pins) }, ...groups]
+  const entries = [{ title: PINNED, icon: Pin, to: undefined, items: pinnedItems(allGroups, pins) }, ...groups]
   const close = () => setOpen(null)
 
   return (
@@ -116,7 +116,7 @@ export function TopNav({ nav, theme, festive, onToggleTheme }: {
                               onTogglePin={togglePin}
                               dense
                               onNavigate={close}
-                              section={isPinned ? sectionOf(groups, item.to) : undefined}
+                              section={isPinned ? sectionOf(allGroups, item.to) : undefined}
                             />
                           ))}
                         </div>

@@ -164,6 +164,15 @@ const breadcrumbLabels: Record<string, string> = {
   accounts: 'Accounts',
   sales: 'Sales',
   'tax-summary': 'Tax Summary',
+  taxes: 'Taxes',
+  'tax-filings': 'Tax Filings',
+  'tax-plan': 'Tax Plan',
+  'tax-impact': 'Tax Impact',
+  'tax-management': 'Tax Management',
+  'tax-receipts': 'Tax Receipts',
+  'vat-tracker': 'VAT Receipt Tracker',
+  reports: 'Reports',
+  'government-statement': 'Government Statement',
   'batch-payments': 'Batch Payments',
   'cpo-bonds': 'CPO Bonds',
   staff: 'Staff',
@@ -198,6 +207,13 @@ export function AppShell() {
   const segments = location.pathname.split('/').filter(Boolean)
 
   const nav = useNavData()
+  // A page that lives on a hub (the tax programs on /taxes) has the hub as
+  // the step before it.
+  const hubCrumb = useMemo(() => {
+    const items = nav.allGroups.flatMap(g => g.items)
+    const here = items.find(i => i.inHub && (location.pathname === i.to || location.pathname.startsWith(`${i.to}/`)))
+    return here ? items.find(i => i.to === here.inHub) ?? null : null
+  }, [nav.allGroups, location.pathname])
   const [layout, setLayout] = useNavLayout()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -276,10 +292,18 @@ export function AppShell() {
           {/* Breadcrumb */}
           <nav className="hidden items-center gap-1 text-sm text-slate-500 md:flex dark:text-slate-400">
             <NavLink to="/home" className="crumb-link hover:text-slate-700 dark:hover:text-slate-200">Home</NavLink>
+            {hubCrumb && (
+              <span className="flex items-center gap-1">
+                <ChevronRight className="h-3.5 w-3.5" />
+                <NavLink to={hubCrumb.to} title={hubCrumb.label} className="crumb-link whitespace-nowrap hover:text-slate-700 dark:hover:text-slate-200">
+                  {breadcrumbLabels[hubCrumb.to.replace(/^\//, '')] ?? hubCrumb.label}
+                </NavLink>
+              </span>
+            )}
             {segments.map((seg, i) => (
               <span key={seg} className="flex items-center gap-1">
                 <ChevronRight className="h-3.5 w-3.5" />
-                <span className={i === segments.length - 1 ? 'crumb-here font-medium text-slate-800 dark:text-slate-100' : ''}>
+                <span className={`whitespace-nowrap ${i === segments.length - 1 ? 'crumb-here font-medium text-slate-800 dark:text-slate-100' : ''}`}>
                   {breadcrumbLabels[seg] ?? seg}
                 </span>
               </span>
