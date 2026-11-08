@@ -83,6 +83,8 @@ const ProjectsPage = lazyPage(() => import('@/pages/projects/ProjectsPage'))
 const ProjectFormPage = lazyPage(() => import('@/pages/projects/ProjectFormPage'))
 const ProjectWorkspacePage = lazyPage(() => import('@/pages/projects/ProjectWorkspacePage'))
 const ProjectsWeekPage = lazyPage(() => import('@/pages/projects/ProjectsWeekPage'))
+const OverheadPage = lazyPage(() => import('@/pages/overhead/OverheadPage'))
+const BucketPage = lazyPage(() => import('@/pages/overhead/BucketPage'))
 const AccountsPage = lazyPage(() => import('@/pages/accounts/AccountsPage'))
 const AccountFormPage = lazyPage(() => import('@/pages/accounts/AccountFormPage'))
 const AccountDetailPage = lazyPage(() => import('@/pages/accounts/AccountDetailPage'))
@@ -270,6 +272,10 @@ export const router = createBrowserRouter([
           { path: 'timesheet/:id/edit', element: <Navigate to="/timesheet" replace /> },
           { path: 'attendance', element: <Navigate to="/timesheet" replace /> },
           { path: 'calendar', element: <CalendarPage /> },
+          // Cost buckets (503): finance sees every one; a bucket's owner, whatever
+          // their role, sees theirs. The page asks the database, which decides.
+          { path: 'overhead', element: <OverheadPage /> },
+          { path: 'overhead/:id', element: <BucketPage /> },
           { path: 'settings', element: <SettingsPage /> },
           // Notifications (migrations 424–425): open to everyone; RLS keeps each inbox private.
           { path: 'settings/notifications', element: <NotificationSettingsPage /> },

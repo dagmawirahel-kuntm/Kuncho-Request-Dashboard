@@ -8,7 +8,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Pill, Stat } from '@/components/record/Record'
 import { useProjectBoqStatuses, boqLabel } from '@/lib/boq'
-import { Plus, Pencil, Trash2, Search, ChevronRight, ChevronDown, Building2, User, MapPin, Briefcase, Layers } from 'lucide-react'
+import { ProjectCloseReview } from '@/components/projects/ProjectCloseReview'
+import { Plus, Pencil, Trash2, Search, ChevronRight, Building2, User, MapPin, Briefcase, Layers } from 'lucide-react'
 
 type ProjectRow = Project & {
   staff: { employee_name: string } | null
@@ -69,7 +70,6 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [filter, setFilter] = useState<Filter>('active')
   const [dept, setDept] = useState<string | null>(null)
-  const [showInternal, setShowInternal] = useState(false)
   const [missingBoqOnly, setMissingBoqOnly] = useState(false)
 
   const { data = [], isLoading, error: loadError } = useQuery({
@@ -104,13 +104,14 @@ export default function ProjectsPage() {
 
   const departments = useMemo(() => {
     const m = new Map<string, number>()
-    for (const p of data) if (filter === 'all' || (filter === 'active') === p.active_for_year) m.set(deptKey(p.department), (m.get(deptKey(p.department)) ?? 0) + 1)
+    for (const p of data) if (!p.is_internal && (filter === 'all' || (filter === 'active') === p.active_for_year)) m.set(deptKey(p.department), (m.get(deptKey(p.department)) ?? 0) + 1)
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [data, filter])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return data.filter(p =>
+    // Cost buckets live on the Overhead page (503); this list is jobs.
+    return data.filter(p => !p.is_internal &&
       (filter === 'all' || (filter === 'active') === p.active_for_year) &&
       (dept == null || deptKey(p.department) === dept) &&
       (!missingBoqOnly || missingBoq(p.id)) &&
@@ -119,8 +120,9 @@ export default function ProjectsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, filter, dept, search, missingBoqOnly, boqBy])
 
-  const clientWork = filtered.filter(p => !p.is_internal)
-  const internalWork = filtered.filter(p => p.is_internal)
+  const clientWork = filtered
+  const bucketCount = data.filter(p => p.is_internal).length
+  const noClient = data.filter(p => !p.is_internal && p.active_for_year && !p.client_id && !p.own_work).length
 
   const stats = useMemo(() => {
     const active = data.filter(p => p.active_for_year && !p.is_internal)
@@ -131,7 +133,6 @@ export default function ProjectsPage() {
     })
     return {
       active: active.length,
-      internal: data.filter(p => p.active_for_year && p.is_internal).length,
       withBudget: withBudget.length,
       over: over.length,
       spent: active.reduce((s, p) => s + Number(budgetBy.get(p.id)?.total_actual_with_labor ?? 0), 0),
@@ -163,7 +164,13 @@ export default function ProjectsPage() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Link to={`/projects/${p.id}`} onClick={e => e.stopPropagation()} className="truncate text-sm font-semibold text-slate-800 hover:text-brand dark:text-slate-100">{p.project_name}</Link>
             {p.health && <Pill tone={HEALTH_TONE[p.health]}>{p.health}</Pill>}
-            {!p.active_for_year && <Pill>Inactive</Pill>}
+            {!p.is_internal && !p.client_id && !p.own_work && <Pill tone="amber" title="Set the client before it's marked delivered">No client yet</Pill>}
+            {p.own_work && <Pill tone="slate">Our own work</Pill>}
+            {p.costing_closed_at
+              ? <Pill tone="slate">{p.delivered_at ? 'Closed' : 'Closed · never went ahead'}</Pill>
+              : !p.active_for_year && (p.is_internal
+                ? <Pill>Off the list</Pill>
+                : <Pill tone="amber" title="Switched off the old way: costs can still land on it until it closes">Off, not closed</Pill>)}
             {(() => {
               const l = boqLabel(boqBy.get(p.id))
               if (!l || l.tone === 'green') return null
@@ -216,7 +223,7 @@ export default function ProjectsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Projects</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Client work and the internal cost buckets, with what each has spent</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Jobs, with what each has spent. Cost buckets are on the Overhead page.</p>
         </div>
         {canCreate && (
           <Link to="/projects/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
@@ -226,16 +233,18 @@ export default function ProjectsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Active client projects" value={stats.active} sub={`+ ${stats.internal} internal`} />
+        <Stat label="Active jobs" value={stats.active} sub={noClient > 0 ? `${noClient} with no client yet` : 'Cost buckets are on the Overhead page'} tone={noClient > 0 ? 'amber' : undefined} />
         <Stat label="Over budget" value={stats.over} sub={`of ${stats.withBudget} with a budget`} tone={stats.over > 0 ? 'red' : undefined} />
         <Stat label="Spent on active work" value={formatCurrency(stats.spent).replace(/\.00$/, '')} sub={stats.contract > 0 ? `against ${formatCurrency(stats.contract).replace(/\.00$/, '')} in contracts` : 'Materials, expenses and labour'} />
-        <Stat label="No project manager" value={stats.noManager} sub="Active client projects" tone={stats.noManager > 0 ? 'amber' : undefined} />
+        <Stat label="No project manager" value={stats.noManager} sub="Active jobs" tone={stats.noManager > 0 ? 'amber' : undefined} />
         {boqStatuses.length > 0 && (
           <button type="button" onClick={() => setMissingBoqOnly(v => !v)} className="text-left">
             <Stat label="Missing a BOQ" value={stats.noBoq} sub={missingBoqOnly ? 'Showing only these — tap to show all' : 'Client work with activity · tap to list'} tone={stats.noBoq > 0 ? 'red' : undefined} />
           </button>
         )}
       </div>
+
+      <ProjectCloseReview />
 
       {loadError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-700/50 dark:bg-red-900/20 dark:text-red-400">
@@ -251,7 +260,7 @@ export default function ProjectsPage() {
               className="w-full rounded-lg border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800" />
           </div>
           <div className="flex gap-1.5">
-            {([['active', 'Active this year'], ['inactive', 'Inactive'], ['all', 'All']] as [Filter, string][]).map(([v, l]) => (
+            {([['active', 'Active'], ['inactive', 'Closed'], ['all', 'All']] as [Filter, string][]).map(([v, l]) => (
               <button key={v} onClick={() => { setFilter(v); setDept(null) }} className={chip(filter === v)}>{l}</button>
             ))}
             {stats.noBoq > 0 && (
@@ -280,7 +289,7 @@ export default function ProjectsPage() {
           {clientWork.length > 0 && (
             <section className="overflow-hidden rounded-xl border shadow-sm dark:border-slate-700">
               <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
-                <span>Client work · {clientWork.length}</span>
+                <span>Jobs · {clientWork.length}</span>
                 <span className="hidden md:block">Spent against budget</span>
               </div>
               <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -288,28 +297,20 @@ export default function ProjectsPage() {
               </div>
             </section>
           )}
-          {internalWork.length > 0 && (
-            <section className="overflow-hidden rounded-xl border shadow-sm dark:border-slate-700">
-              <button onClick={() => setShowInternal(v => !v)}
-                className="flex w-full items-center justify-between bg-slate-50 px-4 py-2.5 text-left text-xs font-semibold text-slate-500 hover:text-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
-                <span className="inline-flex items-center gap-1.5">
-                  {showInternal || search ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  Internal work and cost buckets · {internalWork.length}
-                </span>
-                <span className="hidden font-normal sm:block">Salaries, workshop, admin — no client</span>
-              </button>
-              {(showInternal || !!search) && (
-                <div className="divide-y divide-slate-100 border-t dark:divide-slate-700/60 dark:border-slate-700">
-                  {internalWork.map(renderRow)}
-                </div>
-              )}
-            </section>
+          {bucketCount > 0 && (
+            <Link to="/overhead" className="flex items-center justify-between rounded-xl border bg-white px-4 py-3 text-sm shadow-sm hover:border-brand dark:border-slate-700 dark:bg-slate-800">
+              <span className="inline-flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                <Layers className="h-4 w-4 text-slate-400" />
+                {bucketCount} cost bucket{bucketCount === 1 ? '' : 's'} (workshop, taxes, salaries, office…) are on the Overhead page, month by month
+              </span>
+              <ChevronRight className="h-4 w-4 text-slate-400" />
+            </Link>
           )}
         </div>
       )}
-      {!isLoading && data.some(p => !p.active_for_year) && filter === 'active' && (
+      {!isLoading && data.some(p => !p.active_for_year && !p.is_internal) && filter === 'active' && (
         <p className="text-center text-xs text-slate-400">
-          {(() => { const n = data.filter(p => !p.active_for_year).length; return `${n} inactive project${n === 1 ? ' is' : 's are'} hidden` })()} — <button onClick={() => setFilter('all')} className="text-brand hover:underline">show all</button>
+          {(() => { const n = data.filter(p => !p.active_for_year && !p.is_internal).length; return `${n} closed or switched-off project${n === 1 ? ' is' : 's are'} hidden` })()} — <button onClick={() => setFilter('all')} className="text-brand hover:underline">show all</button>
         </p>
       )}
     </div>

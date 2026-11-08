@@ -53,7 +53,7 @@ export default function ProjectManagerViewPage() {
     queryKey: ['pm-view-my-projects', isOpsManager ? 'every' : staffId],
     queryFn: async () => {
       let q = supabase.from('projects').select('*').order('project_name')
-      q = isOpsManager ? q.eq('active_for_year', true) : q.eq('project_manager_id', staffId!)
+      q = isOpsManager ? q.eq('active_for_year', true).eq('is_internal', false) : q.eq('project_manager_id', staffId!)
       const { data, error } = await q
       if (error) throw error
       return data as Project[]

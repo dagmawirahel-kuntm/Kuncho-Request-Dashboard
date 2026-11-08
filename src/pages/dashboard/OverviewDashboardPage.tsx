@@ -12,7 +12,7 @@ interface ExpenseRow { id: string; amount_etb: number | null; payment_status: bo
 interface OrderRow { id: string; status: string | null; order_name: string | null; created_at: string }
 interface TransportRow { id: string; amount: number | null; payment_status: boolean; request_name: string | null; created_at: string }
 interface SaleRow { id: string; amount: number | null; sales_description: string | null; created_at: string; date: string | null }
-interface ProjectRow { id: string; project_name: string | null; active_for_year: boolean; created_at: string }
+interface ProjectRow { id: string; project_name: string | null; active_for_year: boolean; created_at: string; is_internal: boolean }
 
 export default function OverviewDashboardPage() {
   const { data } = useQuery({
@@ -25,7 +25,7 @@ export default function OverviewDashboardPage() {
         supabase.from('sales').select('id, amount, sales_description, created_at, date').eq('is_archived', false),
         supabase.from('vendors').select('id, active'),
         supabase.from('staff').select('id'),
-        supabase.from('projects').select('id, project_name, active_for_year, created_at'),
+        supabase.from('projects').select('id, project_name, active_for_year, created_at, is_internal'),
       ])
       return {
         expenses: (expenses.data ?? []) as unknown as ExpenseRow[],
@@ -50,7 +50,7 @@ export default function OverviewDashboardPage() {
   const pendingOrders = orders.filter(o => o.status === 'pending').length
   const pendingTransport = transport.filter(t => !t.payment_status).length
   const totalSales = sales.reduce((sum, s) => sum + (s.amount ?? 0), 0)
-  const activeProjects = projects.filter(p => p.active_for_year).length
+  const activeProjects = projects.filter(p => p.active_for_year && !p.is_internal).length
 
   const openItemsBreakdown = [
     { label: 'Pending Expenses', value: pendingExpenses },

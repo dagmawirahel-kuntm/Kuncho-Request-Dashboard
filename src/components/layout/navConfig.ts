@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
+import { useOwnsBucket } from '@/lib/buckets'
 
 export interface NavItem {
   label: string
@@ -27,6 +28,9 @@ export interface NavItem {
   // another desk holds the badge rather than the role, and would otherwise
   // lose the entries to the surfaces the badge already lets them use.
   showIfLogisticsOfficer?: boolean
+  // Shown to whoever owns a cost bucket (503), whatever their role: they
+  // approve its spending before finance.
+  showIfBucketOwner?: boolean
   // Shown to a site foreman with at least one active project assignment. Site
   // foreman lives on staff.role (a job title), not user_profiles.role (system
   // access), so it uses the same "derived, not a stored permission" pattern as
@@ -105,6 +109,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Projects', to: '/projects', icon: FolderKanban, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
       { label: 'This Week on Site', to: '/projects/this-week', icon: CalendarRange, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'] },
+      { label: 'Overhead', to: '/overhead', icon: Layers, roles: ['admin', 'executive', 'finance'], showIfBucketOwner: true },
       // Matches sdr_pm_read/sdr_exec_all on site_daily_reports — finance
       // has no read grant on that table, so it's left off here. Anyone who
       // manages a project sees it whatever their app role.
@@ -271,6 +276,7 @@ export function useNavItemVisible(): (item: NavItem) => boolean {
   const { hasRole, profile } = useAuth()
   const { managesAny } = useMyManagedProjects()
   const { hasAny: isForemanWithProjects } = useMySiteForemanProjects()
+  const ownsBucket = useOwnsBucket()
   return (item: NavItem) =>
     !item.roles
     // The login role, or one held as a badge (operations manager, 447).
@@ -288,4 +294,6 @@ export function useNavItemVisible(): (item: NavItem) => boolean {
     || (!!item.showIfLogisticsOfficer && !!profile?.is_logistics_officer)
     // Site foreman with at least one scoped project.
     || (!!item.showIfSiteForeman && isForemanWithProjects)
+    // Owner of a cost bucket: approves its spending on the Overhead page.
+    || (!!item.showIfBucketOwner && ownsBucket)
 }

@@ -6,6 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { useCategories, useProjects, useStaff, useVendors } from '@/hooks/useLookups'
+import { costPickerOptions, type PickerProject } from '@/lib/buckets'
 import { usePayers } from '@/lib/bankPayers'
 import type { BankLine } from '@/lib/bankReconciliation'
 import { VAT_RATE } from '@/lib/withholding'
@@ -76,7 +77,8 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
   const [busy, setBusy] = useState(false)
 
   const categoryOptions = useMemo(() => categories.map(c => ({ id: c.id, label: c.category_name, sub: c.nature ?? undefined })), [categories])
-  const projectOptions = useMemo(() => projects.map(p => ({ id: p.id, label: p.project_name, sub: p.department ?? undefined })), [projects])
+  // Costing closed: no new expense can go on it (502). Buckets read as overhead (503).
+  const projectOptions = useMemo(() => costPickerOptions(projects as PickerProject[]), [projects])
   const vendorOptions = useMemo(() => vendors.map(v => ({ id: v.id, label: v.vendor_name, sub: v.bank_account ?? undefined })), [vendors])
   const staffOptions = useMemo(() => staff.map(s => ({ id: s.id, label: s.employee_name, sub: s.role ?? undefined })), [staff])
 
