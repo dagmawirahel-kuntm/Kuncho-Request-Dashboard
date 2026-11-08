@@ -221,6 +221,8 @@ export interface Project {
   bucket_owner_id?: string | null
   bucket_monthly_budget?: number | null
   bucket_category_id?: string | null
+  /** Kinds of overhead recorded with no project that land here by themselves (503). */
+  bucket_expense_types?: string[]
   kind_sorted_at?: string | null
   created_at: string
   updated_at: string

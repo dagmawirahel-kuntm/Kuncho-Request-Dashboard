@@ -257,3 +257,29 @@ export function againstFor(m: VarianceMonth, row: VarianceRow, history: Overhead
   if (!(Number(base) > 0)) return 0
   return Number(base) * (m.idx === row.cur_idx ? monthShare(history, row.cur_idx) : 1)
 }
+
+/** Kinds of overhead a bucket can take by itself when recorded with no project. */
+export const ROUTABLE_TYPES: { type: string; label: string }[] = [
+  { type: 'fuel', label: 'Fuel' },
+  { type: 'maintenance', label: 'Vehicle maintenance & penalties' },
+  { type: 'property_rent', label: 'Property rent' },
+  { type: 'transportation', label: 'Trips & ride hailing' },
+]
+
+/** Which bucket takes each kind, for showing a kind as taken elsewhere. */
+export function useBucketRouting() {
+  return useQuery({
+    queryKey: ['bucket-routing'],
+    staleTime: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('projects').select('id, project_name, bucket_expense_types')
+        .eq('is_internal', true).eq('active_for_year', true)
+      if (error) throw error
+      const by = new Map<string, { id: string; name: string }>()
+      for (const p of (data ?? []) as { id: string; project_name: string; bucket_expense_types: string[] | null }[]) {
+        for (const t of p.bucket_expense_types ?? []) if (!by.has(t)) by.set(t, { id: p.id, name: p.project_name })
+      }
+      return by
+    },
+  })
+}

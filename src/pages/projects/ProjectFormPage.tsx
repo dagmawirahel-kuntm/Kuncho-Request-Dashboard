@@ -9,6 +9,7 @@ import type { Project, ProjectInsert } from '@/types/database'
 import { useStaff, useLocations, useFinanceContacts, useClients, useUserProfiles, useCategories, locationPickerOptions } from '@/hooks/useLookups'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { ExpenseTypeChips } from '@/components/overhead/OverheadParts'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors'
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -85,6 +86,7 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
         bucket_owner_id: record.bucket_owner_id ?? null,
         bucket_monthly_budget: record.bucket_monthly_budget ?? null,
         bucket_category_id: record.bucket_category_id ?? null,
+        bucket_expense_types: record.bucket_expense_types ?? [],
       }
       : { active_for_year: true, is_internal: false, own_work: false }
   )
@@ -100,11 +102,11 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
     // A job may have no client yet (503): it is flagged until one is set.
     // It leaves the active lists only by closing (502), so the form leaves
     // Active for year alone unless it is a cost bucket.
-    const { active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, ...job } = form
+    const { active_for_year, bucket_owner_id, bucket_monthly_budget, bucket_category_id, bucket_expense_types, ...job } = form
     const payload = form.is_internal
       ? { ...form, client_id: null, own_work: false }
       : { ...job, client_id: form.own_work ? null : job.client_id ?? null, ...(isEdit ? {} : { active_for_year: active_for_year ?? true }) }
-    void bucket_owner_id; void bucket_monthly_budget; void bucket_category_id
+    void bucket_owner_id; void bucket_monthly_budget; void bucket_category_id; void bucket_expense_types
     setError(''); setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const op = isEdit ? supabase.from('projects').update(payload as any).eq('id', id!) : supabase.from('projects').insert([payload as any])
@@ -154,6 +156,10 @@ function ProjectFormPageBody({ id, record }: { id?: string; record?: Project }) 
           <Field label="Default category">
             <SearchableSelect value={form.bucket_category_id ?? null} onChange={v => set('bucket_category_id', v)} options={categoryOptions} placeholder="The ledger its spending goes to…" />
             <p className="mt-1 text-[11px] text-slate-400">Given to spending here that has no category of its own. Purchase orders keep their items' category.</p>
+          </Field>
+          <Field label="Lands here by itself">
+            <ExpenseTypeChips bucketId={id ?? null} value={form.bucket_expense_types ?? []} onChange={v => set('bucket_expense_types', v)} />
+            <p className="mt-1 text-[11px] text-slate-400">Overhead of these kinds recorded with no project comes straight here.</p>
           </Field>
         </>
       ) : (

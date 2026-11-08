@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Panel, Pill } from '@/components/record/Record'
 import { formatDate } from '@/lib/utils'
 import {
-  BAND_FILL, BAND_LABEL, FISCAL_MONTHS, againstFor, btnSm as btn, gregMonth, money, monthShare, ratioText, referenceOf, short, useBucketWaiting, varianceBand,
+  BAND_FILL, BAND_LABEL, FISCAL_MONTHS, ROUTABLE_TYPES, againstFor, useBucketRouting, btnSm as btn, gregMonth, money, monthShare, ratioText, referenceOf, short, useBucketWaiting, varianceBand,
   type CompareWith, type OverheadHistory, type VarianceMonth, type VarianceRow,
 } from '@/lib/buckets'
 import { UserCheck } from 'lucide-react'
@@ -362,5 +362,35 @@ export function FiscalTable({ row, history }: { row: VarianceRow; history: Overh
         </table>
       </div>
     </details>
+  )
+}
+
+/**
+ * The kinds of overhead that land in a bucket by themselves when recorded
+ * with no project (503k). A kind another bucket already takes is shown, but
+ * can't be picked twice.
+ */
+export function ExpenseTypeChips({ bucketId, value, onChange, disabled }: {
+  bucketId: string | null; value: string[]; onChange: (v: string[]) => void; disabled?: boolean
+}) {
+  const { data: taken } = useBucketRouting()
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {ROUTABLE_TYPES.map(({ type, label }) => {
+        const on = value.includes(type)
+        const elsewhere = taken?.get(type)
+        const blocked = !on && !!elsewhere && elsewhere.id !== bucketId
+        return (
+          <button key={type} type="button" disabled={disabled || blocked} aria-pressed={on}
+            onClick={() => onChange(on ? value.filter(t => t !== type) : [...value, type])}
+            title={blocked ? `${elsewhere!.name} takes these` : undefined}
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${on
+              ? 'border-brand bg-brand/10 text-brand dark:border-brand dark:text-slate-100'
+              : 'text-slate-600 hover:border-slate-400 dark:border-slate-600 dark:text-slate-300'}`}>
+            {on ? '✓ ' : ''}{label}{blocked ? ` · ${elsewhere!.name}` : ''}
+          </button>
+        )
+      })}
+    </div>
   )
 }

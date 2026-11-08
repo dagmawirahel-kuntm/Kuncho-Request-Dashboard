@@ -530,3 +530,68 @@ END $f$;
 
 GRANT EXECUTE ON FUNCTION public.overhead_unbucketed(integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.expense_move_to_bucket(uuid[], uuid) TO authenticated;
+
+-- ── 503j (applied on its own) ───────────────────────────────────────────────
+SET LOCAL lock_timeout = '5s';
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS bucket_expense_types text[] NOT NULL DEFAULT '{}';
+COMMENT ON COLUMN public.projects.bucket_expense_types IS 'Kinds of overhead (expense_type) recorded with no project that land in this cost bucket by themselves (503).';
+
+-- ── 503k (applied on its own) ───────────────────────────────────────────────
+-- Overhead of a kind a bucket takes (fuel and vehicle maintenance to the
+-- vehicles bucket, rent to premises…) lands in it by itself when it is
+-- recorded with no project, instead of piling up as "other overhead".
+CREATE OR REPLACE FUNCTION public.bucket_for_expense_type(p_type text)
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  SELECT id FROM projects
+   WHERE is_internal AND active_for_year AND costing_closed_at IS NULL AND p_type = ANY(bucket_expense_types)
+   ORDER BY project_name LIMIT 1;
+$f$;
+
+CREATE OR REPLACE FUNCTION public.trg_bucket_route_expense()
+RETURNS trigger LANGUAGE plpgsql SET search_path TO 'public' AS $f$
+BEGIN
+  IF NEW.project_id IS NULL AND NEW.expense_type IS NOT NULL THEN
+    NEW.project_id := bucket_for_expense_type(NEW.expense_type::text);
+  END IF;
+  RETURN NEW;
+END $f$;
+
+-- Named to run first: the bucket's default category and the closed-costing
+-- check then see the bucket.
+CREATE OR REPLACE TRIGGER trg_a_bucket_0_route
+  BEFORE INSERT ON public.expenses
+  FOR EACH ROW EXECUTE FUNCTION trg_bucket_route_expense();
+
+-- Suggestions: a bucket that takes this kind of expense comes first.
+CREATE OR REPLACE FUNCTION public.overhead_unbucketed(p_limit integer DEFAULT 100)
+RETURNS TABLE(id uuid, expense_code text, date date, description text, amount numeric, payee text,
+              category_name text, approval_status text, payment_state text, requested_by text,
+              suggested_bucket uuid, suggested_bucket_name text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
+  WITH usual AS (
+    SELECT DISTINCT ON (x.category_id) x.category_id, x.project_id
+      FROM expenses x JOIN projects p ON p.id = x.project_id AND p.is_internal AND p.active_for_year
+                    AND (p.kind_sorted_at IS NOT NULL OR COALESCE(p.suggested_kind, 'bucket') = 'bucket')
+     WHERE x.category_id IS NOT NULL AND NOT COALESCE(x.is_archived, false)
+     GROUP BY x.category_id, x.project_id
+     ORDER BY x.category_id, count(*) DESC
+  )
+  SELECT e.id, e.expense_code, e.date, e.item_service_description, e.amount_etb,
+         COALESCE(v.vendor_name, s.employee_name, e.vendors_name), c.category_name, e.approval_status::text, e.payment_state,
+         up.full_name, COALESCE(tp.id, dp.id, u.project_id), btrim(COALESCE(tp.project_name, dp.project_name, up2.project_name))
+    FROM expenses e
+    LEFT JOIN vendors v ON v.id = e.vendor_id LEFT JOIN staff s ON s.id = e.paid_to_staff_id
+    LEFT JOIN categories c ON c.id = e.category_id LEFT JOIN user_profiles up ON up.id = e.purchaser_user_id
+    LEFT JOIN projects tp ON tp.id = bucket_for_expense_type(e.expense_type::text)
+    LEFT JOIN LATERAL (SELECT p.id, p.project_name FROM projects p
+                        WHERE p.is_internal AND p.active_for_year AND p.bucket_category_id = e.category_id
+                          AND (p.kind_sorted_at IS NOT NULL OR COALESCE(p.suggested_kind, 'bucket') = 'bucket')
+                        ORDER BY p.project_name LIMIT 1) dp ON true
+    LEFT JOIN usual u ON u.category_id = e.category_id
+    LEFT JOIN projects up2 ON up2.id = u.project_id
+   WHERE e.project_id IS NULL AND e.is_overhead AND NOT COALESCE(e.is_archived, false)
+     AND e.approval_status::text <> 'rejected' AND COALESCE(e.payment_state, '') <> 'void'
+     AND COALESCE(get_user_role()::text IN ('admin', 'finance', 'executive'), false)
+   ORDER BY e.date DESC, e.created_at DESC
+   LIMIT LEAST(GREATEST(p_limit, 1), 500);
+$f$;

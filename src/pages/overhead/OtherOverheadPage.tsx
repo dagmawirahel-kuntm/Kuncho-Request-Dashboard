@@ -67,6 +67,11 @@ export default function OtherOverheadPage() {
   const total = rows.reduce((s, r) => s + Number(r.amount), 0)
   const target = (r: Unbucketed) => (r.id in chosen ? chosen[r.id] : r.suggested_bucket)
   const withSuggestion = rows.filter(r => r.suggested_bucket)
+  // One click picks every expense suggested for the same bucket.
+  const bySuggestion = [...rows.reduce((m, r) => {
+    if (r.suggested_bucket) m.set(r.suggested_bucket, { name: r.suggested_bucket_name ?? 'Bucket', ids: [...(m.get(r.suggested_bucket)?.ids ?? []), r.id] })
+    return m
+  }, new Map<string, { name: string; ids: string[] }>())].sort((a, b) => b[1].ids.length - a[1].ids.length)
 
   async function move(ids: string[], bucket: string | null, label: string) {
     if (!bucket || ids.length === 0) return
@@ -125,6 +130,15 @@ export default function OtherOverheadPage() {
       <Panel title="Put these in their buckets" icon={ArrowRight} count={rows.length} padded={false}>
         {rows.length === 0 ? <p className="p-4 text-sm text-slate-500">Nothing left: every overhead expense is in a bucket.</p> : (
           <>
+            {canMove && bySuggestion.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5 text-xs dark:border-slate-700">
+                <span className="text-slate-500">Pick the ones suggested for</span>
+                {bySuggestion.map(([bucket, g]) => (
+                  <button key={bucket} onClick={() => { setSelected(new Set(g.ids)); setBulkTo(bucket) }}
+                    className={`${btn} text-slate-700 dark:text-slate-200`}>{g.name} <span className="rounded-full bg-slate-100 px-1.5 text-[10px] dark:bg-slate-700">{g.ids.length}</span></button>
+                ))}
+              </div>
+            )}
             {canMove && (
               <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5 text-xs dark:border-slate-700">
                 <label className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
@@ -180,7 +194,7 @@ export default function OtherOverheadPage() {
               ))}
             </ul>
             <p className="px-4 py-2 text-[11px] text-slate-400">
-              The suggested bucket is the one whose default category matches, or where spending in the same category usually goes. Check it before moving.
+              The suggested bucket is the one set to take this kind of expense, else the one whose default category matches, else where spending in the same category usually goes. Check it before moving.
             </p>
           </>
         )}
