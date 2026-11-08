@@ -224,6 +224,7 @@ export interface Project {
   /** Kinds of overhead recorded with no project that land here by themselves (503). */
   bucket_expense_types?: string[]
   bucket_counts_as_overhead?: boolean
+  bucket_takes_category?: boolean
   kind_sorted_at?: string | null
   created_at: string
   updated_at: string

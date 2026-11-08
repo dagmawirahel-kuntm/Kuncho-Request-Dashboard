@@ -39,13 +39,14 @@ export function PagePalette({ nav }: { nav: NavData }) {
   const entries = useMemo(() => {
     const seen = new Set<string>()
     const all: Entry[] = []
-    for (const g of nav.groups) for (const item of g.items) {
+    // Every page, those that live on a hub too: they are found by name.
+    for (const g of nav.allGroups) for (const item of g.items) {
       if (seen.has(item.to)) continue
       seen.add(item.to)
       all.push({ item, where: item.subgroup ? `${g.title} › ${item.subgroup}` : g.title })
     }
     return all
-  }, [nav.groups])
+  }, [nav.allGroups])
 
   const results = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)

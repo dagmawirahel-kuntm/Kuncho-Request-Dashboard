@@ -132,6 +132,7 @@ const TaxReceiptsPage = lazyPage(() => import('@/pages/tax-receipts/TaxReceiptsP
 const TaxReceiptFormPage = lazyPage(() => import('@/pages/tax-receipts/TaxReceiptFormPage'))
 const VatReceiptTrackerPage = lazyPage(() => import('@/pages/tax-receipts/VatReceiptTrackerPage'))
 const SalesReceiptFormPage = lazyPage(() => import('@/pages/tax-receipts/SalesReceiptFormPage'))
+const TaxHubPage = lazyPage(() => import('@/pages/taxes/TaxHubPage'))
 const BatchPaymentsPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentsPage'))
 const BatchPaymentFormPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentFormPage'))
 const BatchPaymentDetailPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentDetailPage'))
@@ -439,6 +440,13 @@ export const router = createBrowserRouter([
               { path: 'tax-plan', element: <TaxPlanPage /> },
               { path: 'tax-impact', element: <TaxImpactPage /> },
             ],
+          },
+          {
+            // The tax hub (506): every tax program in one place. Open to
+            // anyone who can open one of them; each card shows only to those
+            // who can open its program.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer']} allowTaxOfficer />,
+            children: [{ path: 'taxes', element: <TaxHubPage /> }],
           },
           {
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,

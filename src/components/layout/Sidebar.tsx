@@ -63,9 +63,10 @@ function SearchButton() {
 }
 
 // ── Sidebar: every section in one column, folding ────────────────────────
-function SectionTree({ groups, active, pins, togglePin, onNavigate }: NavData & { onNavigate?: () => void }) {
+function SectionTree({ groups, allGroups, active, pins, togglePin, onNavigate }: NavData & { onNavigate?: () => void }) {
   const { isOpen, toggle } = useOpenSections(active.section)
-  const pinned = pinnedItems(groups, pins)
+  // A pin can be a page that lives on a hub: pins read every page.
+  const pinned = pinnedItems(allGroups, pins)
 
   return (
     <nav className="flex-1 space-y-0.5 p-3">
@@ -84,7 +85,7 @@ function SectionTree({ groups, active, pins, togglePin, onNavigate }: NavData & 
                 pinned
                 onTogglePin={togglePin}
                 onNavigate={onNavigate}
-                section={sectionOf(groups, item.to)}
+                section={sectionOf(allGroups, item.to)}
               />
             ))}
           </div>
@@ -208,9 +209,9 @@ function Rail({ groups, active, selected, onSelect, theme, festive, onToggleThem
 
 // One section's pages beside the rail — docked in the rail layout, floating
 // when the nav is folded down to icons.
-function SectionPanel({ title, groups, active, pins, togglePin, onNavigate }: NavData & { title: string; onNavigate?: () => void }) {
+function SectionPanel({ title, groups, allGroups, active, pins, togglePin, onNavigate }: NavData & { title: string; onNavigate?: () => void }) {
   const group = groups.find(g => g.title === title)
-  const items = title === PINNED ? pinnedItems(groups, pins) : group?.items ?? []
+  const items = title === PINNED ? pinnedItems(allGroups, pins) : group?.items ?? []
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar" style={accentVars(title)}>
       <div className="nav-panel-head flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
@@ -230,7 +231,7 @@ function SectionPanel({ title, groups, active, pins, togglePin, onNavigate }: Na
           title === PINNED
             ? <div className="space-y-0.5">{items.map(item => (
                 <NavItemLink key={item.to} item={item} active={item.to === active.to} pinned onTogglePin={togglePin}
-                  onNavigate={onNavigate} section={sectionOf(groups, item.to)} />
+                  onNavigate={onNavigate} section={sectionOf(allGroups, item.to)} />
               ))}</div>
             : <SectionItems items={items} activeTo={active.to} pins={pins} onTogglePin={togglePin} onNavigate={onNavigate} />
         )}

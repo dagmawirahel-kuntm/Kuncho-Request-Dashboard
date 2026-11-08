@@ -37,6 +37,10 @@ export interface NavItem {
   // PM assignment above.
   showIfSiteForeman?: boolean
   animateIcon?: string
+  // The hub page this item lives on (its path). It is left out of the
+  // sidebar and the top bar, the hub lists it instead; Ctrl K and pins still
+  // find it, and while it is open the hub's own entry lights up.
+  inHub?: string
   // Small heading this item sits under inside its section.
   subgroup?: string
 }
@@ -219,16 +223,18 @@ export const navGroups: NavGroup[] = [
       // Read-only for everyone (register + book value), actions gated
       // inside the page itself — no roles restriction here on purpose.
       { subgroup: 'Books & bank', label: 'Fixed Assets', to: '/finance/fixed-assets', icon: Archive },
-      // Everything tax in one place: they all read Ethiopian periods and
-      // the same rate references (migrations 301-313).
-      { subgroup: 'Tax', label: 'Tax Plan', to: '/tax-plan', icon: Target, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
+      // Everything tax in one place (506): one entry, the hub at /taxes, lists
+      // the programs below with what each needs doing. They all read
+      // Ethiopian periods and the same rate references (migrations 301-313).
+      { subgroup: 'Tax', label: 'Taxes & Government Fees', to: '/taxes', icon: Landmark, roles: ['admin', 'executive', 'finance', 'procurement_officer'], showIfTaxOfficer: true },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'Tax Plan', to: '/tax-plan', icon: Target, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
       // Open expenses and POs ranked by how much VAT they bring this month (migration 423).
-      { subgroup: 'Tax', label: 'Tax Impact', to: '/tax-impact', icon: Tag, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
-      { subgroup: 'Tax', label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
-      { subgroup: 'Tax', label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
-      { subgroup: 'Tax', label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
-      { subgroup: 'Tax', label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
-      { subgroup: 'Tax', label: 'Government Statement', to: '/reports/government-statement', icon: FileText, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'Tax Impact', to: '/tax-impact', icon: Tag, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'Tax Filings', to: '/tax-filings', icon: Landmark, roles: ['admin', 'executive', 'finance'], showIfTaxOfficer: true },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'Tax Management', to: '/tax-management', icon: Landmark, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'Tax Receipts', to: '/tax-receipts', icon: Receipt, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'VAT Receipt Tracker', to: '/vat-tracker', icon: Camera, roles: ['admin', 'executive', 'finance', 'procurement_officer'] },
+      { subgroup: 'Tax', inHub: '/taxes', label: 'Government Statement', to: '/reports/government-statement', icon: FileText, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Reports', label: 'P&L Report', to: '/reports/pl', icon: PieChart, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Reports', label: 'Balance Sheet', to: '/reports/balance-sheet', icon: Scale, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Reports', label: 'Historical Archive', to: '/reports/archive', icon: Archive, roles: ['admin', 'executive', 'finance'] },
