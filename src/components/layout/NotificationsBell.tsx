@@ -80,7 +80,7 @@ export function NotificationsBell() {
         { label: 'Daily site reports not in on your sites', count: pmDays, to: '/site-foreman/reports' },
         { label: 'Expenses waiting for approval', count: c(toApprove), to: '/expenses/approvals' },
         { label: 'Approved, waiting to be paid', count: c(toPay), to: '/finance/payments' },
-        { label: 'High tax impact: escalated or overdue', count: tiCount, to: '/tax-impact' },
+        { label: 'High tax impact: escalated or overdue', count: tiCount, to: '/taxes/now?vat=ranking#vat' },
         { label: 'Purchase requests waiting', count: c(orders), to: '/purchase-requests' },
         { label: 'Transport requests to pay', count: c(transport), to: '/transportation' },
         { label: 'Payroll not paid', count: c(payroll), to: '/payroll' },

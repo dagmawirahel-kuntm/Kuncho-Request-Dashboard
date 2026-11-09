@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
-import type { TaxFilingView, TaxFilingLine, StaffTaxPeriod } from '@/types/database'
+import type { TaxFilingLine, StaffTaxPeriod } from '@/types/database'
 import { Lock, RefreshCw } from 'lucide-react'
 
 /**
@@ -15,7 +15,9 @@ import { Lock, RefreshCw } from 'lucide-react'
  * one did. Before a schedule exists, the live figures for the period are
  * shown as a preview so the officer can see what will be declared.
  */
-export function EmployeeScheduleSection({ filing, canEdit }: { filing: TaxFilingView; canEdit: boolean }) {
+export interface ScheduleReturn { id: string; schedule_code: string; status: string; period_ec_year: number; period_ec_month: number | null }
+
+export function EmployeeSchedule({ filing, canEdit }: { filing: ScheduleReturn; canEdit: boolean }) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [building, setBuilding] = useState(false)
@@ -52,7 +54,7 @@ export function EmployeeScheduleSection({ filing, canEdit }: { filing: TaxFiling
     setBuilding(false)
     if (error) { toast(error.message, 'error'); return }
     qc.invalidateQueries({ queryKey: ['tax-filing-lines', filing.id] })
-    qc.invalidateQueries({ queryKey: ['tax-filing-computed'] })
+    qc.invalidateQueries({ queryKey: ['tax-month'] })
     const r = data as { employees: number; total: number }
     toast(`Schedule built: ${r.employees} employee${r.employees === 1 ? '' : 's'}, ${formatCurrency(r.total)}`, 'success')
   }

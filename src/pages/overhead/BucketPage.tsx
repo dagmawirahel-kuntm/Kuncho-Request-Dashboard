@@ -102,7 +102,7 @@ export default function BucketPage() {
         <Link to="/overhead" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Overhead</Link>
         {/* The bucket government payments go to: its programs live on the tax hub (506). */}
         {project.id === taxBucket && (
-          <Link to="/taxes" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"><Landmark className="h-4 w-4" /> Every tax program</Link>
+          <Link to="/taxes" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"><Landmark className="h-4 w-4" /> Taxes, month by month</Link>
         )}
       </div>
       <div className="flex flex-wrap items-start gap-3">

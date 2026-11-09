@@ -221,11 +221,9 @@ export function ExpensePaymentsPanel({ expense, baseDocument, canAct, isAdmin, c
                   <p className="mt-0.5 text-[11px] text-violet-600 dark:text-violet-300"
                     title="Each part's share of the bill's input VAT counts in the tax month that part was paid">
                     VAT {formatCurrency(Number(partVat!.get(p.id)!.vat_amount))} · counts in {partVat!.get(p.id)!.declare_period_label}
-                    {partVat!.get(p.id)!.stage !== 'claimed' && ' (once its receipt is tax-reviewed)'}
+                    {partVat!.get(p.id)!.stage !== 'claimed' && ' (once its receipt is in hand)'}
                     {partVat!.get(p.id)!.stage === 'needs_receipt' && (
-                      <> · <Link
-                        to={`/tax-receipts/new?expense_id=${expense.id}&expense_payment_id=${p.id}${expense.vendor_id ? `&vendor_id=${expense.vendor_id}` : ''}${expense.project_id ? `&project_id=${expense.project_id}` : ''}`}
-                        className="font-medium underline-offset-2 hover:underline">Capture its receipt</Link></>
+                      <> · <Link to="/taxes/now?vat=collect#vat" className="font-medium underline-offset-2 hover:underline">Receipt in hand? Tick it in Taxes</Link></>
                     )}
                   </p>
                 )}

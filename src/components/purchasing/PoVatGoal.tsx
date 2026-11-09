@@ -68,7 +68,7 @@ export function PoVatSummary({ data, loading, onPick }: {
               </button>
             )
           })}
-          <Link to="/tax-plan?tab=forecast" className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+          <Link to="/taxes" className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
             Tax plan <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
@@ -204,7 +204,7 @@ export function PoVatPanel({ data, poId, onHide }: { data: PoVatGoal | undefined
           {e.reaches_goal && <Pill tone="green" icon={Target}>With the bigger POs, this one reaches the goal</Pill>}
         </div>
       )}
-      <Link to="/tax-plan?tab=forecast" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+      <Link to="/taxes" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
         Open the tax plan <ArrowRight className="h-3 w-3" />
       </Link>
     </Panel>

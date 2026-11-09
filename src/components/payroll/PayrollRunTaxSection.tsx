@@ -93,7 +93,7 @@ export function PayrollRunTaxSection({ payrollId }: { payrollId: string }) {
                 <td className="px-4 py-2 text-xs">
                   {(declaredBy.get(l.staff_id) ?? []).length > 0
                     ? (declaredBy.get(l.staff_id) ?? []).map((f, i) => f && (
-                        <Link key={i} to="/tax-filings" className="mr-2 text-brand hover:underline">
+                        <Link key={i} to="/taxes" className="mr-2 text-brand hover:underline">
                           {f.schedule_code === 'SCH_A' ? 'Sch A' : f.schedule_code === 'PENSION' ? 'Pension' : f.schedule_code} {f.period_label} ({f.status})
                         </Link>
                       ))

@@ -100,7 +100,7 @@ export function TaxImpactNudge() {
           closing && payVat > 0 ? `${etb(payVat)} of VAT approved but unpaid, ${data.period.days_left} day${data.period.days_left === 1 ? '' : 's'} left` : null,
         ].filter(Boolean).join(' · ')}
       </p>
-      <Link to="/tax-impact" className="inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90">
+      <Link to="/taxes/now?vat=ranking#vat" className="inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90">
         Open the table <ChevronRight className="h-3.5 w-3.5" />
       </Link>
       <button type="button" aria-label="Hide until tomorrow" title="Hide until tomorrow"
@@ -135,7 +135,7 @@ export function TaxImpactNote({ id, po = false }: { id: string; po?: boolean }) 
         </span>
       </p>
       <span className="text-xs font-medium text-[#1e3a5f] dark:text-sky-300">{nextStep(it, data.period.label)}</span>
-      <Link to={`/tax-impact#${it.id}`} className="inline-flex items-center text-xs font-medium text-brand hover:underline">Table <ChevronRight className="h-3.5 w-3.5" /></Link>
+      <Link to={`/taxes/now?vat=ranking#${it.id}`} className="inline-flex items-center text-xs font-medium text-brand hover:underline">Table <ChevronRight className="h-3.5 w-3.5" /></Link>
     </div>
   )
 }
