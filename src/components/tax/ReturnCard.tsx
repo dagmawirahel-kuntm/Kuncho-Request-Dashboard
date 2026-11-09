@@ -4,7 +4,7 @@ import { Check, CircleDashed, Landmark, Receipt, Undo2 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import { useAccounts } from '@/hooks/useLookups'
 import {
-  TAX_LONG, TONE_PILL, billFits, declareReturn, etb, etb2, longDate, payReturn, returnAmount, stateLabel, undoReturn, useTaxRefresh,
+  PAID_TO, TAX_LONG, TONE_PILL, billFits, declareReturn, etb, etb2, longDate, payReturn, returnAmount, stateLabel, undoReturn, useTaxRefresh,
   whenText, type GovBill, type TaxReturn,
 } from '@/lib/taxes'
 
@@ -18,13 +18,11 @@ const ghost = `${btn} border text-slate-600 hover:bg-slate-50 dark:border-slate-
  * the one or two clicks that record it. Declaring takes the books' figure
  * unless told otherwise; paying picks the government bill that paid it.
  */
-export function ReturnCard({ r, today, canRecord, bills, pair, breakdown, children }: {
+export function ReturnCard({ r, today, canRecord, bills, breakdown, children }: {
   r: TaxReturn
   today: string
   canRecord: boolean
   bills: GovBill[]
-  /** Payroll tax's pension return (and back): one bill often pays both. */
-  pair?: TaxReturn
   breakdown?: ReactNode
   children?: ReactNode
 }) {
@@ -50,7 +48,7 @@ export function ReturnCard({ r, today, canRecord, bills, pair, breakdown, childr
         <div className="min-w-0">
           <h3 className="font-semibold text-slate-800 dark:text-slate-100">{TAX_LONG[r.code]}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {r.code === 'SCH_C' ? `For the year · ` : ''}{r.due ? <>Due {longDate(r.due)}{r.state !== 'done' && r.state !== 'future' ? ` (${whenText(r.due, today)})` : ''}</> : 'No due date'}
+            {r.code === 'SCH_C' ? `For the year · ` : ''}{r.due ? <>Due {longDate(r.due)}{r.state !== 'done' && r.state !== 'future' ? ` (${whenText(r.due, today)})` : ''}</> : 'No due date'} · Paid to {PAID_TO[r.code]}
           </p>
         </div>
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE_PILL[st.tone]}`}>{st.text}</span>
@@ -94,7 +92,7 @@ export function ReturnCard({ r, today, canRecord, bills, pair, breakdown, childr
           )}
           {open === 'declare' && <DeclareForm r={r} today={today} busy={busy} onCancel={() => setOpen(null)}
             onSave={(amount, ref, on) => run(() => declareReturn(r.id, amount, ref, on), 'Declaration saved')} />}
-          {open === 'pay' && <PayForm r={r} pair={pair} bills={bills} busy={busy} onCancel={() => setOpen(null)}
+          {open === 'pay' && <PayForm r={r} bills={bills} busy={busy} onCancel={() => setOpen(null)}
             onSave={(amount, on, by) => run(() => payReturn(r.id, amount, on, by), 'Payment recorded')} />}
         </div>
       )}
@@ -153,11 +151,11 @@ function DeclareForm({ r, today, busy, onCancel, onSave }: {
   )
 }
 
-function PayForm({ r, pair, bills, busy, onCancel, onSave }: {
-  r: TaxReturn; pair?: TaxReturn; bills: GovBill[]; busy: boolean; onCancel: () => void
+function PayForm({ r, bills, busy, onCancel, onSave }: {
+  r: TaxReturn; bills: GovBill[]; busy: boolean; onCancel: () => void
   onSave: (amount: number, on: string | null, by: { expense?: string; account?: string }) => void
 }) {
-  const fits = billFits(r, bills, pair)
+  const fits = billFits(r, bills)
   const best = fits.find(f => f.score >= 3)
   const { data: accounts = [] } = useAccounts()
   const owed = Number(r.declared ?? r.books ?? 0)
