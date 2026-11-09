@@ -5,12 +5,14 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { useReceiptChase, type ChaseRow, type ChaseStatus } from '@/lib/receiptChase'
-import { Building2, Check, ChevronDown, ChevronRight, Copy, Paperclip, Phone, Search } from 'lucide-react'
+import { markReceipts, useTaxRefresh } from '@/lib/taxes'
+import { Building2, Check, ChevronDown, ChevronRight, Copy, Phone, ReceiptText, Search } from 'lucide-react'
 
 // Receipts to chase (migration 452): purchases from VAT suppliers where the
 // money has left — marked paid, paid as an advance, or shown by the bank —
-// and no VAT receipt has been captured. Grouped by supplier, because one
-// call covers all of a supplier's bills.
+// and no VAT receipt is in hand. Grouped by supplier, because one call
+// covers all of a supplier's bills. "Have it" marks the receipt as in hand
+// (507): its VAT is claimed on the month's return from then.
 
 type StatusFilter = 'open' | 'not_asked' | 'asked' | 'promised' | 'late' | 'not_coming' | 'all'
 const STATUS_FILTERS: { key: StatusFilter; label: string; test: (r: ChaseRow) => boolean }[] = [
@@ -40,10 +42,15 @@ interface Group {
   oldest: number
 }
 
-export function ReceiptChase() {
+export function ReceiptChase({ month: initialMonth, canRecord = false }: {
+  /** Open on one paid month, as "2019-1". */
+  month?: string
+  /** Finance, the tax officer and admin mark receipts as in hand. */
+  canRecord?: boolean
+} = {}) {
   const { data: rows = [], isLoading, error } = useReceiptChase()
   const [status, setStatus] = useState<StatusFilter>('open')
-  const [month, setMonth] = useState<string>('all')
+  const [month, setMonth] = useState<string>(initialMonth ?? 'all')
   const [q, setQ] = useState('')
 
   const months = useMemo(() => {
@@ -78,8 +85,8 @@ export function ReceiptChase() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500 dark:text-slate-400">
-        Money has left for these purchases from VAT suppliers, but no VAT receipt has been captured. Their VAT can't be claimed until the receipt is in.
-        Biggest suppliers first — one call covers all their bills.
+        Money has left for these purchases from VAT suppliers, but their VAT receipt isn't in hand. Their VAT is claimed once it is:
+        tick “Have it” when the receipt arrives. Biggest suppliers first — one call covers all their bills.
       </p>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -115,7 +122,7 @@ export function ReceiptChase() {
       </div>
 
       <div className="space-y-2">
-        {groups.map(g => <VendorCard key={g.key} g={g} />)}
+        {groups.map(g => <VendorCard key={g.key} g={g} canRecord={canRecord} />)}
         {groups.length === 0 && (
           <p className="rounded-xl border bg-white px-4 py-10 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-800">
             {rows.length === 0 ? 'Every paid VAT purchase has its receipt.' : 'Nothing matches.'}
@@ -137,8 +144,9 @@ function groupByVendor(rows: ChaseRow[]): Group[] {
   return [...m.values()].sort((a, b) => b.vat - a.vat)
 }
 
-function VendorCard({ g }: { g: Group }) {
+function VendorCard({ g, canRecord }: { g: Group; canRecord: boolean }) {
   const qc = useQueryClient()
+  const refresh = useTaxRefresh()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -156,6 +164,18 @@ function VendorCard({ g }: { g: Group }) {
     toast(action === 'asked' ? 'Marked as asked' : action === 'promised' ? 'Promise saved' : action === 'not_coming' ? 'Marked as not coming' : 'Chase cleared', 'success')
     setPromise('')
     qc.invalidateQueries({ queryKey: ['vat-receipt-chase'] })
+  }
+
+  async function have(ids: string[]) {
+    const no = ids.length === 1 ? window.prompt('The receipt number, if you have it (optional)') : ''
+    if (no === null) return
+    setBusy(true)
+    try {
+      await markReceipts(ids, 'held', no || null)
+      toast(ids.length === 1 ? 'Receipt in hand: its VAT is claimed' : `${ids.length} receipts in hand: their VAT is claimed`, 'success')
+      refresh()
+    } catch (e) { toast((e as Error).message, 'error') }
+    setBusy(false)
   }
 
   // A message to send the supplier, listing what we need receipts for.
@@ -201,6 +221,12 @@ function VendorCard({ g }: { g: Group }) {
             className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:bg-brand/90 disabled:opacity-50">
             <Check className="h-3 w-3" /> Asked today
           </button>
+          {canRecord && (
+            <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Mark all ${g.rows.length} receipts from ${g.vendor} as in hand?`)) have(ids) }}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/30">
+              <ReceiptText className="h-3 w-3" /> Have them all
+            </button>
+          )}
         </div>
       </div>
 
@@ -220,7 +246,7 @@ function VendorCard({ g }: { g: Group }) {
             {g.contact && <span className="ml-auto text-slate-500 dark:text-slate-400">Contact: {g.contact}</span>}
           </div>
           <ul className="divide-y dark:divide-slate-700">
-            {g.rows.map(r => <BillRow key={r.expense_id} r={r} busy={busy} onMark={(a, d) => mark([r.expense_id], a, d)} />)}
+            {g.rows.map(r => <BillRow key={r.expense_id} r={r} busy={busy} canRecord={canRecord} onHave={() => have([r.expense_id])} onMark={(a, d) => mark([r.expense_id], a, d)} />)}
           </ul>
         </div>
       )}
@@ -228,13 +254,14 @@ function VendorCard({ g }: { g: Group }) {
   )
 }
 
-function BillRow({ r, busy, onMark }: { r: ChaseRow; busy: boolean; onMark: (a: ChaseStatus | 'clear', d?: string) => void }) {
+function BillRow({ r, busy, canRecord, onHave, onMark }: {
+  r: ChaseRow; busy: boolean; canRecord: boolean; onHave: () => void; onMark: (a: ChaseStatus | 'clear', d?: string) => void
+}) {
   const chip = r.promise_late ? { text: `Promised ${formatDateGC(r.promised_on)} · passed`, cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
     : r.chase_status === 'promised' ? { text: `Promised ${formatDateGC(r.promised_on)}`, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }
     : r.chase_status === 'asked' ? { text: `Asked ${r.asked_count}×${r.last_asked_at ? ` · ${formatDateGC(r.last_asked_at)}` : ''}`, cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' }
     : r.chase_status === 'not_coming' ? { text: 'Not coming', cls: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400' }
     : { text: 'Not asked', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' }
-  const attach = `/tax-receipts/new?expense_id=${r.expense_id}${r.vendor_id ? `&vendor_id=${r.vendor_id}` : ''}`
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 text-sm">
       <div className="min-w-[200px] flex-1">
@@ -252,9 +279,12 @@ function BillRow({ r, busy, onMark }: { r: ChaseRow; busy: boolean; onMark: (a: 
       </div>
       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>{chip.text}</span>
       <div className="flex items-center gap-1.5">
-        <Link to={attach} className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
-          <Paperclip className="h-3 w-3" /> Receipt in
-        </Link>
+        {canRecord && (
+          <button type="button" disabled={busy} onClick={onHave} title="The VAT receipt is in hand: claim its VAT"
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/30">
+            <ReceiptText className="h-3 w-3" /> Have it
+          </button>
+        )}
         <button type="button" disabled={busy} onClick={() => onMark('asked')} title="Asked the supplier today"
           className="rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Asked</button>
         {r.chase_status && (

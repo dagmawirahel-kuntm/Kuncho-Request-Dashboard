@@ -35,7 +35,7 @@ export function TaxTag({ item, periodLabel, size = 'sm', link = true }: {
         <span aria-hidden>✓</span>{month.split(' ')[0]}
       </span>
     )
-    return link ? <Link to={`/tax-impact#${item.id}`} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">{badge}</Link> : badge
+    return link ? <Link to={`/taxes/now?vat=ranking#${item.id}`} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">{badge}</Link> : badge
   }
   const known = item.cls === 'vat' && item.rank != null
   const level = meterLevel(item.share)
@@ -76,7 +76,7 @@ export function TaxTag({ item, periodLabel, size = 'sm', link = true }: {
       {item.overdue && <span aria-hidden className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-800" />}
     </span>
   )
-  return link ? <Link to={`/tax-impact#${item.id}`} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">{body}</Link> : body
+  return link ? <Link to={`/taxes/now?vat=ranking#${item.id}`} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">{body}</Link> : body
 }
 
 /** The key to the tag, for the table page and the queues. */

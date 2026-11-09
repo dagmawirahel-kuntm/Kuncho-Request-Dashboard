@@ -1,6 +1,7 @@
 import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { ETHIOPIAN_MONTHS } from '@/lib/ethiopianCalendar'
 import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
 import { PagePalette } from './PagePalette'
@@ -165,12 +166,6 @@ const breadcrumbLabels: Record<string, string> = {
   sales: 'Sales',
   'tax-summary': 'Tax Summary',
   taxes: 'Taxes',
-  'tax-filings': 'Tax Filings',
-  'tax-plan': 'Tax Plan',
-  'tax-impact': 'Tax Impact',
-  'tax-management': 'Tax Management',
-  'tax-receipts': 'Tax Receipts',
-  'vat-tracker': 'VAT Receipt Tracker',
   reports: 'Reports',
   'government-statement': 'Government Statement',
   'batch-payments': 'Batch Payments',
@@ -204,11 +199,15 @@ export function AppShell() {
   // The company's identity for every printed document (migration 368).
   useCompanyProfile()
   const location = useLocation()
-  const segments = location.pathname.split('/').filter(Boolean)
+  const rawSegments = location.pathname.split('/').filter(Boolean)
+  // A tax month (/taxes/2019/1) reads "Taxes › Meskerem 2019".
+  const segments = rawSegments[0] === 'taxes' && rawSegments.length === 3 && /^\d+$/.test(rawSegments[1]) && /^\d+$/.test(rawSegments[2])
+    ? ['taxes', `${ETHIOPIAN_MONTHS[Number(rawSegments[2]) - 1] ?? rawSegments[2]} ${rawSegments[1]}`]
+    : rawSegments
 
   const nav = useNavData()
-  // A page that lives on a hub (the tax programs on /taxes) has the hub as
-  // the step before it.
+  // A page that lives on a hub (NavItem.inHub) has the hub as the step
+  // before it.
   const hubCrumb = useMemo(() => {
     const items = nav.allGroups.flatMap(g => g.items)
     const here = items.find(i => i.inHub && (location.pathname === i.to || location.pathname.startsWith(`${i.to}/`)))
@@ -303,9 +302,13 @@ export function AppShell() {
             {segments.map((seg, i) => (
               <span key={seg} className="flex items-center gap-1">
                 <ChevronRight className="h-3.5 w-3.5" />
-                <span className={`whitespace-nowrap ${i === segments.length - 1 ? 'crumb-here font-medium text-slate-800 dark:text-slate-100' : ''}`}>
-                  {breadcrumbLabels[seg] ?? seg}
-                </span>
+                {seg === 'taxes' && i < segments.length - 1 ? (
+                  <NavLink to="/taxes" className="crumb-link whitespace-nowrap hover:text-slate-700 dark:hover:text-slate-200">{breadcrumbLabels[seg]}</NavLink>
+                ) : (
+                  <span className={`whitespace-nowrap ${i === segments.length - 1 ? 'crumb-here font-medium text-slate-800 dark:text-slate-100' : ''}`}>
+                    {breadcrumbLabels[seg] ?? seg}
+                  </span>
+                )}
               </span>
             ))}
           </nav>

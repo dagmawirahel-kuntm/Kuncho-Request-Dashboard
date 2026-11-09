@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LandingRedirect } from './LandingRedirect'
+import { ToTaxMonth } from './ToTaxMonth'
 import { AppShell } from '@/components/layout/AppShell'
 import { lazyPage } from './lazyPage'
 
@@ -124,15 +125,9 @@ const AllocationFormPage = lazyPage(() => import('@/pages/purchase-allocation/Al
 const AttendancePage = lazyPage(() => import('@/pages/attendance/AttendancePage'))
 const CashAdvancesPage = lazyPage(() => import('@/pages/cash-advances/CashAdvancesPage'))
 const CashAdvanceFormPage = lazyPage(() => import('@/pages/cash-advances/CashAdvanceFormPage'))
-const TaxManagementPage = lazyPage(() => import('@/pages/tax-summary/TaxManagementPage'))
-const TaxFilingsPage = lazyPage(() => import('@/pages/tax-filings/TaxFilingsPage'))
-const TaxPlanPage = lazyPage(() => import('@/pages/tax-plan/TaxPlanPage'))
-const TaxImpactPage = lazyPage(() => import('@/pages/tax-plan/TaxImpactPage'))
-const TaxReceiptsPage = lazyPage(() => import('@/pages/tax-receipts/TaxReceiptsPage'))
-const TaxReceiptFormPage = lazyPage(() => import('@/pages/tax-receipts/TaxReceiptFormPage'))
-const VatReceiptTrackerPage = lazyPage(() => import('@/pages/tax-receipts/VatReceiptTrackerPage'))
-const SalesReceiptFormPage = lazyPage(() => import('@/pages/tax-receipts/SalesReceiptFormPage'))
-const TaxHubPage = lazyPage(() => import('@/pages/taxes/TaxHubPage'))
+const TaxesPage = lazyPage(() => import('@/pages/taxes/TaxesPage'))
+const TaxMonthPage = lazyPage(() => import('@/pages/taxes/TaxMonthPage'))
+const TaxNowRedirect = lazyPage(() => import('@/pages/taxes/TaxMonthPage').then(m => ({ default: m.TaxNowRedirect })))
 const BatchPaymentsPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentsPage'))
 const BatchPaymentFormPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentFormPage'))
 const BatchPaymentDetailPage = lazyPage(() => import('@/pages/batch-payments/BatchPaymentDetailPage'))
@@ -355,18 +350,6 @@ export const router = createBrowserRouter([
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer']} />,
             children: [
               { path: 'procurement', element: <ProcurementDashboardPage /> },
-              // Tax receipts: entry is finance/procurement (whoever collected
-              // it), verification is the other department, tax review is the
-              // Tax Officer. All three steps are enforced server-side by the
-              // maker-checker-reviewer trigger — this route only decides who
-              // can reach the page at all.
-              { path: 'tax-receipts', element: <TaxReceiptsPage /> },
-              { path: 'tax-receipts/new', element: <TaxReceiptFormPage /> },
-              // The tracker is the procurement-facing surface: capture a
-              // photo, then confirm the paper reached the office. Sales-side
-              // presentation is reachable from the same page.
-              { path: 'vat-tracker', element: <VatReceiptTrackerPage /> },
-              { path: 'sales-receipts/new', element: <SalesReceiptFormPage /> },
               { path: 'vendors', element: <VendorsPage /> },
               { path: 'vendors/new', element: <VendorFormPage /> },
               { path: 'vendors/review', element: <VendorReviewPage /> },
@@ -427,26 +410,26 @@ export const router = createBrowserRouter([
           { path: 'site-deliveries', element: <SiteDeliveriesPage /> },
           { path: 'site-deliveries/:id', element: <SiteDeliveryNotePage /> },
           {
-            // Tax filings sit in their own block rather than the finance one
-            // below, because the tax officer is a badge and not a role: the
-            // RLS on these tables reads is_tax_officer() alongside
-            // admin/finance/executive, and the gate has to match or an
-            // officer with some other login role is locked out of the module
-            // built for them. Writes are narrower still (tax officer or
-            // admin) and are enforced by policy, not by this route.
+            // Taxes, by tax month (507). Their own block because the tax
+            // officer is a badge, not a role: the gate matches the server's
+            // tax_plan_reader (admin, executive, finance, tax officer).
+            // Recording is narrower (finance, the tax officer, admin) and is
+            // checked by the server.
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} allowTaxOfficer />,
             children: [
-              { path: 'tax-filings', element: <TaxFilingsPage /> },
-              { path: 'tax-plan', element: <TaxPlanPage /> },
-              { path: 'tax-impact', element: <TaxImpactPage /> },
+              { path: 'taxes', element: <TaxesPage /> },
+              { path: 'taxes/now', element: <TaxNowRedirect /> },
+              { path: 'taxes/:y/:m', element: <TaxMonthPage /> },
+              // The pages the month replaced (507): old links and bookmarks land on it.
+              { path: 'tax-filings', element: <Navigate to="/taxes" replace /> },
+              { path: 'tax-management', element: <Navigate to="/taxes" replace /> },
+              { path: 'tax-plan', element: <Navigate to="/taxes" replace /> },
+              { path: 'tax-impact', element: <ToTaxMonth vat="ranking" /> },
+              { path: 'vat-tracker', element: <ToTaxMonth vat="collect" /> },
+              { path: 'tax-receipts', element: <ToTaxMonth vat="collect" /> },
+              { path: 'tax-receipts/new', element: <ToTaxMonth vat="collect" /> },
+              { path: 'sales-receipts/new', element: <Navigate to="/taxes" replace /> },
             ],
-          },
-          {
-            // The tax hub (506): every tax program in one place. Open to
-            // anyone who can open one of them; each card shows only to those
-            // who can open its program.
-            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer']} allowTaxOfficer />,
-            children: [{ path: 'taxes', element: <TaxHubPage /> }],
           },
           {
             element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance']} />,
@@ -478,8 +461,7 @@ export const router = createBrowserRouter([
               // Tax Summary was a Gregorian-month filing-status grid over
               // tax_engagements; Tax Filings replaced it with Ethiopian
               // periods (migration 308). Kept as a redirect for old links.
-              { path: 'tax-summary', element: <Navigate to="/tax-filings" replace /> },
-              { path: 'tax-management', element: <TaxManagementPage /> },
+              { path: 'tax-summary', element: <Navigate to="/taxes" replace /> },
               { path: 'batch-payments', element: <BatchPaymentsPage /> },
               { path: 'batch-payments/:id', element: <BatchPaymentDetailPage /> },
               { path: 'invoices', element: <InvoicesPage /> },
@@ -529,11 +511,11 @@ export const router = createBrowserRouter([
               { path: 'clients/:id/edit', element: <ClientFormPage /> },
               // tax_summary was an empty manual monthly rollup; periods now
               // follow from each record's date (migration 314).
-              { path: 'tax-summary/new', element: <Navigate to="/tax-filings" replace /> },
-              { path: 'tax-summary/:id/edit', element: <Navigate to="/tax-filings" replace /> },
+              { path: 'tax-summary/new', element: <Navigate to="/taxes" replace /> },
+              { path: 'tax-summary/:id/edit', element: <Navigate to="/taxes" replace /> },
               // Filings are recorded in Tax Filings now; tax_engagements is a
               // read-only archive (migration 308).
-              { path: 'tax-management/log', element: <Navigate to="/tax-filings" replace /> },
+              { path: 'tax-management/log', element: <Navigate to="/taxes" replace /> },
               { path: 'batch-payments/new', element: <BatchPaymentFormPage /> },
               { path: 'batch-payments/:id/edit', element: <BatchPaymentFormPage /> },
               { path: 'finance/fixed-assets/new', element: <FixedAssetFormPage /> },
@@ -653,9 +635,9 @@ export const router = createBrowserRouter([
               // Payroll Taxes was manual per-staff entry (empty). PAYE and
               // pension are now computed from payroll and shown on the
               // Schedule A and pension filings (migration 312).
-              { path: 'payroll-taxes', element: <Navigate to="/tax-filings" replace /> },
-              { path: 'payroll-taxes/new', element: <Navigate to="/tax-filings" replace /> },
-              { path: 'payroll-taxes/:id/edit', element: <Navigate to="/tax-filings" replace /> },
+              { path: 'payroll-taxes', element: <Navigate to="/taxes" replace /> },
+              { path: 'payroll-taxes/new', element: <Navigate to="/taxes" replace /> },
+              { path: 'payroll-taxes/:id/edit', element: <Navigate to="/taxes" replace /> },
               { path: 'emergency-payroll', element: <EmergencyPayrollPage /> },
               { path: 'emergency-payroll/new', element: <EmergencyPayrollFormPage /> },
               { path: 'emergency-payroll/:id/edit', element: <EmergencyPayrollFormPage /> },

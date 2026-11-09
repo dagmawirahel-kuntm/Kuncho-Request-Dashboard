@@ -102,8 +102,9 @@ export function VatQuestion({ value, onChange, total, payeeIsVendor, vendorTin, 
 }
 
 /**
- * The receipt photo, and whether it is a VAT invoice. A VAT invoice opens
- * the tax review by itself, so the input VAT on it can be claimed (395).
+ * The receipt photo, and whether it is a VAT invoice. A VAT invoice
+ * uploaded here is the receipt in hand: the input VAT on it is claimed on
+ * its month's VAT return (507).
  * Where the form already asked "Does this amount include VAT?" (428), pass
  * the answer as `vatIncluded`: the receipt then follows it instead of
  * asking again.
