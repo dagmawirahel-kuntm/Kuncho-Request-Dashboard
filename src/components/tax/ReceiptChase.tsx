@@ -6,13 +6,15 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDateGC } from '@/lib/utils'
 import { useReceiptChase, type ChaseRow, type ChaseStatus } from '@/lib/receiptChase'
 import { markReceipts, useTaxRefresh } from '@/lib/taxes'
+import { ReceiptPhotoButton } from '@/components/tax/ReceiptPhotoButton'
 import { Building2, Check, ChevronDown, ChevronRight, Copy, Phone, ReceiptText, Search } from 'lucide-react'
 
 // Receipts to chase (migration 452): purchases from VAT suppliers where the
 // money has left — marked paid, paid as an advance, or shown by the bank —
 // and no VAT receipt is in hand. Grouped by supplier, because one call
-// covers all of a supplier's bills. "Have it" marks the receipt as in hand
-// (507): its VAT is claimed on the month's return from then.
+// covers all of a supplier's bills. "Have it" marks the paper as in hand
+// (507); "Photo" collects it as a picture instead (510) — taken on a phone
+// or sent by the supplier. Either way its VAT is claimed from then.
 
 type StatusFilter = 'open' | 'not_asked' | 'asked' | 'promised' | 'late' | 'not_coming' | 'all'
 const STATUS_FILTERS: { key: StatusFilter; label: string; test: (r: ChaseRow) => boolean }[] = [
@@ -86,7 +88,8 @@ export function ReceiptChase({ month: initialMonth, canRecord = false }: {
     <div className="space-y-4">
       <p className="text-sm text-slate-500 dark:text-slate-400">
         Money has left for these purchases from VAT suppliers, but their VAT receipt isn't in hand. Their VAT is claimed once it is:
-        tick “Have it” when the receipt arrives. Biggest suppliers first — one call covers all their bills.
+        tick “Have it” when the paper arrives, or “Photo” to collect it as a picture — taken on the spot or sent by the supplier.
+        Biggest suppliers first — one call covers all their bills.
       </p>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -280,10 +283,13 @@ function BillRow({ r, busy, canRecord, onHave, onMark }: {
       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>{chip.text}</span>
       <div className="flex items-center gap-1.5">
         {canRecord && (
-          <button type="button" disabled={busy} onClick={onHave} title="The VAT receipt is in hand: claim its VAT"
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/30">
-            <ReceiptText className="h-3 w-3" /> Have it
-          </button>
+          <>
+            <button type="button" disabled={busy} onClick={onHave} title="The paper VAT receipt is in hand: claim its VAT"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/30">
+              <ReceiptText className="h-3 w-3" /> Have it
+            </button>
+            <ReceiptPhotoButton expenseId={r.expense_id} />
+          </>
         )}
         <button type="button" disabled={busy} onClick={() => onMark('asked')} title="Asked the supplier today"
           className="rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Asked</button>
