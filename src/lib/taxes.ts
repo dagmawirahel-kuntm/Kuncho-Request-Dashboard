@@ -103,7 +103,7 @@ export function useTaxMonth(y: number | null, m: number | null) {
 export function useTaxRefresh() {
   const qc = useQueryClient()
   return () => {
-    for (const k of ['tax-year', 'tax-month', 'vat-receipt-chase', 'tax-impact', 'tax-hub', 'tax-filing-lines']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['tax-year', 'tax-month', 'vat-receipt-chase', 'tax-impact', 'tax-hub', 'tax-filing-lines', 'tax-receipt-photos']) qc.invalidateQueries({ queryKey: [k] })
   }
 }
 
@@ -203,4 +203,52 @@ export function billFits(r: TaxReturn, bills: GovBill[], pair?: TaxReturn) {
       return { bill: b, score, reasons }
     })
     .sort((a, b) => b.score - a.score || Date.parse(a.bill.date) - Date.parse(b.bill.date))
+}
+
+// ── A VAT receipt collected as a picture (510) ─────────────────────────────
+/** A phone photo is 3–8 MB; a receipt stays readable at 2,000 px. PDFs go as they are. */
+async function shrinkReceipt(file: File): Promise<Blob> {
+  if (!file.type.startsWith('image/')) return file
+  try {
+    const bmp = await createImageBitmap(file)
+    const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height))
+    if (k === 1 && file.size < 1_500_000) return file
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bmp.width * k)
+    canvas.height = Math.round(bmp.height * k)
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height)
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error('no image'))), 'image/jpeg', 0.85))
+  } catch {
+    return file // a format the browser can't draw: send it as it is
+  }
+}
+
+/**
+ * Stores a picture of a purchase's VAT receipt in the private tax documents
+ * store and marks the receipt as in hand: its VAT is claimed from then.
+ */
+export async function saveReceiptPhoto(expenseId: string, file: File, receiptNo?: string | null) {
+  const blob = await shrinkReceipt(file)
+  const ext = blob.type === 'application/pdf' ? 'pdf' : blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg'
+  const path = `vendor-receipts/vat/${expenseId}/${Date.now()}.${ext}`
+  const { error: up } = await supabase.storage.from('tax-documents').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: false })
+  if (up) throw new Error(`The picture didn't upload: ${up.message}`)
+  const { error } = await supabase.rpc('tax_receipt_photo', { p_expense: expenseId, p_path: path, p_name: file.name, p_receipt_no: receiptNo ?? null })
+  if (error) throw error
+}
+
+/** The receipt pictures kept for these purchases, by purchase. */
+export function useReceiptPhotos(expenseIds: string[]) {
+  const ids = [...new Set(expenseIds)].sort()
+  return useQuery({
+    queryKey: ['tax-receipt-photos', ids.join(',')],
+    enabled: ids.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('input_vat_items').select('expense_id, receipt_photo_path, receipt_photo_name')
+        .in('expense_id', ids).not('receipt_photo_path', 'is', null)
+      if (error) throw error
+      return new Map(((data ?? []) as { expense_id: string; receipt_photo_path: string; receipt_photo_name: string | null }[])
+        .map(r => [r.expense_id, { path: r.receipt_photo_path, name: r.receipt_photo_name }]))
+    },
+  })
 }

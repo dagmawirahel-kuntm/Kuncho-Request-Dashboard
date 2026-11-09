@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Banknote, ChevronLeft, ChevronRight, HelpCircle, ListOrdered, ReceiptText, ScrollText, Undo2, Users } from 'lucide-react'
+import { ArrowLeft, Banknote, Camera, ChevronLeft, ChevronRight, HelpCircle, ListOrdered, ReceiptText, ScrollText, Undo2, Users } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { ReturnCard } from '@/components/tax/ReturnCard'
@@ -8,8 +8,10 @@ import { ReceiptChase } from '@/components/tax/ReceiptChase'
 import { VatRanking } from '@/components/tax/VatRanking'
 import { BankLinesToMatch } from '@/components/tax/BankLinesToMatch'
 import { EmployeeSchedule } from '@/components/tax/EmployeeSchedule'
+import { ReceiptPhotoButton } from '@/components/tax/ReceiptPhotoButton'
+import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import {
-  TAX_NAME, TONE_PILL, etb, longDate, markReceipts, monthPath, needsAction, shortDate, useTaxMonth, useTaxRefresh, useTaxYear,
+  TAX_NAME, TONE_PILL, etb, longDate, markReceipts, monthPath, needsAction, shortDate, useReceiptPhotos, useTaxMonth, useTaxRefresh, useTaxYear,
   whenText, type ReceiptAction, type TaxMonth, type TaxReturn,
 } from '@/lib/taxes'
 
@@ -282,7 +284,8 @@ function useReceiptAction() {
 
 function HeldReceipts({ d }: { d: TaxMonth }) {
   const { busy, act } = useReceiptAction()
-  if (d.claimed.length === 0) return <p className="py-6 text-center text-sm text-slate-400">No VAT receipt claimed on this month's return yet. Tick “Have it” under Receipts to collect as they come in.</p>
+  const { data: photos } = useReceiptPhotos(d.claimed.map(c => c.expense_id))
+  if (d.claimed.length === 0) return <p className="py-6 text-center text-sm text-slate-400">No VAT receipt claimed on this month's return yet. Tick “Have it” or take a “Photo” under Receipts to collect as they come in.</p>
   const total = d.claimed.reduce((s, c) => s + Number(c.vat), 0)
   return (
     <div className="space-y-2">
@@ -294,7 +297,15 @@ function HeldReceipts({ d }: { d: TaxMonth }) {
               <Link to={`/expenses/${c.expense_id}`} className="font-mono text-xs font-semibold text-brand hover:underline">{c.code ?? 'Expense'}{c.part_no ? ` · part ${c.part_no}` : ''}</Link>
               <p className="truncate text-slate-700 dark:text-slate-200">{c.vendor ?? '—'}{c.tin ? <span className="text-xs text-slate-400"> · TIN {c.tin}</span> : <span className="text-xs text-amber-600"> · no TIN on the vendor</span>}</p>
             </div>
-            <span className="text-xs text-slate-500">{c.receipt_no ? `Receipt ${c.receipt_no}` : c.ticked ? 'Ticked as in hand' : 'Uploaded on the expense'}</span>
+            <span className="text-xs text-slate-500">
+              {c.receipt_no ? `Receipt ${c.receipt_no}` : photos?.get(c.expense_id) ? 'Collected as a picture' : c.ticked ? 'Paper in hand' : 'Uploaded on the expense'}
+            </span>
+            {photos?.get(c.expense_id)
+              ? <PrivateDocLink path={photos.get(c.expense_id)!.path} bucket="tax-documents" title="Open the receipt picture"
+                  className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+                  <Camera className="h-3 w-3" /> Picture
+                </PrivateDocLink>
+              : d.can_record && c.ticked && <ReceiptPhotoButton expenseId={c.expense_id} label="Add picture" askNumber={!c.receipt_no} />}
             <span className="w-24 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{etb(c.vat)}</span>
             {d.can_record && c.ticked && (
               <button type="button" disabled={busy} title="The receipt isn't in hand after all"
