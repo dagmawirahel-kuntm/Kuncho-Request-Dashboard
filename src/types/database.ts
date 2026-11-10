@@ -153,6 +153,12 @@ export interface Staff {
   first_engaged_at: string | null
   last_engaged_at: string | null
   job_description_id: string | null
+  /** Taxpayer identification number, on the payroll tax return (511). */
+  tin?: string | null
+  /** Private pension number, on the pension return (511). */
+  pension_no?: string | null
+  /** Not covered by private pension: no 7% / 11% (511). */
+  pension_exempt?: boolean
   created_at: string
   updated_at: string
 }
@@ -1293,6 +1299,11 @@ export interface Payroll {
   manager_approved_at: string | null
   finance_approved_by: string | null
   finance_approved_at: string | null
+  /** The day the money went out (511). */
+  paid_on?: string | null
+  /** Tax month the run is declared in (511). */
+  tax_ec_year?: number | null
+  tax_ec_month?: number | null
   created_at: string
   updated_at: string
 }
@@ -2487,6 +2498,19 @@ export interface PayrollStaff {
    *  primary — but the primary moves, so a run that has been paid should name
    *  its account rather than be re-read against whatever is primary later. */
   staff_bank_account_id: string | null
+  /** Agreed take-home for this payment, before anything is taken back (511). */
+  base_net?: number | null
+  days_paid?: number | null
+  days_in_period?: number | null
+  /** Taken back against cash advances (511). */
+  advance_recovery?: number
+  paye?: number | null
+  pension_employee?: number | null
+  pension_employer?: number | null
+  /** Set when the run was paid and the line's tax was fixed (511). */
+  frozen_at?: string | null
+  note?: string | null
+  bank_line_id?: string | null
 }
 
 /** One account a staff member holds. staff.bank_id/bank_account mirror the primary. */
@@ -4525,6 +4549,15 @@ export interface PayrollLineTax {
   pension_employee_share: number | null
   pension_employer_share: number | null
   employer_cost_share: number | null
+  /** Agreed take-home before anything is taken back (511). net_amount is the cash paid. */
+  base_net: number
+  advance_recovery: number
+  /** The run is paid and this tax is fixed; otherwise an estimate (511). */
+  tax_fixed: boolean
+  /** Salary and back pay carry pension; overtime, bonus and allowances do not (511). */
+  carries_pension: boolean
+  days_paid: number | null
+  days_in_period: number | null
 }
 
 // tax_filing_lines — the declaration schedule of a Schedule A / pension return.
