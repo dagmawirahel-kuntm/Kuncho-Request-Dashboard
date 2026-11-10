@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import type { AccountOverview } from '@/lib/bankReconciliation'
+import { PayeesPanel } from './PayeesPanel'
 import { ImportStatementPanel } from './ImportStatementPanel'
 import { ReviewQueue, type QueueView } from './ReviewQueue'
 import { StatementsPanel } from './StatementsPanel'
@@ -17,8 +18,8 @@ import { useFyFlag } from '@/lib/fiscalFlag'
 import { noteWorkPlace } from '@/lib/returnTrail'
 import { ArrowLeft, Upload } from 'lucide-react'
 
-type Tab = 'queue' | 'audit' | 'import' | 'statements'
-const TABS: Tab[] = ['queue', 'audit', 'import', 'statements']
+type Tab = 'queue' | 'audit' | 'payees' | 'import' | 'statements'
+const TABS: Tab[] = ['queue', 'audit', 'payees', 'import', 'statements']
 
 /**
  * Bank reconciliation: import each account's statements (CSV, Excel, PDF),
@@ -167,6 +168,7 @@ export default function BankReconciliationPage() {
   const tabs: { id: Tab; label: string; n?: number }[] = [
     { id: 'queue', label: 'To reconcile', n: openNow || undefined },
     { id: 'audit', label: 'Audit', n: flagCount || undefined },
+    { id: 'payees', label: 'Payees' },
     { id: 'statements', label: 'Statements & closing' },
   ]
   const pill = (on: boolean) => `inline-flex shrink-0 snap-start items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${on
@@ -263,6 +265,7 @@ export default function BankReconciliationPage() {
             onImport={acct => { setAccountId(acct); setTab('import') }} />
         </>
       )}
+      {activeTab === 'payees' && <PayeesPanel accountId={accountId} />}
       {activeTab === 'import' && (
         <ImportStatementPanel onImported={acct => { setAccountId(acct); setTab('queue') }} />
       )}

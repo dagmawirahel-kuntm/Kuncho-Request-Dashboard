@@ -8,7 +8,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { useCategories, useProjects, useStaff, useVendors } from '@/hooks/useLookups'
 import { costPickerOptions, type PickerProject } from '@/lib/buckets'
 import { usePayers } from '@/lib/bankPayers'
-import { isClearingParty, type BankLine } from '@/lib/bankReconciliation'
+import { isClearingParty, ownerHowLabel, type BankLine } from '@/lib/bankReconciliation'
 import { useLineParty } from '@/hooks/useLineParty'
 import { VAT_RATE } from '@/lib/withholding'
 import { RECEIPT_CHARGE_TOLERANCE, withholdingProfileLabel } from '@/lib/clientWithholding'
@@ -164,7 +164,7 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
           {hinted && (
             <span className="block text-[11px] text-slate-400">
               {payeeKind === 'name' ? 'As the bank names them; not a vendor or staff member on record'
-                : fromBank?.how === 'account' ? 'The bank paid their account on record' : 'The bank named them'}
+                : `Who the bank paid: ${fromBank ? ownerHowLabel(fromBank.how) : ''}`}
             </span>
           )}
         </div>

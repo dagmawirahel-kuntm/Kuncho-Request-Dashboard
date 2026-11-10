@@ -15,8 +15,10 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { autoMatchBankLines } from '@/lib/bankAutoMatch'
 import {
   CLASSIFICATIONS, KIND_LABEL, describeReconciled, isClearingParty, lineSubtitle, lineTitle, ruleTextFrom,
-  type BankLine, type LineCombination, type LineParty, type Suggestion,
+  PARTY_LABEL, PARTY_PATH, ownerHowLabel,
+  type BankLine, type LineCombination, type Suggestion,
 } from '@/lib/bankReconciliation'
+import { LinkPayee } from '@/components/bank/LinkPayee'
 import { useLineParty } from '@/hooks/useLineParty'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { SeveralPayments } from './SeveralPayments'
@@ -305,32 +307,48 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   )
 }
 
-const PARTY_KIND: Record<LineParty['kind'], { label: string; to: string }> = {
-  vendor: { label: 'Vendor', to: '/vendors/' },
-  staff: { label: 'Staff', to: '/staff/' },
-  client: { label: 'Client', to: '/clients/' },
-}
-
 /**
  * Who the bank says a line paid or came from: their account, and the vendor,
- * staff member or client on record with it. Nothing for a clearing house.
+ * staff member or client it belongs to and how we know. Unknown, or known by
+ * name only, it can be linked here; once linked, every payment to or from
+ * that account points to them.
  */
 function LinePartyRow({ line, full = false }: { line: BankLine; full?: boolean }) {
   const { data: party } = useLineParty(line)
+  const [linking, setLinking] = useState(false)
   const named = !!line.counterparty_name && !isClearingParty(line.counterparty_name)
   if (!named && !party) return null
+  const account = line.counterparty_account?.replace(/\D/g, '') ?? ''
+  const canLink = named && account.length >= 8
+  const sure = party && party.how !== 'name'
   return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-      {full && <span className="font-medium text-slate-700 dark:text-slate-200">{line.direction === 'debit' ? 'Paid to' : 'From'} {line.counterparty_name}</span>}
-      {line.counterparty_account && <span className="tabular-nums">Account {line.counterparty_account}</span>}
-      {party && (
-        <Link to={PARTY_KIND[party.kind].to + party.id} className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:underline dark:bg-emerald-900/30 dark:text-emerald-300"
-          title={party.how === 'account' ? 'Their bank account on record is this one' : 'Their name on record matches; no account on record confirms it'}>
-          <UserCheck className="h-3 w-3" />
-          {PARTY_KIND[party.kind].label}: {party.name}{party.how === 'name' ? ' (by name)' : ''}
-        </Link>
+    <div className="space-y-1.5">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+        {full && <span className="font-medium text-slate-700 dark:text-slate-200">{line.direction === 'debit' ? 'Paid to' : 'From'} {line.counterparty_name}</span>}
+        {line.counterparty_account && <span className="tabular-nums">Account {line.counterparty_account}</span>}
+        {party && (
+          <Link to={PARTY_PATH[party.kind] + party.id}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:underline ${sure
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              : 'bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+            <UserCheck className="h-3 w-3" />
+            {PARTY_LABEL[party.kind]}: {party.name}
+          </Link>
+        )}
+        {party && <span className="text-slate-400">{ownerHowLabel(party.how)}</span>}
+        {canLink && !linking && (
+          <button onClick={() => setLinking(true)} className="inline-flex items-center gap-1 font-medium text-brand hover:underline">
+            <Link2 className="h-3 w-3" />
+            {!party ? 'Whose account is this?' : party.how === 'name' ? 'Yes, link the account' : 'Not them?'}
+          </button>
+        )}
+      </p>
+      {linking && (
+        <LinkPayee account={account} bankName={line.counterparty_name} moneyOut={line.direction === 'debit'}
+          initial={party ? { kind: party.kind, id: party.id } : null} linked={party?.how === 'linked'}
+          onDone={() => setLinking(false)} />
       )}
-    </p>
+    </div>
   )
 }
 
