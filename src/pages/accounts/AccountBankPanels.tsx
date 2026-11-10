@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Lock, Scale, ArrowRight, Hourglass } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { KIND_LABEL, describeReconciled, type BankLine } from '@/lib/bankReconciliation'
+import { KIND_LABEL, describeReconciled, lineTitle, type BankLine } from '@/lib/bankReconciliation'
 import { SWEEP_AFTER_DAYS, type AccountControl } from '@/lib/cashControl'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { MoveMoneyModal } from '@/components/cash/MoveMoneyModal'
@@ -124,7 +124,7 @@ export function BankLinesTab({ accountId }: { accountId: string }) {
                     {l.direction === 'debit' ? <ArrowUpRight className="h-4 w-4 shrink-0 text-red-500" /> : <ArrowDownLeft className="h-4 w-4 shrink-0 text-emerald-500" />}
                     <span className="w-20 shrink-0 text-xs text-slate-500">{formatDate(l.value_date)}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>
+                      <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{lineTitle(l)}</span>
                       <span className="block truncate text-[11px] text-slate-400">
                         {l.reconciled_as ? `${KIND_LABEL[l.reconciled_as]}: ${describeReconciled(l).map(d => d.text).join(', ')}` : (l.reference ?? '')}
                       </span>

@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
-  KIND_LABEL, classificationLabel, describeReconciled, type AccountOverview, type BankLine,
+  KIND_LABEL, classificationLabel, describeReconciled, lineSubtitle, lineTitle, type AccountOverview, type BankLine,
 } from '@/lib/bankReconciliation'
 import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
 import { groupByDay } from '@/lib/statementDates'
@@ -228,8 +228,8 @@ function LinesTable({ lines }: { lines: BankLine[] }) {
             <tr key={l.line_id}>
               <td className="px-4 py-1.5"><DirectionTag direction={l.direction} size="xs" /></td>
               <td className="max-w-[240px] px-4 py-1.5 text-slate-600 dark:text-slate-300">
-                <span className="block truncate">{l.narration ?? '—'}</span>
-                <span className="block truncate font-mono text-[10px] text-slate-400">{l.reference}</span>
+                <span className="block truncate">{lineTitle(l)}</span>
+                <span className="block truncate font-mono text-[10px] text-slate-400">{lineSubtitle(l)}</span>
               </td>
               <td className="px-4 py-1.5 text-right">{l.debit_amount != null ? <SignedAmount direction="debit" amount={Number(l.debit_amount)} /> : ''}</td>
               <td className="px-4 py-1.5 text-right">{l.credit_amount != null ? <SignedAmount direction="credit" amount={Number(l.credit_amount)} /> : ''}</td>

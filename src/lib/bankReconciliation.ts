@@ -54,6 +54,9 @@ export interface BankLine {
   internal: { account_id: string; account_name: string; source: string; line_id: string | null } | null
   reconciled_as: ReconciledAs | null
   linked_amount: number | null
+  /** Who the bank says the line paid (debits) or came from (credits), when the statement names them. */
+  counterparty_name: string | null
+  counterparty_account: string | null
 }
 
 export interface Suggestion {
@@ -143,4 +146,39 @@ export function describeReconciled(l: BankLine): { text: string; to: string | nu
  *  the starting point for a rule ("SERVICE CHARGE FOR 0012345" → "SERVICE CHARGE FOR"). */
 export function ruleTextFrom(narration: string | null): string {
   return (narration ?? '').replace(/\d[\d,./-]*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)
+}
+
+type Named = Pick<BankLine, 'counterparty_name' | 'narration' | 'transaction_type' | 'reference'>
+
+/**
+ * What a line is called in a list: who the bank says it paid or came from,
+ * else its narration. A clearing house (the NBE for transfers to other banks)
+ * isn't who was paid, so such a line goes by its transaction type.
+ */
+export function lineTitle(l: Named): string {
+  if (l.counterparty_name && isClearingParty(l.counterparty_name)) return l.transaction_type || l.narration || '—'
+  return l.counterparty_name || l.narration || l.transaction_type || '—'
+}
+
+/** The rest of what the bank says about a line, for the small text under its title. */
+export function lineSubtitle(l: Named): string {
+  const title = lineTitle(l)
+  const via = l.counterparty_name && isClearingParty(l.counterparty_name) ? `via ${l.counterparty_name}` : null
+  return [via, l.narration, l.transaction_type, l.reference]
+    .filter((v, i, all): v is string => !!v && v !== title && all.indexOf(v) === i)
+    .join(' · ')
+}
+
+/** A bank, clearing house or wallet the money passed through, not who it was for (506, bank_party_clearing). */
+export function isClearingParty(name: string | null | undefined): boolean {
+  return /(national bank of ethiopia|\bnbe\b|e[ -]?money|depository|telebirr|inter ?bank|\bcpo|rtgs|settlement|\bswitch\b|payable account|payable$)/i.test(name ?? '')
+}
+
+/** The vendor, staff member or client a line's other party is on record as (bank_line_party, 506). */
+export interface LineParty {
+  kind: 'vendor' | 'staff' | 'client'
+  id: string
+  name: string
+  /** Matched on their bank account, or on the name alone. */
+  how: 'account' | 'name'
 }

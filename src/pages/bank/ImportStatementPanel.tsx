@@ -41,6 +41,7 @@ function toRpcLines(p: ParsedStatement) {
   return p.lines.map(l => ({
     value_date: l.valueDate, post_date: l.postDate, transaction_type: l.transactionType, narration: l.narration,
     debit: l.debit, credit: l.credit, balance: l.balance, reference: l.reference,
+    counterparty_name: l.counterpartyName ?? null, counterparty_account: l.counterpartyAccount ?? null,
   }))
 }
 
@@ -124,6 +125,8 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
 
   const parsed = useMemo(() => (read && mapping ? applyMapping(read.grid, mapping) : null), [read, mapping])
   const rpcLines = useMemo(() => (parsed ? toRpcLines(parsed) : []), [parsed])
+  // The file names who each line paid or came from (CBE's BeneficiaryName/SenderName).
+  const withNames = useMemo(() => !!parsed?.lines.some(l => l.counterpartyName || l.counterpartyAccount), [parsed])
 
   // What the database makes of it before anything is written.
   const { data: dry, isFetching: checking, error: dryError } = useQuery({
@@ -144,7 +147,8 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   async function handleImport() {
     if (!accountId || !read || !parsed || !mapping) return
     setImporting(true)
-    const { data, error } = await supabase.rpc('import_bank_statement', {
+    // A file with nothing new can still name who each line paid (506).
+    const { data, error } = dry?.new === 0 ? { data: dry, error: null } : await supabase.rpc('import_bank_statement', {
       p_account_id: accountId, p_file_name: fileName, p_source_format: read.format,
       p_starting_balance: parsed.startingBalance, p_ending_balance: parsed.endingBalance,
       p_lines: rpcLines, p_dry_run: false,
@@ -173,11 +177,30 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
       }
       setMatching(null)
     }
+    // Who each line paid or came from, on the new lines and those already in.
+    // With names, more lines match: the account gets another pass.
+    let named = 0
+    if (withNames) {
+      const { data: n, error: nameError } = await supabase.rpc('bank_lines_add_names', { p_account_id: accountId, p_lines: rpcLines })
+      if (nameError) matchError = matchError ?? nameError.message
+      named = Number(n ?? 0)
+      if (named > 0 && !matchError) {
+        setMatching({ tried: 0, of: 0 })
+        try {
+          const m = await autoMatchBankLines({ accountId, onProgress: p => setMatching(s => s && { ...s, tried: p.tried }) })
+          auto += m.matched
+        } catch (e) {
+          matchError = (e as Error).message
+        }
+        setMatching(null)
+      }
+    }
     setImporting(false)
     const imported = `Imported ${r.new} line${r.new === 1 ? '' : 's'}${r.already_imported ? ` (${r.already_imported} already in)` : ''}`
-    if (r.new === 0) toast('Nothing new — every line in this file was already imported', 'success')
-    else if (matchError) toast(`${imported}. Automatic matching stopped part-way (${matchError}) — press Auto-match on the queue to finish it.`, 'info')
-    else toast(`${imported}; ${auto} matched automatically`, 'success')
+    const names = named ? `; who was paid added to ${named} line${named === 1 ? '' : 's'}` : ''
+    if (matchError) toast(`${r.new ? imported : 'Nothing new'}${names}. Automatic matching stopped part-way (${matchError}) — press Match automatically on the queue to finish it.`, 'info')
+    else if (r.new === 0) toast(named ? `Nothing new${names}; ${auto} matched automatically` : 'Nothing new — every line in this file was already imported', 'success')
+    else toast(`${imported}${names}; ${auto} matched automatically`, 'success')
     for (const k of ['bank-lines', 'bank-overview', 'bank-imports', 'bank-statement-formats', 'bank-import-accounts', 'expenses', 'sales', 'accounts']) {
       qc.invalidateQueries({ queryKey: [k] })
     }
@@ -307,14 +330,18 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
           {accountId && parsed.lines.length > 0 && (
             checking ? <p className="text-xs text-slate-400">Checking against what's already imported…</p>
             : dryError ? <Note tone="red" icon={<XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>{(dryError as Error).message}</Note>
-            : dry && <DryRunSummary dry={dry} />
+            : dry && <DryRunSummary dry={dry} withNames={withNames} />
           )}
 
           <div className="flex justify-end">
             <button onClick={handleImport}
-              disabled={importing || !accountId || !dry || dry.new === 0 || dry.in_closed_period > 0 || parsed.lines.length === 0 || wrongAccount || (checks?.problems.length ?? 0) > 0}
+              disabled={importing || !accountId || !dry || (dry.new === 0 && !withNames) || dry.in_closed_period > 0 || parsed.lines.length === 0 || wrongAccount || (checks?.problems.length ?? 0) > 0}
               className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
-              {matching ? `Matching… ${Math.min(matching.tried, matching.of)} of ${matching.of}` : importing ? 'Importing…' : dry ?`Import ${dry.new} new line${dry.new === 1 ? '' : 's'}` : 'Import'}
+              {matching ? (matching.of ? `Matching… ${Math.min(matching.tried, matching.of)} of ${matching.of}` : `Matching… ${matching.tried} checked`)
+                : importing ? 'Importing…'
+                : !dry ? 'Import'
+                : dry.new === 0 ? 'Add who was paid to the lines already in'
+                : `Import ${dry.new} new line${dry.new === 1 ? '' : 's'}${withNames ? ' with who was paid' : ''}`}
             </button>
           </div>
         </div>
@@ -323,7 +350,7 @@ export function ImportStatementPanel({ onImported }: { onImported: (accountId: s
   )
 }
 
-function DryRunSummary({ dry }: { dry: DryRun }) {
+function DryRunSummary({ dry, withNames }: { dry: DryRun; withNames: boolean }) {
   const joins = dry.gap_before == null
     ? (dry.previous_balance == null
         ? { tone: 'slate' as const, text: 'First statement for this account — nothing earlier to join to.' }
@@ -335,7 +362,9 @@ function DryRunSummary({ dry }: { dry: DryRun }) {
     <div className="space-y-1.5">
       <Note tone={dry.new === 0 ? 'slate' : 'green'} icon={<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
         {dry.new === 0
-          ? `All ${dry.total} lines are already imported — nothing to add.`
+          ? (withNames
+            ? `All ${dry.total} lines are already imported. This file names who each one paid or came from: that can be added to them.`
+            : `All ${dry.total} lines are already imported — nothing to add.`)
           : `${dry.new} new line${dry.new === 1 ? '' : 's'}${dry.first_new_date ? ` (${formatDate(dry.first_new_date)} → ${formatDate(dry.last_new_date)})` : ''}${dry.already_imported ? `; ${dry.already_imported} already imported and skipped` : ''}.`}
       </Note>
       {dry.new > 0 && <Note tone={joins.tone} icon={<Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>{joins.text}</Note>}
@@ -377,7 +406,9 @@ function PreviewTable({ parsed, flag }: { parsed: ParsedStatement; flag: FyFlag 
     rows.push(
       <tr key={i}>
         <td className="px-3 py-1.5">{(l.debit ?? 0) > 0 ? <DirectionTag direction="debit" size="xs" /> : <DirectionTag direction="credit" size="xs" />}</td>
-        <td className="max-w-[260px] truncate px-3 py-1.5 text-slate-600 dark:text-slate-300">{l.narration ?? '—'}</td>
+        <td className="max-w-[260px] truncate px-3 py-1.5 text-slate-600 dark:text-slate-300">
+          {l.counterpartyName ? <><span className="font-medium text-slate-800 dark:text-slate-100">{l.counterpartyName}</span>{l.narration ? ` · ${l.narration}` : ''}</> : l.narration ?? '—'}
+        </td>
         <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500">{l.reference ?? '—'}</td>
         <td className="px-3 py-1.5 text-right">{l.debit != null ? <SignedAmount direction="debit" amount={l.debit} /> : ''}</td>
         <td className="px-3 py-1.5 text-right">{l.credit != null ? <SignedAmount direction="credit" amount={l.credit} /> : ''}</td>
@@ -419,6 +450,10 @@ const FIELDS: { key: keyof ColumnMapping; label: string; hint?: string }[] = [
   { key: 'balance', label: 'Running balance' },
   { key: 'type', label: 'Transaction type' },
   { key: 'postDate', label: 'Post date' },
+  { key: 'payee', label: 'Paid to (name)', hint: 'Who money out went to: beneficiary' },
+  { key: 'payeeAccount', label: 'Paid to (account)', hint: "The beneficiary's account number" },
+  { key: 'payer', label: 'Paid by (name)', hint: 'Who money in came from: sender' },
+  { key: 'payerAccount', label: 'Paid by (account)', hint: "The sender's account number" },
 ]
 
 function MappingEditor({ mapping, columns, rows, onChange }: {
