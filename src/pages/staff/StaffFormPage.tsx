@@ -123,6 +123,7 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
           status: record.status ?? 'active', photo_url: record.photo_url,
           id_document_url: record.id_document_url, id_document_name: record.id_document_name,
           user_id: record.user_id, department_id: record.department_id, sub_team: record.sub_team, reports_to_id: record.reports_to_id,
+          tin: record.tin ?? null, pension_no: record.pension_no ?? null, pension_exempt: record.pension_exempt ?? false,
         }
       : { status: 'active', employment_type: 'Full Time', payment_frequency: 'Monthly' }
   )
@@ -178,6 +179,7 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
         { label: 'Reports to', ok: !!form.reports_to_id || form.management_level === 'upper' },
         { label: 'Pay', ok: Number(form.monthly_salary) > 0 || Number(form.day_rate) > 0 },
         { label: 'National ID', ok: !!form.national_id?.trim() },
+        { label: 'TIN', ok: !!form.tin?.trim() },
         { label: 'ID document', ok: !!form.id_document_url },
         { label: 'Bank account', ok: !!form.bank_account?.trim() },
         { label: 'Login linked', ok: !!form.user_id },
@@ -372,6 +374,20 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
                     options={[{ value: 'Monthly', label: 'Month' }, { value: 'Bi-Weekly', label: '2 weeks' }, { value: 'Weekly', label: 'Week' }, { value: 'Daily', label: 'Day' }]} />
                 </Field>
               </div>
+              {!isCasual && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="TIN" hint="Taxpayer number, listed on the payroll tax return">
+                    <input className={`${inputCls} tabular-nums`} value={form.tin ?? ''} onChange={e => set('tin', e.target.value || null)} inputMode="numeric" />
+                  </Field>
+                  <Field label="Pension number" hint={form.pension_exempt ? 'Not covered, so not needed' : 'Listed on the pension return'}>
+                    <input className={`${inputCls} tabular-nums`} value={form.pension_no ?? ''} disabled={!!form.pension_exempt} onChange={e => set('pension_no', e.target.value || null)} />
+                  </Field>
+                  <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 sm:col-span-2">
+                    <input type="checkbox" className="mt-0.5" checked={!!form.pension_exempt} onChange={e => set('pension_exempt', e.target.checked)} />
+                    <span>Not covered by private pension <span className="block text-[11px] text-slate-400">Already a pensioner, or a foreign national. No 7% or 11% is worked out for them.</span></span>
+                  </label>
+                </div>
+              )}
               <Field label="Bank account" hint={isEdit ? 'Accounts are added and changed under Bank accounts on their page' : 'Becomes their main account; pick the bank on their page'}>
                 {isEdit ? (
                   <div className="flex items-center justify-between gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-900/40">

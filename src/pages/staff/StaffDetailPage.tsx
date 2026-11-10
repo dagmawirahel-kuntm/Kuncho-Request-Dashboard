@@ -13,6 +13,7 @@ import { StaffSkillsSummary } from '@/pages/roles/StaffSkillsSummary'
 import { MyAssetsSection } from '@/components/staff/MyAssetsSection'
 import { StaffBankAccountsSection } from '@/components/staff/StaffBankAccountsSection'
 import { StaffTaxCostSection } from '@/components/staff/StaffTaxCostSection'
+import { StaffPayrollSection } from '@/components/staff/StaffPayrollSection'
 import { StaffTelegramSection } from '@/components/staff/StaffTelegramSection'
 import { PrivateDocLink } from '@/components/shared/PrivateDocLink'
 import type { Staff, CashAdvance, Timesheet, EmergencyPayrollSummary } from '@/types/database'
@@ -1096,7 +1097,19 @@ export default function StaffDetailPage() {
             <PerformanceTab staffId={staff.id} isOwnProfile={isOwnProfile} viewerRole={role ?? null} />
           )}
           {activeTab === 'competency' && <StaffSkillsSummary staffId={staff.id} />}
-          {activeTab === 'payroll'    && <PayrollTab records={payrollRecords} staffId={staff.id} />}
+          {activeTab === 'payroll'    && (
+            <div className="space-y-6">
+              {(['admin', 'hr_officer', 'finance', 'executive'].includes(role ?? '') || isOwnProfile) && (
+                <StaffPayrollSection staffId={staff.id} canManage={['admin', 'hr_officer', 'finance'].includes(role ?? '')} />
+              )}
+              {payrollRecords.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-sm font-bold text-slate-800 dark:text-slate-100">Earlier pay records</h3>
+                  <PayrollTab records={payrollRecords} staffId={staff.id} />
+                </div>
+              )}
+            </div>
+          )}
           {activeTab === 'tax'        && canSeeTaxCost && <StaffTaxCostSection staffId={staff.id} />}
           {activeTab === 'advances'   && <AdvancesTab advances={advances} staffId={staff.id} />}
           {activeTab === 'timesheets' && <TimesheetsTab timesheets={timesheets} />}

@@ -1,15 +1,20 @@
 import { Fragment, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Pencil, AlertTriangle, Landmark } from 'lucide-react'
+import { Pencil, AlertTriangle, Landmark, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserProfiles } from '@/hooks/useLookups'
+import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions'
-import type { Payroll } from '@/types/database'
+import type { Payroll, PayrollLineTax } from '@/types/database'
 import { PayrollRunTaxSection } from '@/components/payroll/PayrollRunTaxSection'
+import { PayrollPayPanel } from '@/components/payroll/PayrollPayPanel'
+import { monthOfDates } from '@/lib/payroll'
+import { ecMonthName } from '@/lib/ethiopianCalendar'
+import { printPayslips } from '@/lib/payslipPrint'
 
 // A payroll run had no page of its own — the list went straight to the edit
 // form — so there was nowhere to issue the one document finance actually
@@ -33,6 +38,8 @@ type StaffLine = {
   gross_amount: number | null
   deductions: number | null
   net_amount: number | null
+  base_net: number | null
+  bank_line_id: string | null
   account_number: string | null
   account_holder: string | null
   bank_id: string | null
@@ -42,12 +49,15 @@ type StaffLine = {
     employee_name: string
     role: string | null
     bank_account_note: string | null
+    tin: string | null
+    pension_no: string | null
   } | null
 }
 
 export default function PayrollDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
+  const { toast } = useToast()
   const { data: profiles = [] } = useUserProfiles()
 
   const profileNameById = useMemo(
@@ -75,10 +85,28 @@ export default function PayrollDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_payroll_staff_accounts')
-        .select('staff_id, gross_amount, deductions, net_amount, account_number, account_holder, bank_id, bank_name, account_was_chosen, staff:staff_id (employee_name, role, bank_account_note)')
+        .select('staff_id, gross_amount, deductions, net_amount, account_number, account_holder, bank_id, bank_name, account_was_chosen, staff:staff_id (employee_name, role, bank_account_note, tin, pension_no)')
         .eq('payroll_id', id!)
       if (error) throw error
-      return (data ?? []) as unknown as StaffLine[]
+      // base_net and bank_line_id come off the line itself.
+      const { data: raw, error: rawErr } = await supabase
+        .from('payroll_staff').select('staff_id, base_net, bank_line_id').eq('payroll_id', id!)
+      if (rawErr) throw rawErr
+      const extra = new Map((raw ?? []).map(r => [r.staff_id as string, r as { base_net: number | null; bank_line_id: string | null }]))
+      return ((data ?? []) as unknown as StaffLine[]).map(l => ({
+        ...l, base_net: extra.get(l.staff_id)?.base_net ?? null, bank_line_id: extra.get(l.staff_id)?.bank_line_id ?? null,
+      }))
+    },
+  })
+
+  // The tax each line carries; shared with the tax section below.
+  const { data: taxLines = [] } = useQuery({
+    queryKey: ['payroll-line-tax', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_payroll_line_tax').select('*').eq('payroll_id', id!).order('employee_name')
+      if (error) throw error
+      return data as PayrollLineTax[]
     },
   })
 
@@ -246,6 +274,31 @@ export default function PayrollDetailPage() {
   }
   }, [run, byBank, user, profileNameById])
 
+  function payslips(staffId?: string) {
+    if (!run) return
+    const byStaff = new Map(lines.map(l => [l.staff_id, l]))
+    const chosen = taxLines.filter(t => !staffId || t.staff_id === staffId)
+    const ok = printPayslips(
+      {
+        payroll_record: run.payroll_record, payroll_type: run.payroll_type, start_date: run.start_date, end_date: run.end_date,
+        paid_on: run.paid_on ?? null, is_paid: run.payment_status === 'paid',
+        tax_label: run.tax_ec_year && run.tax_ec_month ? `${ecMonthName(run.tax_ec_month)} ${run.tax_ec_year}` : null,
+      },
+      chosen.map(t => {
+        const l = byStaff.get(t.staff_id)
+        return {
+          employee_name: t.employee_name, role: l?.staff?.role ?? null, tin: l?.staff?.tin ?? null, pension_no: l?.staff?.pension_no ?? null,
+          account: l?.account_number ? `${l.bank_name ?? ''} ${l.account_number}`.trim() : null,
+          base_net: Number(t.base_net ?? 0), advance_recovery: Number(t.advance_recovery ?? 0), net_amount: Number(t.net_amount ?? 0),
+          gross: Number(t.gross_share ?? 0), paye: Number(t.paye_share ?? 0),
+          pension_employee: Number(t.pension_employee_share ?? 0), pension_employer: Number(t.pension_employer_share ?? 0),
+          days_paid: t.days_paid, days_in_period: t.days_in_period, tax_fixed: t.tax_fixed,
+        }
+      }),
+    )
+    if (!ok) toast('Allow pop-ups to print payslips', 'error')
+  }
+
   if (runLoading || linesLoading) {
     return <div className="flex items-center justify-center min-h-[60vh]"><p className="text-slate-400 text-sm">Loading…</p></div>
   }
@@ -267,10 +320,22 @@ export default function PayrollDetailPage() {
             {run.payroll_record ?? 'Payroll run'}
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {run.payroll_type ?? 'Payroll'} · {run.pay_period ?? '—'} · {formatDate(run.start_date)} → {formatDate(run.end_date)}
+            {run.payroll_type ?? 'Regular'} · pays for {monthOfDates(run.start_date, run.end_date)?.label ?? '—'} ({formatDate(run.start_date)} → {formatDate(run.end_date)})
+          </p>
+          <p className="text-xs text-slate-400">
+            {run.tax_ec_year && run.tax_ec_month ? `Declared in ${ecMonthName(run.tax_ec_month)} ${run.tax_ec_year}` : 'No tax month'}
+            {run.paid_on ? ` · paid ${formatDate(run.paid_on)}` : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => payslips()}
+            disabled={taxLines.length === 0}
+            className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40"
+          >
+            <Printer className="h-3.5 w-3.5" /> Payslips
+          </button>
           {/* The run-wide sheet. It is the summary somebody signs, not an
               instruction to any one bank — those are issued per group in the
               table below, each with its own code and revision history. */}
@@ -296,7 +361,7 @@ export default function PayrollDetailPage() {
           { label: 'Employees', value: String(lines.length) },
           { label: 'Gross', value: formatCurrency(grossTotal) },
           { label: 'Net payable', value: formatCurrency(netTotal) },
-          { label: 'Paid from', value: run.accounts?.account_name ?? '—' },
+          { label: 'Paid from', value: run.accounts?.account_name ?? (run.payment_method === 'Cash' ? 'Cash — account not given' : '—') },
         ].map(c => (
           <div key={c.label} className="rounded-xl border bg-white dark:bg-slate-800 dark:border-slate-700 px-4 py-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-400">{c.label}</p>
@@ -309,6 +374,12 @@ export default function PayrollDetailPage() {
         <StatusBadge status={run.approval_status} />
         {run.payment_status && <StatusBadge status={run.payment_status} />}
       </div>
+
+      <PayrollPayPanel
+        run={run}
+        unmatchedNet={lines.filter(l => !l.bank_line_id).reduce((s, l) => s + Number(l.net_amount ?? 0), 0)}
+        matchedNet={lines.filter(l => l.bank_line_id).reduce((s, l) => s + Number(l.net_amount ?? 0), 0)}
+      />
 
       {missingAccount > 0 && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20 px-4 py-3">
@@ -335,8 +406,8 @@ export default function PayrollDetailPage() {
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Employee</th>
                 <th className="px-4 py-2 text-left font-medium">Account</th>
-                <th className="px-4 py-2 text-right font-medium">Gross</th>
-                <th className="px-4 py-2 text-right font-medium">Deductions</th>
+                <th className="px-4 py-2 text-right font-medium">Agreed take-home</th>
+                <th className="px-4 py-2 text-right font-medium">Taken back</th>
                 <th className="px-4 py-2 text-right font-medium">Net</th>
               </tr>
             </thead>
@@ -404,7 +475,7 @@ export default function PayrollDetailPage() {
                           <div className="font-sans text-[11px] text-slate-400">chosen for this run</div>
                         )}
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(Number(l.gross_amount ?? 0))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(Number(l.base_net ?? l.net_amount ?? 0))}</td>
                       <td className="px-4 py-2 text-right tabular-nums text-slate-500">
                         {Number(l.deductions ?? 0) > 0 ? formatCurrency(Number(l.deductions)) : '—'}
                       </td>
@@ -426,7 +497,7 @@ export default function PayrollDetailPage() {
         </div>
       </div>
 
-      {id && <PayrollRunTaxSection payrollId={id} />}
+      {id && <PayrollRunTaxSection payrollId={id} onPayslip={payslips} />}
     </div>
   )
 }

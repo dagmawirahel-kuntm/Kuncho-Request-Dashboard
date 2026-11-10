@@ -9,8 +9,10 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Payroll } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { monthOfDates } from '@/lib/payroll'
+import { ecMonthName } from '@/lib/ethiopianCalendar'
 
-type PayrollRow = Payroll & { payroll_staff: { staff_id: string; net_amount: number | null }[] | null }
+type PayrollRow = Payroll & { accounts: { account_name: string } | null; payroll_staff: { staff_id: string; net_amount: number | null }[] | null }
 
 export default function PayrollPage() {
   const [searchParams] = useSearchParams()
@@ -20,7 +22,7 @@ export default function PayrollPage() {
   const { data = [], isLoading } = useQuery({
     queryKey: ['payroll'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id, net_amount)').eq('is_archived', false).order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('payroll').select('*, accounts(account_name), payroll_staff(staff_id, net_amount)').eq('is_archived', false).order('start_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
       if (error) throw error
       return data as PayrollRow[]
     },
@@ -44,10 +46,24 @@ export default function PayrollPage() {
         </Link>
       ),
     },
-    { accessorKey: 'pay_period', header: 'Pay Period', cell: ({ getValue }) => getValue() ?? '—' },
-    { accessorKey: 'payroll_type', header: 'Type', cell: ({ getValue }) => getValue() ?? '—' },
-    { accessorKey: 'start_date', header: 'Start', cell: ({ getValue }) => formatDate(getValue() as string) },
-    { accessorKey: 'end_date', header: 'End', cell: ({ getValue }) => formatDate(getValue() as string) },
+    {
+      id: 'pays_for', header: 'Pays for',
+      accessorFn: r => monthOfDates(r.start_date, r.end_date)?.label ?? '',
+      cell: ({ row }) => {
+        const r = row.original
+        const pays = monthOfDates(r.start_date, r.end_date)
+        const taxLabel = r.tax_ec_year && r.tax_ec_month ? `${ecMonthName(r.tax_ec_month)} ${r.tax_ec_year}` : null
+        return (
+          <div>
+            <span className="font-medium">{pays?.label ?? '—'}</span>
+            <div className="text-[11px] text-slate-400">{formatDate(r.start_date)} → {formatDate(r.end_date)}</div>
+            {taxLabel && pays && taxLabel !== pays.label && <div className="text-[11px] text-amber-600">declared in {taxLabel}</div>}
+          </div>
+        )
+      },
+    },
+    { accessorKey: 'payroll_type', header: 'Kind', cell: ({ getValue }) => getValue() ?? '—' },
+    { accessorKey: 'paid_on', header: 'Paid on', cell: ({ getValue }) => getValue() ? formatDate(getValue() as string) : <span className="text-slate-300">—</span> },
     {
       id: 'total_net', header: 'Total Net (ETB)',
       cell: ({ row }) => {
@@ -60,7 +76,7 @@ export default function PayrollPage() {
     },
     { accessorKey: 'payment_status', header: 'Status', cell: ({ getValue }) => getValue() ? <StatusBadge status={getValue() as string} /> : '—' },
     { accessorKey: 'approval_status', header: 'Approval', filterFn: 'equals', cell: ({ getValue }) => <StatusBadge status={getValue() as string} /> },
-    { id: 'account_name', header: 'Account', cell: ({ row }) => (row.original as any).accounts?.account_name ?? '—' },
+    { id: 'account_name', header: 'Account', cell: ({ row }) => row.original.accounts?.account_name ?? '—' },
     { id: 'staff_count', header: 'Employees', cell: ({ row }) => row.original.payroll_staff?.length ?? 0 },
     {
       id: 'actions',
@@ -78,9 +94,9 @@ export default function PayrollPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-xl font-bold text-slate-800">Payroll</h1><p className="text-sm text-slate-500">Payroll runs and records</p></div>
+        <div><h1 className="text-xl font-bold text-slate-800">Payroll</h1><p className="text-sm text-slate-500">Salary, overtime, bonus, allowance and back-pay runs, by the month they pay for</p></div>
         <Link to="/payroll/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> Add Payroll
+          <Plus className="h-4 w-4" /> New Run
         </Link>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll…" persistKey="payroll" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="payroll" queryKeys={['payroll', 'payroll-lookup']} />}
