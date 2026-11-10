@@ -14,9 +14,10 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { autoMatchBankLines } from '@/lib/bankAutoMatch'
 import {
-  CLASSIFICATIONS, KIND_LABEL, describeReconciled, ruleTextFrom,
-  type BankLine, type LineCombination, type Suggestion,
+  CLASSIFICATIONS, KIND_LABEL, describeReconciled, isClearingParty, lineSubtitle, lineTitle, ruleTextFrom,
+  type BankLine, type LineCombination, type LineParty, type Suggestion,
 } from '@/lib/bankReconciliation'
+import { useLineParty } from '@/hooks/useLineParty'
 import { LineHistory, UndoMatch } from '@/components/cash/LineHistory'
 import { SeveralPayments } from './SeveralPayments'
 import { PayrollLine } from './PayrollLine'
@@ -24,7 +25,7 @@ import { PayerSelect, RecordExpenseFromLine, RecordSaleFromLine } from './Record
 import { useAccountPayer } from '@/lib/bankPayers'
 import {
   ArrowLeft, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Coins, ExternalLink, History, Link2, RefreshCw,
-  Repeat, Search, SkipForward, Sparkles, AlertTriangle, Layers, FilePlus2, Users, Wand2,
+  Repeat, Search, SkipForward, Sparkles, AlertTriangle, Layers, FilePlus2, UserCheck, Users, Wand2,
 } from 'lucide-react'
 
 /** The queue as a list (with the open line beside it on a wide screen), or one line at a time. */
@@ -102,7 +103,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 
   const matching = lines.filter(l =>
     (direction === 'all' || l.direction === direction) &&
-    (!search.trim() || `${l.narration ?? ''} ${l.reference ?? ''} ${l.amount}`.toLowerCase().includes(search.trim().toLowerCase())))
+    (!search.trim() || `${l.counterparty_name ?? ''} ${l.counterparty_account ?? ''} ${l.narration ?? ''} ${l.reference ?? ''} ${l.amount}`.toLowerCase().includes(search.trim().toLowerCase())))
   const otherFy = matching.filter(l => fyFlag.outside(l.value_date))
   const shown = hideOtherFy ? matching.filter(l => !fyFlag.outside(l.value_date)) : matching
 
@@ -128,7 +129,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
     if (!onOpenChange) return
     const l = openId ? lines.find(x => x.line_id === openId) : null
     if (openId && !l) return
-    const detail = l ? [accountName.get(l.account_id), formatDate(l.value_date), formatCurrency(Number(l.amount)), l.narration || l.transaction_type]
+    const detail = l ? [accountName.get(l.account_id), formatDate(l.value_date), formatCurrency(Number(l.amount)), lineTitle(l)]
       .filter(Boolean).join(' · ') : null
     const key = `${openId ?? ''}|${detail ?? ''}`
     if (told.current === key) return
@@ -191,7 +192,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
         </div>
         <div className="relative min-w-[10rem] flex-1 sm:flex-none">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Narration, reference or amount"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name, narration, reference or amount"
             className="w-full rounded-md border py-1.5 pl-7 pr-2 text-base outline-none focus:ring-2 focus:ring-brand sm:w-56 sm:text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         </div>
         {onDatesChange && <DateRangeButton from={from} to={to} onChange={onDatesChange} />}
@@ -262,10 +263,8 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
                     <DirectionTag direction={l.direction} size="xs" />
                     {!accountId && <BankChip brand={brandOfLine(l)} />}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>
-                      <span className="block truncate text-[11px] text-slate-400">
-                        {[l.transaction_type && l.narration ? l.transaction_type : null, l.reference].filter(Boolean).join(' · ')}
-                      </span>
+                      <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{lineTitle(l)}</span>
+                      <span className="block truncate text-[11px] text-slate-400">{lineSubtitle(l)}</span>
                     </span>
                     {showDone && !split && (
                       <span className="hidden max-w-[240px] truncate text-xs text-slate-500 sm:block dark:text-slate-400">
@@ -306,15 +305,52 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   )
 }
 
-/** The line being worked on, as a header: its bank, date, narration and amount. */
+const PARTY_KIND: Record<LineParty['kind'], { label: string; to: string }> = {
+  vendor: { label: 'Vendor', to: '/vendors/' },
+  staff: { label: 'Staff', to: '/staff/' },
+  client: { label: 'Client', to: '/clients/' },
+}
+
+/**
+ * Who the bank says a line paid or came from: their account, and the vendor,
+ * staff member or client on record with it. Nothing for a clearing house.
+ */
+function LinePartyRow({ line, full = false }: { line: BankLine; full?: boolean }) {
+  const { data: party } = useLineParty(line)
+  const named = !!line.counterparty_name && !isClearingParty(line.counterparty_name)
+  if (!named && !party) return null
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+      {full && <span className="font-medium text-slate-700 dark:text-slate-200">{line.direction === 'debit' ? 'Paid to' : 'From'} {line.counterparty_name}</span>}
+      {line.counterparty_account && <span className="tabular-nums">Account {line.counterparty_account}</span>}
+      {party && (
+        <Link to={PARTY_KIND[party.kind].to + party.id} className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:underline dark:bg-emerald-900/30 dark:text-emerald-300"
+          title={party.how === 'account' ? 'Their bank account on record is this one' : 'Their name on record matches; no account on record confirms it'}>
+          <UserCheck className="h-3 w-3" />
+          {PARTY_KIND[party.kind].label}: {party.name}{party.how === 'name' ? ' (by name)' : ''}
+        </Link>
+      )}
+    </p>
+  )
+}
+
+/** The line being worked on, as a header: its bank, date, who it paid or came from, and amount. */
 function LineHeader({ line, brand }: { line: BankLine; brand?: BankBrand }) {
+  const title = lineTitle(line)
+  const named = !!line.counterparty_name && !isClearingParty(line.counterparty_name)
+  const via = line.counterparty_name && !named ? `via ${line.counterparty_name}` : null
+  const rest = [via, line.narration, line.reference].filter((v, i, all) => v && v !== title && all.indexOf(v) === i).join(' · ')
   return (
     <div className="flex items-start gap-3">
       {brand && <BankMark brand={brand} size="md" />}
       <div className="min-w-0 flex-1">
         <p className="text-[11px] text-slate-400">{[brand?.bank, formatDate(line.value_date), line.transaction_type].filter(Boolean).join(' · ')}</p>
-        <p className="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">{line.narration || line.transaction_type || '—'}</p>
-        {line.reference && <p className="truncate text-[11px] text-slate-400">{line.reference}</p>}
+        <p className="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">
+          {named && <span className="font-normal text-slate-400">{line.direction === 'debit' ? 'Paid to ' : 'From '}</span>}
+          {title}
+        </p>
+        <LinePartyRow line={line} />
+        {rest && <p className="truncate text-[11px] text-slate-400">{rest}</p>}
       </div>
       <div className="shrink-0 text-right">
         <DirectionTag direction={line.direction} size="xs" />
@@ -394,7 +430,7 @@ function OneAtATime({ lines, isLoading, startId, brandOf, accounts, onShow, onDo
                 <button onClick={() => go(idx + 1 + k)} className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
                   <span className="w-24 shrink-0 text-[11px] text-slate-400">{day(l.value_date)}</span>
                   <BankChip brand={brandOf(l)} />
-                  <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{l.narration || l.transaction_type || '—'}</span>
+                  <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{lineTitle(l)}</span>
                   <SignedAmount direction={l.direction} amount={Number(l.amount)} className="shrink-0 text-sm font-semibold" />
                 </button>
               </li>
@@ -487,7 +523,7 @@ function LineWorkbench({ line, accounts, onDone, variant = 'inline', brand }: {
 
   return (
     <div className={variant === 'inline' ? 'space-y-3 border-t bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40' : 'space-y-4'}>
-      {variant === 'panel' && <LineHeader line={line} brand={brand} />}
+      {variant === 'panel' ? <LineHeader line={line} brand={brand} /> : <LinePartyRow line={line} full />}
       {tab === 'suggest' ? (
         <>
           {combos.length > 0 && (

@@ -17,6 +17,9 @@ export interface StatementLine {
   credit: number | null       // money in, positive
   balance: number | null      // running balance after the line
   reference: string | null
+  /** Who the line paid (money out) or came from (money in), when the statement names them. */
+  counterpartyName?: string | null
+  counterpartyAccount?: string | null
 }
 
 export type DateOrder = 'dmy' | 'mdy' | 'ymd'
@@ -36,6 +39,12 @@ export interface ColumnMapping {
   /** A DR/CR column that says which way an unsigned amount goes. */
   drcr?: number | null
   balance?: number | null
+  /** Who money out went to, and their account (CBE: BeneficiaryName, BeneficiaryAccount). */
+  payee?: number | null
+  payeeAccount?: number | null
+  /** Who money in came from, and their account (CBE: SenderName, SenderAccount). */
+  payer?: number | null
+  payerAccount?: number | null
   dateOrder: DateOrder
 }
 
@@ -54,6 +63,7 @@ export type Grid = string[][]
 
 // ── Header words ────────────────────────────────────────────────────────
 type Field = 'date' | 'postDate' | 'type' | 'narration' | 'reference' | 'debit' | 'credit' | 'amount' | 'drcr' | 'balance'
+  | 'payee' | 'payeeAccount' | 'payer' | 'payerAccount'
 
 const HEADER_WORDS: Record<Field, string[]> = {
   date: ['valuedate', 'transactiondate', 'txndate', 'trandate', 'transdate', 'date', 'valdate', 'effectivedate'],
@@ -68,6 +78,10 @@ const HEADER_WORDS: Record<Field, string[]> = {
   amount: ['amount', 'transactionamount', 'amountetb'],
   drcr: ['drcr', 'debitcredit', 'crdr', 'dc'],
   balance: ['balance', 'runningbalance', 'closingbalance', 'availablebalance', 'ledgerbalance', 'balanceetb', 'bookbalance'],
+  payee: ['beneficiaryname', 'payeename', 'receivername', 'creditorname', 'beneficiarysname'],
+  payeeAccount: ['beneficiaryaccount', 'beneficiaryaccountno', 'beneficiaryaccountnumber', 'payeeaccount', 'receiveraccount', 'creditoraccount'],
+  payer: ['sendername', 'payername', 'remittername', 'debtorname', 'orderingcustomer', 'ordername'],
+  payerAccount: ['senderaccount', 'senderaccountno', 'senderaccountnumber', 'payeraccount', 'remitteraccount', 'debtoraccount'],
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '')
@@ -119,6 +133,10 @@ export function detectMapping(grid: Grid): ColumnMapping | null {
     amount: h.debit || h.credit ? null : h.amount?.[0] ?? null,
     drcr: h.drcr?.[0] ?? null,
     balance: h.balance?.[0] ?? null,
+    payee: h.payee?.[0] ?? null,
+    payeeAccount: h.payeeAccount?.[0] ?? null,
+    payer: h.payer?.[0] ?? null,
+    payerAccount: h.payerAccount?.[0] ?? null,
     dateOrder: guessDateOrder(grid, best.row + 1, h.date![0]),
   }
 }
@@ -264,6 +282,10 @@ export function applyMapping(grid: Grid, map: ColumnMapping): ParsedStatement {
     if (debit == null && credit == null) { skipped++; continue }
 
     const narration = map.narration.map(i => cell(row, i)).filter(Boolean).join(' ') || null
+    // The other party: whoever money out went to, whoever money in came from.
+    const out = debit != null
+    const counterpartyName = cell(row, out ? map.payee : map.payer) || null
+    const counterpartyAccount = cell(row, out ? map.payeeAccount : map.payerAccount).replace(/\s+/g, '') || null
     lines.push({
       valueDate: date,
       postDate: map.postDate != null ? parseDate(cell(row, map.postDate), map.dateOrder) : null,
@@ -273,6 +295,8 @@ export function applyMapping(grid: Grid, map: ColumnMapping): ParsedStatement {
       credit: credit != null ? round2(credit) : null,
       balance: parseAmount(cell(row, map.balance)),
       reference: cell(row, map.reference) || null,
+      counterpartyName,
+      counterpartyAccount,
     })
   }
 

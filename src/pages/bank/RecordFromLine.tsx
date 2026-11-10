@@ -8,7 +8,8 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { useCategories, useProjects, useStaff, useVendors } from '@/hooks/useLookups'
 import { costPickerOptions, type PickerProject } from '@/lib/buckets'
 import { usePayers } from '@/lib/bankPayers'
-import type { BankLine } from '@/lib/bankReconciliation'
+import { isClearingParty, type BankLine } from '@/lib/bankReconciliation'
+import { useLineParty } from '@/hooks/useLineParty'
 import { VAT_RATE } from '@/lib/withholding'
 import { RECEIPT_CHARGE_TOLERANCE, withholdingProfileLabel } from '@/lib/clientWithholding'
 import type { WithholdingProfile } from '@/types/database'
@@ -67,10 +68,22 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [overhead, setOverhead] = useState(false)
-  const [payeeKind, setPayeeKind] = useState<'vendor' | 'staff' | 'name'>('vendor')
-  const [vendorId, setVendorId] = useState<string | null>(null)
-  const [staffId, setStaffId] = useState<string | null>(null)
-  const [payeeName, setPayeeName] = useState('')
+  // Who the bank says was paid starts picked: the vendor or staff member on
+  // record with that account (or name), else the name the bank gives (506).
+  const { data: party } = useLineParty(line)
+  const bankName = line.counterparty_name && !isClearingParty(line.counterparty_name) ? line.counterparty_name : null
+  const fromBank = party?.kind === 'vendor' || party?.kind === 'staff' ? party : null
+  const [kindPicked, setPayeeKind] = useState<'vendor' | 'staff' | 'name' | null>(null)
+  const [vendorPicked, setVendorId] = useState<string | null | undefined>(undefined)
+  const [staffPicked, setStaffId] = useState<string | null | undefined>(undefined)
+  const [namePicked, setPayeeName] = useState<string | null>(null)
+  const payeeKind = kindPicked ?? fromBank?.kind ?? (bankName ? 'name' : 'vendor')
+  const vendorId = vendorPicked !== undefined ? vendorPicked : fromBank?.kind === 'vendor' ? fromBank.id : null
+  const staffId = staffPicked !== undefined ? staffPicked : fromBank?.kind === 'staff' ? fromBank.id : null
+  const payeeName = namePicked ?? bankName ?? ''
+  const hinted = (payeeKind === 'vendor' && vendorPicked === undefined && fromBank?.kind === 'vendor')
+    || (payeeKind === 'staff' && staffPicked === undefined && fromBank?.kind === 'staff')
+    || (payeeKind === 'name' && namePicked === null && !!bankName)
   const [amount, setAmount] = useState(String(Number(line.amount)))
   const [payer, setPayer] = useState(accountPayer && accountPayer !== user?.id ? accountPayer : '')
   const [note, setNote] = useState('')
@@ -148,6 +161,12 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
           {payeeKind === 'vendor' && <SearchableSelect value={vendorId} onChange={setVendorId} options={vendorOptions} placeholder="Pick the vendor…" />}
           {payeeKind === 'staff' && <SearchableSelect value={staffId} onChange={setStaffId} options={staffOptions} placeholder="Pick the staff member…" />}
           {payeeKind === 'name' && <input value={payeeName} onChange={e => setPayeeName(e.target.value)} placeholder="Who was paid" className={inputCls} />}
+          {hinted && (
+            <span className="block text-[11px] text-slate-400">
+              {payeeKind === 'name' ? 'As the bank names them; not a vendor or staff member on record'
+                : fromBank?.how === 'account' ? 'The bank paid their account on record' : 'The bank named them'}
+            </span>
+          )}
         </div>
         <label className="space-y-1">
           <span className="flex h-5 items-center text-[11px] font-medium text-slate-500">Amount paid (the line is {formatCurrency(Number(line.amount))})</span>
@@ -223,14 +242,17 @@ export function RecordSaleFromLine({ line, onDone }: { line: BankLine; onDone: (
   const { data: projects = [] } = useProjects()
   const received = Number(line.amount)
 
-  // A client whose name is in the narration is picked to start with.
+  // The client the bank says sent it starts picked (506), else one whose name is in the narration.
+  const { data: party } = useLineParty(line)
+  const fromBank = party?.kind === 'client' ? party.id : null
   const hint = useMemo(() => {
-    const text = (line.narration ?? '').toUpperCase()
+    if (fromBank) return fromBank
+    const text = `${line.counterparty_name ?? ''} ${line.narration ?? ''}`.toUpperCase()
     return clients.find(c => {
       const first = c.client_name.trim().split(/\s+/)[0]?.toUpperCase() ?? ''
       return first.length >= 4 && text.includes(first)
     })?.id ?? null
-  }, [clients, line.narration])
+  }, [clients, line.narration, line.counterparty_name, fromBank])
   const [picked, setClientId] = useState<string | null>(null)
   const clientId = picked ?? hint
   const client = clients.find(c => c.id === clientId)
@@ -280,7 +302,7 @@ export function RecordSaleFromLine({ line, onDone }: { line: BankLine; onDone: (
         <div className="space-y-1">
           <span className="flex h-5 items-center text-[11px] font-medium text-slate-500">Client who paid</span>
           <SearchableSelect value={clientId} onChange={id => { setClientId(id); setAmount(null) }} options={clientOptions} placeholder="Pick the client…" />
-          {client && <span className="block text-[11px] text-slate-400">{withholdingProfileLabel(client.withholding_profile, client.business_type)}{!picked && hint ? ' · named in the narration' : ''}</span>}
+          {client && <span className="block text-[11px] text-slate-400">{withholdingProfileLabel(client.withholding_profile, client.business_type)}{!picked && hint ? (hint === fromBank ? ' · the bank says they sent it' : ' · named in the bank line') : ''}</span>}
         </div>
         <div className="space-y-1">
           <span className="flex h-5 items-center text-[11px] font-medium text-slate-500">Project (optional)</span>
