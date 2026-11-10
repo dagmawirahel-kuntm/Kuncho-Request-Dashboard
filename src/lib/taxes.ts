@@ -12,6 +12,11 @@ export const MONTHLY: TaxCode[] = ['VAT', 'WHT', 'SCH_A', 'PENSION']
 export const TAX_NAME: Record<TaxCode, string> = {
   VAT: 'VAT', WHT: 'Withholding', SCH_A: 'Payroll tax', PENSION: 'Pension', SCH_C: 'Profit tax',
 }
+/** Who each return is paid to: pension goes to social security, not the tax authority. */
+export const PAID_TO: Record<TaxCode, string> = {
+  VAT: 'Ministry of Revenues', WHT: 'Ministry of Revenues', SCH_A: 'Ministry of Revenues', SCH_C: 'Ministry of Revenues',
+  PENSION: 'the social security agency (POESSA)',
+}
 export const TAX_LONG: Record<TaxCode, string> = {
   VAT: 'VAT return', WHT: 'Withholding return', SCH_A: 'Payroll tax (Schedule A)', PENSION: 'Pension contributions', SCH_C: 'Profit tax (Schedule C)',
 }
@@ -178,27 +183,26 @@ export const monthPath = (y: number, m: number) => `/taxes/${y}/${m}`
 const WORDS: Record<TaxCode, RegExp> = {
   VAT: /\bvat\b|value added/i,
   WHT: /\bwht\b|withh/i,
-  SCH_A: /payroll|paye|income tax|employ|salary|\btx\b/i,
+  SCH_A: /payroll|paye|income tax|employ|salary/i,
   PENSION: /pension|pens\b/i,
   SCH_C: /profit|\bsch.?c\b|business income/i,
 }
 
 /**
- * How well each government bill fits a return: its amount matches (alone,
- * or payroll tax with pension), its description names the tax. Best first;
- * bills with nothing left are skipped.
+ * How well each government bill fits a return: its amount matches, its
+ * description names the tax. Each return is matched on its own — payroll
+ * tax and pension are paid to different bodies. Best first; bills with
+ * nothing left are skipped.
  */
-export function billFits(r: TaxReturn, bills: GovBill[], pair?: TaxReturn) {
+export function billFits(r: TaxReturn, bills: GovBill[]) {
   const target = returnAmount(r)
   const tol = (n: number) => Math.max(1, n * 0.005)
-  const pairSum = pair ? target + returnAmount(pair) : null
   return bills
     .filter(b => b.left > 0.5 && !b.pays.some(p => p.id === r.id))
     .map(b => {
       const reasons: string[] = []
       let score = 0
       if (target > 0 && Math.abs(b.left - target) <= tol(target)) { score += 3; reasons.push('same amount') }
-      else if (pairSum && Math.abs(b.left - pairSum) <= tol(pairSum)) { score += 3; reasons.push(`payroll tax and pension together`) }
       if (WORDS[r.code].test(b.description ?? '')) { score += 1; reasons.push(`mentions ${TAX_NAME[r.code].toLowerCase()}`) }
       return { bill: b, score, reasons }
     })

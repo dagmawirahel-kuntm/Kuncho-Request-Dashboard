@@ -14,7 +14,7 @@ import {
 } from '@/lib/taxes'
 import { formatDate } from '@/lib/utils'
 
-const SECTION: Record<string, string> = { VAT: 'vat', WHT: 'wht', SCH_A: 'payroll', PENSION: 'payroll' }
+const SECTION: Record<string, string> = { VAT: 'vat', WHT: 'wht', SCH_A: 'payroll-tax', PENSION: 'pension' }
 
 /**
  * Taxes (507): every tax month of the year at a glance — VAT, withholding,

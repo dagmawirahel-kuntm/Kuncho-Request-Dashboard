@@ -46,10 +46,11 @@ export default function TaxMonthPage() {
 function MonthBody({ d }: { d: TaxMonth }) {
   const { hasRole } = useAuth()
   const { hash } = useLocation()
-  // Arriving from the year (#vat, #payroll…) lands on that part of the month.
+  // Arriving from the year (#vat, #pension…) lands on that part of the month.
+  // #payroll, from before payroll tax and pension were apart, lands on payroll tax.
   useEffect(() => {
-    const id = hash.replace('#', '')
-    if (['vat', 'wht', 'payroll', 'bills'].includes(id)) document.getElementById(id)?.scrollIntoView({ block: 'start' })
+    const id = hash.replace('#', '') === 'payroll' ? 'payroll-tax' : hash.replace('#', '')
+    if (['vat', 'wht', 'payroll-tax', 'pension', 'bills'].includes(id)) document.getElementById(id)?.scrollIntoView({ block: 'start' })
   }, [hash])
   const ret = d.returns
   const all = (['VAT', 'WHT', 'SCH_A', 'PENSION'] as const).map(c => ret[c]).filter((r): r is TaxReturn => !!r)
@@ -104,21 +105,21 @@ function MonthBody({ d }: { d: TaxMonth }) {
         </section>
       )}
 
-      {(ret.SCH_A || ret.PENSION) && (
-        <section id="payroll" className="scroll-mt-20 space-y-3">
-          <SectionTitle title="Payroll tax & pension" sub="Declared together, often paid with one bill: tie that bill to both." />
-          <div className="space-y-3">
-            {ret.SCH_A && (
-              <ReturnCard r={ret.SCH_A} pair={ret.PENSION} today={d.today} canRecord={d.can_record} bills={d.bills} breakdown={<PayeBreakdown r={ret.SCH_A} />}>
-                <Schedule r={ret.SCH_A} canEdit={d.can_record} />
-              </ReturnCard>
-            )}
-            {ret.PENSION && (
-              <ReturnCard r={ret.PENSION} pair={ret.SCH_A} today={d.today} canRecord={d.can_record} bills={d.bills} breakdown={<PensionBreakdown r={ret.PENSION} />}>
-                <Schedule r={ret.PENSION} canEdit={d.can_record} />
-              </ReturnCard>
-            )}
-          </div>
+      {ret.SCH_A && (
+        <section id="payroll-tax" className="scroll-mt-20 space-y-3">
+          <SectionTitle title="Payroll tax" sub="Employment income tax on the salaries paid this month, declared and paid to the Ministry of Revenues." />
+          <ReturnCard r={ret.SCH_A} today={d.today} canRecord={d.can_record} bills={d.bills} breakdown={<PayeBreakdown r={ret.SCH_A} />}>
+            <Schedule r={ret.SCH_A} canEdit={d.can_record} />
+          </ReturnCard>
+        </section>
+      )}
+
+      {ret.PENSION && (
+        <section id="pension" className="scroll-mt-20 space-y-3">
+          <SectionTitle title="Pension" sub="7% from employees and 11% from Kuncho on the salaries paid this month, declared and paid to the social security agency — its own return, due date and payment." />
+          <ReturnCard r={ret.PENSION} today={d.today} canRecord={d.can_record} bills={d.bills} breakdown={<PensionBreakdown r={ret.PENSION} />}>
+            <Schedule r={ret.PENSION} canEdit={d.can_record} />
+          </ReturnCard>
         </section>
       )}
 
