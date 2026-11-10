@@ -3,23 +3,22 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCurrency, formatDate } from '@/lib/utils'
 import type { AccountOverview } from '@/lib/bankReconciliation'
 import { ImportStatementPanel } from './ImportStatementPanel'
-import { ReviewQueue } from './ReviewQueue'
+import { ReviewQueue, type QueueView } from './ReviewQueue'
 import { StatementsPanel } from './StatementsPanel'
 import { AuditPanel } from './AuditPanel'
 import { useBankAuditFlags } from '@/lib/bankAudit'
 import { inRange } from '@/lib/bankReconciliation'
-import { brandFor, brandVars, useAccountBrands } from '@/lib/bankBrands'
-import { BankBanner, BankLookEditor, BankMark } from '@/components/bank/BankLook'
+import { bankShortName, brandFor, brandVars, useAccountBrands } from '@/lib/bankBrands'
+import { BankLookEditor, BankMark, BankStrip } from '@/components/bank/BankLook'
+import { DateRangeButton } from '@/components/bank/DateRangeButton'
 import { useFyFlag } from '@/lib/fiscalFlag'
 import { noteWorkPlace } from '@/lib/returnTrail'
-import { CalendarRange, CalendarX2, Lock } from 'lucide-react'
+import { ArrowLeft, Upload } from 'lucide-react'
 
 type Tab = 'queue' | 'audit' | 'import' | 'statements'
 const TABS: Tab[] = ['queue', 'audit', 'import', 'statements']
-const dateCls = 'rounded-md border px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
 /**
  * Bank reconciliation: import each account's statements (CSV, Excel, PDF),
@@ -50,6 +49,8 @@ export default function BankReconciliationPage() {
   // The lines (by value date) and the flags (by their date) between two days.
   const [from, setFrom] = useState(() => params.get('from') ?? '')
   const [to, setTo] = useState(() => params.get('to') ?? '')
+  // The queue as a list, or one line at a time (?view=one).
+  const [view, setView] = useState<QueueView>(() => (params.get('view') === 'one' ? 'one' : 'list'))
   const [editingLook, setEditingLook] = useState(false)
   const onOpenChange = useCallback((lineId: string | null, detail: string | null) => {
     setOpenLine(lineId)
@@ -78,6 +79,7 @@ export default function BankReconciliationPage() {
     setShowDone(params.get('done') === '1')
     setFrom(params.get('from') ?? '')
     setTo(params.get('to') ?? '')
+    setView(params.get('view') === 'one' ? 'one' : 'list')
   }, [params])
   useEffect(() => {
     const next = new URLSearchParams()
@@ -88,11 +90,12 @@ export default function BankReconciliationPage() {
     if (showDone && (t ?? 'queue') === 'queue') next.set('done', '1')
     if (from) next.set('from', from)
     if (to) next.set('to', to)
+    if (view === 'one' && (t ?? 'queue') === 'queue') next.set('view', 'one')
     const s = next.toString()
     if (s === written.current) return
     written.current = s
     setParamsRef.current(next, { replace: true })
-  }, [tab, accountId, openLine, showDone, from, to])
+  }, [tab, accountId, openLine, showDone, from, to, view])
   const { data: flags = [] } = useBankAuditFlags()
   // Each bank's look: its colours and logo (bankBrands.ts).
   const { data: brandRows } = useAccountBrands()
@@ -137,112 +140,128 @@ export default function BankReconciliationPage() {
       ? `Every line is from ${years}, not ${fyFlag.fy.label}${o.open ? ` · ${o.open} still open` : ''}`
       : `${o.n} of ${a.line_count} lines are from ${years}${o.open ? ` · ${o.open} still open` : ''}`
   }
-  const openTotal = withLines.reduce((s, a) => s + a.open_count, 0)
+  // Open lines in the fiscal year being worked in, and those from other
+  // years: those are set aside in the queue, so the counts here match it.
+  const otherOpen = (id: string) => otherFy.get(id)?.open ?? 0
+  const thisYearOpen = (a: AccountOverview) => Math.max(0, a.open_count - otherOpen(a.account_id))
+  const inScope = withLines.filter(a => !accountId || a.account_id === accountId)
+  const openNow = inScope.reduce((s, a) => s + thisYearOpen(a), 0)
+  const openOther = inScope.reduce((s, a) => s + Math.min(a.open_count, otherOpen(a.account_id)), 0)
+  // The year just before, said as "last year"; any other as its label.
+  const lastFy = fyFlag.fy ? fyFlag.fyOf(new Date(new Date(`${fyFlag.fy.start_date}T00:00:00`).getTime() - 864e5).toISOString().slice(0, 10)) : null
+  const otherYearsOf = (id: string) => [...(otherFy.get(id)?.years ?? [])]
+  const otherWord = (id: string) => { const ys = otherYearsOf(id); return ys.length === 1 && ys[0] === lastFy ? 'last year' : ys.length === 1 ? ys[0] : 'other years' }
   // Kept the same between renders: the queue names lines from it.
   const accounts = useMemo(() => overview.map(a => ({ id: a.account_id, account_name: a.account_name })), [overview])
   // Statements & close work on one account: the chosen one, or the busiest.
   const statementAccount = withLines.find(a => a.account_id === accountId) ?? withLines[0] ?? null
-  const activeTab: Tab = tab ?? (isLoading || openTotal > 0 ? 'queue' : 'import')
+  const activeTab: Tab = tab ?? (!isLoading && withLines.length === 0 ? 'import' : 'queue')
   const selected = overview.find(a => a.account_id === accountId) ?? null
   const selectedBrand = selected ? brandOf(selected.account_id, selected.account_name) : null
+  const latest = withLines.reduce<string | null>((m, a) => (a.last_date && (!m || a.last_date > m) ? a.last_date : m), null)
+  const closedCount = withLines.filter(a => a.closed_through).length
+  const shortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  // Banks by what's left this year, then by what's left at all.
+  const pills = [...withLines].sort((a, b) => thisYearOpen(b) - thisYearOpen(a) || b.open_count - a.open_count)
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'queue', label: `To reconcile${openTotal ? ` (${withLines.filter(a => !accountId || a.account_id === accountId).reduce((s, a) => s + a.open_count, 0)})` : ''}` },
-    { id: 'audit', label: `Audit${flagCount ? ` (${flagCount})` : ''}` },
-    { id: 'import', label: 'Import a statement' },
+  const tabs: { id: Tab; label: string; n?: number }[] = [
+    { id: 'queue', label: 'To reconcile', n: openNow || undefined },
+    { id: 'audit', label: 'Audit', n: flagCount || undefined },
     { id: 'statements', label: 'Statements & closing' },
   ]
+  const pill = (on: boolean) => `inline-flex shrink-0 snap-start items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${on
+    ? 'border-brand bg-brand/5 text-slate-800 ring-1 ring-brand dark:text-slate-100'
+    : 'bg-white text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-500'}`
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Bank Reconciliation</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Import each account's statement, settle every line against the payment or receipt it is — or say what it is — and close the period at the bank's balance.
-          The Audit tab shows what the bank and the payments don't agree on.
-        </p>
-      </div>
-
-      {withLines.length > 0 && (
-        // A strip to swipe through on a phone, so the chosen bank stays in view.
-        <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3">
-          {withLines.map(a => {
-            const selected = accountId === a.account_id
-            const brand = brandOf(a.account_id, a.account_name)
-            return (
-              <button key={a.account_id} onClick={() => setAccountId(selected ? null : a.account_id)} style={brandVars(brand)}
-                className={`bank-theme w-72 shrink-0 snap-start overflow-hidden rounded-xl border bg-white text-left transition sm:w-auto dark:bg-slate-800 ${selected ? 'border-brand ring-2 ring-brand/30' : 'hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-500'}`}>
-                <div className="bank-banner h-1.5" />
-                <div className="p-3">
-                <div className="flex items-center gap-2">
-                  <BankMark brand={brand} size="sm" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{brand.known ? brand.bank : a.account_name}</span>
-                    {brand.known && brand.bank !== a.account_name && <span className="block truncate text-[11px] text-slate-400">{a.account_name}</span>}
-                  </span>
-                  {a.open_count > 0
-                    ? <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{a.open_count} to reconcile</span>
-                    : <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">all reconciled</span>}
-                </div>
-                <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  Statements {formatDate(a.first_date)} → {formatDate(a.last_date)}
-                  {a.statement_balance != null && <> · bank balance <span className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(Number(a.statement_balance))}</span></>}
-                </p>
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
-                  <Lock className="h-3 w-3" /> {a.closed_through ? `Closed through ${formatDate(a.closed_through)}` : 'Never closed'}
-                  {a.oldest_open && <> · oldest open line {formatDate(a.oldest_open)}</>}
-                </p>
-                {otherFyNote(a) && (
-                  <p className="mt-1.5 flex items-start gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                    <CalendarX2 className="mt-px h-3 w-3 shrink-0" /> {otherFyNote(a)}
-                  </p>
-                )}
-                </div>
-              </button>
-            )
-          })}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Bank Reconciliation</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Match each statement line to what it paid or brought in, then close the period at the bank's balance.</p>
         </div>
-      )}
-
-      <div className={`space-y-5 ${selectedBrand ? 'bank-theme' : ''}`} style={selectedBrand ? brandVars(selectedBrand) : undefined}>
-      {selected && selectedBrand && (
-        <BankBanner brand={selectedBrand} account={brandRows?.get(selected.account_id)} overview={selected}
-          canEdit={canAct && !!brandRows?.get(selected.account_id)} onEdit={() => setEditingLook(true)} fyNote={otherFyNote(selected)} />
-      )}
-      <div className="flex gap-1 overflow-x-auto border-b dark:border-slate-700">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${activeTab === t.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
-            {t.label}
+        {activeTab !== 'import' && (
+          <button onClick={() => setTab('import')}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+            <Upload className="h-3.5 w-3.5" /> Import a statement
           </button>
-        ))}
-        {accountId && (
-          <span className="ml-auto self-center text-xs text-slate-500 dark:text-slate-400">
-            Showing {selected?.account_name} · <button onClick={() => setAccountId(null)} className="text-brand hover:underline">all accounts</button>
-          </span>
         )}
       </div>
 
-      {(activeTab === 'queue' || activeTab === 'audit') && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-          <CalendarRange className="h-3.5 w-3.5 text-slate-400" />
-          <label className="flex items-center gap-1.5">From
-            <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} className={dateCls} />
-          </label>
-          <label className="flex items-center gap-1.5">to
-            <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} className={dateCls} />
-          </label>
-          {(from || to) && <button onClick={() => { setFrom(''); setTo('') }} className="text-brand hover:underline">Any date</button>}
+      {withLines.length > 0 && activeTab !== 'import' && (
+        <>
+          {/* One row of banks, to swipe through on a phone; the count is what's
+              left this fiscal year, with older lines said apart. */}
+          <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0">
+            <button onClick={() => setAccountId(null)} className={pill(!accountId)}>
+              All banks
+              {withLines.some(a => thisYearOpen(a) > 0)
+                ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{withLines.reduce((s, a) => s + thisYearOpen(a), 0)}</span>
+                : <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">✓</span>}
+            </button>
+            {pills.map(a => {
+              const on = accountId === a.account_id
+              const brand = brandOf(a.account_id, a.account_name)
+              const n = thisYearOpen(a)
+              const older = Math.min(a.open_count, otherOpen(a.account_id))
+              return (
+                <button key={a.account_id} onClick={() => setAccountId(on ? null : a.account_id)} style={brandVars(brand)} title={brand.bank}
+                  className={`bank-theme ${pill(on)}`}>
+                  <BankMark brand={brand} size="xs" />
+                  {bankShortName(brand, a.account_name)}
+                  {n > 0
+                    ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{n}</span>
+                    : older > 0
+                      ? <span className="text-[10px] font-normal text-slate-400">{older} {otherWord(a.account_id)}</span>
+                      : <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          {selected && selectedBrand ? (
+            <BankStrip brand={selectedBrand} account={brandRows?.get(selected.account_id)} overview={selected}
+              canEdit={canAct && !!brandRows?.get(selected.account_id)} onEdit={() => setEditingLook(true)} fyNote={otherFyNote(selected)} />
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              <b className="font-semibold text-slate-700 dark:text-slate-200">{openNow ? `${openNow} line${openNow === 1 ? '' : 's'} to reconcile` : 'Nothing to reconcile'}</b>
+              {fyFlag.fy ? ` in ${fyFlag.fy.label}` : ''}
+              {openOther > 0 && ` · ${openOther} more from ${lastFy && withLines.every(a => otherYearsOf(a.account_id).every(y => y === lastFy)) ? lastFy : 'other years'}, set aside`}
+              {latest && ` · statements up to ${shortDay(latest)}`}
+              {` · ${closedCount ? `${closedCount} of ${withLines.length} closed` : 'none closed yet'}`}
+            </p>
+          )}
+        </>
+      )}
+
+      <div className={`space-y-4 ${selectedBrand ? 'bank-theme' : ''}`} style={selectedBrand ? brandVars(selectedBrand) : undefined}>
+      {activeTab === 'import' ? (
+        <button onClick={() => setTab('queue')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand">
+          <ArrowLeft className="h-4 w-4" /> Back to reconciling
+        </button>
+      ) : (
+        <div className="flex gap-1 overflow-x-auto border-b dark:border-slate-700">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${activeTab === t.id ? 'border-brand text-brand' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+              {t.label}
+              {t.n != null && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">{t.n}</span>}
+            </button>
+          ))}
         </div>
       )}
 
       {activeTab === 'queue' && <ReviewQueue key={focusLineId ?? 'queue'} accountId={accountId} accounts={accounts} focusLineId={focusLineId} from={from} to={to}
+        onDatesChange={(f, t) => { setFrom(f); setTo(t) }} view={view} onViewChange={setView}
         showDone={showDone} onShowDoneChange={setShowDone}
         onOpenChange={onOpenChange} />}
       {activeTab === 'audit' && (
-        <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'} from={from} to={to}
-          onOpenLine={lineId => { setFocusLineId(lineId); setTab('queue') }}
-          onImport={acct => { setAccountId(acct); setTab('import') }} />
+        <>
+          <DateRangeButton from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
+          <AuditPanel accountId={accountId} accounts={accounts} canAct={canAct} isAdmin={role === 'admin'} from={from} to={to}
+            onOpenLine={lineId => { setFocusLineId(lineId); setTab('queue') }}
+            onImport={acct => { setAccountId(acct); setTab('import') }} />
+        </>
       )}
       {activeTab === 'import' && (
         <ImportStatementPanel onImported={acct => { setAccountId(acct); setTab('queue') }} />

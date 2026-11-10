@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { brandFor, brandVars, knownBank, type AccountBrandRow, type BankBrand } from '@/lib/bankBrands'
 import type { AccountOverview } from '@/lib/bankReconciliation'
@@ -31,66 +31,56 @@ export function BankChip({ brand }: { brand: BankBrand }) {
   return <span title={brand.bank}><BankMark brand={brand} size="xs" /></span>
 }
 
+const shortDate = (iso: string | null) => iso
+  ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  : '—'
+
 /**
- * The account at the top of its reconciliation screens, laid out the way a
- * bank's internet banking shows an account: the bank's colours and logo, the
- * account and holder, the balance on the statement.
+ * The chosen account in one slim strip: its colours and mark, the balance on
+ * its statement, how far its statements go and how far it's closed. Takes
+ * the place of the full banner so the lines start higher up the page.
  */
-export function BankBanner({ brand, account, overview, canEdit, onEdit, fyNote }: {
+export function BankStrip({ brand, account, overview, canEdit, onEdit, fyNote }: {
   brand: BankBrand
   account: AccountBrandRow | undefined
   overview: AccountOverview
   canEdit: boolean
   onEdit: () => void
-  /** Lines dated outside the fiscal year being worked in, said plainly. */
   fyNote?: string | null
 }) {
   const balance = overview.statement_balance != null ? Number(overview.statement_balance) : null
-  return (
-    <div className="overflow-hidden rounded-2xl shadow-sm ring-1 ring-black/5" style={brandVars(brand)}>
-      <div className="bank-banner relative px-4 pb-4 pt-4 sm:px-6">
-        <div className="flex flex-wrap items-start gap-3">
-          <BankMark brand={brand} size="lg" />
-          <div className="min-w-0 flex-1">
-            <p className="text-lg font-extrabold leading-tight tracking-tight sm:text-xl">{brand.bank}</p>
-            <p className="mt-0.5 text-xs opacity-80">
-              {[account?.holder_name || 'Kuncho Trading PLC', account?.account_number ? `Account ${account.account_number}` : null, account?.account_name !== brand.bank ? account?.account_name : null]
-                .filter(Boolean).join(' · ')}
-            </p>
-          </div>
-          {canEdit && (
-            <button onClick={onEdit} className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium backdrop-blur hover:bg-white/25"
-              style={{ color: 'inherit' }}>
-              <Palette className="h-3.5 w-3.5" /> {brand.custom ? 'Bank look' : 'Set the bank look'}
-            </button>
-          )}
-        </div>
-        <div className="mt-4 flex flex-wrap items-end gap-x-8 gap-y-3">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wider opacity-75">Statement balance</p>
-            <p className="text-2xl font-bold tabular-nums sm:text-3xl">{balance != null ? formatCurrency(balance) : '—'}</p>
-            {overview.statement_date && <p className="text-[11px] opacity-75">as of {formatDate(overview.statement_date)}</p>}
-          </div>
-          <Fact label="To reconcile" value={overview.open_count ? String(overview.open_count) : 'All done'} />
-          <Fact label="Statements" value={`${formatDate(overview.first_date)} → ${formatDate(overview.last_date)}`} />
-          <Fact label="Closed through" value={overview.closed_through ? formatDate(overview.closed_through) : 'Never closed'} icon />
-        </div>
-        {fyNote && (
-          <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold">
-            <CalendarX2 className="h-3.5 w-3.5" /> {fyNote}
-          </p>
-        )}
-      </div>
-      <div className="bank-banner-stripe h-1.5" />
+  const sub = [account?.account_number ? `Account ${account.account_number}` : null, account?.account_name !== brand.bank ? account?.account_name : null].filter(Boolean).join(' · ')
+  const fact = (label: string, value: React.ReactNode) => (
+    <div className="min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{value}</p>
     </div>
   )
-}
-
-function Fact({ label, value, icon }: { label: string; value: string; icon?: boolean }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[11px] font-medium uppercase tracking-wider opacity-75">{label}</p>
-      <p className="flex items-center gap-1 text-sm font-semibold">{icon && <Lock className="h-3 w-3 opacity-75" />}{value}</p>
+    <div className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800" style={brandVars(brand)}>
+      <div className="bank-banner h-1" />
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <BankMark brand={brand} size="sm" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{brand.bank}</p>
+            {sub && <p className="truncate text-[11px] text-slate-400">{sub}</p>}
+          </div>
+        </div>
+        {fact('Statement balance', <span className="tabular-nums">{balance != null ? formatCurrency(balance) : '—'}</span>)}
+        {fact('Statements', `${shortDate(overview.first_date)} → ${shortDate(overview.last_date)}`)}
+        {fact('Closed through', <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3 text-slate-400" />{overview.closed_through ? shortDate(overview.closed_through) : 'Never closed'}</span>)}
+        {fyNote && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+            <CalendarX2 className="h-3 w-3" /> {fyNote}
+          </span>
+        )}
+        {canEdit && (
+          <button onClick={onEdit} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700">
+            <Palette className="h-3.5 w-3.5" /> {brand.custom ? 'Bank look' : 'Set the bank look'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
