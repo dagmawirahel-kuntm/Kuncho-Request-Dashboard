@@ -68,6 +68,12 @@ export function brandFor(a: BrandSource): BankBrand {
   }
 }
 
+/** The bank's everyday short name, for tight spaces ("CBE", "Dashen"). */
+const SHORT_NAME: Record<string, string> = { cbe: 'CBE', abyssinia: 'Abyssinia', dashen: 'Dashen', awash: 'Awash', zemen: 'Zemen', coop: 'Coop' }
+export function bankShortName(b: BankBrand, accountName: string): string {
+  return SHORT_NAME[b.key] ?? accountName
+}
+
 /** The look for a statement's bank, before it's tied to an account. */
 export function brandForProfile(profileId: string, bankName: string): BankBrand {
   return brandFor({ account_name: knownBank(profileId)?.bank ?? bankName })

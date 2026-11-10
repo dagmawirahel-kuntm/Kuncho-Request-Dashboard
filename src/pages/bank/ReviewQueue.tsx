@@ -1,5 +1,7 @@
-import { brandFor, useAccountBrands } from '@/lib/bankBrands'
-import { BankChip } from '@/components/bank/BankLook'
+import { brandFor, useAccountBrands, type BankBrand } from '@/lib/bankBrands'
+import { BankChip, BankMark } from '@/components/bank/BankLook'
+import { DateRangeButton } from '@/components/bank/DateRangeButton'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useFyFlag } from '@/lib/fiscalFlag'
 import { DateHeading, DirectionTag, SignedAmount } from '@/components/bank/StatementBits'
 import { groupByDay } from '@/lib/statementDates'
@@ -21,9 +23,12 @@ import { PayrollLine } from './PayrollLine'
 import { PayerSelect, RecordExpenseFromLine, RecordSaleFromLine } from './RecordFromLine'
 import { useAccountPayer } from '@/lib/bankPayers'
 import {
-  ChevronDown, ChevronRight, Coins, ExternalLink, Link2, RefreshCw,
-  Repeat, Search, Sparkles, AlertTriangle, Layers, FilePlus2, Users,
+  ArrowLeft, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Coins, ExternalLink, History, Link2, RefreshCw,
+  Repeat, Search, SkipForward, Sparkles, AlertTriangle, Layers, FilePlus2, Users, Wand2,
 } from 'lucide-react'
+
+/** The queue as a list (with the open line beside it on a wide screen), or one line at a time. */
+export type QueueView = 'list' | 'one'
 
 const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 
@@ -35,7 +40,7 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   }
 }
 
-export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '', onOpenChange, showDone: shownDone, onShowDoneChange }: {
+export function ReviewQueue({ accountId, accounts, focusLineId = null, from = '', to = '', onOpenChange, showDone: shownDone, onShowDoneChange, onDatesChange, view = 'list', onViewChange }: {
   accountId: string | null
   accounts: { id: string; account_name: string }[]
   focusLineId?: string | null
@@ -47,6 +52,10 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   /** Value dates to show, yyyy-mm-dd; blank for no limit. */
   from?: string
   to?: string
+  /** Lets the toolbar set the value dates (the page keeps them in its address). */
+  onDatesChange?: (from: string, to: string) => void
+  view?: QueueView
+  onViewChange?: (v: QueueView) => void
 }) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -62,7 +71,9 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   const { data: brandRows } = useAccountBrands()
   // Lines dated in another fiscal year are flagged, and can be set aside.
   const fyFlag = useFyFlag()
-  const [hideOtherFy, setHideOtherFy] = useState(false)
+  // Lines from another fiscal year belong to that year's books: set aside
+  // unless asked for, so this year's work isn't buried under them.
+  const [hideOtherFy, setHideOtherFy] = useState(true)
 
   const { data: lines = [], isLoading } = useQuery({
     queryKey: ['bank-lines', 'queue', accountId, showDone, from, to, showDone ? focusLineId : null],
@@ -147,100 +158,250 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 
   const totalOut = shown.filter(l => l.direction === 'debit').reduce((s, l) => s + Number(l.amount), 0)
   const totalIn = shown.filter(l => l.direction === 'credit').reduce((s, l) => s + Number(l.amount), 0)
+  // Wide screens show the open line beside the list, so nothing jumps.
+  const wide = useMediaQuery('(min-width: 1024px)')
+  const phone = !useMediaQuery('(min-width: 640px)')
+  const oneAtATime = view === 'one' && !showDone
+  const split = wide && !oneAtATime
+  const openLine = openId ? lines.find(l => l.line_id === openId) ?? null : null
+  const brandOfLine = (l: BankLine) => brandFor(brandRows?.get(l.account_id) ?? { account_name: accountName.get(l.account_id) ?? '' })
+  const otherBanks = [...new Set(otherFy.map(l => accountName.get(l.account_id) ?? ''))].filter(Boolean)
+  const close = () => { setOpenId(null); invalidateAll(qc) }
+  // Beside the list, a settled line makes way for the next one.
+  const settleAndNext = (l: BankLine) => () => {
+    const i = shown.findIndex(x => x.line_id === l.line_id)
+    setOpenId((shown[i + 1] ?? shown[i - 1])?.line_id ?? null)
+    invalidateAll(qc)
+  }
+  const detailFor = (l: BankLine, variant: 'inline' | 'panel') => showDone
+    ? <ReconciledDetail key={l.line_id} line={l} onDone={close} variant={variant} brand={brandOfLine(l)} />
+    : <LineWorkbench key={l.line_id} line={l} accounts={accounts} onDone={variant === 'panel' ? settleAndNext(l) : close} variant={variant} brand={brandOfLine(l)} />
+  const seg = (on: boolean) => `px-3 py-1.5 ${on ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`
+  const plain = 'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs'
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-md border text-xs dark:border-slate-600">
+        <div className="flex overflow-hidden rounded-md border text-xs dark:border-slate-600">
           {(['all', 'debit', 'credit'] as const).map(d => (
-            <button key={d} onClick={() => setDirection(d)}
-              className={`px-3 py-1.5 ${direction === d ? 'bg-brand text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
-              {d === 'all' ? 'All' : d === 'debit' ? <><b>DR</b> · Money out</> : <><b>CR</b> · Money in</>}
+            <button key={d} onClick={() => setDirection(d)} title={d === 'debit' ? 'DR · money out' : d === 'credit' ? 'CR · money in' : undefined} className={seg(direction === d)}>
+              {d === 'all' ? 'All' : d === 'debit' ? 'Out' : 'In'}
             </button>
           ))}
         </div>
-        <div className="relative">
+        <div className="relative min-w-[10rem] flex-1 sm:flex-none">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Narration, reference or amount"
-            className="w-56 rounded-md border py-1.5 pl-7 pr-2 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+            className="w-full rounded-md border py-1.5 pl-7 pr-2 text-base outline-none focus:ring-2 focus:ring-brand sm:w-56 sm:text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-          <input type="checkbox" checked={showDone} onChange={e => { setShowDone(e.target.checked); setOpenId(null) }} /> Show reconciled
-        </label>
-        <button onClick={runAuto} disabled={running !== null}
-          className="ml-auto flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
-          <RefreshCw className={`h-3.5 w-3.5 ${running !== null ? 'animate-spin' : ''}`} /> {running ? `Matching… ${running} lines checked` : 'Run automatic matching'}
+        {onDatesChange && <DateRangeButton from={from} to={to} onChange={onDatesChange} />}
+        <button onClick={() => { setShowDone(!showDone); setOpenId(null) }} aria-pressed={showDone}
+          className={`${plain} ${showDone ? 'border-brand bg-brand/5 font-medium text-slate-800 dark:text-slate-100' : 'text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+          <CheckCheck className="h-3.5 w-3.5" /> Reconciled
         </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {onViewChange && !showDone && (
+            <div className="flex overflow-hidden rounded-md border text-xs dark:border-slate-600">
+              <button onClick={() => onViewChange('list')} className={seg(view === 'list')}>List</button>
+              <button onClick={() => onViewChange('one')} className={seg(view === 'one')}>One at a time</button>
+            </div>
+          )}
+          <button onClick={runAuto} disabled={running !== null}
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            {running !== null ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+            {running !== null ? `Matching…${running ? ` ${running} checked` : ''}` : 'Match automatically'}
+          </button>
+        </div>
       </div>
 
-      {(otherFy.length > 0 || hideOtherFy) && fyFlag.fy && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/40 dark:bg-amber-900/10 dark:text-amber-200">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+      {otherFy.length > 0 && fyFlag.fy && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-100/70 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+          <History className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           <span className="min-w-0 flex-1">
-            {otherFy.length} line{otherFy.length === 1 ? ' is' : 's are'} dated outside {fyFlag.fy.label}:{' '}
-            {otherYears.map(([y, v]) => `${v.n} from ${y} (${formatCurrency(v.amount)})`).join(', ')}.
-            {' '}They belong to that year's books{hideOtherFy ? ', and are set aside here.' : ', and are counted in this list.'}
+            {hideOtherFy
+              ? <>{otherFy.length} open line{otherFy.length === 1 ? '' : 's'} from {otherYears.map(([y]) => y).join(', ')}{otherBanks.length && !accountId ? ` (${otherBanks.join(', ')})` : ''} {otherFy.length === 1 ? 'is' : 'are'} set aside: they belong to that year's books.</>
+              : <>Showing {otherYears.map(([y, v]) => `${v.n} line${v.n === 1 ? '' : 's'} from ${y} (${formatCurrency(v.amount)})`).join(', ')} too. They belong to that year's books.</>}
           </span>
-          <button onClick={() => setHideOtherFy(v => !v)} className="shrink-0 rounded-md border border-amber-300 bg-white px-2 py-1 font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-transparent dark:text-amber-200">
-            {hideOtherFy ? 'Show them' : `Show only ${fyFlag.fy.label}`}
+          <button onClick={() => setHideOtherFy(v => !v)} className="shrink-0 font-medium text-brand hover:underline">
+            {hideOtherFy ? 'Show them' : 'Set them aside'}
           </button>
         </div>
       )}
 
-      {!showDone && shown.length > 0 && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {shown.length} line{shown.length === 1 ? '' : 's'} to reconcile · DR (out) <SignedAmount direction="debit" amount={totalOut} /> · CR (in) <SignedAmount direction="credit" amount={totalIn} />.
-          Open a line to see what it probably is.
-        </p>
-      )}
-
-      <div className="overflow-hidden rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
-        {isLoading ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p>
-        : shown.length === 0 ? (
-          <p className="py-10 text-center text-sm text-slate-400">
-            {showDone ? 'No reconciled lines yet.' : 'Every line is reconciled.'}{(from || to) && ' (between these dates)'}
-          </p>
-        ) : (
-          <div>
-            {groupByDay(shown, l => l.value_date, l => ({ out: l.direction === 'debit' ? Number(l.amount) : 0, in: l.direction === 'credit' ? Number(l.amount) : 0 })).map(g => (
-            <div key={g.date}>
-            <DateHeading date={g.date} out={g.out} inn={g.in} count={g.lines.length} flag={fyFlag} />
-            <div className="divide-y dark:divide-slate-700">
-            {g.lines.map(l => (
-              <div key={l.line_id} id={`bank-line-${l.line_id}`} className="scroll-mt-20 transition-colors duration-700">
-                <button onClick={() => setOpenId(openId === l.line_id ? null : l.line_id)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                  {openId === l.line_id ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
-                  <DirectionTag direction={l.direction} />
-                  {!accountId && <BankChip brand={brandFor(brandRows?.get(l.account_id) ?? { account_name: accountName.get(l.account_id) ?? '' })} />}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>
-                    <span className="block truncate text-[11px] text-slate-400">
-                      {l.transaction_type && l.narration ? `${l.transaction_type} · ` : ''}{l.reference ?? ''}{!accountId ? ` · ${accountName.get(l.account_id) ?? ''}` : ''}
+      {oneAtATime ? (
+        <OneAtATime lines={shown} isLoading={isLoading} startId={openId} brandOf={brandOfLine} accounts={accounts}
+          onShow={setOpenId} onDone={() => invalidateAll(qc)} />
+      ) : (
+      <div className={split ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]' : ''}>
+        <div className="min-w-0 overflow-hidden rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
+          {!isLoading && shown.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-4 py-2 text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">{shown.length} line{shown.length === 1 ? '' : 's'} {showDone ? 'reconciled' : 'to reconcile'}</span>
+              {totalOut > 0 && <span>DR <SignedAmount direction="debit" amount={totalOut} /></span>}
+              {totalIn > 0 && <span>CR <SignedAmount direction="credit" amount={totalIn} /></span>}
+            </div>
+          )}
+          {isLoading ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p>
+          : shown.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-400">
+              {showDone ? 'No reconciled lines yet.' : 'Every line is reconciled.'}{(from || to) && ' (between these dates)'}
+            </p>
+          ) : (
+            <div className={split ? 'max-h-[calc(100vh-13rem)] overflow-y-auto' : ''}>
+              {groupByDay(shown, l => l.value_date, l => ({ out: l.direction === 'debit' ? Number(l.amount) : 0, in: l.direction === 'credit' ? Number(l.amount) : 0 })).map(g => (
+              <div key={g.date}>
+              <DateHeading date={g.date} out={g.out} inn={g.in} count={g.lines.length} flag={fyFlag} tight={split || phone} />
+              <div className="divide-y dark:divide-slate-700">
+              {g.lines.map(l => {
+                const isOpen = openId === l.line_id
+                return (
+                <div key={l.line_id} id={`bank-line-${l.line_id}`} className="scroll-mt-20 transition-colors duration-700">
+                  <button onClick={() => setOpenId(isOpen && !split ? null : l.line_id)} aria-current={isOpen && split ? 'true' : undefined}
+                    className={`flex w-full items-center gap-3 px-4 py-2 text-left ${isOpen && split ? 'bg-brand/5 ring-1 ring-inset ring-brand' : 'hover:bg-slate-50 dark:hover:bg-slate-700/40'}`}>
+                    {!split && (isOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />)}
+                    <DirectionTag direction={l.direction} size="xs" />
+                    {!accountId && <BankChip brand={brandOfLine(l)} />}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-slate-800 dark:text-slate-100">{l.narration || l.transaction_type || '—'}</span>
+                      <span className="block truncate text-[11px] text-slate-400">
+                        {[l.transaction_type && l.narration ? l.transaction_type : null, l.reference].filter(Boolean).join(' · ')}
+                      </span>
                     </span>
-                  </span>
-                  {showDone && (
-                    <span className="hidden max-w-[240px] truncate text-xs text-slate-500 sm:block dark:text-slate-400">
-                      {KIND_LABEL[l.reconciled_as!]}: {describeReconciled(l).map(d => d.text).join(', ')}
-                    </span>
-                  )}
-                  <SignedAmount direction={l.direction} amount={Number(l.amount)} className="w-32 shrink-0 text-right text-sm font-semibold" />
-                </button>
-                {openId === l.line_id && (
-                  showDone
-                    ? <ReconciledDetail line={l} onDone={() => { setOpenId(null); invalidateAll(qc) }} />
-                    : <LineWorkbench line={l} accounts={accounts} onDone={() => { setOpenId(null); invalidateAll(qc) }} />
+                    {showDone && !split && (
+                      <span className="hidden max-w-[240px] truncate text-xs text-slate-500 sm:block dark:text-slate-400">
+                        {KIND_LABEL[l.reconciled_as!]}: {describeReconciled(l).map(d => d.text).join(', ')}
+                      </span>
+                    )}
+                    <SignedAmount direction={l.direction} amount={Number(l.amount)} className={`${split ? 'whitespace-nowrap' : 'w-32'} shrink-0 text-right text-sm font-semibold`} />
+                  </button>
+                  {isOpen && !split && detailFor(l, 'inline')}
+                </div>
+                )
+              })}
+              </div>
+              </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {split && (
+          <div className="min-w-0 rounded-xl border bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto dark:border-slate-700 dark:bg-slate-800">
+            {openLine ? detailFor(openLine, 'panel') : (
+              <div className="py-12 text-center text-sm text-slate-400">
+                <p>Pick a line to see what it probably is.</p>
+                {shown.length > 0 && (
+                  <button onClick={() => setOpenId(shown[0].line_id)} className="mt-2 font-medium text-brand hover:underline">
+                    Start with the {showDone ? 'latest' : 'oldest'}
+                  </button>
                 )}
               </div>
-            ))}
-            </div>
-            </div>
-            ))}
+            )}
           </div>
         )}
       </div>
+      )}
 
       {!showDone && <PaidWithoutBankLine accountId={accountId} />}
+    </div>
+  )
+}
+
+/** The line being worked on, as a header: its bank, date, narration and amount. */
+function LineHeader({ line, brand }: { line: BankLine; brand?: BankBrand }) {
+  return (
+    <div className="flex items-start gap-3">
+      {brand && <BankMark brand={brand} size="md" />}
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-slate-400">{[brand?.bank, formatDate(line.value_date), line.transaction_type].filter(Boolean).join(' · ')}</p>
+        <p className="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">{line.narration || line.transaction_type || '—'}</p>
+        {line.reference && <p className="truncate text-[11px] text-slate-400">{line.reference}</p>}
+      </div>
+      <div className="shrink-0 text-right">
+        <DirectionTag direction={line.direction} size="xs" />
+        <SignedAmount direction={line.direction} amount={Number(line.amount)} className="mt-0.5 block text-lg font-bold" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * One line at a time: the line and what it probably is, Previous and Skip,
+ * and the next few below. A settled line makes way for the next; the bar
+ * shows how far this sitting has got.
+ */
+function OneAtATime({ lines, isLoading, startId, brandOf, accounts, onShow, onDone }: {
+  lines: BankLine[]
+  isLoading: boolean
+  startId: string | null
+  brandOf: (l: BankLine) => BankBrand
+  accounts: { id: string; account_name: string }[]
+  onShow: (lineId: string | null) => void
+  onDone: () => void
+}) {
+  const [curId, setCurId] = useState<string | null>(startId)
+  const [lastIdx, setLastIdx] = useState(0)
+  const [done, setDone] = useState(0)
+  const found = curId ? lines.findIndex(l => l.line_id === curId) : -1
+  // A line just settled drops out of the list: the one after it takes its place.
+  const idx = lines.length === 0 ? -1 : found >= 0 ? found : Math.min(lastIdx, lines.length - 1)
+  const cur = idx >= 0 ? lines[idx] : null
+  const curKey = cur?.line_id ?? null
+  useEffect(() => { onShow(curKey) }, [curKey, onShow])
+  const go = (i: number) => {
+    const n = lines.length
+    if (!n) return
+    const j = ((i % n) + n) % n
+    setLastIdx(j); setCurId(lines[j].line_id)
+  }
+  const btn = 'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'
+  const day = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+
+  if (isLoading) return <p className="py-10 text-center text-sm text-slate-400">Loading…</p>
+  if (!cur) {
+    return (
+      <div className="rounded-xl border bg-white py-12 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+        {done ? `All done: ${done} line${done === 1 ? '' : 's'} reconciled in this sitting.` : 'Every line is reconciled.'}
+      </div>
+    )
+  }
+  const total = done + lines.length
+  const upNext = lines.slice(idx + 1, idx + 4)
+  return (
+    <div className="mx-auto max-w-3xl space-y-3">
+      <div>
+        <div className="flex justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <span>Line {idx + 1} of {lines.length}{done ? ` · ${done} done in this sitting` : ''}</span>
+          <span>{lines.length} to go</span>
+        </div>
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+          <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+        </div>
+      </div>
+      <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5 dark:border-slate-700 dark:bg-slate-800">
+        <LineWorkbench key={cur.line_id} line={cur} accounts={accounts} variant="panel" brand={brandOf(cur)}
+          onDone={() => { setLastIdx(idx); setDone(d => d + 1); onDone() }} />
+        <div className="mt-4 flex items-center gap-2 border-t pt-3 dark:border-slate-700">
+          <button onClick={() => go(idx - 1)} disabled={lines.length < 2} className={btn}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>
+          <button onClick={() => go(idx + 1)} disabled={lines.length < 2} className={`${btn} ml-auto`}>Skip for now <SkipForward className="h-3.5 w-3.5" /></button>
+        </div>
+      </div>
+      {upNext.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">Up next</p>
+          <ul className="divide-y overflow-hidden rounded-xl border bg-white text-sm dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-800">
+            {upNext.map((l, k) => (
+              <li key={l.line_id}>
+                <button onClick={() => go(idx + 1 + k)} className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                  <span className="w-24 shrink-0 text-[11px] text-slate-400">{day(l.value_date)}</span>
+                  <BankChip brand={brandOf(l)} />
+                  <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{l.narration || l.transaction_type || '—'}</span>
+                  <SignedAmount direction={l.direction} amount={Number(l.amount)} className="shrink-0 text-sm font-semibold" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
@@ -248,7 +409,19 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 // ── One line, being reconciled ──────────────────────────────────────────
 type Tab = 'suggest' | 'several' | 'payroll' | 'find' | 'record' | 'explain' | 'transfer'
 
-function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: { id: string; account_name: string }[]; onDone: () => void }) {
+/**
+ * Settling one line: what it probably is first, each with Match; then, if
+ * it's none of those, the other ways (several payments, salaries, find,
+ * record, explain, between accounts) as one choice each. Inline under its
+ * row on a narrow screen; beside the list, or on its own, with a header.
+ */
+function LineWorkbench({ line, accounts, onDone, variant = 'inline', brand }: {
+  line: BankLine
+  accounts: { id: string; account_name: string }[]
+  onDone: () => void
+  variant?: 'inline' | 'panel'
+  brand?: BankBrand
+}) {
   const { toast } = useToast()
   const [tab, setTab] = useState<Tab>('suggest')
   const [busy, setBusy] = useState(false)
@@ -296,36 +469,28 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
     onDone()
   }
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'suggest', label: `Suggestions${suggestions.length ? ` (${suggestions.length})` : ''}`, icon: <Sparkles className="h-3.5 w-3.5" /> },
-    ...(line.direction === 'debit' ? [{ id: 'several' as const, label: `Several payments${combos.length ? ` (${combos.length})` : ''}`, icon: <Layers className="h-3.5 w-3.5" /> }] : []),
-    ...(line.direction === 'debit' ? [{ id: 'payroll' as const, label: 'Salaries', icon: <Users className="h-3.5 w-3.5" /> }] : []),
-    { id: 'find', label: 'Find', icon: <Search className="h-3.5 w-3.5" /> },
-    { id: 'record', label: 'Record it', icon: <FilePlus2 className="h-3.5 w-3.5" /> },
-    { id: 'explain', label: 'Explain', icon: <Coins className="h-3.5 w-3.5" /> },
-    { id: 'transfer', label: 'Between accounts', icon: <Repeat className="h-3.5 w-3.5" /> },
+  const debit = line.direction === 'debit'
+  const ways: { id: Exclude<Tab, 'suggest'>; label: string; icon: React.ReactNode; n?: number }[] = [
+    ...(debit ? [{ id: 'several' as const, label: 'Several payments', icon: <Layers className="h-3.5 w-3.5 shrink-0" />, n: combos.length || undefined }] : []),
+    ...(debit ? [{ id: 'payroll' as const, label: 'Salaries', icon: <Users className="h-3.5 w-3.5 shrink-0" /> }] : []),
+    { id: 'find', label: 'Find a record', icon: <Search className="h-3.5 w-3.5 shrink-0" /> },
+    { id: 'record', label: debit ? 'Record the expense' : 'Record the sale', icon: <FilePlus2 className="h-3.5 w-3.5 shrink-0" /> },
+    { id: 'explain', label: 'Explain it (fee, tax, loan…)', icon: <Coins className="h-3.5 w-3.5 shrink-0" /> },
+    { id: 'transfer', label: 'Between our accounts', icon: <Repeat className="h-3.5 w-3.5 shrink-0" /> },
   ]
+  const way = ways.find(w => w.id === tab)
+  const payerRow = debit && (
+    <div title="Used when the expense is approved but nobody is recorded as paying it. It can't be whoever approved it.">
+      <PayerSelect value={payer} onChange={setPayer} accountPayer={accountPayer} label="Paid by" />
+    </div>
+  )
 
   return (
-    <div className="space-y-3 border-t bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
-      <div className="flex flex-wrap gap-1">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium ${tab === t.id ? 'bg-white text-brand shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}>
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
-
-      {line.direction === 'debit' && (tab === 'suggest' || tab === 'find') && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-dashed bg-white/60 px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800/40">
-          <PayerSelect value={payer} onChange={setPayer} accountPayer={accountPayer} label="Who made this payment" />
-          <span className="text-[11px] text-slate-400">
-            Used when the expense is approved but nobody is recorded as paying it. It can't be whoever approved it.
-          </span>
-        </div>
-      )}
-      {tab === 'suggest' && combos.length > 0 && (
+    <div className={variant === 'inline' ? 'space-y-3 border-t bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40' : 'space-y-4'}>
+      {variant === 'panel' && <LineHeader line={line} brand={brand} />}
+      {tab === 'suggest' ? (
+        <>
+          {combos.length > 0 && (
         <button onClick={() => setTab('several')}
           className="flex w-full items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-200">
           <Layers className="h-3.5 w-3.5 shrink-0" />
@@ -336,21 +501,19 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
           <span className="shrink-0 font-semibold">Review →</span>
         </button>
       )}
-      {tab === 'suggest' && (
-        isLoading ? <p className="text-xs text-slate-400">Looking…</p>
-        : suggestions.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Nothing on record looks like this line. <button onClick={() => setTab('find')} className="text-brand hover:underline">Search</button>,
-            {' '}<button onClick={() => setTab('record')} className="text-brand hover:underline">{line.direction === 'debit' ? 'record the expense' : 'record the sale'}</button>,
-            {' '}<button onClick={() => setTab('explain')} className="text-brand hover:underline">explain it</button> (bank charge, tax, loan…),
-            or mark it as a <button onClick={() => setTab('transfer')} className="text-brand hover:underline">transfer between your accounts</button>.
-          </p>
-        ) : (
+          <div>
+            <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
+              <Sparkles className="h-3.5 w-3.5 text-brand" /> What it probably is
+            </p>
+            {isLoading ? <p className="text-xs text-slate-400">Looking…</p>
+            : suggestions.length === 0 ? <p className="text-xs text-slate-500 dark:text-slate-400">Nothing on record looks like this line.</p>
+            : (
           <div className="space-y-1.5">
             {suggestions.map(s => (
-              <div key={`${s.kind}-${s.target_id}`} className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                <ScoreDot score={s.score} />
-                <div className="min-w-0 flex-1">
+              <div key={`${s.kind}-${s.target_id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                <Confidence score={s.score} />
+                {/* On a phone the amount and Match drop under the name, so the name stays readable. */}
+                <div className="min-w-[12rem] flex-1">
                   <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-100">
                     <span className="mr-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">{KIND_LABEL[s.kind]}</span>
                     {s.label}
@@ -359,7 +522,7 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
                     {s.reason}{s.detail ? ` · ${s.detail}` : ''}{s.target_date ? ` · ${formatDate(s.target_date)}` : ''}
                   </p>
                 </div>
-                {s.amount != null && <span className="text-xs tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(Number(s.amount))}</span>}
+                {s.amount != null && <span className="ml-auto text-xs tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(Number(s.amount))}</span>}
                 {s.kind === 'purchase_order' ? (
                   <Link to={`/sourcing/${s.target_id}`} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">
                     Open order <ExternalLink className="h-3 w-3" />
@@ -388,9 +551,32 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
               </div>
             ))}
           </div>
-        )
-      )}
-
+            )}
+          </div>
+          {payerRow}
+          <div>
+            <p className="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">{suggestions.length ? 'Not one of these?' : 'What is it, then?'}</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {ways.map(w => (
+                <button key={w.id} onClick={() => setTab(w.id)}
+                  className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-left text-xs text-slate-600 hover:border-brand hover:text-brand dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {w.icon}<span className="min-w-0 flex-1 leading-tight">{w.label}</span>
+                  {w.n != null && <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{w.n}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button onClick={() => setTab('suggest')} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand">
+              <ArrowLeft className="h-3.5 w-3.5" /> What it probably is
+            </button>
+            <span className="text-slate-300 dark:text-slate-600">/</span>
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-200">{way?.icon}{way?.label}</span>
+          </div>
+          {tab === 'find' && payerRow}
       {tab === 'several' && <SeveralPayments line={line} onDone={onDone} />}
       {tab === 'payroll' && <PayrollLine key={payrollRun ?? 'any'} line={line} accounts={accounts} initialRunId={payrollRun} onDone={onDone} />}
       {tab === 'find' && <FindRecord line={line} busy={busy} onPick={apply} />}
@@ -399,6 +585,8 @@ function LineWorkbench({ line, accounts, onDone }: { line: BankLine; accounts: {
         : <RecordSaleFromLine line={line} onDone={onDone} />)}
       {tab === 'explain' && <ExplainLine line={line} onDone={onDone} />}
       {tab === 'transfer' && <TransferLine line={line} accounts={accounts} onDone={onDone} />}
+        </>
+      )}
     </div>
   )
 }
@@ -408,10 +596,13 @@ function notApproved(s: Suggestion) {
   return /isn't approved/.test(s.reason)
 }
 
-function ScoreDot({ score }: { score: number }) {
-  const cls = score >= 95 ? 'bg-emerald-500' : score >= 60 ? 'bg-sky-500' : score >= 40 ? 'bg-amber-400' : 'bg-slate-300'
-  const label = score >= 95 ? 'Almost certain' : score >= 60 ? 'Likely' : score >= 40 ? 'Possible' : 'Weak'
-  return <span title={label} className={`h-2.5 w-2.5 shrink-0 rounded-full ${cls}`} />
+/** How sure the match is, in words. */
+function Confidence({ score }: { score: number }) {
+  const [label, cls] = score >= 95 ? ['Almost certain', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300']
+    : score >= 60 ? ['Likely', 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300']
+    : score >= 40 ? ['Possible', 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300']
+    : ['Weak', 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300']
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{label}</span>
 }
 
 // Search any open record of the right direction.
@@ -625,11 +816,12 @@ function TransferLine({ line, accounts, onDone }: { line: BankLine; accounts: { 
   )
 }
 
-function ReconciledDetail({ line, onDone }: { line: BankLine; onDone: () => void }) {
+function ReconciledDetail({ line, onDone, variant = 'inline', brand }: { line: BankLine; onDone: () => void; variant?: 'inline' | 'panel'; brand?: BankBrand }) {
   const diff = line.linked_amount != null ? Number(line.amount) - Number(line.linked_amount) : null
 
   return (
-    <div className="space-y-2 border-t bg-slate-50 px-4 py-3 text-xs dark:border-slate-700 dark:bg-slate-900/40">
+    <div className={variant === 'inline' ? 'space-y-2 border-t bg-slate-50 px-4 py-3 text-xs dark:border-slate-700 dark:bg-slate-900/40' : 'space-y-3 text-xs'}>
+      {variant === 'panel' && <LineHeader line={line} brand={brand} />}
       <p className="text-slate-600 dark:text-slate-300">
         <span className="font-medium">{KIND_LABEL[line.reconciled_as!]}:</span>{' '}
         {describeReconciled(line).map((d, i) => (
@@ -666,11 +858,14 @@ function PaidWithoutBankLine({ accountId }: { accountId: string | null }) {
   if (rows.length === 0) return null
   const total = rows.reduce((s, r) => s + Number(r.amount), 0)
   return (
-    <div className="overflow-hidden rounded-xl border bg-white dark:border-slate-700 dark:bg-slate-800">
-      <button onClick={() => setOpen(v => !v)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
+    <div className={`overflow-hidden rounded-xl border bg-white dark:bg-slate-800 ${open ? 'dark:border-slate-700' : 'border-dashed dark:border-slate-600'}`}>
+      <button onClick={() => setOpen(v => !v)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs">
         {open ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
-        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Paid in the app, not seen on the bank</span>
-        <span className="text-xs text-slate-500 dark:text-slate-400">{rows.length} · {formatCurrency(total)}</span>
+        <span className="min-w-0 flex-1 text-slate-600 dark:text-slate-300">
+          <b className="font-semibold text-slate-800 dark:text-slate-100">{rows.length} payment{rows.length === 1 ? '' : 's'}</b> marked paid by bank {rows.length === 1 ? "isn't" : "aren't"} on any statement yet
+          <span className="text-slate-400"> · {formatCurrency(total)}</span>
+        </span>
+        <span className="shrink-0 font-medium text-brand">{open ? 'Hide' : 'Review'}</span>
       </button>
       {open && (
         <div className="divide-y border-t dark:divide-slate-700 dark:border-slate-700">

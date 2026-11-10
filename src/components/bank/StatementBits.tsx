@@ -41,7 +41,7 @@ export function SignedAmount({ direction, amount, className = '' }: { direction:
  * which date it is (the value date), a flag if it's in another fiscal year,
  * and what moved that day.
  */
-export function DateHeading({ date, out, inn, count, flag, label = 'Value date', compact = false }: {
+export function DateHeading({ date, out, inn, count, flag, label = 'Value date', compact = false, tight = false }: {
   date: string
   out: number
   inn: number
@@ -49,20 +49,22 @@ export function DateHeading({ date, out, inn, count, flag, label = 'Value date',
   flag?: FyFlag
   label?: string
   compact?: boolean
+  /** For a narrow column: the day and the count only, on one line. */
+  tight?: boolean
 }) {
   const d = localDate(date)
-  const weekday = d.toLocaleDateString('en-GB', { weekday: compact ? 'short' : 'long' })
-  const gc = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const weekday = d.toLocaleDateString('en-GB', { weekday: compact || tight ? 'short' : 'long' })
+  const gc = d.toLocaleDateString('en-GB', { day: 'numeric', month: tight ? 'short' : 'long', year: 'numeric' })
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-slate-200 bg-slate-100/80 px-4 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900/70">
       <span className="font-semibold text-slate-800 dark:text-slate-100">{weekday}, {gc}</span>
       <span className="text-slate-500 dark:text-slate-400">{formatEthiopian(d)} E.C.</span>
-      <span className="text-[10px] uppercase tracking-wider text-slate-400">{label}</span>
+      {!tight && <span className="text-[10px] uppercase tracking-wider text-slate-400">{label}</span>}
       {flag && <FyBadge date={date} flag={flag} />}
       <span className="ml-auto flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
         <span>{count} line{count === 1 ? '' : 's'}</span>
-        {out > 0 && <span>DR <SignedAmount direction="debit" amount={out} className="font-semibold" /></span>}
-        {inn > 0 && <span>CR <SignedAmount direction="credit" amount={inn} className="font-semibold" /></span>}
+        {!tight && out > 0 && <span>DR <SignedAmount direction="debit" amount={out} className="font-semibold" /></span>}
+        {!tight && inn > 0 && <span>CR <SignedAmount direction="credit" amount={inn} className="font-semibold" /></span>}
       </span>
     </div>
   )
