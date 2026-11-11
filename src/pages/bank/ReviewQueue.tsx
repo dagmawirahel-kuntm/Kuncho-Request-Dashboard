@@ -149,13 +149,17 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   async function runAuto() {
     setRunning(0)
     let n: number
+    let stopped: boolean
     try {
-      n = (await autoMatchBankLines({ accountId, onProgress: p => setRunning(p.tried) })).matched
+      const r = await autoMatchBankLines({ accountId, onProgress: p => setRunning(p.tried) })
+      n = r.matched
+      stopped = r.stopped
     } catch (e) {
       setRunning(null); toast((e as Error).message, 'error'); invalidateAll(qc); return
     }
     setRunning(null)
-    toast(n > 0 ? `Matched ${n} line${n === 1 ? '' : 's'} automatically` : 'Nothing more could be matched automatically — the rest need a look', n > 0 ? 'success' : 'info')
+    if (stopped) toast(`Matched ${n} line${n === 1 ? '' : 's'} so far. Stopped early because the system is busy; press Match automatically again in a minute to carry on.`, 'info')
+    else toast(n > 0 ? `Matched ${n} line${n === 1 ? '' : 's'} automatically` : 'Nothing more could be matched automatically — the rest need a look', n > 0 ? 'success' : 'info')
     invalidateAll(qc)
   }
 
