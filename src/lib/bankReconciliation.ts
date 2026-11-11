@@ -174,11 +174,55 @@ export function isClearingParty(name: string | null | undefined): boolean {
   return /(national bank of ethiopia|\bnbe\b|e[ -]?money|depository|telebirr|inter ?bank|\bcpo|rtgs|settlement|\bswitch\b|payable account|payable$)/i.test(name ?? '')
 }
 
-/** The vendor, staff member or client a line's other party is on record as (bank_line_party, 506). */
+export type PartyKind = 'vendor' | 'staff' | 'client'
+
+/** The vendor, staff member or client a line's other party is (bank_line_party, 506/512). */
 export interface LineParty {
-  kind: 'vendor' | 'staff' | 'client'
+  kind: PartyKind
   id: string
   name: string
-  /** Matched on their bank account, or on the name alone. */
-  how: 'account' | 'name'
+  /**
+   * How we know: a person linked the account to them, they were paid there
+   * before, it is the account on their record, or only the name agrees.
+   */
+  how: 'linked' | 'paid' | 'account' | 'name'
+}
+
+/** Whose an account is, as bank_account_owners() (512) says. */
+export interface AccountOwner {
+  kind: PartyKind
+  id: string
+  name: string
+  how: 'linked' | 'paid' | 'record'
+  /** For 'paid': how many lines paid them there. */
+  lines: number | null
+}
+
+/** One account on the bank lines and whose it is (bank_payees, 512). */
+export interface Payee {
+  account_number: string
+  bank_name: string
+  names: string[]
+  lines_out: number
+  amount_out: number
+  lines_in: number
+  amount_in: number
+  open_lines: number
+  last_date: string
+  owners: AccountOwner[]
+  /** Nobody owns the account, but this record's name is the bank's name for it. */
+  by_name: { kind: PartyKind; id: string; name: string } | null
+}
+
+export const PARTY_LABEL: Record<PartyKind, string> = { vendor: 'Vendor', staff: 'Staff', client: 'Client' }
+export const PARTY_PATH: Record<PartyKind, string> = { vendor: '/vendors/', staff: '/staff/', client: '/clients/' }
+
+/** How we know whose an account is, in a few words. */
+export function ownerHowLabel(how: LineParty['how'] | AccountOwner['how'], lines?: number | null): string {
+  switch (how) {
+    case 'linked': return 'linked by you'
+    case 'paid': return lines ? `paid there ${lines === 1 ? 'once' : `${lines} times`}` : 'paid there before'
+    case 'account': case 'record': return 'their account on record'
+    case 'name': return 'same name; account not linked'
+  }
 }
