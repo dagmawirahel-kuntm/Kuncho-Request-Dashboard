@@ -8,9 +8,10 @@ import { Pill } from '@/components/record/Record'
 import { usePayableDrafts } from '@/lib/labourPayRequests'
 import { useMyWorkers } from '@/lib/workerDetails'
 import { useDayPeople, useDaySettings } from '@/lib/labourDay'
+import { useNotificationPrefs } from '@/lib/notifications'
 import { LabourFlagsPanel } from '@/components/labour/LabourFlagsPanel'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { CalendarCheck, CalendarDays, CalendarPlus, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Sheet, Wallet, Inbox } from 'lucide-react'
+import { BellRing, CalendarCheck, CalendarDays, CalendarPlus, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Sheet, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -21,6 +22,8 @@ export default function LabourHomePage() {
   const { sites, managedIds, everywhere } = useLabourSites()
   const approver = hasRole(...APPROVER_ROLES)
   const { data: otSettings } = useOvertimeSettings()
+  // Reminders reach a phone only through Telegram; most people haven't linked it (514).
+  const { data: prefs } = useNotificationPrefs()
   const finance = role === 'finance'
   const siteIds = new Set(sites.map(s => s.id))
   const [tab, setTab] = useState<RequestStage>('active')
@@ -144,6 +147,9 @@ export default function LabourHomePage() {
     .filter(r => !needle || `${r.role_needed} ${r.projects?.project_name ?? ''} ${r.scope_of_work ?? ''}`.toLowerCase().includes(needle))
   const count = (s: RequestStage) => mine.filter(r => stageOf(r) === s).length
 
+  // Said as who is waiting and for how much, not as a count of sheets.
+  const waitingWorkers = toRequest.reduce((n, d) => n + Number(d.workers ?? 0), 0)
+  const waitingPay = toRequest.reduce((n, d) => n + Number(d.amount ?? 0), 0)
   const todo: { to: string; label: string; n: number; tone: string }[] = [
     ...(toApprove.length ? [{ to: '#waiting', label: 'Requests to approve', n: toApprove.length, tone: 'bg-amber-500' }] : []),
     ...(dayTodo?.requests ? [{ to: '/labour/day-requests', label: 'Crew changes to approve', n: dayTodo.requests, tone: 'bg-amber-500' }] : []),
@@ -153,7 +159,8 @@ export default function LabourHomePage() {
     ...(noWorkers.length ? [{ to: '#active', label: 'Approved, no workers added yet', n: noWorkers.length, tone: 'bg-slate-500' }] : []),
     ...(detailsReturned ? [{ to: '/labour/workers', label: 'Worker details sent back by HR', n: detailsReturned, tone: 'bg-red-600' }] : []),
     ...(detailsMissing ? [{ to: '/labour/workers', label: 'Workers with details missing (their pay waits)', n: detailsMissing, tone: 'bg-amber-500' }] : []),
-    ...(toRequest.length ? [{ to: '/labour/requests?view=mine', label: 'Confirmed pay to send in a payment request', n: toRequest.length, tone: 'bg-blue-600' }] : []),
+    ...(toRequest.length ? [{ to: '/labour/requests?view=mine', n: toRequest.length, tone: 'bg-blue-600',
+      label: `${waitingWorkers} worker${waitingWorkers === 1 ? ' is' : 's are'} waiting for ${fmtMoney(waitingPay)}: confirmed pay to send in a payment request` }] : []),
     ...(financeWaiting ? [{ to: '/labour/requests', label: 'Payment requests to approve or pay', n: financeWaiting, tone: 'bg-emerald-600' }] : []),
   ]
 
@@ -255,6 +262,17 @@ export default function LabourHomePage() {
       )}
 
       {dayApprover && <LabourFlagsPanel compact />}
+
+      {prefs !== undefined && !prefs?.telegram_chat_id && (
+        <Link to="/settings/notifications" className={`${card} flex items-center gap-3 px-4 py-3 text-sm hover:border-brand`}>
+          <span className="rounded-full bg-brand/10 p-2 text-brand"><BellRing className="h-4 w-4" /></span>
+          <span className="flex-1 text-slate-700 dark:text-slate-200">
+            <b className="block">Get this on your phone</b>
+            <span className="text-xs text-slate-500">One Telegram message a morning with what's waiting on you, and "who worked today?" at 5:30 pm. <span className="text-brand">Connect Telegram</span></span>
+          </span>
+          <ChevronRight className="h-4 w-4 text-slate-300" />
+        </Link>
+      )}
 
       {todo.length > 0 && (
         <section className={card}>

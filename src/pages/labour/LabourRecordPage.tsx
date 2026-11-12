@@ -9,7 +9,7 @@ import { UpdateProgressSheet } from '@/pages/work-orders/WorkOrderParts'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { useWorkerPhotos } from '@/lib/workerPhotos'
 import type { WorkOrder } from '@/types/database'
-import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Lock, Plus, Save, HardHat, Timer, TrendingUp } from 'lucide-react'
+import { AlertTriangle, CheckCheck, ChevronLeft, ChevronRight, ClipboardCheck, History, Lock, Plus, Save, HardHat, Timer, TrendingUp } from 'lucide-react'
 
 type Row = {
   labor_requisition_id: string; role_needed: string; payment_basis: 'per_day' | 'per_volume' | 'fixed_price'; payment_model: string
@@ -85,6 +85,21 @@ export default function LabourRecordPage() {
   })
   const [updatingWo, setUpdatingWo] = useState<WorkOrder | null>(null)
   const { data: photos = {} } = useWorkerPhotos(rows.map(r => r.staff_id))
+  // The last day recorded on this site before this one (514): most days the
+  // same people work, so one tap marks them and only the changes are typed.
+  const { data: lastDay = null } = useQuery({
+    queryKey: ['labour-last-recorded-day', site, date],
+    enabled: !!site,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_work_entries').select('labor_requisition_id, staff_id, hours, work_date')
+        .eq('project_id', site!).lt('work_date', date).gt('hours', 0).order('work_date', { ascending: false }).limit(300)
+      if (error) throw error
+      const found = (data ?? []) as { labor_requisition_id: string; staff_id: string | null; hours: number; work_date: string }[]
+      if (!found.length) return null
+      const day = found[0].work_date
+      return { day, hours: Object.fromEntries(found.filter(e => e.work_date === day).map(e => [key(e), Number(e.hours)])) as Record<string, number> }
+    },
+  })
 
   // Overtime (migration 458): the rates in force on each request today, and
   // what each entry already holds beyond the day sheet's columns.
@@ -159,6 +174,16 @@ export default function LabourRecordPage() {
     return overtimeAmount(otRates[r.labor_requisition_id], Number(r.day_rate ?? 0), num(d.overtime_hours) ?? 0, num(d.night) ?? 0, num(d.agreed))
   }
   const recorded = rows.filter(r => { const d = draftOf(r); return (num(d.hours) ?? 0) > 0 || (num(d.quantity) ?? 0) > 0 || (num(d.percent_done) ?? 0) > 0 }).length
+  // Day workers nobody has marked yet on this sheet: what the one-tap buttons fill.
+  const blank = rows.filter(r => r.payment_basis === 'per_day' && !r.locked && r.entry_id == null && !drafts[sheetKey]?.[key(r)])
+  const sameAsLast = lastDay ? blank.filter(r => lastDay.hours[key(r)] != null).length : 0
+  function fill(hoursOf: (r: Row) => string | null) {
+    setDrafts(d => {
+      const sheet = { ...(d[sheetKey] ?? {}) }
+      for (const r of blank) { const h = hoursOf(r); if (h != null) sheet[key(r)] = { ...draftOf(r), hours: h } }
+      return { ...d, [sheetKey]: sheet }
+    })
+  }
 
   async function save() {
     const touched = rows.filter(r => drafts[sheetKey]?.[key(r)] && !r.locked)
@@ -187,7 +212,7 @@ export default function LabourRecordPage() {
     qc.invalidateQueries({ queryKey: ['labour-overtime-entries'] })
     qc.invalidateQueries({ queryKey: ['labour-day-clashes', site, date] })
     qc.invalidateQueries({ queryKey: ['labour-request-jobs'] })
-    toast(`Saved ${dayLabel(date)}`, 'success')
+    toast(recorded ? `Saved ${dayLabel(date)}: ${recorded} recorded, about ${fmtMoney(dayCost)} toward their pay` : `Saved ${dayLabel(date)}`, 'success')
   }
 
   return (
@@ -217,6 +242,24 @@ export default function LabourRecordPage() {
           <Timer className="h-4 w-4 shrink-0" />
           {dayKind.day_kind === 'holiday' ? `${dayKind.holiday_name ?? 'A public holiday'}` : 'The weekly rest day'} — overtime at the {dayKind.day_kind === 'holiday' ? 'holiday' : 'rest-day'} rate where the company rates apply.
         </p>
+      )}
+
+      {site && !loadingRows && blank.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-brand/30 bg-brand/5 p-3">
+          <p className="min-w-[11rem] flex-1 text-xs text-slate-600 dark:text-slate-300">
+            <b>{blank.length}</b> day worker{blank.length === 1 ? ' isn\'t' : 's aren\'t'} marked yet. Mark them in one tap, then change only who was different.
+          </p>
+          {lastDay && sameAsLast > 0 && (
+            <button type="button" onClick={() => fill(r => (lastDay.hours[key(r)] != null ? String(lastDay.hours[key(r)]) : null))}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white">
+              <History className="h-3.5 w-3.5" /> Same as {dayLabel(lastDay.day)}
+            </button>
+          )}
+          <button type="button" onClick={() => fill(() => '8')}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-brand px-3 py-2 text-xs font-semibold text-brand">
+            <CheckCheck className="h-3.5 w-3.5" /> Everyone a full day
+          </button>
+        </div>
       )}
 
       {!site ? null : loadingRows ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p> : groups.length === 0 ? (
