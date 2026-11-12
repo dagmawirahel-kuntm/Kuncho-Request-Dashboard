@@ -13,9 +13,30 @@ import { useLineParty } from '@/hooks/useLineParty'
 import { VAT_RATE } from '@/lib/withholding'
 import { RECEIPT_CHARGE_TOLERANCE, withholdingProfileLabel } from '@/lib/clientWithholding'
 import type { WithholdingProfile } from '@/types/database'
-import { FilePlus2, UserCheck } from 'lucide-react'
+import { FilePlus2, History, UserCheck } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+
+/** An earlier expense for the same payee, to start a new one from. */
+interface PastExpense {
+  id: string
+  category_id: string | null
+  project_id: string | null
+  is_overhead: boolean | null
+  item_service_description: string | null
+  date: string
+  amount_etb: number | null
+  net_payable: number | null
+}
+
+/** The category most of a payee's expenses were booked under, and how many. */
+function usualCategory(past: PastExpense[]): { id: string; n: number } | null {
+  const counts = new Map<string, number>()
+  for (const e of past) if (e.category_id) counts.set(e.category_id, (counts.get(e.category_id) ?? 0) + 1)
+  let best: { id: string; n: number } | null = null
+  for (const [id, n] of counts) if (!best || n > best.n) best = { id, n }
+  return best
+}
 
 /**
  * Who made a payment. A bank line confirms the money left but not who sent
@@ -65,7 +86,7 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
   const { data: staff = [] } = useStaff()
 
   const [description, setDescription] = useState(line.narration ?? '')
-  const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [categoryPicked, setCategoryId] = useState<string | null | undefined>(undefined)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [overhead, setOverhead] = useState(false)
   // Who the bank says was paid starts picked: the vendor or staff member on
@@ -84,6 +105,32 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
   const hinted = (payeeKind === 'vendor' && vendorPicked === undefined && fromBank?.kind === 'vendor')
     || (payeeKind === 'staff' && staffPicked === undefined && fromBank?.kind === 'staff')
     || (payeeKind === 'name' && namePicked === null && !!bankName)
+  // What they were paid for before (513): their usual category starts
+  // picked, and their last expense can be copied in one go.
+  const payeeId = payeeKind === 'vendor' ? vendorId : payeeKind === 'staff' ? staffId : null
+  const { data: past = [] } = useQuery({
+    queryKey: ['payee-history', payeeKind, payeeId],
+    enabled: !!payeeId,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<PastExpense[]> => {
+      const base = supabase.from('expenses')
+        .select('id, category_id, project_id, is_overhead, item_service_description, date, amount_etb, net_payable')
+        .not('is_archived', 'is', true).order('date', { ascending: false }).limit(20)
+      const { data, error } = await (payeeKind === 'vendor' ? base.eq('vendor_id', payeeId!) : base.eq('paid_to_staff_id', payeeId!))
+      if (error) throw error
+      return (data ?? []) as PastExpense[]
+    },
+  })
+  const usual = useMemo(() => usualCategory(past), [past])
+  const categoryId = categoryPicked !== undefined ? categoryPicked : usual?.id ?? null
+  const last = past[0]
+  function sameAsLast() {
+    if (!last) return
+    if (last.item_service_description) setDescription(last.item_service_description)
+    if (last.category_id) setCategoryId(last.category_id)
+    setOverhead(!!last.is_overhead)
+    setProjectId(last.is_overhead ? null : last.project_id)
+  }
   const [amount, setAmount] = useState(String(Number(line.amount)))
   const [payer, setPayer] = useState(accountPayer && accountPayer !== user?.id ? accountPayer : '')
   const [note, setNote] = useState('')
@@ -129,6 +176,17 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
         reference {line.reference_code ?? line.reference ?? '—'}, approved by you and matched to this line in one step.
         Someone other than you must have made the payment.
       </p>
+      {last && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+          <History className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            Last paid to them: <span className="font-medium text-slate-700 dark:text-slate-200">{last.item_service_description || 'an expense'}</span>
+            {' · '}{last.is_overhead ? 'company overhead' : projects.find(p => p.id === last.project_id)?.project_name ?? 'no project'}
+            {' · '}{formatCurrency(Number(last.net_payable ?? last.amount_etb ?? 0))} on {formatDate(last.date)}
+          </span>
+          <button type="button" onClick={sameAsLast} className="font-medium text-brand hover:underline">Same as last time</button>
+        </div>
+      )}
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="space-y-1 sm:col-span-2">
           <span className="flex h-5 items-center text-[11px] font-medium text-slate-500">What it was for</span>
@@ -137,6 +195,9 @@ export function RecordExpenseFromLine({ line, accountPayer, onDone }: { line: Ba
         <div className="space-y-1">
           <span className="flex h-5 items-center text-[11px] font-medium text-slate-500">Category</span>
           <SearchableSelect value={categoryId} onChange={setCategoryId} options={categoryOptions} placeholder="Pick a category…" />
+          {usual && categoryPicked === undefined && (
+            <span className="block text-[11px] text-slate-400">Their usual category ({usual.n} of their last {past.length} expenses)</span>
+          )}
         </div>
         <div className="space-y-1">
           <span className="flex h-5 items-center justify-between text-[11px] font-medium text-slate-500">

@@ -341,14 +341,49 @@ BEGIN
            count(*) FILTER (WHERE l.open)::int AS op, max(l.value_date) AS last,
            bool_or(l.money_out) AS any_out
       FROM l GROUP BY l.n
+  ),
+  -- The same evidence as bank_account_owners(), gathered for every account in
+  -- one pass rather than account by account (190 calls took 16 s).
+  link AS (
+    SELECT k.account_number AS n,
+           CASE WHEN k.vendor_id IS NOT NULL THEN 'vendor' WHEN k.staff_id IS NOT NULL THEN 'staff' ELSE 'client' END AS kind,
+           COALESCE(k.vendor_id, k.staff_id, k.client_id) AS id, 'linked'::text AS how, NULL::integer AS lines, 1 AS rank
+      FROM bank_payee_links k WHERE k.account_number IN (SELECT g.n FROM g)
+  ), paid AS (
+    SELECT p.line_id, p.account_number AS n, p.kind, p.party_id, count(*) OVER (PARTITION BY p.line_id) AS parties
+      FROM v_bank_line_paid_party p WHERE p.account_number IN (SELECT g.n FROM g)
+  ), hist AS (
+    SELECT p.n, p.kind, p.party_id AS id, 'paid'::text AS how, count(*)::integer AS lines, 2 AS rank
+      FROM paid p WHERE p.parties = 1 GROUP BY p.n, p.kind, p.party_id
+  ), rec AS (
+    SELECT x.n, 'vendor'::text AS kind, v.id, 'record'::text AS how, NULL::integer AS lines, 3 AS rank
+      FROM vendors v CROSS JOIN LATERAL unnest(bank_account_numbers(v.bank_account)) x(n)
+    UNION
+    SELECT x.n, 'staff', s.id, 'record', NULL, 3 FROM staff s CROSS JOIN LATERAL unnest(bank_account_numbers(s.bank_account)) x(n)
+    UNION
+    SELECT x.n, 'staff', sb.staff_id, 'record', NULL, 3 FROM staff_bank_accounts sb CROSS JOIN LATERAL unnest(bank_account_numbers(sb.account_number)) x(n)
+  ), found AS (
+    SELECT * FROM link
+    UNION ALL
+    SELECT * FROM (SELECT DISTINCT ON (u.n, u.kind, u.id) u.*
+                     FROM (SELECT * FROM hist UNION ALL SELECT * FROM rec WHERE rec.n IN (SELECT g.n FROM g)) u
+                    ORDER BY u.n, u.kind, u.id, u.rank) z
+     WHERE NOT EXISTS (SELECT 1 FROM link k WHERE k.n = z.n)
+  ), owners AS (
+    SELECT f.n, jsonb_agg(jsonb_build_object('kind', f.kind, 'id', f.id,
+             'name', btrim(COALESCE(v.vendor_name, s.employee_name, c.client_name)), 'how', f.how, 'lines', f.lines)
+             ORDER BY f.rank, f.lines DESC NULLS LAST) AS o
+      FROM found f
+      LEFT JOIN vendors v ON f.kind = 'vendor' AND v.id = f.id
+      LEFT JOIN staff s ON f.kind = 'staff' AND s.id = f.id
+      LEFT JOIN clients c ON f.kind = 'client' AND c.id = f.id
+     GROUP BY f.n
   )
-  SELECT g.n, g.cp, g.cps, g.lo, g.ao, g.li, g.ai, g.op, g.last,
-         COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', o.kind, 'id', o.id, 'name', o.name, 'how', o.how, 'lines', o.lines))
-                     FROM bank_account_owners(g.n) o), '[]'::jsonb),
-         CASE WHEN EXISTS (SELECT 1 FROM bank_account_owners(g.n)) THEN NULL
+  SELECT g.n, g.cp, g.cps, g.lo, g.ao, g.li, g.ai, g.op, g.last, COALESCE(o.o, '[]'::jsonb),
+         CASE WHEN o.o IS NOT NULL THEN NULL
               ELSE (SELECT jsonb_build_object('kind', b.kind, 'id', b.id, 'name', b.name)
                       FROM bank_party_by_name(g.cp, g.any_out) b LIMIT 1) END
-    FROM g
+    FROM g LEFT JOIN owners o ON o.n = g.n
    ORDER BY g.op DESC, g.last DESC;
 END $f$;
 REVOKE EXECUTE ON FUNCTION public.bank_payees(uuid) FROM PUBLIC, anon;
