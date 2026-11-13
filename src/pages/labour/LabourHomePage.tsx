@@ -178,10 +178,13 @@ export default function LabourHomePage() {
         {([
           { word: 'Crew', does: 'Ask for workers', to: '/labour/new', icon: <Users className="h-5 w-5" />, n: 0,
             more: [...(dayStarted ? [{ to: '/labour/day-requests', label: 'Crew request' }] : []), { to: '/labour/workers', label: 'Worker details' }] },
-          { word: 'Days', does: 'Record today', to: '/labour/record', icon: <ClipboardCheck className="h-5 w-5" />, n: 0,
-            more: [{ to: '/labour/record/week', label: 'Record a week' },
-              ...(dayStarted ? [{ to: '/labour/week-sheet', label: 'Week sheet' }, { to: '/labour/days', label: 'Review days' }] : []),
-              { to: '/labour/overtime', label: 'Overtime' }] },
+          // Once day sheets have started, day-rate and piece work is recorded there; the job-by-job screen is for crew-leader jobs.
+          dayStarted
+            ? { word: 'Days', does: "Today's sheet", to: '/labour/day', icon: <ClipboardCheck className="h-5 w-5" />, n: 0,
+                more: [{ to: '/labour/week-sheet', label: 'Week sheet' }, { to: '/labour/record', label: 'Crew-leader jobs' },
+                  { to: '/labour/days', label: 'Review days' }, { to: '/labour/overtime', label: 'Overtime' }] }
+            : { word: 'Days', does: 'Record today', to: '/labour/record', icon: <ClipboardCheck className="h-5 w-5" />, n: 0,
+                more: [{ to: '/labour/record/week', label: 'Record a week' }, { to: '/labour/overtime', label: 'Overtime' }] },
           { word: 'Pay', does: 'Send the pay', to: '/labour/pay', icon: <Wallet className="h-5 w-5" />, n: toConfirm.length + toRequest.length,
             more: [{ to: '/labour/requests', label: 'Payment requests' }] },
         ]).map(step => (

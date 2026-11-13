@@ -401,7 +401,7 @@ export default function LabourRecordPage() {
       )}
 
       {site && !loadingRows && <SitePulseCard projectId={site} />}
-      {telling && site && <WorkerSlipsSheet projectId={site} date={date} onClose={() => setTelling(false)} />}
+      {telling && site && <WorkerSlipsSheet projectIds={[site]} date={date} onClose={() => setTelling(false)} />}
       {historyOf && <WorkerHistorySheet staffId={historyOf} onClose={() => setHistoryOf(null)} />}
 
       {updatingWo && <UpdateProgressSheet wo={updatingWo} onClose={() => {

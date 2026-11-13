@@ -22,6 +22,10 @@
 --                              was recorded for them since the last time.
 --   labour_worker_history()    a worker's record: days, sites, trades, last
 --                              worked, rate.
+--
+-- All of it reads the three ways of paying alike: by the day (hours), by the
+-- piece (quantity) and at a fixed price (% of the task, recorded for the job
+-- and belonging to whoever is paid for it).
 
 -- ── The pay week ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.labour_pay_week_settings (
@@ -58,11 +62,41 @@ END $f$;
 REVOKE EXECUTE ON FUNCTION public.set_labour_pay_week(boolean, integer, integer, integer) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.set_labour_pay_week(boolean, integer, integer, integer) TO authenticated;
 
+-- ── Whose work, and in what words ───────────────────────────────────────────
+-- Three ways of paying, one record. Day work and piece work name the worker.
+-- A fixed-price task (and a crew's piece work) is recorded for the job, with
+-- no name on it: it belongs to whoever is paid for it, the first worker on
+-- the request, exactly as confirm_labour_pay pays it.
+CREATE OR REPLACE FUNCTION public.labour_entry_worker(p_req uuid, p_staff uuid)
+RETURNS uuid LANGUAGE sql STABLE SET search_path TO 'public' AS $f$
+  SELECT COALESCE(p_staff, (SELECT a.staff_id FROM labor_allocations a WHERE a.labor_requisition_id = p_req
+                             ORDER BY (a.status = 'active') DESC, a.created_at LIMIT 1))
+$f$;
+REVOKE EXECUTE ON FUNCTION public.labour_entry_worker(uuid, uuid) FROM PUBLIC, anon;
+
+-- 46, 46.5, 1,200: a number as someone would write it.
+CREATE OR REPLACE FUNCTION public.labour_num(p numeric)
+RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+  SELECT regexp_replace(to_char(COALESCE(p, 0), 'FM999,999,990.00'), '\.?0+$', '')
+$f$;
+
+-- "1 day", "Gypsum board, 46 m²", "Electrician, 40% of the task".
+CREATE OR REPLACE FUNCTION public.labour_entry_words(p_job text, p_basis text, p_hours numeric, p_ot numeric, p_qty numeric, p_unit text, p_pct numeric)
+RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+  SELECT CASE WHEN p_basis = 'per_volume' OR (p_basis IS NULL AND COALESCE(p_hours, 0) = 0 AND COALESCE(p_qty, 0) > 0)
+                THEN COALESCE(NULLIF(btrim(p_job), '') || ', ', '') || labour_num(p_qty) || ' ' || COALESCE(NULLIF(btrim(p_unit), ''), 'units')
+              WHEN p_basis = 'fixed_price' THEN COALESCE(NULLIF(btrim(p_job), '') || ', ', '') || labour_num(p_pct) || '% of the task'
+              WHEN COALESCE(p_hours, 0) = 8 THEN '1 day' WHEN COALESCE(p_hours, 0) = 4 THEN 'half a day'
+              ELSE labour_num(p_hours) || ' hours' END
+      || CASE WHEN COALESCE(p_ot, 0) > 0 THEN ' + ' || labour_num(p_ot) || ' h overtime' ELSE '' END
+$f$;
+
 -- ── One tap: the week's pay for a site ──────────────────────────────────────
 -- What a tap would send, site by site, for the sites this person runs.
+-- "crews" are jobs with pay waiting and nobody named on them.
 CREATE OR REPLACE FUNCTION public.labour_week_pay_sites(p_to date DEFAULT NULL)
 RETURNS TABLE(project_id uuid, project_name text, to_confirm integer, to_confirm_amount numeric, confirmed integer,
-              confirmed_amount numeric, workers integer, first_day date, last_day date, unverified integer)
+              confirmed_amount numeric, workers integer, first_day date, last_day date, unverified integer, crews integer)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
 DECLARE
   v_to date := COALESCE(p_to, bot_today());
@@ -72,7 +106,7 @@ BEGIN
   RETURN QUERY
   WITH sites AS (
     SELECT p.id, btrim(p.project_name) AS name FROM projects p WHERE v_all OR manages_project(p.id)
-  ), rl AS MATERIALIZED (    -- recorded, not confirmed: a row per worker per request
+  ), rl AS MATERIALIZED (    -- recorded, not confirmed: a row per worker (or task) per request
     SELECT u.project_id AS pid, u.labor_requisition_id AS req, u.first_day AS d1, u.last_day AS d2, x.staff_id AS sid, x.amount AS amt
       FROM v_labour_unpaid u
       CROSS JOIN LATERAL labour_pay_lines(u.labor_requisition_id, v_to) x
@@ -84,19 +118,21 @@ BEGIN
     SELECT d.expense_id AS eid, d.project_id AS pid, d.amount AS amt, d.unverified AS unv, d.period_start AS d1, d.period_end AS d2
       FROM labour_payable_drafts() d WHERE d.project_id IN (SELECT s.id FROM sites s)
   ), ppl AS (                -- a worker counts once on a site, however many sheets they are on
-    SELECT rl.pid, rl.sid, false AS chk FROM rl JOIN rec ON rec.req = rl.req WHERE rl.amt > 0
+    SELECT rl.pid, labour_entry_worker(rl.req, rl.sid) AS sid, rl.req::text AS job, false AS chk
+      FROM rl JOIN rec ON rec.req = rl.req WHERE rl.amt > 0
     UNION ALL
-    SELECT c.pid, w.staff_id, c.unv > 0 FROM conf c JOIN labor_expense_workers w ON w.expense_id = c.eid
+    SELECT c.pid, w.staff_id, c.eid::text, c.unv > 0 FROM conf c LEFT JOIN labor_expense_workers w ON w.expense_id = c.eid
   )
   SELECT s.id, s.name,
     (SELECT count(*) FROM rec r WHERE r.pid = s.id)::int,
     COALESCE((SELECT sum(r.amt) FROM rec r WHERE r.pid = s.id), 0),
     (SELECT count(*) FROM conf c WHERE c.pid = s.id)::int,
     COALESCE((SELECT sum(c.amt) FROM conf c WHERE c.pid = s.id), 0),
-    (SELECT count(DISTINCT COALESCE(x.sid::text, 'unnamed')) FROM ppl x WHERE x.pid = s.id)::int,
+    (SELECT count(DISTINCT x.sid) FROM ppl x WHERE x.pid = s.id)::int,
     LEAST((SELECT min(r.d1) FROM rec r WHERE r.pid = s.id), (SELECT min(c.d1) FROM conf c WHERE c.pid = s.id)),
     GREATEST((SELECT max(r.d2) FROM rec r WHERE r.pid = s.id), (SELECT max(c.d2) FROM conf c WHERE c.pid = s.id)),
-    (SELECT count(DISTINCT x.sid) FROM ppl x JOIN staff st ON st.id = x.sid WHERE x.pid = s.id AND x.chk AND st.verified_at IS NULL)::int
+    (SELECT count(DISTINCT x.sid) FROM ppl x JOIN staff st ON st.id = x.sid WHERE x.pid = s.id AND x.chk AND st.verified_at IS NULL)::int,
+    (SELECT count(DISTINCT x.job) FROM ppl x WHERE x.pid = s.id AND x.sid IS NULL)::int
   FROM sites s
   WHERE EXISTS (SELECT 1 FROM rec r WHERE r.pid = s.id) OR EXISTS (SELECT 1 FROM conf c WHERE c.pid = s.id)
   ORDER BY 2;
@@ -139,6 +175,8 @@ REVOKE EXECUTE ON FUNCTION public.labour_send_week_pay(uuid, date) FROM PUBLIC, 
 GRANT EXECUTE ON FUNCTION public.labour_send_week_pay(uuid, date) TO authenticated;
 
 -- ── The site's pulse ────────────────────────────────────────────────────────
+-- "output" is what the jobs paid by the piece or at a fixed price produced:
+-- quantity against the amount asked for, or % of the task against 100.
 CREATE OR REPLACE FUNCTION public.labour_site_pulse(p_project uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
 DECLARE v_today date := bot_today(); v_mon date;
@@ -146,11 +184,13 @@ BEGIN
   IF auth.uid() IS NULL OR NOT labour_can_see_costs(p_project) THEN RETURN NULL; END IF;
   v_mon := v_today - (extract(isodow FROM v_today)::int - 1);
   RETURN (
-    WITH c AS MATERIALIZED (SELECT * FROM labour_entry_costs(p_project, NULL))
+    WITH c AS MATERIALIZED (
+      SELECT x.*, labour_entry_worker(x.labor_requisition_id, x.staff_id) AS sid FROM labour_entry_costs(p_project, NULL) x
+    )
     SELECT jsonb_build_object(
       'week_start', v_mon,
       'week_cost', COALESCE((SELECT sum(c.cost) FROM c WHERE c.work_date >= v_mon), 0),
-      'week_workers', (SELECT count(DISTINCT c.staff_id) FROM c WHERE c.work_date >= v_mon),
+      'week_workers', (SELECT count(DISTINCT c.sid) FROM c WHERE c.work_date >= v_mon AND c.cost > 0),
       'week_days', COALESCE((SELECT round(sum(COALESCE(c.hours, 0)) / 8, 1) FROM c WHERE c.work_date >= v_mon), 0),
       'last_week_cost', COALESCE((SELECT sum(c.cost) FROM c WHERE c.work_date >= v_mon - 7 AND c.work_date < v_mon), 0),
       'total_cost', COALESCE((SELECT sum(c.cost) FROM c), 0),
@@ -158,62 +198,92 @@ BEGIN
                    JOIN projects p ON p.id = pb.project_id AND p.budget_version = pb.version
                    JOIN cost_groups g ON g.id = pb.cost_group_id AND g.name = 'Labor'
                   WHERE pb.project_id = p_project),
-      'output', COALESCE((SELECT jsonb_agg(to_jsonb(o)) FROM (
-                   SELECT q.role_needed AS role, q.volume_unit AS unit, q.estimated_total_volume AS planned,
-                          COALESCE(sum(c.quantity) FILTER (WHERE c.work_date >= v_mon), 0) AS week,
-                          COALESCE(sum(c.quantity) FILTER (WHERE c.work_date >= v_mon - 7 AND c.work_date < v_mon), 0) AS last_week,
-                          COALESCE(sum(c.quantity), 0) AS total
-                     FROM c JOIN labor_requisitions q ON q.id = c.labor_requisition_id AND q.payment_basis = 'per_volume'
+      'output', COALESCE((SELECT jsonb_agg(to_jsonb(o) ORDER BY o.week DESC, o.role) FROM (
+                   SELECT q.role_needed AS role, q.payment_basis AS basis,
+                          CASE WHEN q.payment_basis = 'per_volume' THEN q.volume_unit ELSE '%' END AS unit,
+                          CASE WHEN q.payment_basis = 'per_volume' THEN q.estimated_total_volume ELSE 100 END AS planned,
+                          COALESCE(sum(m.v) FILTER (WHERE c.work_date >= v_mon), 0) AS week,
+                          COALESCE(sum(m.v) FILTER (WHERE c.work_date >= v_mon - 7 AND c.work_date < v_mon), 0) AS last_week,
+                          COALESCE(sum(m.v), 0) AS total
+                     FROM c JOIN labor_requisitions q ON q.id = c.labor_requisition_id AND q.payment_basis IN ('per_volume', 'fixed_price')
+                     CROSS JOIN LATERAL (SELECT CASE WHEN q.payment_basis = 'per_volume' THEN c.quantity ELSE c.percent_done END AS v) m
                     GROUP BY q.id
-                   HAVING COALESCE(sum(c.quantity) FILTER (WHERE c.work_date >= v_mon - 7), 0) > 0) o), '[]'::jsonb)));
+                   HAVING COALESCE(sum(m.v) FILTER (WHERE c.work_date >= v_mon - 7), 0) > 0) o), '[]'::jsonb)));
 END $f$;
 REVOKE EXECUTE ON FUNCTION public.labour_site_pulse(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.labour_site_pulse(uuid) TO authenticated;
 
--- ── Each worker's week on a site ────────────────────────────────────────────
--- Lines, a total, and the words to send them. "linked" says the bot will
--- tell them itself.
-CREATE OR REPLACE FUNCTION public.labour_site_slips(p_project uuid, p_week_of date DEFAULT NULL)
-RETURNS TABLE(staff_id uuid, name text, phone text, linked boolean, days numeric, amount numeric, lines jsonb, message text)
+-- ── Each worker's week ──────────────────────────────────────────────────────
+-- Lines, a total, and the words to send them, whatever they are paid by: days,
+-- quantity, or % of a task. On one site, or on several at once (a PM's day
+-- sheet covers all of theirs). A job with nobody on it to name gets a row of
+-- its own. "linked" says the bot will tell them itself; "crew" is how many
+-- people share what was recorded for a crew.
+CREATE OR REPLACE FUNCTION public.labour_site_slips(p_project uuid, p_week_of date DEFAULT NULL, p_projects uuid[] DEFAULT NULL)
+RETURNS TABLE(staff_id uuid, name text, phone text, linked boolean, crew integer, summary text, amount numeric, lines jsonb, message text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
-DECLARE v_day date := COALESCE(p_week_of, bot_today()); v_mon date; v_site text;
+DECLARE v_day date := COALESCE(p_week_of, bot_today()); v_mon date; v_set uuid[]; v_site text;
 BEGIN
-  IF auth.uid() IS NULL OR NOT (can_run_labour_site(p_project) OR labour_can_see_costs(p_project)) THEN RETURN; END IF;
+  IF auth.uid() IS NULL THEN RETURN; END IF;
+  SELECT array_agg(p.id) INTO v_set FROM projects p
+   WHERE p.id = ANY (COALESCE(p_projects, ARRAY[p_project])) AND (can_run_labour_site(p.id) OR labour_can_see_costs(p.id));
+  IF v_set IS NULL THEN RETURN; END IF;
   v_mon := v_day - (extract(isodow FROM v_day)::int - 1);
-  SELECT btrim(project_name) INTO v_site FROM projects WHERE id = p_project;
+  -- With one site its name goes in the opening line; with several, on each line.
+  v_site := CASE WHEN cardinality(v_set) = 1 THEN (SELECT btrim(project_name) FROM projects WHERE id = v_set[1]) END;
   RETURN QUERY
   WITH c AS MATERIALIZED (
-    SELECT x.staff_id AS sid, x.work_date, x.hours, x.overtime_hours, x.quantity, x.percent_done, x.cost, q.role_needed, q.payment_basis, q.volume_unit
-      FROM labour_entry_costs(p_project, NULL) x
+    SELECT labour_entry_worker(x.labor_requisition_id, x.staff_id) AS sid, x.labor_requisition_id AS req,
+           CASE WHEN x.staff_id IS NULL THEN (SELECT count(DISTINCT a.staff_id) FROM labor_allocations a
+                                               WHERE a.labor_requisition_id = x.labor_requisition_id AND a.status = 'active') ELSE 0 END AS crew_n,
+           x.work_date, x.hours, x.overtime_hours, x.quantity, x.percent_done, x.cost, q.role_needed, btrim(pr.project_name) AS site,
+           COALESCE(q.payment_basis, CASE WHEN COALESCE(x.hours, 0) = 0 AND COALESCE(x.quantity, 0) > 0 THEN 'per_volume' ELSE 'per_day' END) AS basis,
+           COALESCE(NULLIF(btrim(q.volume_unit), ''), 'units') AS unit
+      FROM labour_entry_costs(CASE WHEN cardinality(v_set) = 1 THEN v_set[1] END, NULL) x
       LEFT JOIN labor_requisitions q ON q.id = x.labor_requisition_id
-     WHERE x.staff_id IS NOT NULL AND x.work_date BETWEEN v_mon AND v_mon + 6
+      LEFT JOIN projects pr ON pr.id = x.project_id
+     WHERE x.project_id = ANY (v_set) AND x.work_date BETWEEN v_mon AND v_mon + 6
+       AND (COALESCE(x.hours, 0) > 0 OR COALESCE(x.overtime_hours, 0) > 0 OR COALESCE(x.quantity, 0) > 0 OR COALESCE(x.percent_done, 0) > 0)
+  ), who AS (    -- a worker; or, with nobody on the request to name, the job itself
+    SELECT c.*, COALESCE(c.sid::text, 'job:' || COALESCE(c.req::text, '')) AS k FROM c
+  ), part AS (   -- the week in a few words: days, each unit of piece work, each task
+    SELECT w.k, CASE w.basis WHEN 'per_day' THEN 1 WHEN 'per_volume' THEN 2 ELSE 3 END AS ord,
+           CASE w.basis
+             WHEN 'per_day' THEN NULLIF(concat_ws(' + ',
+                    CASE WHEN sum(COALESCE(w.hours, 0)) > 0 THEN labour_num(round(sum(COALESCE(w.hours, 0)) / 8, 2)) || CASE WHEN sum(COALESCE(w.hours, 0)) = 8 THEN ' day' ELSE ' days' END END,
+                    CASE WHEN sum(COALESCE(w.overtime_hours, 0)) > 0 THEN labour_num(sum(COALESCE(w.overtime_hours, 0))) || ' h overtime' END), '')
+             WHEN 'per_volume' THEN labour_num(sum(COALESCE(w.quantity, 0))) || ' ' || max(w.unit)
+             ELSE COALESCE(max(w.role_needed) || ' ', '') || labour_num(sum(COALESCE(w.percent_done, 0))) || '%' END AS words
+      FROM who w
+     GROUP BY w.k, w.basis, CASE WHEN w.basis = 'per_volume' THEN w.unit END, CASE WHEN w.basis = 'fixed_price' THEN w.req END
   ), per AS (
-    SELECT c.sid, sum(COALESCE(c.hours, 0)) / 8 AS d, sum(c.cost) AS amt,
-           jsonb_agg(jsonb_build_object('date', c.work_date, 'what', c.role_needed, 'days', round(COALESCE(c.hours, 0) / 8, 2),
-                     'overtime_hours', NULLIF(c.overtime_hours, 0), 'quantity', NULLIF(c.quantity, 0), 'unit', c.volume_unit,
-                     'amount', round(c.cost, 2)) ORDER BY c.work_date) AS ls,
-           string_agg(to_char(c.work_date, 'Dy DD Mon') || ': '
-                      || CASE WHEN c.payment_basis = 'per_volume' THEN trim(to_char(COALESCE(c.quantity, 0), 'FM999,990.##')) || ' ' || COALESCE(c.volume_unit, 'units')
-                              WHEN c.payment_basis = 'fixed_price' THEN trim(to_char(COALESCE(c.percent_done, 0), 'FM990.##')) || '% of the task'
-                              WHEN COALESCE(c.hours, 0) = 8 THEN '1 day' WHEN COALESCE(c.hours, 0) = 4 THEN 'half a day'
-                              ELSE trim(to_char(COALESCE(c.hours, 0), 'FM990.##')) || ' hours' END
-                      || CASE WHEN COALESCE(c.overtime_hours, 0) > 0 THEN ' + ' || trim(to_char(c.overtime_hours, 'FM990.##')) || ' h overtime' ELSE '' END
-                      || ' · ' || bot_birr(round(c.cost, 2)), E'\n' ORDER BY c.work_date) AS txt
-      FROM c GROUP BY c.sid
+    SELECT w.k, max(w.sid::text)::uuid AS sid, max(w.role_needed) AS job, max(w.site) AS site, max(w.crew_n) AS crew_n, sum(w.cost) AS amt,
+           jsonb_agg(jsonb_build_object('date', w.work_date, 'site', w.site, 'what', w.role_needed, 'basis', w.basis, 'days', round(COALESCE(w.hours, 0) / 8, 2),
+                     'overtime_hours', NULLIF(w.overtime_hours, 0), 'quantity', NULLIF(w.quantity, 0), 'unit', CASE WHEN w.basis = 'per_volume' THEN w.unit END,
+                     'percent_done', NULLIF(w.percent_done, 0), 'amount', round(w.cost, 2)) ORDER BY w.work_date) AS ls,
+           string_agg(to_char(w.work_date, 'Dy DD Mon') || ': ' || CASE WHEN v_site IS NULL THEN COALESCE(w.site || ', ', '') ELSE '' END
+                      || labour_entry_words(CASE WHEN w.basis <> 'per_day' THEN w.role_needed END, w.basis, w.hours, w.overtime_hours, w.quantity, w.unit, w.percent_done)
+                      || ' · ' || bot_birr(round(w.cost, 2)), E'\n' ORDER BY w.work_date) AS txt
+      FROM who w GROUP BY w.k
   )
-  SELECT p.sid, btrim(s.employee_name), NULLIF(btrim(COALESCE(s.phone_number, '')), ''), bot_chat_of_staff(p.sid) IS NOT NULL,
-         round(p.d, 2), round(p.amt, 2), p.ls,
-         btrim(s.employee_name) || ', this is what is recorded for you at ' || COALESCE(v_site, 'site') || ', '
+  SELECT p.sid, COALESCE(btrim(s.employee_name), p.job, 'Crew'), NULLIF(btrim(COALESCE(s.phone_number, '')), ''),
+         p.sid IS NOT NULL AND bot_chat_of_staff(p.sid) IS NOT NULL, p.crew_n::int,
+         (SELECT string_agg(t.words, ' + ' ORDER BY t.ord, t.words) FROM part t WHERE t.k = p.k),
+         round(p.amt, 2), p.ls,
+         CASE WHEN p.sid IS NULL THEN COALESCE(p.job, 'Crew') || ' at ' || COALESCE(p.site, 'site') || ': this is what is recorded for the crew, '
+              ELSE btrim(s.employee_name) || ', this is what is recorded for you' || CASE WHEN p.crew_n > 1 THEN ' and your crew (' || p.crew_n || ' people)' ELSE '' END
+                   || CASE WHEN v_site IS NOT NULL THEN ' at ' || v_site ELSE '' END || ', ' END
            || to_char(v_mon, 'DD Mon') || ' to ' || to_char(v_mon + 6, 'DD Mon') || E':\n' || p.txt
-           || E'\nTotal: ' || bot_birr(round(p.amt, 2)) || E'\nIf a day is missing or wrong, tell your site manager.'
-    FROM per p JOIN staff s ON s.id = p.sid
-   ORDER BY 2;
+           || E'\nTotal: ' || bot_birr(round(p.amt, 2)) || E'\nIf something is missing or wrong, tell your site manager.'
+    FROM per p LEFT JOIN staff s ON s.id = p.sid
+   ORDER BY (p.sid IS NULL), 2;
 END $f$;
-REVOKE EXECUTE ON FUNCTION public.labour_site_slips(uuid, date) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.labour_site_slips(uuid, date) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.labour_site_slips(uuid, date, uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.labour_site_slips(uuid, date, uuid[]) TO authenticated;
 
 -- Workers linked to the bot hear in the evening what was recorded for them
--- since the last time (whichever day it was worked).
+-- since the last time (whichever day it was worked): on a request by the
+-- day, by the piece or as part of a task, or on a day sheet.
 CREATE TABLE IF NOT EXISTS public.labour_worker_notice (
   staff_id     uuid PRIMARY KEY REFERENCES public.staff(id) ON DELETE CASCADE,
   last_sent_at timestamptz NOT NULL DEFAULT now()
@@ -229,19 +299,35 @@ BEGIN
   END IF;
   IF NOT bot_ready() THEN RETURN 0; END IF;
   FOR w IN
-    WITH fresh AS (
-      SELECT e.id, e.staff_id, e.work_date FROM labour_work_entries e
-        LEFT JOIN labour_worker_notice n ON n.staff_id = e.staff_id
-       WHERE e.staff_id IS NOT NULL AND e.recorded_at > COALESCE(n.last_sent_at, now() - interval '26 hours')
-         AND e.recorded_at > now() - interval '7 days'
-         AND (COALESCE(e.hours, 0) > 0 OR COALESCE(e.quantity, 0) > 0 OR COALESCE(e.percent_done, 0) > 0)
-    ), c AS MATERIALIZED (SELECT x.entry_id, x.staff_id, x.work_date, x.project_id, x.hours, x.cost FROM labour_entry_costs(NULL, NULL) x)
-    SELECT f.staff_id, bot_chat_of_staff(f.staff_id) AS chat,
-           string_agg(to_char(c.work_date, 'Dy DD Mon') || ' · ' || bot_esc(COALESCE(btrim(p.project_name), 'site')) || ' · ' || bot_birr(round(c.cost, 2)),
-                      E'\n' ORDER BY c.work_date) AS txt,
-           (SELECT COALESCE(sum(k.cost), 0) FROM c k WHERE k.staff_id = f.staff_id AND k.work_date >= v_mon) AS week
-      FROM fresh f JOIN c ON c.entry_id = f.id LEFT JOIN projects p ON p.id = c.project_id
-     GROUP BY f.staff_id
+    WITH c AS MATERIALIZED (
+      SELECT x.source, x.entry_id, labour_entry_worker(x.labor_requisition_id, x.staff_id) AS sid, x.work_date, x.project_id,
+             x.hours, x.overtime_hours, x.quantity, x.percent_done, x.cost, q.role_needed, q.payment_basis, q.volume_unit
+        FROM labour_entry_costs(NULL, NULL) x LEFT JOIN labor_requisitions q ON q.id = x.labor_requisition_id
+    ), touched AS (   -- recorded on a request, or saved on a day sheet, in the last week
+      SELECT 'day'::text AS source, e.id AS entry_id, NULL::uuid AS sid, NULL::date AS work_date, e.recorded_at AS at
+        FROM labour_work_entries e WHERE e.recorded_at > now() - interval '7 days'
+      UNION ALL
+      SELECT 'sheet', NULL, dw.staff_id, d.work_date, COALESCE(d.saved_at, d.created_at)
+        FROM labour_days d JOIN labour_day_workers dw ON dw.day_id = d.id
+       WHERE COALESCE(d.saved_at, d.created_at) > now() - interval '7 days'
+    ), fresh AS (
+      SELECT DISTINCT ON (c.source, c.entry_id) c.*
+        FROM touched t
+        JOIN c ON c.source = t.source AND ((t.source = 'day' AND c.entry_id = t.entry_id)
+                                        OR (t.source = 'sheet' AND c.sid = t.sid AND c.work_date = t.work_date))
+       WHERE c.sid IS NOT NULL
+         AND (COALESCE(c.hours, 0) > 0 OR COALESCE(c.overtime_hours, 0) > 0 OR COALESCE(c.quantity, 0) > 0 OR COALESCE(c.percent_done, 0) > 0)
+         AND t.at > COALESCE((SELECT n.last_sent_at FROM labour_worker_notice n WHERE n.staff_id = c.sid), now() - interval '26 hours')
+       ORDER BY c.source, c.entry_id
+    )
+    SELECT f.sid AS staff_id, bot_chat_of_staff(f.sid) AS chat,
+           string_agg(to_char(f.work_date, 'Dy DD Mon') || ' · ' || bot_esc(COALESCE(btrim(p.project_name), 'site')) || ' · '
+                      || bot_esc(labour_entry_words(CASE WHEN f.payment_basis IN ('per_volume', 'fixed_price') THEN f.role_needed END,
+                                                    f.payment_basis, f.hours, f.overtime_hours, f.quantity, f.volume_unit, f.percent_done))
+                      || ' · ' || bot_birr(round(f.cost, 2)), E'\n' ORDER BY f.work_date) AS txt,
+           (SELECT COALESCE(sum(k.cost), 0) FROM c k WHERE k.sid = f.sid AND k.work_date >= v_mon) AS week
+      FROM fresh f LEFT JOIN projects p ON p.id = f.project_id
+     GROUP BY f.sid
   LOOP
     CONTINUE WHEN w.chat IS NULL;
     PERFORM bot_queue(bot_msg(w.chat,
@@ -256,6 +342,7 @@ REVOKE EXECUTE ON FUNCTION public.labour_worker_push() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.labour_worker_push() TO authenticated;
 
 -- ── A worker's record ───────────────────────────────────────────────────────
+-- Days for day work, quantity for piece work, tasks for fixed-price work.
 CREATE OR REPLACE FUNCTION public.labour_worker_history(p_staff uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $f$
 DECLARE v_money boolean;
@@ -270,16 +357,21 @@ BEGIN
   v_money := COALESCE(get_user_role()::text IN ('admin', 'executive', 'finance', 'hr_officer', 'operations_manager', 'project_manager'), false) OR is_ops_manager();
   RETURN (
     WITH c AS MATERIALIZED (
-      SELECT x.work_date, x.project_id, x.hours, x.quantity, x.cost, q.role_needed
+      SELECT x.work_date, x.project_id, x.hours, x.quantity, x.percent_done, x.cost, x.labor_requisition_id AS req, q.role_needed,
+             COALESCE(q.payment_basis, CASE WHEN COALESCE(x.hours, 0) = 0 AND COALESCE(x.quantity, 0) > 0 THEN 'per_volume' ELSE 'per_day' END) AS basis,
+             COALESCE(NULLIF(btrim(q.volume_unit), ''), 'units') AS unit
         FROM labour_entry_costs(NULL, NULL) x LEFT JOIN labor_requisitions q ON q.id = x.labor_requisition_id
-       WHERE x.staff_id = p_staff
+       WHERE x.staff_id = p_staff OR (x.staff_id IS NULL AND labour_entry_worker(x.labor_requisition_id, NULL) = p_staff)
     )
     SELECT jsonb_build_object(
       'name', btrim(s.employee_name), 'phone', NULLIF(btrim(COALESCE(s.phone_number, '')), ''), 'trade', s.trade_tag,
       'verified', s.verified_at IS NOT NULL, 'linked', bot_chat_of_staff(s.id) IS NOT NULL,
       'first_day', (SELECT min(c.work_date) FROM c), 'last_day', (SELECT max(c.work_date) FROM c),
-      'days', COALESCE((SELECT round(sum(COALESCE(c.hours, 0)) / 8, 1) FROM c), 0),
+      'days', COALESCE((SELECT round(sum(COALESCE(c.hours, 0)) / 8, 1) FROM c WHERE c.basis = 'per_day'), 0),
       'days_recorded', (SELECT count(DISTINCT c.work_date) FROM c),
+      'piece', COALESCE((SELECT jsonb_agg(jsonb_build_object('unit', u.unit, 'qty', u.qty) ORDER BY u.qty DESC)
+                           FROM (SELECT c.unit, sum(COALESCE(c.quantity, 0)) AS qty FROM c WHERE c.basis = 'per_volume' GROUP BY c.unit) u), '[]'::jsonb),
+      'tasks', (SELECT count(DISTINCT c.req) FROM c WHERE c.basis = 'fixed_price'),
       'earned', CASE WHEN v_money THEN COALESCE((SELECT round(sum(c.cost), 2) FROM c), 0) END,
       'day_rate', CASE WHEN v_money THEN (SELECT a.day_rate_snapshot FROM labor_allocations a WHERE a.staff_id = p_staff AND a.day_rate_snapshot IS NOT NULL
                                            ORDER BY a.created_at DESC LIMIT 1) END,

@@ -7,12 +7,13 @@ import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { NewWorkerForm, type NewWorker } from '@/components/labour/NewWorkerForm'
+import { PayWeekBanner, SitePulseCard, WorkerHistorySheet, WorkerSlipsSheet } from '@/components/labour/LabourGives'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
   BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople, weekdaysLabel,
   type Alloc, type Bucket, type DaySheet, type PieceJob, type SheetWorker,
 } from '@/lib/labourDay'
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Hammer, Lock, Plus, Ruler, Save, Send, Sheet, Tag, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Hammer, Lock, MessageCircle, Plus, Ruler, Save, Send, Sheet, Tag, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 
 type Row = Omit<SheetWorker, 'alloc'> & { cells: Record<string, number> }
 type Col = { key: string; bucket: Bucket; project_id: string | null; project: string; group: string }
@@ -82,6 +83,9 @@ export default function LabourDaySheetPage() {
   const [addingProject, setAddingProject] = useState<string | null>(null)
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [newWorker, setNewWorker] = useState<NewWorker | null>(null)
+  // What recording gives back (515): each worker's week to tell them, and a worker's record.
+  const [telling, setTelling] = useState(false)
+  const [historyOf, setHistoryOf] = useState<string | null>(null)
 
   // Seed the grid from each sheet the server sends back.
   const [seeded, setSeeded] = useState<typeof sheet>(undefined)
@@ -115,6 +119,13 @@ export default function LabourDaySheetPage() {
     for (const p of extra) m.set(p.id, p.name)
     return [...m].map(([id, name]) => ({ id, name }))
   }, [sheet, extra])
+  // Every site this sheet touches: day workers' columns and the piece jobs.
+  const sheetSites = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of projectCols) m.set(p.id, p.name)
+    for (const j of sheet?.jobs ?? []) m.set(j.project_id, j.project)
+    return [...m].map(([id, name]) => ({ id, name }))
+  }, [projectCols, sheet])
   const cols: Col[] = [
     ...projectCols.flatMap(p => PROJECT_BUCKETS.map(b => ({ key: cellKey(b, p.id), bucket: b, project_id: p.id, project: p.name, group: p.id }))),
     ...OTHER_BUCKETS.filter(b => sheet?.buckets?.[b as 'workshop']).map(b => ({ key: b, bucket: b, project_id: null, project: BUCKET_LABEL[b], group: b })),
@@ -256,6 +267,7 @@ export default function LabourDaySheetPage() {
         {sheet && <Pill tone={DAY_STATUS[status].tone}>{DAY_STATUS[status].label}</Pill>}
         {sheet?.day?.paid && <Pill tone="green">Pay confirmed</Pill>}
       </div>
+      <PayWeekBanner date={date} />
 
       {!pm && !loadingPeople && (
         <p className={`${card} p-6 text-center text-sm text-slate-500`}>{seeAll ? 'Pick whose sheet to open.' : 'Your login isn\'t linked to a staff record, so there is no sheet to open. Ask HR to link it.'}</p>
@@ -334,7 +346,8 @@ export default function LabourDaySheetPage() {
                           <div className="flex items-center gap-2">
                             <WorkerAvatar url={r.photo_url} name={r.name} size="sm" />
                             <div className="min-w-0">
-                              <p className="truncate font-medium text-slate-800 dark:text-slate-100">{r.name}</p>
+                              <button type="button" onClick={() => setHistoryOf(r.staff_id)} title="Their record"
+                                className="block max-w-full truncate text-left font-medium text-slate-800 underline decoration-slate-300 decoration-dotted underline-offset-4 dark:text-slate-100">{r.name}</button>
                               <p className="truncate text-[11px] text-slate-500">
                                 {tradeName(r.trade)} · {r.day_rate ? `${Number(r.day_rate).toLocaleString()}/day` : <span className="text-red-600">no day rate</span>}
                                 {!r.verified && <span className="text-amber-600"> · not verified</span>}
@@ -462,6 +475,14 @@ export default function LabourDaySheetPage() {
             </div>
           )}
 
+          {/* What recording gives back: tell the workers, and each site's week. */}
+          {sheetSites.length > 0 && (
+            <button onClick={() => setTelling(true)} className={`${card} flex w-full items-center justify-center gap-2 border-dashed px-4 py-3 text-sm font-medium text-slate-700 hover:border-brand dark:text-slate-200`}>
+              <MessageCircle className="h-4 w-4 text-brand" /> Tell the workers what's recorded for them this week
+            </button>
+          )}
+          {sheetSites.slice(0, 4).map(p => <SitePulseCard key={p.id} projectId={p.id} title={p.name} />)}
+
           {/* Operations' review */}
           {approver && status === 'submitted' && !dirty && (
             <div className={`${card} flex flex-wrap items-center gap-2 p-3`}>
@@ -486,6 +507,8 @@ export default function LabourDaySheetPage() {
           )}
         </>
       )}
+      {telling && <WorkerSlipsSheet projectIds={sheetSites.map(p => p.id)} date={date} onClose={() => setTelling(false)} />}
+      {historyOf && <WorkerHistorySheet staffId={historyOf} onClose={() => setHistoryOf(null)} />}
     </div>
   )
 }

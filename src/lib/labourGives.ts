@@ -77,6 +77,8 @@ export type WeekPaySite = {
   /** Pay sheets confirmed and in no payment request. */
   confirmed: number; confirmed_amount: number
   workers: number; first_day: string | null; last_day: string | null; unverified: number
+  /** Jobs with pay waiting and nobody named on them (a crew, or a fixed-price task). */
+  crews: number
 }
 
 export function useWeekPaySites(enabled = true) {
@@ -103,7 +105,8 @@ export async function sendWeekPay(projectId: string): Promise<SentWeekPay> {
 export type SitePulse = {
   week_start: string; week_cost: number; week_workers: number; week_days: number; last_week_cost: number
   total_cost: number; budget: number | null
-  output: { role: string; unit: string | null; planned: number | null; week: number; last_week: number; total: number }[]
+  /** Jobs paid by the piece (quantity against what was asked for) or at a fixed price (% of the task against 100). */
+  output: { role: string; basis: 'per_volume' | 'fixed_price'; unit: string | null; planned: number | null; week: number; last_week: number; total: number }[]
 }
 
 export function useSitePulse(projectId: string | null) {
@@ -120,19 +123,26 @@ export function useSitePulse(projectId: string | null) {
 
 // ── Each worker's week ──────────────────────────────────────────────────────
 export type WorkerSlip = {
-  staff_id: string; name: string; phone: string | null
+  /** Null when the work is recorded for a job with nobody named on it. */
+  staff_id: string | null; name: string; phone: string | null
   /** The bot tells them itself each evening. */
   linked: boolean
-  days: number; amount: number; message: string
-  lines: { date: string; what: string | null; days: number; overtime_hours: number | null; quantity: number | null; unit: string | null; amount: number }[]
+  /** How many people share it, when it was recorded for a crew. */
+  crew: number
+  /** The week in a few words: "4 days", "46 m²", "Electrician 40%". */
+  summary: string | null
+  amount: number; message: string
+  lines: { date: string; site: string | null; what: string | null; basis: string; days: number; overtime_hours: number | null; quantity: number | null; unit: string | null; percent_done: number | null; amount: number }[]
 }
 
-export function useSiteSlips(projectId: string | null, weekOf: string, enabled = true) {
+/** One site, or several at once (a PM's day sheet covers all of theirs). */
+export function useSiteSlips(projectIds: string[], weekOf: string, enabled = true) {
   return useQuery({
-    queryKey: ['labour-site-slips', projectId, weekOf],
-    enabled: enabled && !!projectId,
+    queryKey: ['labour-site-slips', projectIds.join(','), weekOf],
+    enabled: enabled && projectIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('labour_site_slips', { p_project: projectId, p_week_of: weekOf })
+      const one = projectIds.length === 1
+      const { data, error } = await supabase.rpc('labour_site_slips', { p_project: one ? projectIds[0] : null, p_week_of: weekOf, p_projects: one ? null : projectIds })
       if (error) throw error
       return (data ?? []) as WorkerSlip[]
     },
@@ -142,7 +152,11 @@ export function useSiteSlips(projectId: string | null, weekOf: string, enabled =
 // ── A worker's record ───────────────────────────────────────────────────────
 export type WorkerHistory = {
   name: string; phone: string | null; trade: string | null; verified: boolean; linked: boolean
-  first_day: string | null; last_day: string | null; days: number; days_recorded: number
+  first_day: string | null; last_day: string | null
+  /** Days paid by the day; days_recorded counts every date with work of any kind. */
+  days: number; days_recorded: number
+  /** Work paid by the piece, by unit; and how many fixed-price tasks. */
+  piece: { unit: string; qty: number }[]; tasks: number
   earned: number | null; day_rate: number | null; on_site_now: string | null
   sites: { project: string; days: number; last_day: string; work: string | null }[]
 }

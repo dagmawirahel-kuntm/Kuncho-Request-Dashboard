@@ -263,7 +263,8 @@ function SendWeekPay() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{s.project_name}</p>
                 <p className="text-xs text-slate-500">
-                  <b className="text-slate-700 dark:text-slate-200">{s.workers} worker{s.workers === 1 ? '' : 's'}</b> waiting for <b className="text-slate-700 dark:text-slate-200">{fmtMoney(total)}</b>
+                  <b className="text-slate-700 dark:text-slate-200">{[s.workers ? `${s.workers} worker${s.workers === 1 ? '' : 's'}` : null,
+                    Number(s.crews) ? `${s.crews} job${Number(s.crews) === 1 ? '' : 's'} with no one named` : null].filter(Boolean).join(' and ') || 'Pay'}</b> waiting for <b className="text-slate-700 dark:text-slate-200">{fmtMoney(total)}</b>
                   {s.first_day && s.last_day ? ` · ${dayLabel(s.first_day)} – ${dayLabel(s.last_day)}` : ''}
                 </p>
                 <p className="text-[11px] text-slate-400">

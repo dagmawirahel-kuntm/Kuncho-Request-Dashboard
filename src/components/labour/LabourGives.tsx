@@ -101,7 +101,7 @@ export function PayWeekSettings({ canEdit }: { canEdit: boolean }) {
  * site against last week's, the total against the labour budget, and what
  * the volume work produced. Nothing for people who don't see costs.
  */
-export function SitePulseCard({ projectId }: { projectId: string }) {
+export function SitePulseCard({ projectId, title }: { projectId: string; title?: string }) {
   const { data: p } = useSitePulse(projectId)
   if (!p || (Number(p.total_cost) === 0 && Number(p.week_cost) === 0)) return null
   const week = Number(p.week_cost), last = Number(p.last_week_cost), total = Number(p.total_cost)
@@ -110,11 +110,14 @@ export function SitePulseCard({ projectId }: { projectId: string }) {
   const up = week > last
   return (
     <section className="mt-4 rounded-2xl border bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">This site, this week</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{title ? `${title}, this week` : 'This site, this week'}</h2>
       <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
         <div>
           <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{fmtMoney(week)}</p>
-          <p className="text-xs text-slate-500">{Number(p.week_workers)} worker{Number(p.week_workers) === 1 ? '' : 's'} · {Number(p.week_days)} day{Number(p.week_days) === 1 ? '' : 's'} recorded since {dayLabel(p.week_start)}</p>
+          <p className="text-xs text-slate-500">
+            {[`${Number(p.week_workers)} worker${Number(p.week_workers) === 1 ? '' : 's'}`,
+              Number(p.week_days) > 0 ? `${Number(p.week_days)} day${Number(p.week_days) === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ')} recorded since {dayLabel(p.week_start)}
+          </p>
         </div>
         {last > 0 && (
           <p className="flex items-center gap-1 text-xs text-slate-500">
@@ -138,13 +141,20 @@ export function SitePulseCard({ projectId }: { projectId: string }) {
       )}
       {p.output.length > 0 && (
         <ul className="mt-3 space-y-1 border-t pt-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
-          {p.output.map(o => (
-            <li key={o.role} className="flex flex-wrap justify-between gap-x-3">
+          {p.output.map((o, i) => (
+            <li key={`${o.role}-${i}`} className="flex flex-wrap justify-between gap-x-3">
               <span className="font-medium">{o.role}</span>
-              <span>
-                {Number(o.week)} {o.unit ?? 'units'} this week{Number(o.last_week) > 0 ? ` (last week ${Number(o.last_week)})` : ''}
-                {o.planned ? ` · ${Number(o.total)} of ${Number(o.planned)} done` : ''}
-              </span>
+              {o.basis === 'fixed_price' ? (
+                <span>
+                  {Number(o.week) > 0 ? `${Number(o.week)}% more this week` : 'nothing more this week'}{Number(o.last_week) > 0 ? ` (last week ${Number(o.last_week)}%)` : ''}
+                  {' · '}{Number(o.total) >= 100 ? 'the task is done' : `${Number(o.total)}% done`}
+                </span>
+              ) : (
+                <span>
+                  {Number(o.week)} {o.unit ?? 'units'} this week{Number(o.last_week) > 0 ? ` (last week ${Number(o.last_week)})` : ''}
+                  {o.planned ? ` · ${Number(o.total)} of ${Number(o.planned)} done` : ''}
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -158,9 +168,10 @@ export function SitePulseCard({ projectId }: { projectId: string }) {
  * from this phone (WhatsApp, Telegram, SMS), or copied. Workers linked to
  * the bot are told by it each evening.
  */
-export function WorkerSlipsSheet({ projectId, date, onClose }: { projectId: string; date: string; onClose: () => void }) {
+export function WorkerSlipsSheet({ projectIds, date, onClose }: { projectIds: string[]; date: string; onClose: () => void }) {
   const { toast } = useToast()
-  const { data: slips = [], isLoading } = useSiteSlips(projectId, date)
+  const { data: slips = [], isLoading } = useSiteSlips(projectIds, date)
+  const idOf = (s: WorkerSlip) => s.staff_id ?? `job:${s.name}`
   const [open, setOpen] = useState<string | null>(null)
   const [done, setDone] = useState<Set<string>>(new Set())
 
@@ -168,11 +179,11 @@ export function WorkerSlipsSheet({ projectId, date, onClose }: { projectId: stri
     try {
       if (navigator.share) await navigator.share({ text: s.message })
       else { await navigator.clipboard.writeText(s.message); toast('Copied. Paste it in a message to them.', 'success') }
-      setDone(d => new Set(d).add(s.staff_id))
+      setDone(d => new Set(d).add(idOf(s)))
     } catch { /* closed the share sheet: nothing sent */ }
   }
   async function copy(s: WorkerSlip) {
-    try { await navigator.clipboard.writeText(s.message); toast('Copied', 'success'); setDone(d => new Set(d).add(s.staff_id)) }
+    try { await navigator.clipboard.writeText(s.message); toast('Copied', 'success'); setDone(d => new Set(d).add(idOf(s))) }
     catch { toast('Could not copy on this phone', 'error') }
   }
   const total = slips.reduce((n, s) => n + Number(s.amount), 0)
@@ -183,32 +194,34 @@ export function WorkerSlipsSheet({ projectId, date, onClose }: { projectId: stri
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3 dark:border-slate-700">
           <div>
             <h3 className="font-semibold text-slate-800 dark:text-slate-100">Tell the workers</h3>
-            <p className="text-xs text-slate-500">What is recorded for each of them in the week of {dayLabel(date)}. A worker who sees their days asks for the missing ones.</p>
+            <p className="text-xs text-slate-500">What is recorded for each of them in the week of {dayLabel(date)}: days, piece work measured, or how far a task has got. A worker who sees it asks for what's missing.</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700" aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isLoading ? <p className="p-6 text-center text-sm text-slate-400">Loading…</p> : slips.length === 0 ? (
-            <p className="p-6 text-center text-sm text-slate-500">Nothing is recorded on this site for that week yet.</p>
+            <p className="p-6 text-center text-sm text-slate-500">Nothing is recorded for that week yet.</p>
           ) : (
             <ul className="divide-y dark:divide-slate-700">
               {slips.map(s => (
-                <li key={s.staff_id} className="px-4 py-3">
+                <li key={idOf(s)} className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <button onClick={() => setOpen(open === s.staff_id ? null : s.staff_id)} className="min-w-0 flex-1 text-left">
+                    <button onClick={() => setOpen(open === idOf(s) ? null : idOf(s))} className="min-w-0 flex-1 text-left">
                       <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{s.name}</p>
                       <p className="text-xs text-slate-500">
-                        {Number(s.days) > 0 ? `${Number(s.days)} day${Number(s.days) === 1 ? '' : 's'} · ` : ''}{fmtMoney(Number(s.amount))}
-                        {s.linked ? <span className="text-emerald-600"> · told by the bot each evening</span> : s.phone ? ` · ${s.phone}` : <span className="text-amber-600"> · no phone on record</span>}
+                        {s.summary ? `${s.summary} · ` : ''}{fmtMoney(Number(s.amount))}
+                        {Number(s.crew) > 1 && ` · for a crew of ${Number(s.crew)}`}
+                        {!s.staff_id ? <span className="text-amber-600"> · no one is named on this job</span>
+                          : s.linked ? <span className="text-emerald-600"> · told by the bot each evening</span> : s.phone ? ` · ${s.phone}` : <span className="text-amber-600"> · no phone on record</span>}
                       </p>
                     </button>
-                    {done.has(s.staff_id) && <Check className="h-4 w-4 shrink-0 text-emerald-500" />}
+                    {done.has(idOf(s)) && <Check className="h-4 w-4 shrink-0 text-emerald-500" />}
                     <button onClick={() => copy(s)} className="shrink-0 rounded-lg border p-2 text-slate-500 dark:border-slate-600" aria-label={`Copy ${s.name}'s slip`}><Copy className="h-4 w-4" /></button>
                     <button onClick={() => tell(s)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white">
                       <Share2 className="h-3.5 w-3.5" /> Send
                     </button>
                   </div>
-                  {open === s.staff_id && (
+                  {open === idOf(s) && (
                     <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 font-sans text-xs text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">{s.message}</pre>
                   )}
                 </li>
@@ -218,7 +231,8 @@ export function WorkerSlipsSheet({ projectId, date, onClose }: { projectId: stri
         </div>
         {slips.length > 0 && (
           <p className="border-t px-4 py-2.5 text-xs text-slate-500 dark:border-slate-700">
-            {slips.length} worker{slips.length === 1 ? '' : 's'} · {fmtMoney(total)} recorded that week.
+            {(() => { const w = slips.filter(s => s.staff_id).length, j = slips.length - w
+              return [w ? `${w} worker${w === 1 ? '' : 's'}` : null, j ? `${j} job${j === 1 ? '' : 's'} with no one named` : null].filter(Boolean).join(' and ') })()} · {fmtMoney(total)} recorded that week.
             {' '}HR can link a worker to the Telegram bot on their staff page; then they are told without anyone sending anything.
           </p>
         )}
@@ -253,8 +267,8 @@ export function WorkerHistorySheet({ staffId, onClose }: { staffId: string; onCl
             <>
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-900/40">
-                  <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{Number(h.days)}</p>
-                  <p className="text-[11px] text-slate-500">days worked</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{Number(h.days) > 0 ? Number(h.days) : Number(h.days_recorded)}</p>
+                  <p className="text-[11px] text-slate-500">{Number(h.days) > 0 ? 'days worked' : 'days with work recorded'}</p>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-900/40">
                   <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{h.sites.length}</p>
@@ -269,6 +283,8 @@ export function WorkerHistorySheet({ staffId, onClose }: { staffId: string; onCl
                 With us since {h.first_day ? dayLabel(h.first_day) : '—'}
                 {h.on_site_now ? <> · on <b className="text-slate-700 dark:text-slate-200">{h.on_site_now}</b> now</> : ' · not on a site now'}
                 {h.day_rate != null && <> · {fmtMoney(Number(h.day_rate))} a day</>}
+                {(h.piece ?? []).length > 0 && <> · by the piece: {h.piece.map(x => `${Number(x.qty).toLocaleString()} ${x.unit}`).join(', ')}</>}
+                {Number(h.tasks) > 0 && <> · {Number(h.tasks)} fixed-price task{Number(h.tasks) === 1 ? '' : 's'}</>}
                 {h.earned != null && <> · earned {fmtMoney(Number(h.earned))} in all</>}
               </p>
               <ul className="divide-y rounded-xl border dark:divide-slate-700 dark:border-slate-700">
