@@ -11,7 +11,7 @@ import { useDayPeople, useDaySettings } from '@/lib/labourDay'
 import { useNotificationPrefs } from '@/lib/notifications'
 import { LabourFlagsPanel } from '@/components/labour/LabourFlagsPanel'
 import { APPROVER_ROLES, BASIS_LABEL, STAGE, dayLabel, estimateOf, fmtMoney, overtimeSummary, stageOf, useLabourSites, useOvertimeSettings, type LabourRequest, type RequestStage } from '@/lib/labour'
-import { BellRing, CalendarCheck, CalendarDays, CalendarPlus, ChevronRight, IdCard, ClipboardCheck, Clock, FileCheck2, HardHat, Plus, Search, Sheet, Wallet, Inbox } from 'lucide-react'
+import { BellRing, ChevronRight, ClipboardCheck, Clock, HardHat, Search, Sheet, Users, Wallet, Inbox } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const TABS: RequestStage[] = ['waiting', 'active', 'ended', 'declined']
@@ -168,48 +168,46 @@ export default function LabourHomePage() {
     <div className="mx-auto max-w-2xl space-y-4 pb-10">
       <div>
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><HardHat className="h-5 w-5 text-brand" /> Labour</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Ask for workers, record their work, confirm their pay.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Three steps. <b className="text-slate-700 dark:text-slate-200">Crew</b>: who is working. <b className="text-slate-700 dark:text-slate-200">Days</b>: what they worked. <b className="text-slate-700 dark:text-slate-200">Pay</b>: what they are owed.
+        </p>
       </div>
 
+      {/* Crew, Days, Pay: each step's main action, and under it everything else that belongs to it. */}
       <div className="grid grid-cols-3 gap-2">
-        <Link to="/labour/new" className={`${card} flex flex-col items-center gap-1.5 p-3 text-center text-sm font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-          <span className="rounded-full bg-brand/10 p-2 text-brand"><Plus className="h-5 w-5" /></span>Ask
-        </Link>
-        <Link to="/labour/record" className={`${card} flex flex-col items-center gap-1.5 p-3 text-center text-sm font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-          <span className="rounded-full bg-brand/10 p-2 text-brand"><ClipboardCheck className="h-5 w-5" /></span>Record today
-        </Link>
-        <Link to="/labour/pay" className={`${card} relative flex flex-col items-center gap-1.5 p-3 text-center text-sm font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-          <span className="rounded-full bg-brand/10 p-2 text-brand"><Wallet className="h-5 w-5" /></span>Confirm pay
-          {toConfirm.length > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{toConfirm.length}</span>}
-        </Link>
+        {([
+          { word: 'Crew', does: 'Ask for workers', to: '/labour/new', icon: <Users className="h-5 w-5" />, n: 0,
+            more: [...(dayStarted ? [{ to: '/labour/day-requests', label: 'Crew request' }] : []), { to: '/labour/workers', label: 'Worker details' }] },
+          { word: 'Days', does: 'Record today', to: '/labour/record', icon: <ClipboardCheck className="h-5 w-5" />, n: 0,
+            more: [{ to: '/labour/record/week', label: 'Record a week' },
+              ...(dayStarted ? [{ to: '/labour/week-sheet', label: 'Week sheet' }, { to: '/labour/days', label: 'Review days' }] : []),
+              { to: '/labour/overtime', label: 'Overtime' }] },
+          { word: 'Pay', does: 'Send the pay', to: '/labour/pay', icon: <Wallet className="h-5 w-5" />, n: toConfirm.length + toRequest.length,
+            more: [{ to: '/labour/requests', label: 'Payment requests' }] },
+        ]).map(step => (
+          <div key={step.word} className="space-y-1.5">
+            <Link to={step.to} className={`${card} relative flex flex-col items-center gap-1 p-3 text-center hover:border-brand`}>
+              <span className="rounded-full bg-brand/10 p-2 text-brand">{step.icon}</span>
+              <span className="text-base font-bold text-slate-800 dark:text-slate-100">{step.word}</span>
+              <span className="text-xs text-slate-500">{step.does}</span>
+              {step.n > 0 && <span className="absolute right-2 top-2 rounded-full bg-blue-600 px-1.5 text-[11px] font-bold text-white">{step.n}</span>}
+            </Link>
+            <div className="flex flex-col items-center gap-1 text-xs text-slate-500">
+              {step.more.map(m => <Link key={m.to} to={m.to} className="hover:text-brand">{m.label}</Link>)}
+            </div>
+          </div>
+        ))}
       </div>
-      {dayStarted ? (
-        <div className="grid grid-cols-3 gap-2">
-          <Link to="/labour/day-requests" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-            <CalendarPlus className="h-4 w-4 text-brand" /> Crew request
-          </Link>
-          <Link to="/labour/week-sheet" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-            <Sheet className="h-4 w-4 text-brand" /> Week sheet
-          </Link>
-          <Link to="/labour/days" className={`${card} flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold text-slate-700 hover:border-brand dark:text-slate-200`}>
-            <CalendarCheck className="h-4 w-4 text-brand" /> Review days
-          </Link>
-        </div>
-      ) : hasRole('admin', 'operations_manager') && (
+      <p className="truncate text-center text-xs text-slate-400">
+        <Clock className="mr-1 inline h-3.5 w-3.5" />Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}
+      </p>
+      {!dayStarted && hasRole('admin', 'operations_manager') && (
         <Link to="/labour/days" className={`${card} flex items-center gap-3 px-4 py-3 text-sm hover:border-brand`}>
           <Sheet className="h-4 w-4 shrink-0 text-brand" />
           <span className="flex-1 text-slate-700 dark:text-slate-200">Day sheets aren't started yet — day-rate workers are still asked for and recorded on work orders. <span className="text-brand">Set a start date</span></span>
           <ChevronRight className="h-4 w-4 text-slate-300" />
         </Link>
       )}
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
-        <Link to="/labour/record/week" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><CalendarDays className="h-3.5 w-3.5" /> Record a week</Link>
-        <Link to="/labour/workers" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><IdCard className="h-3.5 w-3.5" /> Worker details</Link>
-        <Link to="/labour/requests" className="flex shrink-0 items-center gap-1.5 hover:text-brand"><FileCheck2 className="h-3.5 w-3.5" /> Payment requests</Link>
-        <Link to="/labour/overtime" className="flex min-w-0 items-center gap-1.5 hover:text-brand">
-          <Clock className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Overtime · {overtimeSummary({ overtime_rule: 'company', overtime_multiplier: null, overtime_hour_rate: null }, otSettings)}</span>
-        </Link>
-      </div>
 
       {canBulkClose && onFinished > 0 && (
         <div className={`${card} flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10`}>

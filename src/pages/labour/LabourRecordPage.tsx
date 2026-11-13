@@ -8,8 +8,9 @@ import { addDays, dayLabel, fmtMoney, isoDay, overtimeAmount, overtimeRateLabel,
 import { UpdateProgressSheet } from '@/pages/work-orders/WorkOrderParts'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { useWorkerPhotos } from '@/lib/workerPhotos'
+import { PayWeekBanner, SitePulseCard, WorkerHistorySheet, WorkerSlipsSheet } from '@/components/labour/LabourGives'
 import type { WorkOrder } from '@/types/database'
-import { AlertTriangle, CheckCheck, ChevronLeft, ChevronRight, ClipboardCheck, History, Lock, Plus, Save, HardHat, Timer, TrendingUp } from 'lucide-react'
+import { AlertTriangle, CheckCheck, ChevronLeft, ChevronRight, ClipboardCheck, History, Lock, MessageCircle, Plus, Save, HardHat, Timer, TrendingUp } from 'lucide-react'
 
 type Row = {
   labor_requisition_id: string; role_needed: string; payment_basis: 'per_day' | 'per_volume' | 'fixed_price'; payment_model: string
@@ -84,6 +85,9 @@ export default function LabourRecordPage() {
     },
   })
   const [updatingWo, setUpdatingWo] = useState<WorkOrder | null>(null)
+  // What recording gives back (515): each worker's record, and their week to tell them.
+  const [historyOf, setHistoryOf] = useState<string | null>(null)
+  const [telling, setTelling] = useState(false)
   const { data: photos = {} } = useWorkerPhotos(rows.map(r => r.staff_id))
   // The last day recorded on this site before this one (514): most days the
   // same people work, so one tap marks them and only the changes are typed.
@@ -212,6 +216,9 @@ export default function LabourRecordPage() {
     qc.invalidateQueries({ queryKey: ['labour-overtime-entries'] })
     qc.invalidateQueries({ queryKey: ['labour-day-clashes', site, date] })
     qc.invalidateQueries({ queryKey: ['labour-request-jobs'] })
+    qc.invalidateQueries({ queryKey: ['labour-site-pulse', site] })
+    qc.invalidateQueries({ queryKey: ['labour-site-slips', site] })
+    qc.invalidateQueries({ queryKey: ['labour-week-pay-sites'] })
     toast(recorded ? `Saved ${dayLabel(date)}: ${recorded} recorded, about ${fmtMoney(dayCost)} toward their pay` : `Saved ${dayLabel(date)}`, 'success')
   }
 
@@ -236,6 +243,8 @@ export default function LabourRecordPage() {
           <button onClick={() => setQ('date', addDays(date, 1))} disabled={date >= today} className="rounded-lg border p-2.5 disabled:opacity-30 dark:border-slate-600" aria-label="Next day"><ChevronRight className="h-4 w-4" /></button>
         </div>
       </div>
+
+      {site && <PayWeekBanner date={date} />}
 
       {site && dayKind && (
         <p className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
@@ -322,7 +331,12 @@ export default function LabourRecordPage() {
                     return (
                       <li key={key(r)} className={`px-4 py-3 ${r.locked ? 'opacity-60' : ''}`}>
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-100">{r.staff_id && <WorkerAvatar size="sm" url={photos[r.staff_id]} name={r.worker_name} />}<span className="truncate">{r.worker_name}</span></p>
+                          {r.staff_id ? (
+                            <button type="button" onClick={() => setHistoryOf(r.staff_id)} title="Their record: days, sites, last worked"
+                              className="flex min-w-0 items-center gap-2 text-left text-sm font-medium text-slate-800 dark:text-slate-100">
+                              <WorkerAvatar size="sm" url={photos[r.staff_id]} name={r.worker_name} /><span className="truncate underline decoration-slate-300 decoration-dotted underline-offset-4">{r.worker_name}</span>
+                            </button>
+                          ) : <p className="min-w-0 truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.worker_name}</p>}
                           {r.locked && <span className="flex items-center gap-1 text-[11px] text-slate-500"><Lock className="h-3 w-3" /> on a pay sheet</span>}
                         </div>
                         {(doubled(r) || clash) && (
@@ -379,8 +393,16 @@ export default function LabourRecordPage() {
             )
           })}
           <p className="text-center text-xs text-slate-400">Someone missing? Add them on the request, then record them here.</p>
+          <button type="button" onClick={() => setTelling(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-3 text-sm font-medium text-brand dark:border-slate-600">
+            <MessageCircle className="h-4 w-4" /> Tell the workers what's recorded for them this week
+          </button>
         </div>
       )}
+
+      {site && !loadingRows && <SitePulseCard projectId={site} />}
+      {telling && site && <WorkerSlipsSheet projectId={site} date={date} onClose={() => setTelling(false)} />}
+      {historyOf && <WorkerHistorySheet staffId={historyOf} onClose={() => setHistoryOf(null)} />}
 
       {updatingWo && <UpdateProgressSheet wo={updatingWo} onClose={() => {
         setUpdatingWo(null)
