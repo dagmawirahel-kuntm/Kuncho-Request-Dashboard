@@ -30,9 +30,47 @@ function Label({ children, hint }: { children: React.ReactNode; hint?: string })
   )
 }
 
+/** An earlier request to start from: the same work, pay terms and people (515). */
+type Seed = {
+  site: string; work: string; scope: string; cycle: PayCycle; basis: PayBasis
+  dayRate: string; unit: string; unitRate: string; totalQty: string; price: string
+  crew: boolean; leader: string | null; roster: { id: string; name: string }[]
+}
+const str = (n: number | null | undefined) => (n == null ? '' : String(Number(n)))
+
+// "Ask again with the same crew" (?again=<request>) loads that request
+// first, so the form opens already filled in.
+export default function LabourRequestFormPage() {
+  const [params] = useSearchParams()
+  const again = params.get('again')
+  const { data: seed = null, isLoading } = useQuery({
+    queryKey: ['labour-request-again', again],
+    enabled: !!again,
+    queryFn: async (): Promise<Seed | null> => {
+      const { data: r, error } = await supabase.from('labor_requisitions')
+        .select('project_id, role_needed, scope_of_work, pay_cycle, payment_basis, payment_model, gang_leader_vendor_id, estimated_day_rate, volume_unit, unit_rate, estimated_total_volume, fixed_price_amount')
+        .eq('id', again!).maybeSingle()
+      if (error) throw error
+      if (!r) return null
+      const { data: people } = await supabase.rpc('labour_request_people', { p_req: again })
+      const seen = new Set<string>()
+      const roster = ((people ?? []) as { staff_id: string | null; name: string }[])
+        .filter(p => p.staff_id && !seen.has(p.staff_id) && seen.add(p.staff_id)).map(p => ({ id: p.staff_id!, name: p.name }))
+      return {
+        site: r.project_id, work: r.role_needed ?? '', scope: r.scope_of_work ?? '', cycle: (r.pay_cycle ?? 'weekly') as PayCycle,
+        basis: (r.payment_basis ?? 'per_day') as PayBasis, dayRate: str(r.estimated_day_rate), unit: r.volume_unit ?? 'm²',
+        unitRate: str(r.unit_rate), totalQty: str(r.estimated_total_volume), price: str(r.fixed_price_amount),
+        crew: r.payment_model === 'gang_leader', leader: r.gang_leader_vendor_id ?? null, roster,
+      }
+    },
+  })
+  if (again && isLoading) return <p className="py-16 text-center text-sm text-slate-400">Loading the earlier request…</p>
+  return <RequestForm key={again ?? 'new'} seed={seed} />
+}
+
 // Asking for labour: where and what, who, and how they're paid — three
 // short steps that fit a phone. Workers can still be added after sending.
-export default function LabourRequestFormPage() {
+function RequestForm({ seed }: { seed: Seed | null }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -42,7 +80,7 @@ export default function LabourRequestFormPage() {
   const { data: vendors = [] } = useVendors()
 
   const [step, setStep] = useState(0)
-  const [pickedSite, setSite] = useState<string | null | undefined>(params.get('project') ?? undefined)
+  const [pickedSite, setSite] = useState<string | null | undefined>(params.get('project') ?? seed?.site ?? undefined)
   const site = pickedSite === undefined ? (sites.length === 1 ? sites[0].id : null) : pickedSite
   // The job on the site this labour is for — its cost then counts on that
   // work order, and its workers join the order's crew (migration 408).
@@ -58,27 +96,27 @@ export default function LabourRequestFormPage() {
     enabled: !!site,
   })
   const workOrder = woId && siteOrders.some(o => o.id === woId) ? woId : (woId && !site ? woId : null)
-  const [work, setWork] = useState('')
-  const [scope, setScope] = useState('')
+  const [work, setWork] = useState(seed?.work ?? '')
+  const [scope, setScope] = useState(seed?.scope ?? '')
   const [start, setStart] = useState(isoDay(new Date()))
   const [end, setEnd] = useState('')
-  const [cycle, setCycle] = useState<PayCycle>('weekly')
+  const [cycle, setCycle] = useState<PayCycle>(seed?.cycle ?? 'weekly')
 
-  const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
+  const [roster, setRoster] = useState<{ id: string; name: string }[]>(seed?.roster ?? [])
   const [people, setPeople] = useState<NewPerson[]>([])
   const [draft, setDraft] = useState<NewPerson>({ name: '', phone: '', photo: null, details: {} })
   const [moreDetails, setMoreDetails] = useState(false)
   const [extra, setExtra] = useState('0')
-  const [crew, setCrew] = useState(false)
-  const [leader, setLeader] = useState<string | null>(null)
+  const [crew, setCrew] = useState(seed?.crew ?? false)
+  const [leader, setLeader] = useState<string | null>(seed?.leader ?? null)
 
-  const [chosenBasis, setBasis] = useState<PayBasis>('per_day')
-  const [dayRate, setDayRate] = useState('')
+  const [chosenBasis, setBasis] = useState<PayBasis>(seed?.basis ?? 'per_day')
+  const [dayRate, setDayRate] = useState(seed?.dayRate ?? '')
   const [days, setDays] = useState('')
-  const [unit, setUnit] = useState('m²')
-  const [unitRate, setUnitRate] = useState('')
-  const [totalQty, setTotalQty] = useState('')
-  const [price, setPrice] = useState('')
+  const [unit, setUnit] = useState(seed?.unit ?? 'm²')
+  const [unitRate, setUnitRate] = useState(seed?.unitRate ?? '')
+  const [totalQty, setTotalQty] = useState(seed?.totalQty ?? '')
+  const [price, setPrice] = useState(seed?.price ?? '')
   // From the day-sheet start date, day-rate workers paid one by one are
   // asked for in the crew request (489, 492); this form is for volume,
   // fixed-price and crew-leader jobs, recorded on the PM's day sheet, and a
@@ -188,6 +226,11 @@ export default function LabourRequestFormPage() {
         <Link to="/labour" className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"><ArrowLeft className="h-5 w-5" /></Link>
         <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">Ask for labour</h1>
       </div>
+      {seed && (
+        <p className="mb-4 rounded-xl bg-brand/5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+          Started from the earlier request: the same work and pay terms{seed.roster.length ? <>, and <b>{seed.roster.length} worker{seed.roster.length === 1 ? '' : 's'}</b> from that crew</> : ''}. Change whatever is different this time.
+        </p>
+      )}
 
       <ol className="mb-5 flex gap-2">
         {steps.map((s, i) => (

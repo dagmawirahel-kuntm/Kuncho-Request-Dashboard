@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -8,7 +8,9 @@ import { Pill } from '@/components/record/Record'
 import type { PayLine } from '@/lib/documents/labourPay'
 import { BASIS_LABEL, dayLabel, financeStatus, financeTone, fmtMoney, isoDay, useLabourSites, type PayBasis } from '@/lib/labour'
 import { DaySheetPay } from '@/components/labour/DaySheetPay'
-import { ArrowLeft, CheckCircle2, ChevronRight, Wallet } from 'lucide-react'
+import { PayWeekSettings } from '@/components/labour/LabourGives'
+import { payWeekFor, sendWeekPay, usePayWeek, useWeekPaySites, type WeekPaySite } from '@/lib/labourGives'
+import { ArrowLeft, CheckCircle2, ChevronRight, Send, Wallet } from 'lucide-react'
 
 type Unpaid = {
   labor_requisition_id: string; project_id: string; project_name: string | null; role_needed: string
@@ -62,9 +64,10 @@ export default function LabourPayPage() {
     <div className="mx-auto max-w-2xl space-y-4 pb-10">
       <Link to="/labour" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Labour</Link>
       <div>
-        <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><Wallet className="h-5 w-5 text-brand" /> Confirm pay</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Check what was recorded and confirm it. Then send it to finance in a <Link to="/labour/requests?view=mine" className="text-brand">payment request</Link> with the signed attendance sheet.</p>
+        <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><Wallet className="h-5 w-5 text-brand" /> Pay</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">What the days recorded come to, site by site. One tap puts a site's pay in a request; you check it, add the signed attendance sheet, and send it to finance.</p>
       </div>
+      <PayWeekSettings canEdit={hasRole('admin', 'operations_manager')} />
 
       {current ? (
         <Confirm key={current.labor_requisition_id} u={current} allowed={canConfirm(current)} onBack={() => select(null)}
@@ -72,9 +75,10 @@ export default function LabourPayPage() {
           toast={toast} />
       ) : (
         <>
+        <SendWeekPay />
         <DaySheetPay />
         <section className={card}>
-          <h2 className="border-b px-4 py-3 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">Recorded on work orders, not confirmed yet</h2>
+          <h2 className="border-b px-4 py-3 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">One request at a time<span className="block text-xs font-normal text-slate-500">To check or change the lines before confirming.</span></h2>
           {isLoading ? <p className="p-6 text-center text-sm text-slate-400">Loading…</p> : unpaid.length === 0 ? (
             <p className="flex items-center justify-center gap-2 p-6 text-sm text-slate-500"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Nothing waiting — all recorded work is confirmed.</p>
           ) : (
@@ -210,6 +214,73 @@ function Confirm({ u, allowed, onBack, onDone, toast }: {
           <p className="text-center text-xs text-slate-400">You can take it back until finance acts on it.</p>
         </>}
       </div>
+    </section>
+  )
+}
+
+/**
+ * One tap per site (515): confirms what is recorded on it and puts
+ * everything payable into one draft payment request, opened to check,
+ * sign and send. The three screens this used to take are still below.
+ */
+function SendWeekPay() {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { toast } = useToast()
+  const { data: sites = [], isLoading } = useWeekPaySites()
+  const { data: week } = usePayWeek()
+  const promise = payWeekFor(week, isoDay(new Date()))
+  const [busy, setBusy] = useState<string | null>(null)
+
+  async function send(s: WeekPaySite) {
+    setBusy(s.project_id)
+    try {
+      const r = await sendWeekPay(s.project_id)
+      for (const k of ['labour-week-pay-sites', 'labour-unpaid', 'labour-pay-sheets-recent', 'labour-payable-drafts', 'labour-pay-requests']) qc.invalidateQueries({ queryKey: [k] })
+      toast(`${r.code}: ${fmtMoney(Number(r.total))} ready to check and send${r.skipped.length ? `. Left out: ${r.skipped.join('; ')}` : ''}`, r.skipped.length ? 'info' : 'success')
+      navigate(`/labour/requests/${r.request_id}`)
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (isLoading || sites.length === 0) return null
+  return (
+    <section className={card}>
+      <h2 className="border-b px-4 py-3 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">
+        Send the pay
+        <span className="block text-xs font-normal text-slate-500">
+          {promise ? `Sent by ${promise.cutoffLabel}, it's paid ${promise.payDayLabel} (${promise.left}).` : 'Everything recorded on a site and not yet with finance, in one request.'}
+        </span>
+      </h2>
+      <ul className="divide-y dark:divide-slate-700">
+        {sites.map(s => {
+          const total = Number(s.to_confirm_amount) + Number(s.confirmed_amount)
+          return (
+            <li key={s.project_id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{s.project_name}</p>
+                <p className="text-xs text-slate-500">
+                  <b className="text-slate-700 dark:text-slate-200">{[s.workers ? `${s.workers} worker${s.workers === 1 ? '' : 's'}` : null,
+                    Number(s.crews) ? `${s.crews} job${Number(s.crews) === 1 ? '' : 's'} with no one named` : null].filter(Boolean).join(' and ') || 'Pay'}</b> waiting for <b className="text-slate-700 dark:text-slate-200">{fmtMoney(total)}</b>
+                  {s.first_day && s.last_day ? ` · ${dayLabel(s.first_day)} – ${dayLabel(s.last_day)}` : ''}
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  {[s.to_confirm ? `${fmtMoney(Number(s.to_confirm_amount))} recorded, not confirmed` : null,
+                    s.confirmed ? `${fmtMoney(Number(s.confirmed_amount))} confirmed, in no request` : null].filter(Boolean).join(' · ')}
+                  {s.unverified > 0 && <span className="text-amber-600"> · {s.unverified} not verified by HR</span>}
+                </p>
+              </div>
+              <button onClick={() => send(s)} disabled={!!busy}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
+                <Send className="h-4 w-4" /> {busy === s.project_id ? 'Putting it together…' : 'Send the pay'}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     </section>
   )
 }

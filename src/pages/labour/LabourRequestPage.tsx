@@ -19,8 +19,9 @@ import {
 } from '@/lib/labour'
 import {
   ArrowLeft, Check, ClipboardCheck, Clock, FileText, MessageSquare, Printer, Send, Smartphone, UserMinus, UserPlus, Wallet, X,
-  CalendarPlus, Ban, Undo2, Users, Timer,
+  CalendarPlus, Ban, Repeat, Undo2, Users, Timer,
 } from 'lucide-react'
+import { WorkerHistorySheet } from '@/components/labour/LabourGives'
 import { EmailDocumentButton } from '@/components/documents/EmailDocumentDialog'
 
 type Person = { staff_id: string | null; candidate_id: string | null; name: string; phone: string | null; day_rate: number | null; state: 'on_site' | 'left' | 'named' | 'new'; since: string | null }
@@ -126,6 +127,7 @@ export default function LabourRequestPage() {
   })
 
   const [dialog, setDialog] = useState<null | 'approve' | 'reject' | 'withdraw' | 'close' | 'extend' | 'add'>(null)
+  const [historyOf, setHistoryOf] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [newEnd, setNewEnd] = useState('')
   const [busy, setBusy] = useState(false)
@@ -314,7 +316,9 @@ export default function LabourRequestPage() {
                   ? <PhotoButton url={photos[p.staff_id ?? p.candidate_id ?? '']} name={p.name} onPhoto={url => savePhoto(p, url)} />
                   : <WorkerAvatar url={photos[p.staff_id ?? p.candidate_id ?? '']} name={p.name} />}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{p.name}</p>
+                  {p.staff_id
+                    ? <button type="button" onClick={() => setHistoryOf(p.staff_id)} title="Their record: days, sites, last worked" className="block max-w-full truncate text-left text-sm font-medium text-slate-800 underline decoration-slate-300 decoration-dotted underline-offset-4 dark:text-slate-100">{p.name}</button>
+                    : <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{p.name}</p>}
                   <p className="text-xs text-slate-500">
                     {p.phone ? <a href={`tel:${p.phone}`} className="hover:text-brand">{p.phone}</a> : 'no phone'}
                     {p.day_rate && req.payment_basis === 'per_day' ? ` · ${fmtMoney(p.day_rate)}/day` : ''}
@@ -417,8 +421,15 @@ export default function LabourRequestPage() {
           {!req.closed_at && <button onClick={() => open('close')} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-slate-600 dark:border-slate-600"><Ban className="h-4 w-4" /> Close — work is done</button>}
         </div>
       )}
+      {/* The same work, pay terms and people on a new request (515). */}
+      {req.status === 'approved' && (
+        <p className="text-center text-sm">
+          <Link to={`/labour/new?again=${req.id}`} className="inline-flex items-center gap-1.5 font-medium text-brand"><Repeat className="h-4 w-4" /> Ask again with the same crew</Link>
+        </p>
+      )}
 
       {/* Dialogs: a bottom sheet on a phone */}
+      {historyOf && <WorkerHistorySheet staffId={historyOf} onClose={() => setHistoryOf(null)} />}
       {detailsOf && <WorkerDetailsSheet who={{ staff_id: detailsOf.staff_id, candidate_id: detailsOf.candidate_id }} name={detailsOf.name} onClose={() => setDetailsOf(null)} />}
       {dialog && (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => !busy && setDialog(null)}>
