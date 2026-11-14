@@ -6,7 +6,11 @@ import { supabase } from '@/lib/supabase'
 
 // ── The pay week ────────────────────────────────────────────────────────────
 /** Recorded by the cut-off, paid on pay day. Off until admin or operations sets it. */
-export type PayWeek = { enabled: boolean; cutoff_dow: number; cutoff_hour: number; pay_dow: number; updated_by_name: string | null }
+export type PayWeek = {
+  enabled: boolean; cutoff_dow: number; cutoff_hour: number; pay_dow: number; updated_by_name: string | null
+  /** At the cut-off the system turns locked days into one draft payment request per site manager (516). */
+  auto_prepare?: boolean; last_closed_to?: string | null
+}
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -171,4 +175,41 @@ export function useWorkerHistory(staffId: string | null) {
       return (data ?? null) as WorkerHistory | null
     },
   })
+}
+
+// ── Where the pay is (516) ──────────────────────────────────────────────────
+/** A stage of labour pay on its way from recorded to paid, for one site manager. */
+export type PipelineRow = {
+  stage: number
+  key: 'open' | 'review' | 'locked' | 'to_send' | 'with_finance' | 'approved' | 'sent' | 'paid' | 'held'
+  pm_staff_id: string | null; pm_name: string; amount: number; items: number; oldest: string | null
+}
+
+export function usePayPipeline(enabled = true) {
+  return useQuery({
+    queryKey: ['labour-pay-pipeline'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_pay_pipeline')
+      if (error) throw error
+      return (data ?? []) as PipelineRow[]
+    },
+  })
+}
+
+export type WeekClosed = {
+  ran: boolean; to?: string
+  requests?: { pm: string; request_id?: string; code?: string; added?: number; total?: number; workers?: number; skipped: string[] }[]
+}
+
+/** Admin or operations: prepare everything payable up to today now, without waiting for the cut-off. */
+export async function prepareWeekPay(): Promise<WeekClosed> {
+  const { data, error } = await supabase.rpc('labour_week_close', { p_force: true })
+  if (error) throw error
+  return data as WeekClosed
+}
+
+export async function setAutoPrepare(on: boolean) {
+  const { error } = await supabase.rpc('set_labour_auto_prepare', { p_on: on })
+  if (error) throw error
 }
