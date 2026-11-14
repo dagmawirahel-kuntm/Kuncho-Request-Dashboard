@@ -213,3 +213,33 @@ export async function setAutoPrepare(on: boolean) {
   const { error } = await supabase.rpc('set_labour_auto_prepare', { p_on: on })
   if (error) throw error
 }
+
+// ── HR's check at the door (518) ────────────────────────────────────────────
+/** From door_from, an unverified worker can be recorded for grace_days and then not until HR verifies them; no pay is held. */
+export type DoorCheck = { hold_from: string; door_from: string | null; grace_days: number }
+
+export function useDoorCheck() {
+  return useQuery({
+    queryKey: ['labour-door-check'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_pay_hold_settings').select('hold_from, door_from, grace_days').limit(1).maybeSingle()
+      if (error) throw error
+      return (data ?? null) as DoorCheck | null
+    },
+  })
+}
+
+/** The last work date each unverified worker can be recorded for. Pass ids, or nothing for everyone (HR, finance, operations, admin). */
+export function useDoorStatus(staffIds: string[] | null, enabled = true) {
+  return useQuery({
+    queryKey: ['labour-door-status', staffIds ? [...staffIds].sort().join(',') : 'all'],
+    enabled: enabled && (staffIds === null || staffIds.length > 0),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_door_status', { p_staff: staffIds })
+      if (error) throw error
+      return new Map(((data ?? []) as { staff_id: string; until: string | null }[]).filter(r => r.until).map(r => [r.staff_id, r.until as string]))
+    },
+  })
+}

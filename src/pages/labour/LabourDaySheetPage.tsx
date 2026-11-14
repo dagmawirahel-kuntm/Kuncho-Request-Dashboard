@@ -8,6 +8,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { NewWorkerForm, type NewWorker } from '@/components/labour/NewWorkerForm'
 import { PayWeekBanner, SitePulseCard, WorkerHistorySheet, WorkerSlipsSheet } from '@/components/labour/LabourGives'
+import { useDoorStatus } from '@/lib/labourGives'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
   BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople, weekdaysLabel,
@@ -126,6 +127,9 @@ export default function LabourDaySheetPage() {
     for (const j of sheet?.jobs ?? []) m.set(j.project_id, j.project)
     return [...m].map(([id, name]) => ({ id, name }))
   }, [projectCols, sheet])
+  // With HR's check at the door (518): the last date each unverified worker on the sheet can be recorded for.
+  const unverifiedIds = useMemo(() => (sheet?.workers ?? []).filter(w => !w.verified).map(w => w.staff_id), [sheet])
+  const { data: until } = useDoorStatus(unverifiedIds)
   const cols: Col[] = [
     ...projectCols.flatMap(p => PROJECT_BUCKETS.map(b => ({ key: cellKey(b, p.id), bucket: b, project_id: p.id, project: p.name, group: p.id }))),
     ...OTHER_BUCKETS.filter(b => sheet?.buckets?.[b as 'workshop']).map(b => ({ key: b, bucket: b, project_id: null, project: BUCKET_LABEL[b], group: b })),
@@ -350,7 +354,7 @@ export default function LabourDaySheetPage() {
                                 className="block max-w-full truncate text-left font-medium text-slate-800 underline decoration-slate-300 decoration-dotted underline-offset-4 dark:text-slate-100">{r.name}</button>
                               <p className="truncate text-[11px] text-slate-500">
                                 {tradeName(r.trade)} · {r.day_rate ? `${Number(r.day_rate).toLocaleString()}/day` : <span className="text-red-600">no day rate</span>}
-                                {!r.verified && <span className="text-amber-600"> · not verified</span>}
+                                {!r.verified && <span className={until?.get(r.staff_id) && until.get(r.staff_id)! < date ? 'text-red-600' : 'text-amber-600'}> · not verified{until?.get(r.staff_id) ? `, can be recorded until ${dayLabel(until.get(r.staff_id)!)}` : ''}</span>}
                                 {r.elsewhere > 0 && <span className="text-blue-600"> · {halfDays(r.elsewhere)} on another sheet</span>}
                               </p>
                             </div>

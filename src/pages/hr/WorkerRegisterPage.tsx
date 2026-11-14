@@ -12,6 +12,7 @@ import { useWorkerPhotos } from '@/lib/workerPhotos'
 import { useWorkerDetails } from '@/lib/workerDetails'
 import { ExportButton } from '@/components/shared/ExportButton'
 import { downloadXlsx, fileDate, type XlsxColumn } from '@/lib/xlsxExport'
+import { useDoorCheck, useDoorStatus } from '@/lib/labourGives'
 import { BadgeCheck, ChevronDown, ChevronRight, Copy, ShieldAlert, UserCheck } from 'lucide-react'
 
 type Card = {
@@ -34,7 +35,9 @@ type Tab = 'confirm' | 'waiting' | 'duplicates' | 'verified'
 // HR's worker register (477): every casual worker checked once — who they
 // are, how to reach them, their trade and rate, and where their pay goes.
 // The site team fills the details in (482); HR reviews and accepts them, or
-// sends them back. Pay for anyone not verified is held from the date set here.
+// sends them back. Pay for anyone not verified is held from the date set here;
+// or, checked at the door instead (518), they can be recorded for a grace
+// period and then not until verified, and no pay is held.
 export default function WorkerRegisterPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -44,6 +47,8 @@ export default function WorkerRegisterPage() {
   const [tab, setTab] = useState<Tab>('confirm')
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  const { data: door } = useDoorCheck()
+  const { data: until } = useDoorStatus(null, !!door?.door_from)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['worker-register'],
@@ -61,11 +66,20 @@ export default function WorkerRegisterPage() {
     if (error) { toast(error.message, 'error'); return }
     toast(`Pay for unverified workers is held from ${formatDate(d)}`, 'success'); refresh()
   }
+  // The same check at the door: a start date turns it on, nothing turns it off.
+  async function setDoor(from: string | null, grace?: number) {
+    const { error } = await supabase.rpc('set_labour_door_check', { p_from: from, p_grace: grace ?? null })
+    if (error) { toast(error.message, 'error'); return }
+    toast(from ? `From ${formatDate(from)} a worker who isn't verified can be recorded for ${grace ?? door?.grace_days ?? 14} days, then not until verified. No pay is held.` : 'Back to holding the pay of workers who are not verified', 'success')
+    for (const k of ['labour-door-check', 'labour-door-status', 'worker-register']) qc.invalidateQueries({ queryKey: [k] })
+  }
 
   if (isLoading) return <p className="py-12 text-center text-sm text-slate-400">Loading…</p>
   if (error || !data) return <p className="py-12 text-center text-sm text-red-600">{(error as Error)?.message ?? 'Could not load'}</p>
   const c = data.counts
   const holding = new Date(data.hold_from) <= new Date()
+  const today = new Date().toISOString().slice(0, 10)
+  const doorOn = !!door?.door_from && door.door_from <= today
   const needle = q.trim().toLowerCase()
   const match = (w: Card) => !needle || `${w.name} ${w.phone ?? ''} ${w.trade ?? ''} ${w.last_site ?? ''}`.toLowerCase().includes(needle)
   const toConfirm = data.to_verify.filter(w => w.gaps.length === 0)
@@ -115,6 +129,26 @@ export default function WorkerRegisterPage() {
         <Stat label="Pay waiting, not verified" value={formatCurrency(c.pay_waiting_unverified)} tone="amber" />
       </div>
 
+      {door?.door_from ? (
+        <div className={`${card} space-y-2 border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-900/10`}>
+          <p className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-200">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
+            <span>
+              <b>Checked at the door{doorOn ? '' : ` from ${formatDate(door.door_from)}`}.</b> A worker who isn't verified can be recorded for {door.grace_days} days
+              (counted from their first day, or from {formatDate(door.door_from)} if they were already working), then can't be put on a sheet until HR verifies them. No pay is held.
+            </span>
+          </p>
+          {canSetHold && (
+            <div className="flex flex-wrap items-center gap-2 pl-8 text-xs text-slate-600 dark:text-slate-300">
+              From <input type="date" className="rounded-md border px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800" value={door.door_from} onChange={e => e.target.value && setDoor(e.target.value)} aria-label="Check at the door from" />
+              for <select className="rounded-md border px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800" value={door.grace_days} onChange={e => setDoor(door.door_from, Number(e.target.value))} aria-label="Grace period in days">
+                {[7, 10, 14, 21, 30].map(n => <option key={n} value={n}>{n} days</option>)}
+              </select>
+              <button onClick={() => setDoor(null)} className="ml-auto font-medium text-slate-500 hover:text-red-600">Hold their pay instead</button>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className={`${card} flex flex-wrap items-center gap-3 px-4 py-3 ${holding ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/10' : 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/10'}`}>
         <ShieldAlert className={`h-5 w-5 shrink-0 ${holding ? 'text-red-600' : 'text-amber-600'}`} />
         <p className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-200">
@@ -122,7 +156,13 @@ export default function WorkerRegisterPage() {
           {' '}— it stays out of the payment until HR verifies them.
         </p>
         {canSetHold && <input type="date" className="rounded-md border px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800" value={data.hold_from} onChange={e => e.target.value && setHold(e.target.value)} aria-label="Hold pay from" />}
+        {canSetHold && door && (
+          <button onClick={() => setDoor(today)} className="w-full text-left text-xs font-medium text-brand sm:pl-8">
+            Check at the door instead: let them be recorded for {door.grace_days} days, then not until verified, and hold no pay
+          </button>
+        )}
       </div>
+      )}
 
       {(c.shared_accounts ?? 0) > 0 && (
         <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-sky-200">
@@ -165,6 +205,11 @@ export default function WorkerRegisterPage() {
                         {w.verified_at ? ` · verified ${formatDate(w.verified_at)}${w.verified_by ? ` by ${w.verified_by}` : ''}` : ''}
                         {w.note ? ` · ${w.note}` : ''}
                       </p>
+                      {!w.verified_at && until?.get(w.id) && (
+                        <p className={`text-[11px] font-medium ${until.get(w.id)! < today ? 'text-red-600' : 'text-amber-600'}`}>
+                          {until.get(w.id)! < today ? `Can't be recorded since ${formatDate(until.get(w.id)!)}` : `Can be recorded until ${formatDate(until.get(w.id)!)}`}
+                        </p>
+                      )}
                     </div>
                     {w.pay_waiting > 0 && <div className="shrink-0 text-right text-xs"><p className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(w.pay_waiting)}</p><p className="text-slate-400">pay waiting</p></div>}
                   </button>
