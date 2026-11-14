@@ -9,6 +9,7 @@ import type { PayLine } from '@/lib/documents/labourPay'
 import { BASIS_LABEL, dayLabel, financeStatus, financeTone, fmtMoney, isoDay, useLabourSites, type PayBasis } from '@/lib/labour'
 import { DaySheetPay } from '@/components/labour/DaySheetPay'
 import { PayWeekSettings } from '@/components/labour/LabourGives'
+import { PayPipeline, ReadyToSend } from '@/components/labour/PayPipeline'
 import { payWeekFor, sendWeekPay, usePayWeek, useWeekPaySites, type WeekPaySite } from '@/lib/labourGives'
 import { ArrowLeft, CheckCircle2, ChevronRight, Send, Wallet } from 'lucide-react'
 
@@ -27,8 +28,9 @@ type Sheet = {
 const input = 'w-full rounded-lg border px-3 py-2.5 text-base sm:text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 
-// The project manager's weekly job: look at what was recorded, confirm it,
-// and it goes to finance as one payable per request.
+// Where the pay is, and what is waiting for a signature. Confirming is no
+// longer a step: locked days become one pay request per site manager at the
+// weekly cut-off (516). The by-hand steps stay, folded away.
 export default function LabourPayPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -65,7 +67,7 @@ export default function LabourPayPage() {
       <Link to="/labour" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand"><ArrowLeft className="h-4 w-4" /> Labour</Link>
       <div>
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><Wallet className="h-5 w-5 text-brand" /> Pay</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">What the days recorded come to, site by site. One tap puts a site's pay in a request; you check it, add the signed attendance sheet, and send it to finance.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Locked days turn into one pay request by themselves each week. You attach the signed attendance sheet and send it; finance pays.</p>
       </div>
       <PayWeekSettings canEdit={hasRole('admin', 'operations_manager')} />
 
@@ -75,6 +77,14 @@ export default function LabourPayPage() {
           toast={toast} />
       ) : (
         <>
+        <PayPipeline canPrepare={hasRole('admin', 'operations_manager')} />
+        <ReadyToSend />
+        {/* Before 516 each of these was a step. They stay for off-cycle pay and for checking the lines first. */}
+        <details className="group">
+          <summary className="cursor-pointer list-none text-center text-xs font-medium text-slate-500 hover:text-brand">
+            <span className="group-open:hidden">Prepare pay by hand instead</span><span className="hidden group-open:inline">Hide the by-hand steps</span>
+          </summary>
+          <div className="mt-4 space-y-4">
         <SendWeekPay />
         <DaySheetPay />
         <section className={card}>
@@ -98,6 +108,8 @@ export default function LabourPayPage() {
             </ul>
           )}
         </section>
+          </div>
+        </details>
         </>
       )}
 

@@ -13,6 +13,7 @@ import { hasDetails, saveWorkerDetails, type DetailsInput, type Who } from '@/li
 import { DetailsFields } from '@/components/labour/WorkerDetails'
 import { useDaySettings } from '@/lib/labourDay'
 import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
+import { autoApproveRequest } from '@/lib/labourGives'
 import { ArrowLeft, ArrowRight, Check, HardHat, Plus, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
 const input = 'w-full rounded-lg border px-3 py-2.5 text-base sm:text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -209,7 +210,9 @@ function RequestForm({ seed }: { seed: Seed | null }) {
         if (hasDetails(p.details)) await saveWorkerDetails(added as Who, p.details)
       }
       qc.invalidateQueries({ queryKey: ['labour-requests'] })
-      toast('Sent for approval — you can follow it on the request', 'success')
+      // Nothing new in it (519): the same rate as before, under the limit, nobody to hire. Then it needs no one's approval.
+      const auto = await autoApproveRequest(req.id)
+      toast(auto?.approved ? `Approved straight away: ${auto.why}` : auto?.why ? `Sent for approval, because ${auto.why}` : 'Sent for approval — you can follow it on the request', 'success')
       navigate(`/labour/${req.id}`)
     } catch (e) {
       toast((e as Error).message, 'error')

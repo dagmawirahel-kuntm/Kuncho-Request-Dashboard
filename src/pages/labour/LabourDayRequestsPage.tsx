@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { autoApproveCrew } from '@/lib/labourGives'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
@@ -81,7 +82,7 @@ export default function LabourDayRequestsPage() {
     if (stop && !confirm(`Stop your crew from ${dayLabel(date)}? Nobody is expected from that day until you send a new crew.`)) return
     if (span === 'until_date' && !endsOn) { toast('Pick the last day', 'error'); return }
     setBusy(stop ? 'stop' : submit ? 'send' : 'save')
-    const { error } = await supabase.rpc('labour_day_request_save', {
+    const { data: savedId, error } = await supabase.rpc('labour_day_request_save', {
       p_pm: pm, p_date: date,
       p_lines: stop ? [] : lines.filter(l => l.trade && l.headcount > 0).map(l => ({ trade: l.trade, headcount: l.headcount })),
       p_note: note.trim() || null, p_submit: submit || stop,
@@ -89,7 +90,9 @@ export default function LabourDayRequestsPage() {
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
-    toast(stop ? `No crew from ${dayLabel(date)}` : submit ? 'Sent to operations' : 'Saved as a draft', 'success')
+    // A change that asks for no more people than the crew already approved needs no approval (519).
+    const auto = submit && !stop && savedId ? await autoApproveCrew(savedId as string) : null
+    toast(stop ? `No crew from ${dayLabel(date)}` : auto?.approved ? `Approved straight away: ${auto.why}` : submit ? `Sent to operations${auto?.why ? `, because ${auto.why}` : ''}` : 'Saved as a draft', 'success')
     refresh()
   }
   async function decide(r: CrewRequest, approve: boolean) {

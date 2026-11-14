@@ -10,7 +10,8 @@ export const REQUEST_STATUS: Record<PayRequestStatus, { label: string; tone: Ton
   submitted: { label: 'With finance', tone: 'blue' },
   returned: { label: 'Sent back', tone: 'red' },
   approved: { label: 'Approved — to pay', tone: 'amber' },
-  sent: { label: 'In a payment', tone: 'green' },
+  // Sent is not paid: it closes when finance records the bank reference and the date (517).
+  sent: { label: 'Sent to the bank', tone: 'amber' },
   cancelled: { label: 'Cancelled', tone: 'slate' },
 }
 

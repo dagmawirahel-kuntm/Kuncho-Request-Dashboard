@@ -146,7 +146,8 @@ function FinanceQueue() {
   const groups: { title: string; rows: RequestRow[]; empty: string }[] = [
     { title: 'To approve', rows: rows.filter(r => r.status === 'submitted'), empty: 'No requests waiting for approval.' },
     { title: 'Approved — to pay', rows: rows.filter(r => r.status === 'approved'), empty: 'Nothing approved and unpaid.' },
-    { title: 'In a payment', rows: rows.filter(r => r.status === 'sent').slice(0, 20), empty: 'None yet.' },
+    { title: 'Sent to the bank, not recorded as paid', rows: rows.filter(r => r.status === 'sent' && !r.batch_paid), empty: 'Every payment sent is recorded as paid.' },
+    { title: 'Paid', rows: rows.filter(r => r.status === 'sent' && r.batch_paid).slice(0, 20), empty: 'None yet.' },
   ]
   if (isLoading) return <p className="p-6 text-center text-sm text-slate-400">Loading…</p>
   return <>
@@ -166,7 +167,7 @@ function RequestList({ rows, showWho }: { rows: RequestRow[]; showWho?: boolean 
   return (
     <ul className="divide-y dark:divide-slate-700">
       {rows.map(r => {
-        const st = REQUEST_STATUS[r.status]
+        const st = r.status === 'sent' && r.batch_paid ? { label: 'Paid', tone: 'green' as const } : REQUEST_STATUS[r.status]
         return (
           <li key={r.id}>
             <Link to={`/labour/requests/${r.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/40">
@@ -175,7 +176,7 @@ function RequestList({ rows, showWho }: { rows: RequestRow[]; showWho?: boolean 
                 <p className="truncate text-xs text-slate-500">
                   {r.sheets} sheet{r.sheets === 1 ? '' : 's'} · {r.workers} worker{r.workers === 1 ? '' : 's'}
                   {showWho && r.created_by_name ? ` · ${r.created_by_name}` : ''}
-                  {r.status === 'sent' && r.batch_code ? ` · ${r.batch_code}${r.batch_paid ? ' (paid)' : ''}` : ''}
+                  {r.status === 'sent' && r.batch_code ? ` · ${r.batch_code}${r.batch_paid ? '' : ' · not recorded as paid yet'}` : ''}
                 </p>
                 {r.status === 'returned' && r.returned_reason && <p className="truncate text-xs text-red-600">Sent back: {r.returned_reason}</p>}
               </div>

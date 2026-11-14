@@ -6,7 +6,11 @@ import { supabase } from '@/lib/supabase'
 
 // ── The pay week ────────────────────────────────────────────────────────────
 /** Recorded by the cut-off, paid on pay day. Off until admin or operations sets it. */
-export type PayWeek = { enabled: boolean; cutoff_dow: number; cutoff_hour: number; pay_dow: number; updated_by_name: string | null }
+export type PayWeek = {
+  enabled: boolean; cutoff_dow: number; cutoff_hour: number; pay_dow: number; updated_by_name: string | null
+  /** At the cut-off the system turns locked days into one draft payment request per site manager (516). */
+  auto_prepare?: boolean; last_closed_to?: string | null
+}
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -171,4 +175,120 @@ export function useWorkerHistory(staffId: string | null) {
       return (data ?? null) as WorkerHistory | null
     },
   })
+}
+
+// ── Where the pay is (516) ──────────────────────────────────────────────────
+/** A stage of labour pay on its way from recorded to paid, for one site manager. */
+export type PipelineRow = {
+  stage: number
+  key: 'open' | 'review' | 'locked' | 'to_send' | 'with_finance' | 'approved' | 'sent' | 'paid' | 'held'
+  pm_staff_id: string | null; pm_name: string; amount: number; items: number; oldest: string | null
+}
+
+export function usePayPipeline(enabled = true) {
+  return useQuery({
+    queryKey: ['labour-pay-pipeline'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_pay_pipeline')
+      if (error) throw error
+      return (data ?? []) as PipelineRow[]
+    },
+  })
+}
+
+export type WeekClosed = {
+  ran: boolean; to?: string
+  requests?: { pm: string; request_id?: string; code?: string; added?: number; total?: number; workers?: number; skipped: string[] }[]
+}
+
+/** Admin or operations: prepare everything payable up to today now, without waiting for the cut-off. */
+export async function prepareWeekPay(): Promise<WeekClosed> {
+  const { data, error } = await supabase.rpc('labour_week_close', { p_force: true })
+  if (error) throw error
+  return data as WeekClosed
+}
+
+export async function setAutoPrepare(on: boolean) {
+  const { error } = await supabase.rpc('set_labour_auto_prepare', { p_on: on })
+  if (error) throw error
+}
+
+// ── HR's check at the door (518) ────────────────────────────────────────────
+/** From door_from, an unverified worker can be recorded for grace_days and then not until HR verifies them; no pay is held. */
+export type DoorCheck = { hold_from: string; door_from: string | null; grace_days: number }
+
+export function useDoorCheck() {
+  return useQuery({
+    queryKey: ['labour-door-check'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_pay_hold_settings').select('hold_from, door_from, grace_days').limit(1).maybeSingle()
+      if (error) throw error
+      return (data ?? null) as DoorCheck | null
+    },
+  })
+}
+
+/** The last work date each unverified worker can be recorded for. Pass ids, or nothing for everyone (HR, finance, operations, admin). */
+export function useDoorStatus(staffIds: string[] | null, enabled = true) {
+  return useQuery({
+    queryKey: ['labour-door-status', staffIds ? [...staffIds].sort().join(',') : 'all'],
+    enabled: enabled && (staffIds === null || staffIds.length > 0),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_door_status', { p_staff: staffIds })
+      if (error) throw error
+      return new Map(((data ?? []) as { staff_id: string; until: string | null }[]).filter(r => r.until).map(r => [r.staff_id, r.until as string]))
+    },
+  })
+}
+
+// ── Terms, not asks (519) ───────────────────────────────────────────────────
+/** A request that repeats a rate already approved, under the limit and with nobody new to hire, is approved by the system. */
+export type Terms = { auto_approve: boolean; limit_etb: number; lookback_days: number }
+
+export function useTerms() {
+  return useQuery({
+    queryKey: ['labour-terms'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_terms_settings').select('auto_approve, limit_etb, lookback_days').limit(1).maybeSingle()
+      if (error) throw error
+      return (data ?? null) as Terms | null
+    },
+  })
+}
+
+export type AutoApproved = { approved: boolean; why: string }
+
+/** After a labour request is sent with its people: approved on the spot if it sets nothing new. Never throws: a request that can't be checked just waits for a person. */
+export async function autoApproveRequest(id: string): Promise<AutoApproved | null> {
+  const { data, error } = await supabase.rpc('labour_request_auto_approve', { p_req: id })
+  return error ? null : (data as AutoApproved)
+}
+
+/** The same for a change to the standing crew. */
+export async function autoApproveCrew(id: string): Promise<AutoApproved | null> {
+  const { data, error } = await supabase.rpc('labour_crew_auto_approve', { p_id: id })
+  return error ? null : (data as AutoApproved)
+}
+
+/** Why a waiting request is waiting (or that it would be approved by itself). */
+export function useRequestTerms(id: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['labour-request-terms', id],
+    enabled: enabled && !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_request_terms', { p_req: id })
+      if (error) throw error
+      const row = Array.isArray(data) ? data[0] : data
+      return (row ?? null) as { ok: boolean; why: string } | null
+    },
+  })
+}
+
+export async function setTerms(auto: boolean | null, limit: number | null) {
+  const { error } = await supabase.rpc('set_labour_terms', { p_auto: auto, p_limit: limit })
+  if (error) throw error
 }
