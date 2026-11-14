@@ -96,7 +96,9 @@ export default function LabourPayRequestPage() {
 
   if (isLoading || !req) return <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
 
-  const st = REQUEST_STATUS[req.status]
+  // Sent to the bank is not paid: every pay sheet on it has to be recorded as paid, with the bank reference and date.
+  const paid = req.status === 'sent' && items.length > 0 && items.every(i => i.expenses?.payment_state === 'paid')
+  const st = paid ? { label: 'Paid', tone: 'green' as const } : REQUEST_STATUS[req.status]
   const editable = canEdit && (req.status === 'draft' || req.status === 'returned')
   const gross = lines.reduce((s, l) => s + Number(l.gross), 0)
   const ded = lines.reduce((s, l) => s + Number(l.deduction), 0)
@@ -173,7 +175,19 @@ export default function LabourPayRequestPage() {
       {finance && req.status === 'submitted' && <Review id={id} code={req.code} lines={lines} onDone={refresh} />}
       {finance && req.status === 'approved' && <Pay id={id} net={items.filter(i => i.expenses?.payment_state === 'approved_to_pay').reduce((s, i) => s + Number(i.expenses?.amount_etb ?? 0), 0)} onDone={b => { refresh(); navigate(`/batch-payments/${b}`) }} />}
       {req.batch_payment_id && (
-        <Link to={`/batch-payments/${req.batch_payment_id}`} className={`${card} flex items-center gap-2 px-4 py-3 text-sm font-medium text-brand`}><Banknote className="h-4 w-4" /> Open the batch payment</Link>
+        <Link to={`/batch-payments/${req.batch_payment_id}`}
+          className={`${card} flex items-center gap-3 px-4 py-3 text-sm ${paid ? '' : 'border-amber-300 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-900/10'}`}>
+          <Banknote className={`h-4 w-4 shrink-0 ${paid ? 'text-emerald-600' : 'text-amber-600'}`} />
+          <span className="min-w-0 flex-1">
+            <b className="block text-slate-800 dark:text-slate-100">{paid ? 'Paid' : 'Sent to the bank, not recorded as paid yet'}</b>
+            <span className="text-xs text-slate-500">
+              {paid ? 'Finance recorded the bank reference and the date it was paid.'
+                : finance ? 'Record the bank reference and the date it was paid. Until then this pay counts as not paid.'
+                  : 'It counts as paid once finance records the bank reference and the date.'}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs font-semibold text-brand">{!paid && finance ? 'Record it as paid' : 'Open the payment'}</span>
+        </Link>
       )}
       {(canEdit || finance) && ['draft', 'returned', 'submitted'].includes(req.status) && (
         <button onClick={cancel} className="w-full text-center text-xs text-slate-400 hover:text-red-600">Cancel this request</button>
