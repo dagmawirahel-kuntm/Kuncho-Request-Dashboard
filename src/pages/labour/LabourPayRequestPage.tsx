@@ -8,6 +8,7 @@ import { useAccounts } from '@/hooks/useLookups'
 import { Pill } from '@/components/record/Record'
 import { FileUpload } from '@/components/shared/FileUpload'
 import { dayLabel, fmtMoney } from '@/lib/labour'
+import { useDoorCheck } from '@/lib/labourGives'
 import {
   REQUEST_STATUS, SIGNOFF, usePayableDrafts, type PayRequest, type Photo, type RequestLine,
 } from '@/lib/labourPayRequests'
@@ -27,7 +28,16 @@ type Item = {
     labor_requisitions: { role_needed: string } | null
   } | null
 }
-type Hold = { expense_id: string; staff: { employee_name: string } | null; expenses: { amount_etb: number } | null }
+// Pay split off at approval for a worker HR hadn't verified. It never comes back to this request (it has gone on to
+// finance); once released it goes into the next pay request, so each one says where it is now.
+type Hold = {
+  expense_id: string; staff_id: string | null
+  staff: { employee_name: string; verified_at: string | null } | null
+  expenses: {
+    amount_etb: number; approval_status: string; payment_state: string | null
+    labour_pay_request_items: { removed_at: string | null; labour_pay_requests: { id: string; code: string; status: string } | null }[]
+  } | null
+}
 
 export default function LabourPayRequestPage() {
   const { id = '' } = useParams()
@@ -67,7 +77,7 @@ export default function LabourPayRequestPage() {
     queryKey: ['labour-pay-request', id, 'holds'],
     queryFn: async () => {
       const { data, error } = await supabase.from('labour_pay_holds')
-        .select('expense_id, staff(employee_name), expenses!labour_pay_holds_expense_id_fkey(amount_etb)')
+        .select('expense_id, staff_id, staff(employee_name, verified_at), expenses!labour_pay_holds_expense_id_fkey(amount_etb, approval_status, payment_state, labour_pay_request_items(removed_at, labour_pay_requests(id, code, status)))')
         .eq('request_id', id)
       if (error) throw error
       return (data ?? []) as unknown as Hold[]
@@ -157,17 +167,7 @@ export default function LabourPayRequestPage() {
       <Sheets id={id} items={items} editable={editable} onChange={refresh} />
       <Lines id={id} lines={lines} editable={editable} holdFrom={holdFrom ?? null} status={req.status} onChange={refresh} />
 
-      {holds.length > 0 && (
-        <section className={`${card} border-amber-200 dark:border-amber-900/40`}>
-          <h2 className="flex items-center gap-2 border-b px-4 py-3 font-semibold text-amber-800 dark:border-slate-700 dark:text-amber-300"><ShieldAlert className="h-4 w-4" /> Held until HR verifies</h2>
-          <ul className="divide-y text-sm dark:divide-slate-700">
-            {holds.map(h => (
-              <li key={h.expense_id} className="flex justify-between px-4 py-2"><span>{h.staff?.employee_name ?? 'Whole pay sheet'}</span><span className="font-medium">{fmtMoney(h.expenses?.amount_etb)}</span></li>
-            ))}
-          </ul>
-          <p className="border-t px-4 py-2 text-xs text-slate-500 dark:border-slate-700">Once HR verifies them on the <Link to="/hr/worker-register" className="text-brand">Worker register</Link>, this pay shows up again to put in the next request.</p>
-        </section>
-      )}
+      {holds.length > 0 && <HeldPay holds={holds} />}
 
       {editable ? <Submit req={req} hasLines={lines.length > 0} onDone={refresh} />
         : <Evidence req={req} />}
@@ -485,6 +485,54 @@ function Pay({ id, net, onDone }: { id: string; net: number; onDone: (batch: str
       )}
       <button onClick={pay} disabled={busy || net <= 0} className="w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white disabled:opacity-40">{busy ? 'Making the payment…' : 'Make the batch payment'}</button>
       <p className="text-center text-xs text-slate-400">Advances are taken off each worker's transfer; the bank schedule shows what to send.</p>
+    </section>
+  )
+}
+
+/** Where pay held at approval is now: still held, released into another request, or paid. */
+function HeldPay({ holds }: { holds: Hold[] }) {
+  const { data: door } = useDoorCheck()
+  const today = new Date().toISOString().slice(0, 10)
+  const doorOn = !!door?.door_from && door.door_from <= today
+  const rows = holds.map(h => {
+    const e = h.expenses
+    const req = (e?.labour_pay_request_items ?? []).filter(i => !i.removed_at && i.labour_pay_requests && i.labour_pay_requests.status !== 'cancelled')
+      .map(i => i.labour_pay_requests!)[0] ?? null
+    const verified = !!h.staff?.verified_at
+    const paid = e?.payment_state === 'paid'
+    const stillHeld = !paid && !verified && !doorOn && !!h.staff_id
+    return { h, req, verified, paid, stillHeld }
+  })
+  const waiting = rows.filter(r => r.stillHeld)
+  const where: Record<string, string> = { draft: 'not sent to finance yet', returned: 'sent back by finance', submitted: 'with finance', approved: 'approved, to be paid', sent: 'sent to the bank' }
+  return (
+    <section className={`${card} ${waiting.length ? 'border-amber-200 dark:border-amber-900/40' : ''}`}>
+      <h2 className="flex items-center gap-2 border-b px-4 py-3 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">
+        <ShieldAlert className={`h-4 w-4 ${waiting.length ? 'text-amber-600' : 'text-slate-400'}`} /> Held at approval
+        <span className="ml-auto text-xs font-normal text-slate-500">{waiting.length ? `${waiting.length} still waiting on HR` : 'none still held'}</span>
+      </h2>
+      <ul className="divide-y text-sm dark:divide-slate-700">
+        {rows.map(({ h, req, verified, paid, stillHeld }) => (
+          <li key={h.expense_id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+            <div className="min-w-0">
+              <p className="text-slate-800 dark:text-slate-100">{h.staff?.employee_name ?? 'Whole pay sheet'}</p>
+              <p className="text-xs text-slate-500">
+                {verified ? <span className="text-emerald-600">Verified {dayLabel(h.staff!.verified_at!.slice(0, 10))}</span>
+                  : doorOn ? 'Not verified; no longer held (HR now checks at the door)' : <span className="text-amber-700 dark:text-amber-300">Not verified by HR yet</span>}
+                {' · '}
+                {paid ? <span className="text-emerald-600">paid{req ? ` in ${req.code}` : ''}</span>
+                  : req ? <Link to={`/labour/requests/${req.id}`} className="font-medium text-brand">now in {req.code}, {where[req.status] ?? req.status}</Link>
+                    : stillHeld ? 'held until HR verifies them'
+                      : 'released; goes into the next pay request'}
+              </p>
+            </div>
+            <span className="shrink-0 font-medium tabular-nums">{fmtMoney(h.expenses?.amount_etb)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="border-t px-4 py-2 text-xs text-slate-500 dark:border-slate-700">
+        This request went on without them. Their pay doesn't come back here: once HR verifies them on the <Link to="/hr/worker-register" className="text-brand">Worker register</Link>, it goes into the next pay request, prepared at the weekly cut-off.
+      </p>
     </section>
   )
 }
