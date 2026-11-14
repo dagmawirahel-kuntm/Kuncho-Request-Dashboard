@@ -22,6 +22,7 @@ import {
   CalendarPlus, Ban, Repeat, Undo2, Users, Timer,
 } from 'lucide-react'
 import { WorkerHistorySheet } from '@/components/labour/LabourGives'
+import { useRequestTerms } from '@/lib/labourGives'
 import { EmailDocumentButton } from '@/components/documents/EmailDocumentDialog'
 
 type Person = { staff_id: string | null; candidate_id: string | null; name: string; phone: string | null; day_rate: number | null; state: 'on_site' | 'left' | 'named' | 'new'; since: string | null }
@@ -170,6 +171,7 @@ export default function LabourRequestPage() {
     return true
   }
 
+  const { data: terms } = useRequestTerms(id, req?.status === 'pending')
   if (isLoading || !req) return <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
 
   const stage = stageOf(req)
@@ -273,6 +275,10 @@ export default function LabourRequestPage() {
             canEdit={open_ && (hasRole(...OT_COMPANY_ROLES) || managedIds.has(req.project_id))} onSaved={refresh} />
         )}
         {req.decision_note && <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">“{req.decision_note}”</p>}
+        {/* Why a person has to approve it: what in it is new (519). */}
+        {stage === 'waiting' && terms && !terms.ok && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/10 dark:text-amber-200">Waiting for a person to approve it, because {terms.why}.</p>
+        )}
         {req.closed_at && <p className="mt-2 text-xs text-slate-500">Closed {dayLabel(req.closed_at.slice(0, 10))}{req.close_reason ? ` — ${req.close_reason}` : ''}</p>}
       </section>
 

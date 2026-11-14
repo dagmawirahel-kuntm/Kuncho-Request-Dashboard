@@ -243,3 +243,52 @@ export function useDoorStatus(staffIds: string[] | null, enabled = true) {
     },
   })
 }
+
+// ── Terms, not asks (519) ───────────────────────────────────────────────────
+/** A request that repeats a rate already approved, under the limit and with nobody new to hire, is approved by the system. */
+export type Terms = { auto_approve: boolean; limit_etb: number; lookback_days: number }
+
+export function useTerms() {
+  return useQuery({
+    queryKey: ['labour-terms'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('labour_terms_settings').select('auto_approve, limit_etb, lookback_days').limit(1).maybeSingle()
+      if (error) throw error
+      return (data ?? null) as Terms | null
+    },
+  })
+}
+
+export type AutoApproved = { approved: boolean; why: string }
+
+/** After a labour request is sent with its people: approved on the spot if it sets nothing new. Never throws: a request that can't be checked just waits for a person. */
+export async function autoApproveRequest(id: string): Promise<AutoApproved | null> {
+  const { data, error } = await supabase.rpc('labour_request_auto_approve', { p_req: id })
+  return error ? null : (data as AutoApproved)
+}
+
+/** The same for a change to the standing crew. */
+export async function autoApproveCrew(id: string): Promise<AutoApproved | null> {
+  const { data, error } = await supabase.rpc('labour_crew_auto_approve', { p_id: id })
+  return error ? null : (data as AutoApproved)
+}
+
+/** Why a waiting request is waiting (or that it would be approved by itself). */
+export function useRequestTerms(id: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['labour-request-terms', id],
+    enabled: enabled && !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_request_terms', { p_req: id })
+      if (error) throw error
+      const row = Array.isArray(data) ? data[0] : data
+      return (row ?? null) as { ok: boolean; why: string } | null
+    },
+  })
+}
+
+export async function setTerms(auto: boolean | null, limit: number | null) {
+  const { error } = await supabase.rpc('set_labour_terms', { p_auto: auto, p_limit: limit })
+  if (error) throw error
+}
