@@ -6,6 +6,7 @@ import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
+import { AwaitingDeliveryCard } from '@/components/projects/AwaitingDeliveryCard'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -921,8 +922,8 @@ export default function ProjectWorkspacePage() {
         sub={project.physical_progress != null ? `${Number(project.physical_progress).toFixed(0)}% built` : 'progress not set'} />
       <Stat label="Remaining" value={remaining != null ? formatCurrencyCompact(remaining) : '—'} title={remaining != null ? formatCurrency(remaining) : undefined}
         tone={summary?.any_group_over_budget ? 'red' : undefined} sub={summary ? `of ${formatCurrencyCompact(summary.total_budget)}` : undefined} />
-      <Stat label="Committed" value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'} title={summary ? formatCurrency(summary.total_committed_core) : undefined}
-        sub={summary ? `${formatCurrencyCompact(summary.total_actual_core)} paid` : undefined} />
+      <Stat label="Coming" value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'} title={summary ? formatCurrency(summary.total_committed_core) : undefined}
+        sub={summary ? `${formatCurrencyCompact(summary.total_actual_core)} cost booked` : undefined} />
       <Stat label="Margin" value={summary?.projected_margin_core != null ? `${(summary.projected_margin_core * 100).toFixed(1)}%` : '—'}
         tone={marginBelowBid ? 'amber' : undefined} sub={summary?.bid_margin != null ? `bid ${(summary.bid_margin * 100).toFixed(1)}%` : undefined} />
     </div>
@@ -1043,8 +1044,8 @@ export default function ProjectWorkspacePage() {
                 <FactList facts={[
                   { label: 'Contract value', value: project.contract_value != null ? formatCurrency(project.contract_value) : '—' },
                   { label: 'Cost budget', value: summary ? formatCurrency(summary.total_budget) : '—', hint: project.budget_version ? `version ${project.budget_version}` : undefined },
-                  { label: 'Paid', value: summary ? formatCurrency(summary.total_actual_core) : '—', hint: summary ? `${formatCurrency(summary.total_actual_with_labor)} with labor` : undefined },
-                  { label: 'Committed', value: summary ? formatCurrency(summary.total_committed_core) : '—' },
+                  { label: 'Cost booked', value: summary ? formatCurrency(summary.total_actual_core) : '—', hint: 'from the ledger' },
+                  { label: 'Coming', value: summary ? formatCurrency(summary.total_committed_core) : '—', hint: 'ordered or billed, not yet received' },
                   { label: 'Remaining', value: remaining != null ? formatCurrency(remaining) : '—', tone: summary?.any_group_over_budget ? 'red' : undefined },
                 ]} />
                 <p className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
@@ -1061,15 +1062,16 @@ export default function ProjectWorkspacePage() {
           <>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               <Stat label="Remaining" value={remaining != null ? formatCurrencyCompact(remaining) : '—'} title={remaining != null ? formatCurrency(remaining) : undefined} tone={summary?.any_group_over_budget ? 'red' : undefined} />
-              <Stat label="Committed" value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'} sub={summary ? `${formatCurrencyCompact(summary.total_committed_with_labor)} incl. labor` : undefined} />
+              <Stat label="Coming" value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'} title={summary ? formatCurrency(summary.total_committed_core) : undefined} sub="ordered or billed, not received" />
               <Stat label="Cost budget" value={summary ? formatCurrencyCompact(summary.total_budget) : '—'} title={summary ? formatCurrency(summary.total_budget) : undefined} />
-              <Stat label="Paid" value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'} sub={summary ? `${formatCurrencyCompact(summary.total_actual_with_labor)} incl. labor` : undefined} />
+              <Stat label="Cost booked" value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'} title={summary ? formatCurrency(summary.total_actual_core) : undefined} sub="from the ledger" />
               <Stat label="Contract" value={project.contract_value != null ? formatCurrencyCompact(project.contract_value) : '—'} title={project.contract_value != null ? formatCurrency(project.contract_value) : undefined} />
               <Stat label="Margin" value={summary?.projected_margin_core != null ? `${(summary.projected_margin_core * 100).toFixed(1)}%` : '—'} tone={marginBelowBid ? 'amber' : undefined}
                 sub={summary?.bid_margin != null ? `bid ${(summary.bid_margin * 100).toFixed(1)}%` : undefined} />
             </div>
 
             <BudgetGroupBar title="Budget vs actual by cost group" groups={groups} />
+            <AwaitingDeliveryCard projectId={id!} />
             {canManageBudget && (
               <div className="flex flex-wrap items-center gap-2">
                 {!isLocked && (

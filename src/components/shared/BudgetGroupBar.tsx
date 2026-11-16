@@ -8,7 +8,8 @@ interface BudgetGroupBarProps {
   groups: ProjectCostGroupBudget[]
 }
 
-// Paid (solid) + committed (hatched) stacked against a budget line, per
+// Cost booked (solid, from the ledger) + coming (hatched: ordered, billed
+// and not yet delivered, approved work not yet billed) stacked against a budget line, per
 // cost group — the commitment-bar concept from the reference prototype,
 // rebuilt with the app's own card/color system instead of extending
 // BreakdownBarList's single-value bar API.
@@ -96,8 +97,8 @@ export function BudgetGroupBar({ title, groups }: BudgetGroupBarProps) {
                 {isOpen && (
                   <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg bg-slate-50 dark:bg-slate-700/30 px-3 py-2 text-[11px]">
                     <div><p className="text-slate-400">Budget</p><p className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(g.budgeted_amount)}</p></div>
-                    <div><p className="text-slate-400">Paid</p><p className="font-medium text-emerald-600 dark:text-emerald-400">{formatCurrency(g.actual_amount)}</p></div>
-                    <div><p className="text-slate-400">Committed</p><p className="font-medium text-amber-600 dark:text-amber-400">{formatCurrency(g.committed_amount)}</p></div>
+                    <div><p className="text-slate-400">Cost booked</p><p className="font-medium text-emerald-600 dark:text-emerald-400">{formatCurrency(g.actual_amount)}</p></div>
+                    <div><p className="text-slate-400">Coming</p><p className="font-medium text-amber-600 dark:text-amber-400">{formatCurrency(g.committed_amount)}</p></div>
                     <div>
                       <p className="text-slate-400">Remaining</p>
                       <p className={`font-medium ${g.remaining_amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>
