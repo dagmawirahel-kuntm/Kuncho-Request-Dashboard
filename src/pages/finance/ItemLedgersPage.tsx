@@ -23,7 +23,7 @@ interface ItemRow {
 interface EquipRow { grn_item_id: string; grn_code: string | null; received_on: string | null; bundle_code: string | null; vendor_name: string | null; item_name: string | null; quantity: number; unit_cost: number; cost: number }
 
 const SOURCE: Record<string, string> = {
-  name: 'from its name', history: 'most-used on GRNs', sub_category: 'from its sub-category', grn: 'first receipt', finance: 'confirmed',
+  name: 'from its name', assigned: 'from its order', history: 'most-used on GRNs', sub_category: 'from its sub-category', grn: 'first receipt', finance: 'confirmed',
 }
 
 type Tab = 'need' | 'items' | 'equipment'
