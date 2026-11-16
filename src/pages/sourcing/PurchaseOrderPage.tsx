@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { deliveryWords, setPoDelivery, type DeliveryMode } from '@/lib/receiving'
 import { OpenAdvancesWarning } from '@/components/purchasing/OpenAdvancesWarning'
+import { VendorOrdersToCollect } from '@/components/purchasing/VendorOrdersToCollect'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
@@ -973,6 +974,10 @@ export default function PurchaseOrderPage() {
 
               {(isFinance || isAdmin || isManager || canApprove) && isPayInAdvance && ['submitted', 'approved', 'ordered'].includes(status) && !bundle.expense_id && (
                 <div className="mt-3"><OpenAdvancesWarning vendorId={bundle.vendor_id} exceptBundleId={bundle.id} /></div>
+              )}
+
+              {['drafting', 'submitted', 'approved'].includes(status) && (
+                <div className="mt-3"><VendorOrdersToCollect vendorId={bundle.vendor_id} exceptBundleId={bundle.id} /></div>
               )}
 
               {status === 'ordered' && !deliveryPanel && (
