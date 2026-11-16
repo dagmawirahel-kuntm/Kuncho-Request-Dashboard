@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { AwaitingDeliveryCard } from '@/components/projects/AwaitingDeliveryCard'
+import { ProjectLedgerCard } from '@/components/projects/ProjectLedgerCard'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { RecentActivityFeed, type ActivityItem } from '@/components/shared/RecentActivityFeed'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -1072,6 +1073,7 @@ export default function ProjectWorkspacePage() {
 
             <BudgetGroupBar title="Budget vs actual by cost group" groups={groups} />
             <AwaitingDeliveryCard projectId={id!} />
+            <ProjectLedgerCard projectId={id!} />
             {canManageBudget && (
               <div className="flex flex-wrap items-center gap-2">
                 {!isLocked && (

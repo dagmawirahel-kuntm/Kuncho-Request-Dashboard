@@ -8,6 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
 import { AwaitingDeliveryCard } from '@/components/projects/AwaitingDeliveryCard'
+import { ProjectLedgerCard } from '@/components/projects/ProjectLedgerCard'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -291,6 +292,7 @@ export default function ProjectManagerViewPage() {
                 <ProgressVsSpendCard physicalProgress={activeProject.physical_progress} budgetUsedPct={budgetUsedPct} />
               </div>
               <AwaitingDeliveryCard projectId={activeProjectId!} />
+              <ProjectLedgerCard projectId={activeProjectId!} />
             </>
           )}
 
