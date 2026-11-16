@@ -113,6 +113,7 @@ export default function ItemLedgersPage() {
     toast('Threshold saved. It applies to receipts costed from now on; set an item again to re-cost it.', 'success')
     setNewThreshold(null)
     qc.invalidateQueries({ queryKey: ['ledger-settings'] })
+    qc.invalidateQueries({ queryKey: ['ledger-settings-threshold'] })
     refresh()
   }
 
@@ -150,7 +151,7 @@ export default function ItemLedgersPage() {
               <button onClick={saveThreshold} className="rounded bg-brand p-1 text-white"><Check className="h-4 w-4" /></button>
             </span>
           )}
-          <p className="truncate text-[11px] text-slate-400">tools below it are small tools</p>
+          <p className="truncate text-[11px] text-slate-400">also the fixed asset register’s floor</p>
         </div>
       </div>
 

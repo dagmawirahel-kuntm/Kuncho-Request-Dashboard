@@ -1,6 +1,8 @@
 import type { FixedAssetCategory, DepreciationMethod, FixedAssetCondition, FixedAssetDisposalMethod } from '@/types/database'
 
-export const CAPITALIZATION_THRESHOLD = 5000
+// Fallback only: the live value is ledger_settings.equipment_threshold_etb
+// (522), the same number GRN costing uses. Set on Finance → Item Ledgers.
+export const CAPITALIZATION_THRESHOLD = 10000
 
 export const CATEGORY_LABELS: Record<FixedAssetCategory, string> = {
   it_equipment: 'IT Equipment',

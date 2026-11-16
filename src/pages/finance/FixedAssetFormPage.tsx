@@ -161,7 +161,16 @@ function FixedAssetFormPageBody({ id, record, prefill }: { id?: string; record?:
 
   // Purchase cost gate mirrors the DB CHECK constraint — surfaced here so
   // the rejection reads as guidance, not a raw constraint-violation error.
-  const belowThreshold = form.purchase_cost_etb != null && form.purchase_cost_etb > 0 && form.purchase_cost_etb < CAPITALIZATION_THRESHOLD
+  const { data: threshold = CAPITALIZATION_THRESHOLD } = useQuery({
+    queryKey: ['ledger-settings-threshold'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('ledger_settings').select('equipment_threshold_etb').maybeSingle()
+      if (error) throw error
+      return Number(data?.equipment_threshold_etb ?? CAPITALIZATION_THRESHOLD)
+    },
+  })
+  const belowThreshold = form.purchase_cost_etb != null && form.purchase_cost_etb > 0 && form.purchase_cost_etb < threshold
 
   const { data: expenseOptions = [] } = useQuery({
     queryKey: ['expenses-lookup-for-fixed-asset', form.purchase_vendor_id],
@@ -206,8 +215,8 @@ function FixedAssetFormPageBody({ id, record, prefill }: { id?: string; record?:
     setError('')
     if (!form.asset_name?.trim()) { setError('Asset name is required'); return }
     if (!form.purchase_date) { setError('Purchase date is required'); return }
-    if (form.purchase_cost_etb == null || form.purchase_cost_etb < CAPITALIZATION_THRESHOLD) {
-      setError(`Below capitalization threshold (${formatCurrency(CAPITALIZATION_THRESHOLD)}) — record as expense instead`)
+    if (form.purchase_cost_etb == null || form.purchase_cost_etb < threshold) {
+      setError(`Below capitalization threshold (${formatCurrency(threshold)}) — record as expense instead`)
       return
     }
     if (form.depreciation_method === 'declining_balance' && !(form.declining_balance_rate! > 0 && form.declining_balance_rate! < 1)) {
@@ -296,7 +305,7 @@ function FixedAssetFormPageBody({ id, record, prefill }: { id?: string; record?:
         <Field label="Purchase Cost (ETB) *">
           <FormattedNumberInput className={inputCls} value={form.purchase_cost_etb ?? null} onChange={n => set('purchase_cost_etb', n ?? undefined as any)} />
           {belowThreshold && (
-            <p className="mt-1 text-xs font-medium text-red-500">Below capitalization threshold ({formatCurrency(CAPITALIZATION_THRESHOLD)}) — record as expense instead</p>
+            <p className="mt-1 text-xs font-medium text-red-500">Below capitalization threshold ({formatCurrency(threshold)}) — record as expense instead</p>
           )}
         </Field>
       </div>
