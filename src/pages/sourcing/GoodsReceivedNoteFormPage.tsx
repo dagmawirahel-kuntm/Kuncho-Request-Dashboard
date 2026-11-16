@@ -41,6 +41,8 @@ type BundleForGrn = {
       unit: string | null
       quantity: number
       sub_categories: { parent_category_id: string | null } | null
+      // The item's own ledger (521): when set, the line follows it.
+      stock_items: { ledger_category_id: string | null; ledger: { category_name: string } | null } | null
     } | null
   }[]
 }
@@ -88,7 +90,7 @@ export default function GoodsReceivedNoteFormPage() {
         .select(`
           id, bundle_code, vendor_name, status,
           vendors(vendor_name),
-          sourcing_bundle_items(id, quantity_actual, order_items(item_name, unit, quantity, sub_categories(parent_category_id)))
+          sourcing_bundle_items(id, quantity_actual, order_items(item_name, unit, quantity, sub_categories(parent_category_id), stock_items(ledger_category_id, ledger:categories(category_name))))
         `)
         .eq('id', id!)
         .single()
@@ -124,7 +126,10 @@ export default function GoodsReceivedNoteFormPage() {
   })
 
   const { data: categories = [] } = useCategories()
-  const categoryOptions = categories.map((c: { id: string; category_name: string }) => ({ id: c.id, label: c.category_name }))
+  // "Multiple" and "Inventory" say nothing about what an item is.
+  const categoryOptions = categories
+    .filter((c: { category_name: string }) => c.category_name !== 'Multiple' && c.category_name !== 'Inventory')
+    .map((c: { id: string; category_name: string }) => ({ id: c.id, label: c.category_name }))
 
   const [notes, setNotes] = useState('')
   const [photos, setPhotos] = useState<DeliveryPhoto[]>([])
@@ -151,10 +156,10 @@ export default function GoodsReceivedNoteFormPage() {
         quantity_rejected: '0',
         quantity_damaged: '0',
         condition_notes: '',
-        // Pre-filled from the sub-ledger the PR line was already
-        // classified under, so the receiver confirms rather than
-        // re-derives it. Still editable per line.
-        category_id: it.order_items?.sub_categories?.parent_category_id ?? null,
+        // The item's ledger when it has one (it is not asked again);
+        // otherwise the PR line's sub-ledger as a starting point.
+        category_id: it.order_items?.stock_items?.ledger_category_id
+          ?? it.order_items?.sub_categories?.parent_category_id ?? null,
       }
     }
     setItems(init)
@@ -352,8 +357,18 @@ export default function GoodsReceivedNoteFormPage() {
                       {acceptedQty}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <SearchableSelect value={draft?.category_id ?? null} onChange={v => setItemField(it.id, 'category_id', v)}
-                        options={categoryOptions} placeholder="Select ledger…" />
+                      {it.order_items?.stock_items?.ledger_category_id ? (
+                        <p className="pt-1.5 text-xs text-slate-600 dark:text-slate-300" title="Set on the item by finance; every receipt of it follows">
+                          {it.order_items.stock_items.ledger?.category_name ?? 'Set on item'}
+                          <span className="block text-[10px] text-slate-400">from the item</span>
+                        </p>
+                      ) : (
+                        <>
+                          <SearchableSelect value={draft?.category_id ?? null} onChange={v => setItemField(it.id, 'category_id', v)}
+                            options={categoryOptions} placeholder="What is it?" />
+                          <span className="block pt-0.5 text-[10px] text-slate-400">New item: saved on it for next time</span>
+                        </>
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <input type="text" className={`${numCls} text-left focus:ring-brand focus:border-brand`}

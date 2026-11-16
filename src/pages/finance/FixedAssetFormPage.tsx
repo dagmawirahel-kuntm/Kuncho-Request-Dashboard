@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -41,14 +41,41 @@ export default function FixedAssetFormPage() {
     enabled: isEdit,
   })
 
-  if (isEdit && isLoading) {
-    return <FormPage title="Edit Asset" backTo="/finance/fixed-assets" loading onSave={() => {}} />
+  // Registering equipment received on a GRN (521): start from that line.
+  const [params] = useSearchParams()
+  const grnItem = isEdit ? null : params.get('grn_item')
+  const { data: fromGrn, isLoading: grnLoading } = useQuery({
+    queryKey: ['equipment-to-register', grnItem],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_equipment_to_register')
+        .select('grn_item_id, item_name, received_on, unit_cost, vendor_id, grn_code, bundle_code, quantity')
+        .eq('grn_item_id', grnItem!).maybeSingle()
+      if (error) throw error
+      return data as { grn_item_id: string; item_name: string | null; received_on: string | null; unit_cost: number; vendor_id: string | null; grn_code: string | null; bundle_code: string | null; quantity: number } | null
+    },
+    enabled: !!grnItem,
+  })
+
+  if ((isEdit && isLoading) || (grnItem && grnLoading)) {
+    return <FormPage title={isEdit ? 'Edit Asset' : 'New Asset'} backTo="/finance/fixed-assets" loading onSave={() => {}} />
   }
 
-  return <FixedAssetFormPageBody id={id} record={record} />
+  const prefill: Partial<FixedAssetInsert> | undefined = fromGrn ? {
+    asset_name: fromGrn.item_name ?? '',
+    category: 'workshop_machinery',
+    purchase_date: fromGrn.received_on ?? undefined,
+    depreciation_start_date: fromGrn.received_on ?? undefined,
+    purchase_cost_etb: Number(fromGrn.unit_cost),
+    purchase_vendor_id: fromGrn.vendor_id,
+    useful_life_years: DEFAULT_USEFUL_LIFE.workshop_machinery,
+    grn_item_id: fromGrn.grn_item_id,
+    notes: `Received on ${fromGrn.grn_code ?? 'a GRN'} (${fromGrn.bundle_code ?? ''})${Number(fromGrn.quantity) > 1 ? `, 1 of ${Number(fromGrn.quantity)}` : ''}. Cost is the unit price before tax.`,
+  } : undefined
+
+  return <FixedAssetFormPageBody id={id} record={record} prefill={prefill} />
 }
 
-function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAsset }) {
+function FixedAssetFormPageBody({ id, record, prefill }: { id?: string; record?: FixedAsset; prefill?: Partial<FixedAssetInsert> }) {
   const isEdit = !!id
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -90,7 +117,7 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
         attachments: record.attachments,
         is_active: record.is_active,
       }
-      : { category: 'it_equipment', depreciation_method: 'straight_line', salvage_value_etb: 0, condition: 'good', attachments: [], is_active: true }
+      : { category: 'it_equipment', depreciation_method: 'straight_line', salvage_value_etb: 0, condition: 'good', attachments: [], is_active: true, ...prefill }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
