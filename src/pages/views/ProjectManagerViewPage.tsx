@@ -7,6 +7,7 @@ import { useMyStaffId } from '@/hooks/useMyStaff'
 import { useToast } from '@/contexts/ToastContext'
 import { KpiCard } from '@/components/shared/KpiCard'
 import { BudgetGroupBar } from '@/components/shared/BudgetGroupBar'
+import { AwaitingDeliveryCard } from '@/components/projects/AwaitingDeliveryCard'
 import { ProgressVsSpendCard } from '@/components/shared/ProgressVsSpendCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -257,7 +258,7 @@ export default function ProjectManagerViewPage() {
                   color={summary?.any_group_over_budget ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}
                 />
                 <KpiCard
-                  label="Committed"
+                  label="Coming"
                   value={summary ? formatCurrencyCompact(summary.total_committed_core) : '—'}
                   title={summary ? formatCurrency(summary.total_committed_core) : undefined}
                   icon={Clock3} color="bg-amber-50 text-amber-600"
@@ -269,7 +270,7 @@ export default function ProjectManagerViewPage() {
                   icon={Wallet} color="bg-slate-100 text-slate-600"
                 />
                 <KpiCard
-                  label="Actual (Paid)"
+                  label="Cost booked"
                   value={summary ? formatCurrencyCompact(summary.total_actual_core) : '—'}
                   title={summary ? formatCurrency(summary.total_actual_core) : undefined}
                   icon={Receipt} color="bg-emerald-50 text-emerald-600"
@@ -289,6 +290,7 @@ export default function ProjectManagerViewPage() {
                 </div>
                 <ProgressVsSpendCard physicalProgress={activeProject.physical_progress} budgetUsedPct={budgetUsedPct} />
               </div>
+              <AwaitingDeliveryCard projectId={activeProjectId!} />
             </>
           )}
 
