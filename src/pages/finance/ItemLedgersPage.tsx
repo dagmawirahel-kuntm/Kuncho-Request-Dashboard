@@ -65,7 +65,7 @@ export default function ItemLedgersPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('ledger_settings').select('equipment_threshold_etb').maybeSingle()
       if (error) throw error
-      return Number(data?.equipment_threshold_etb ?? 5000)
+      return Number(data?.equipment_threshold_etb ?? 10000)
     },
   })
 
@@ -140,8 +140,8 @@ export default function ItemLedgersPage() {
         <div className="rounded-xl border bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Equipment from (per unit)</p>
           {newThreshold === null ? (
-            <button onClick={() => setNewThreshold(String(threshold ?? 5000))} className="text-base font-bold tabular-nums text-slate-900 hover:underline dark:text-slate-50 sm:text-lg" title="Tools at or above this price go on the register">
-              {formatCurrency(threshold ?? 5000)}
+            <button onClick={() => setNewThreshold(String(threshold ?? 10000))} className="text-base font-bold tabular-nums text-slate-900 hover:underline dark:text-slate-50 sm:text-lg" title="Tools at or above this price go on the register">
+              {formatCurrency(threshold ?? 10000)}
             </button>
           ) : (
             <span className="flex items-center gap-1">

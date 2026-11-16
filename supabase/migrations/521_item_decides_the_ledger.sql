@@ -24,8 +24,7 @@
 --   3. A GRN line takes the item's ledger. The GRN screen shows it and only
 --      asks when the item has none; the first answer is saved on the item.
 --   4. Posting a GRN line (fixes 520):
---        - a tool at or above the equipment threshold (ETB 5,000 a unit before tax, the app's
---          capitalisation threshold;
+--        - a tool at or above the equipment threshold (ETB 10,000 a unit before tax, set by finance;
 --          ledger_settings) goes to 1610 Property, plant and equipment and
 --          shows on the list of equipment to register;
 --        - goods for no project go to 1510 Workshop stock only when the item
@@ -97,7 +96,7 @@ UPDATE chart_of_accounts SET category_id = NULL
 
 CREATE TABLE IF NOT EXISTS public.ledger_settings (
   id boolean PRIMARY KEY DEFAULT true CHECK (id),
-  equipment_threshold_etb numeric NOT NULL DEFAULT 5000,
+  equipment_threshold_etb numeric NOT NULL DEFAULT 10000,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid
 );
@@ -498,5 +497,3 @@ GRANT EXECUTE ON FUNCTION public.grn_line_postings(uuid, numeric, uuid) TO authe
 --   WHERE sourcing_bundle_id IS NOT NULL AND in_current_fy(received_at::date)) b;
 -- SELECT sync_stock_issue_ledger(id) FROM stock_issues;
 
--- Threshold set to the app's existing capitalisation threshold (fixedAssetLabels.ts).
-UPDATE ledger_settings SET equipment_threshold_etb = 5000 WHERE equipment_threshold_etb = 10000;
