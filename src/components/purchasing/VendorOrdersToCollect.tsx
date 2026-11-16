@@ -23,7 +23,7 @@ export function VendorOrdersToCollect({ vendorId, exceptBundleId }: { vendorId: 
         <PackageCheck className="mr-1 inline h-4 w-4 text-amber-600" />
         {open.length} earlier order{open.length === 1 ? '' : 's'} from {open[0].vendor_name ?? 'this vendor'} {open.length === 1 ? "isn't" : "aren't"} marked collected
         {ahead > 0 && <>, with <b>{formatCurrency(ahead)}</b> paid ahead on them</>}. If the goods came, mark them collected; if not, ask the vendor before buying again.
-        Finance sees these when approving.
+        {ahead > 0 && ' Finance is warned about advances with nothing received before paying this vendor ahead again.'}
       </p>
       <ul className="mt-1.5 space-y-1">
         {open.slice(0, 6).map(r => (
