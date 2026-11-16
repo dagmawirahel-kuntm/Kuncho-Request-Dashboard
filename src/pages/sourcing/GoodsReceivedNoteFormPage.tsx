@@ -67,9 +67,9 @@ function accepted(draft: ItemDraft | undefined): number {
   return d - rej - dmg
 }
 
-// The stock_manager/logistics_officer gateway for recording a GRN — a
-// different role than whoever placed the order, verifying what actually
-// showed up. An order can arrive in several deliveries: each one is its
+// The full receipt form: ledger, damaged and refused per line, driver and
+// vehicle. The store, logistics and admin use it; whoever collects goods
+// from a vendor uses the shorter Mark collected page (520). An order can arrive in several deliveries: each one is its
 // own GRN, and the order is fulfilled once every line is accounted for
 // (371). Goods sent to a site are signed for there on a Site Delivery
 // Note instead, which writes its own GRN.
@@ -197,6 +197,7 @@ export default function GoodsReceivedNoteFormPage() {
       const names = overDelivered.map(it => it.order_items?.item_name ?? 'line').join(', ')
       if (!window.confirm(`More arrived than is still outstanding on: ${names}. Record it anyway?`)) return
     }
+    if (!photos.length && profile?.role !== 'admin') { setError("Add a photo of the goods or the vendor's receipt"); return }
     setError(''); setSaving(true)
 
     const { data: grnRow, error: grnErr } = await supabase
@@ -372,7 +373,7 @@ export default function GoodsReceivedNoteFormPage() {
         )}
       </div>
 
-      <Field label="Photos (optional)">
+      <Field label={profile?.role === 'admin' ? 'Photos' : 'Photo of the goods or the vendor\'s receipt *'}>
         <PhotoUploader photos={photos} onChange={setPhotos} folder="grn-photos" />
       </Field>
 

@@ -8,7 +8,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { useStockLocations } from '@/lib/stockLocations'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { Panel, Pill } from '@/components/record/Record'
-import { ArrowLeft, ClipboardList, FileText, Plus, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ClipboardList, FileText, Plus, ChevronRight, PackageSearch } from 'lucide-react'
+import { useStockToCheckAfterCleanup } from '@/lib/receiving'
 
 interface CountRow {
   id: string; code: string; warehouse_zone: string | null; status: 'counting' | 'posted' | 'cancelled'
@@ -39,6 +40,10 @@ export default function StockCountsPage() {
     },
   })
 
+  // Goods the receiving clean-up (520) added to stock without anyone counting
+  // them; some will be used already. They clear once a posted count covers them.
+  const { data: toCheck = [] } = useStockToCheckAfterCleanup()
+
   async function start() {
     setBusy(true)
     const { data, error } = await supabase.rpc('start_stock_count', { p_zone: zone || null, p_include_empty: includeEmpty, p_notes: notes.trim() || null })
@@ -59,6 +64,19 @@ export default function StockCountsPage() {
           <Plus className="h-4 w-4" /> Start a count
         </button>
       </div>
+
+      {toCheck.length > 0 && (
+        <Panel title="Count these next" icon={PackageSearch} count={toCheck.length}>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Old orders the bank showed as paid were marked received without a count, and their warehouse goods were added to stock. Some will already be used:
+            the next count corrects it.
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            {toCheck.slice(0, 12).map(i => `${i.item_name} +${Number(i.added)}${i.unit ? ` ${i.unit}` : ''}${i.warehouse_zone ? ` (${i.warehouse_zone})` : ''}`).join(' · ')}
+            {toCheck.length > 12 && ` and ${toCheck.length - 12} more`}
+          </p>
+        </Panel>
+      )}
 
       <Panel title="Counts" icon={ClipboardList} count={counts.length} padded={false}>
         {isLoading ? <p className="py-10 text-center text-sm text-slate-400">Loading…</p>

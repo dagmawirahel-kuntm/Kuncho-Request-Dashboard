@@ -10,8 +10,10 @@ import { printHtml } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
 import { buildGrnHtml } from '@/lib/documents/delivery'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/components/record/Record'
-import type { GrnQualityStatus, GrnRegisterRow } from '@/types/database'
-import { ClipboardCheck, Printer, Smartphone, Undo2, FileText, Image as ImageIcon, Package } from 'lucide-react'
+import { PhotoUploader } from '@/components/shared/PhotoUploader'
+import { PROBLEM_DAYS, PROBLEM_KIND, reportReceiptProblem, resolveReceiptProblem, useReceiptProblems, type ProblemKind } from '@/lib/receiving'
+import type { DeliveryPhoto, GrnQualityStatus, GrnRegisterRow } from '@/types/database'
+import { AlertTriangle, ClipboardCheck, Printer, Smartphone, Undo2, FileText, Image as ImageIcon, Package } from 'lucide-react'
 
 type GrnDetail = {
   id: string
@@ -46,6 +48,12 @@ export default function GrnDetailPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [reference, setReference] = useState('')
   const [saving, setSaving] = useState(false)
+  const [reporting, setReporting] = useState(false)
+  const [kind, setKind] = useState<ProblemKind>('short')
+  const [problemNote, setProblemNote] = useState('')
+  const [problemPhotos, setProblemPhotos] = useState<DeliveryPhoto[]>([])
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const { data: problems = [] } = useReceiptProblems(id)
 
   const { data: head } = useQuery({
     queryKey: ['grn-head', id],
@@ -74,6 +82,32 @@ export default function GrnDetailPage() {
   const toReturn = items.filter(i => i.return_status === 'to_return')
   const canReturn = ['admin', 'executive', 'procurement_officer', 'stock_manager', 'logistics_officer'].includes(role ?? '') || !!profile?.is_logistics_officer
   const photos = grn.photos?.length ? grn.photos : grn.photo_url ? [{ url: grn.photo_url }] : []
+  // The site has three days from the day it was received to say something
+  // is wrong (520). Notes signed at the site were counted there.
+  const receivedDay = head.received_at ? new Date(new Date(head.received_at).toDateString()).getTime() : 0
+  const reportBy = new Date(receivedDay + PROBLEM_DAYS * 86_400_000)
+  const inWindow = !!head.received_at && new Date(new Date().toDateString()).getTime() <= reportBy.getTime()
+  const canReport = !head.sdn_code && (role === 'admin' || (inWindow && !['procurement_officer', 'logistics_officer', 'stock_manager', 'finance', 'executive'].includes(role ?? '')))
+
+  async function report() {
+    if (!problemNote.trim()) { toast('Say what happened', 'error'); return }
+    setSaving(true)
+    try {
+      await reportReceiptProblem(id!, kind, problemNote.trim(), problemPhotos)
+      setReporting(false); setProblemNote(''); setProblemPhotos([])
+      qc.invalidateQueries({ queryKey: ['receipt-problems'] })
+      toast('Reported: procurement is told', 'success')
+    } catch (e) { toast((e as Error).message, 'error') }
+    setSaving(false)
+  }
+  async function answer(pid: string) {
+    const note = (answers[pid] ?? '').trim()
+    if (!note) { toast('Say what was done about it', 'error'); return }
+    setSaving(true)
+    try { await resolveReceiptProblem(pid, note); qc.invalidateQueries({ queryKey: ['receipt-problems'] }); toast('Answered: the site is told', 'success') }
+    catch (e) { toast((e as Error).message, 'error') }
+    setSaving(false)
+  }
 
   const print = (asFile = false) => (asFile ? shareHtmlFile : printHtml)(buildGrnHtml({
     ...head, grn_code: head.grn_code ?? 'GRN', driver_name: grn.driver_name, vehicle_plate: grn.vehicle_plate,
@@ -109,6 +143,7 @@ export default function GrnDetailPage() {
           <Pill tone={QUALITY_TONE[head.worst_quality]}>{head.worst_quality}</Pill>
           {head.sdn_code && <Pill tone="violet">Signed on site</Pill>}
           {toReturn.length > 0 && <Pill tone="red">To return</Pill>}
+          {problems.some(p => !p.resolved_at) && <Pill tone="amber" icon={AlertTriangle}>Problem reported</Pill>}
         </>}
         meta={[{ icon: ClipboardCheck, value: `Received ${formatDate(head.received_at)}${head.received_by_name ? ` by ${head.received_by_name}` : ''}` }]}
         actions={[{ label: 'Print GRN', icon: Printer, onClick: () => print(), primary: true }, { label: 'Send file', icon: Smartphone, onClick: () => print(true) }]}
@@ -170,6 +205,53 @@ export default function GrnDetailPage() {
               </div>
             )}
           </Panel>
+          {(problems.length > 0 || canReport) && (
+            <Panel title="Problems" icon={AlertTriangle} count={problems.length || undefined}>
+              <div className="space-y-3">
+                {problems.map(p => (
+                  <div key={p.id} className="space-y-1 text-sm">
+                    <p className="text-slate-800 dark:text-slate-100"><b>{PROBLEM_KIND[p.kind]}</b>: {p.note}</p>
+                    <p className="text-xs text-slate-500">{p.raised_by_name ?? 'The site'}, {formatDate(p.raised_at)}</p>
+                    {p.photos?.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {p.photos.map(ph => <a key={ph.url} href={ph.url} target="_blank" rel="noreferrer"><img src={ph.url} alt="" className="h-16 w-16 rounded-lg border object-cover dark:border-slate-600" /></a>)}
+                      </div>
+                    )}
+                    {p.resolved_at ? (
+                      <p className="text-xs text-emerald-700 dark:text-emerald-400">Answered by {p.resolved_by_name ?? 'procurement'}: {p.resolution}</p>
+                    ) : canReturn ? (
+                      <div className="flex gap-2">
+                        <input value={answers[p.id] ?? ''} onChange={e => setAnswers(a => ({ ...a, [p.id]: e.target.value }))} placeholder="What was done about it"
+                          className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                        <button onClick={() => answer(p.id)} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Answer</button>
+                      </div>
+                    ) : <p className="text-xs text-amber-700 dark:text-amber-400">Waiting for procurement to answer.</p>}
+                  </div>
+                ))}
+                {canReport && !reporting && (
+                  <button onClick={() => setReporting(true)} className="text-sm font-medium text-brand">
+                    Something didn't arrive, or came short or damaged? Report it{role !== 'admin' ? ` by ${reportBy.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}` : ''}
+                  </button>
+                )}
+                {canReport && reporting && (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {(Object.keys(PROBLEM_KIND) as ProblemKind[]).map(k => (
+                        <button key={k} onClick={() => setKind(k)} className={`rounded-full border px-3 py-1 text-xs ${kind === k ? 'border-brand bg-brand/10 font-semibold text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>{PROBLEM_KIND[k]}</button>
+                      ))}
+                    </div>
+                    <textarea rows={2} value={problemNote} onChange={e => setProblemNote(e.target.value)} placeholder="What happened: which item, how many came"
+                      className="w-full rounded-md border px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                    <PhotoUploader photos={problemPhotos} onChange={setProblemPhotos} folder="grn-problems" label="Add a photo (optional)" />
+                    <div className="flex gap-2">
+                      <button onClick={report} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Sending…' : 'Report it'}</button>
+                      <button onClick={() => setReporting(false)} className="rounded-md border px-3 py-1.5 text-xs dark:border-slate-600">Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
           {photos.length > 0 && (
             <Panel title="Photos" icon={ImageIcon}>
               <div className="flex flex-wrap gap-2">
