@@ -6,7 +6,11 @@ export type ReconciledAs =
   | 'batch' | 'expense' | 'sale' | 'payroll' | 'vrf' | 'vrf_return'
   | 'opening_balance' | 'internal' | 'classified'
 
-interface LinkRef { id: string; label: string; amount: number }
+interface LinkRef {
+  id: string; label: string; amount: number
+  /** A sale's client and project (514), so a settled sale can be found by who paid. */
+  client?: string | null; project?: string | null
+}
 
 /** Whether a yyyy-mm-dd date falls between from and to (either may be blank). */
 export function inRange(date: string | null, from: string, to: string) {
@@ -131,7 +135,7 @@ export function describeReconciled(l: BankLine): { text: string; to: string | nu
   switch (l.reconciled_as) {
     case 'batch': return l.batch ? [{ text: l.batch.label, to: `/batch-payments/${l.batch.id}` }] : []
     case 'expense': return (l.expenses ?? []).map(e => ({ text: e.label, to: `/expenses/${e.id}` }))
-    case 'sale': return (l.sales ?? []).map(s => ({ text: s.label, to: `/sales/${s.id}` }))
+    case 'sale': return (l.sales ?? []).map(s => ({ text: s.client ? `${s.label} — ${s.client}` : s.label, to: `/sales/${s.id}` }))
     case 'payroll': return l.payroll ? [{ text: l.payroll.label, to: `/payroll/${l.payroll.id}` }] : []
     case 'vrf': return l.vrf ? [{ text: l.vrf.label, to: `/vendor-receipts/${l.vrf.id}` }] : []
     case 'internal': return [{ text: `${l.direction === 'credit' ? 'From' : 'To'} ${l.internal?.account_name ?? 'another account'}${l.internal?.source === 'counterpart' ? ' (its statement not imported yet)' : ''}`, to: null }]
@@ -167,6 +171,18 @@ export function lineSubtitle(l: Named): string {
   return [via, l.narration, l.transaction_type, l.reference]
     .filter((v, i, all): v is string => !!v && v !== title && all.indexOf(v) === i)
     .join(' · ')
+}
+
+/** Everything a reconciled line is settled to, for searching: invoice and
+ *  expense codes, descriptions, a sale's client and project, the batch,
+ *  payroll run or vendor request. */
+export function reconciledSearchText(l: BankLine): string {
+  const refs = [l.batch, l.payroll, l.vrf, ...(l.expenses ?? []), ...(l.sales ?? [])].filter(Boolean) as LinkRef[]
+  return [
+    ...refs.flatMap(r => [r.label, r.client ?? '', r.project ?? '']),
+    l.internal?.account_name ?? '',
+    l.classification_note ?? '',
+  ].join(' ')
 }
 
 /** A bank, clearing house or wallet the money passed through, not who it was for (506, bank_party_clearing). */

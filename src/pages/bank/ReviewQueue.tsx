@@ -14,7 +14,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { autoMatchBankLines } from '@/lib/bankAutoMatch'
 import {
-  CLASSIFICATIONS, KIND_LABEL, describeReconciled, isClearingParty, lineSubtitle, lineTitle, ruleTextFrom,
+  CLASSIFICATIONS, KIND_LABEL, describeReconciled, isClearingParty, lineSubtitle, lineTitle, reconciledSearchText, ruleTextFrom,
   PARTY_LABEL, PARTY_PATH, ownerHowLabel,
   type BankLine, type LineCombination, type Suggestion,
 } from '@/lib/bankReconciliation'
@@ -78,14 +78,17 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
   // unless asked for, so this year's work isn't buried under them.
   const [hideOtherFy, setHideOtherFy] = useState(true)
 
+  // The reconciled list opens on the latest 200 lines. Searching, or picking
+  // dates, reads every reconciled line, so an older payment can be found.
+  const reachBack = showDone && (search.trim().length > 0 || !!from || !!to)
   const { data: lines = [], isLoading } = useQuery({
-    queryKey: ['bank-lines', 'queue', accountId, showDone, from, to, showDone ? focusLineId : null],
+    queryKey: ['bank-lines', 'queue', accountId, showDone, from, to, showDone ? focusLineId : null, reachBack],
     queryFn: async () => {
       let q = supabase.from('v_bank_line_status').select('*').order('value_date', { ascending: !showDone }).order('line_no')
       if (accountId) q = q.eq('account_id', accountId)
       if (from) q = q.gte('value_date', from)
       if (to) q = q.lte('value_date', to)
-      q = showDone ? q.not('reconciled_as', 'is', null).limit(200) : q.is('reconciled_as', null)
+      q = showDone ? q.not('reconciled_as', 'is', null).limit(reachBack ? 5000 : 200) : q.is('reconciled_as', null)
       const { data, error } = await q
       if (error) throw error
       const rows = (data ?? []) as BankLine[]
@@ -105,7 +108,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
 
   const matching = lines.filter(l =>
     (direction === 'all' || l.direction === direction) &&
-    (!search.trim() || `${l.counterparty_name ?? ''} ${l.counterparty_account ?? ''} ${l.narration ?? ''} ${l.reference ?? ''} ${l.amount}`.toLowerCase().includes(search.trim().toLowerCase())))
+    (!search.trim() || `${l.counterparty_name ?? ''} ${l.counterparty_account ?? ''} ${l.narration ?? ''} ${l.reference ?? ''} ${l.amount} ${reconciledSearchText(l)}`.toLowerCase().includes(search.trim().toLowerCase())))
   const otherFy = matching.filter(l => fyFlag.outside(l.value_date))
   const shown = hideOtherFy ? matching.filter(l => !fyFlag.outside(l.value_date)) : matching
 
@@ -198,7 +201,7 @@ export function ReviewQueue({ accountId, accounts, focusLineId = null, from = ''
         </div>
         <div className="relative min-w-[10rem] flex-1 sm:flex-none">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name, narration, reference or amount"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={showDone ? 'Name, reference, amount, invoice or client' : 'Name, narration, reference or amount'}
             className="w-full rounded-md border py-1.5 pl-7 pr-2 text-base outline-none focus:ring-2 focus:ring-brand sm:w-56 sm:text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
         </div>
         {onDatesChange && <DateRangeButton from={from} to={to} onChange={onDatesChange} />}

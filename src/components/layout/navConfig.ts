@@ -221,6 +221,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Books & bank', label: 'Bank Reconciliation', to: '/bank-statement-import', icon: Upload, roles: ['admin', 'finance'] },
       { subgroup: 'Books & bank', label: 'Cash Forecast', to: '/cash-forecast', icon: CalendarClock, roles: ['admin', 'finance'] },
       { subgroup: 'Books & bank', label: 'Month-end', to: '/month-end', icon: ClipboardCheck, roles: ['admin', 'finance'] },
+      { subgroup: 'Books & bank', label: 'Item Ledgers', to: '/finance/item-ledgers', icon: BookOpen, roles: ['admin', 'finance'] },
       // Read-only for everyone (register + book value), actions gated
       // inside the page itself — no roles restriction here on purpose.
       { subgroup: 'Books & bank', label: 'Fixed Assets', to: '/finance/fixed-assets', icon: Archive },

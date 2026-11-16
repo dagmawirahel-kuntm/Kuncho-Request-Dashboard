@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
@@ -41,14 +41,41 @@ export default function FixedAssetFormPage() {
     enabled: isEdit,
   })
 
-  if (isEdit && isLoading) {
-    return <FormPage title="Edit Asset" backTo="/finance/fixed-assets" loading onSave={() => {}} />
+  // Registering equipment received on a GRN (521): start from that line.
+  const [params] = useSearchParams()
+  const grnItem = isEdit ? null : params.get('grn_item')
+  const { data: fromGrn, isLoading: grnLoading } = useQuery({
+    queryKey: ['equipment-to-register', grnItem],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_equipment_to_register')
+        .select('grn_item_id, item_name, received_on, unit_cost, vendor_id, grn_code, bundle_code, quantity')
+        .eq('grn_item_id', grnItem!).maybeSingle()
+      if (error) throw error
+      return data as { grn_item_id: string; item_name: string | null; received_on: string | null; unit_cost: number; vendor_id: string | null; grn_code: string | null; bundle_code: string | null; quantity: number } | null
+    },
+    enabled: !!grnItem,
+  })
+
+  if ((isEdit && isLoading) || (grnItem && grnLoading)) {
+    return <FormPage title={isEdit ? 'Edit Asset' : 'New Asset'} backTo="/finance/fixed-assets" loading onSave={() => {}} />
   }
 
-  return <FixedAssetFormPageBody id={id} record={record} />
+  const prefill: Partial<FixedAssetInsert> | undefined = fromGrn ? {
+    asset_name: fromGrn.item_name ?? '',
+    category: 'workshop_machinery',
+    purchase_date: fromGrn.received_on ?? undefined,
+    depreciation_start_date: fromGrn.received_on ?? undefined,
+    purchase_cost_etb: Number(fromGrn.unit_cost),
+    purchase_vendor_id: fromGrn.vendor_id,
+    useful_life_years: DEFAULT_USEFUL_LIFE.workshop_machinery,
+    grn_item_id: fromGrn.grn_item_id,
+    notes: `Received on ${fromGrn.grn_code ?? 'a GRN'} (${fromGrn.bundle_code ?? ''})${Number(fromGrn.quantity) > 1 ? `, 1 of ${Number(fromGrn.quantity)}` : ''}. Cost is the unit price before tax.`,
+  } : undefined
+
+  return <FixedAssetFormPageBody id={id} record={record} prefill={prefill} />
 }
 
-function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAsset }) {
+function FixedAssetFormPageBody({ id, record, prefill }: { id?: string; record?: FixedAsset; prefill?: Partial<FixedAssetInsert> }) {
   const isEdit = !!id
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -90,7 +117,7 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
         attachments: record.attachments,
         is_active: record.is_active,
       }
-      : { category: 'it_equipment', depreciation_method: 'straight_line', salvage_value_etb: 0, condition: 'good', attachments: [], is_active: true }
+      : { category: 'it_equipment', depreciation_method: 'straight_line', salvage_value_etb: 0, condition: 'good', attachments: [], is_active: true, ...prefill }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -134,7 +161,16 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
 
   // Purchase cost gate mirrors the DB CHECK constraint — surfaced here so
   // the rejection reads as guidance, not a raw constraint-violation error.
-  const belowThreshold = form.purchase_cost_etb != null && form.purchase_cost_etb > 0 && form.purchase_cost_etb < CAPITALIZATION_THRESHOLD
+  const { data: threshold = CAPITALIZATION_THRESHOLD } = useQuery({
+    queryKey: ['ledger-settings-threshold'],
+    staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('ledger_settings').select('equipment_threshold_etb').maybeSingle()
+      if (error) throw error
+      return Number(data?.equipment_threshold_etb ?? CAPITALIZATION_THRESHOLD)
+    },
+  })
+  const belowThreshold = form.purchase_cost_etb != null && form.purchase_cost_etb > 0 && form.purchase_cost_etb < threshold
 
   const { data: expenseOptions = [] } = useQuery({
     queryKey: ['expenses-lookup-for-fixed-asset', form.purchase_vendor_id],
@@ -179,8 +215,8 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
     setError('')
     if (!form.asset_name?.trim()) { setError('Asset name is required'); return }
     if (!form.purchase_date) { setError('Purchase date is required'); return }
-    if (form.purchase_cost_etb == null || form.purchase_cost_etb < CAPITALIZATION_THRESHOLD) {
-      setError(`Below capitalization threshold (${formatCurrency(CAPITALIZATION_THRESHOLD)}) — record as expense instead`)
+    if (form.purchase_cost_etb == null || form.purchase_cost_etb < threshold) {
+      setError(`Below capitalization threshold (${formatCurrency(threshold)}) — record as expense instead`)
       return
     }
     if (form.depreciation_method === 'declining_balance' && !(form.declining_balance_rate! > 0 && form.declining_balance_rate! < 1)) {
@@ -269,7 +305,7 @@ function FixedAssetFormPageBody({ id, record }: { id?: string; record?: FixedAss
         <Field label="Purchase Cost (ETB) *">
           <FormattedNumberInput className={inputCls} value={form.purchase_cost_etb ?? null} onChange={n => set('purchase_cost_etb', n ?? undefined as any)} />
           {belowThreshold && (
-            <p className="mt-1 text-xs font-medium text-red-500">Below capitalization threshold ({formatCurrency(CAPITALIZATION_THRESHOLD)}) — record as expense instead</p>
+            <p className="mt-1 text-xs font-medium text-red-500">Below capitalization threshold ({formatCurrency(threshold)}) — record as expense instead</p>
           )}
         </Field>
       </div>

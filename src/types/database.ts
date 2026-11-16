@@ -3936,6 +3936,7 @@ export interface FixedAsset {
   purchase_cost_etb: number
   purchase_expense_id: string | null
   purchase_vendor_id: string | null
+  grn_item_id?: string | null
   useful_life_years: number
   depreciation_method: DepreciationMethod
   declining_balance_rate: number | null
