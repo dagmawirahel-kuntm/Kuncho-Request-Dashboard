@@ -156,6 +156,8 @@ const PurchaseOrderPage = lazyPage(() => import('@/pages/sourcing/PurchaseOrderP
 const GoodsReceivedNoteFormPage = lazyPage(() => import('@/pages/sourcing/GoodsReceivedNoteFormPage'))
 const GrnRegisterPage = lazyPage(() => import('@/pages/sourcing/GrnRegisterPage'))
 const GrnDetailPage = lazyPage(() => import('@/pages/sourcing/GrnDetailPage'))
+const CollectedPage = lazyPage(() => import('@/pages/sourcing/CollectedPage'))
+const ReceivingPage = lazyPage(() => import('@/pages/sourcing/ReceivingPage'))
 const ItemVariantsPage = lazyPage(() => import('@/pages/procurement/ItemVariantsPage'))
 const SiteDeliveryNoteFormPage = lazyPage(() => import('@/pages/sourcing/SiteDeliveryNoteFormPage'))
 const SiteDeliveriesPage = lazyPage(() => import('@/pages/sourcing/SiteDeliveriesPage'))
@@ -390,6 +392,8 @@ export const router = createBrowserRouter([
             children: [
               { path: 'sourcing/:id', element: <PurchaseOrderPage /> },
               { path: 'sourcing/:id/grn/new', element: <GoodsReceivedNoteFormPage /> },
+              // Whoever collects the goods marks them collected (520).
+              { path: 'sourcing/:id/collected', element: <CollectedPage /> },
               // Sending goods to a site (371): procurement or logistics.
               // issue_site_delivery_note() is what enforces who may.
               { path: 'sourcing/:id/sdn/new', element: <SiteDeliveryNoteFormPage /> },
@@ -404,6 +408,12 @@ export const router = createBrowserRouter([
               { path: 'goods-received', element: <GrnRegisterPage /> },
               { path: 'goods-received/:id', element: <GrnDetailPage /> },
             ],
+          },
+          {
+            // Every order still waiting for its goods (520). goods_to_collect
+            // decides what each role sees.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer', 'operations_manager']} allowLogisticsOfficer />,
+            children: [{ path: 'receiving', element: <ReceivingPage /> }],
           },
           // Site deliveries (371): the project manager's inbox to sign, and
           // procurement's queue to confirm. Anyone signed in reaches it;

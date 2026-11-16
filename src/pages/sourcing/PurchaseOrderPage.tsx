@@ -21,8 +21,12 @@ import { useStaff } from '@/hooks/useLookups'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, StatusSteps, type Tone } from '@/components/record/Record'
 import {
   Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
-  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2, HardHat, Scissors, TrendingUp
+  Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2, HardHat, Scissors, TrendingUp, PackageCheck
 } from 'lucide-react'
+import { deliveryWords, setPoDelivery, type DeliveryMode } from '@/lib/receiving'
+import { OpenAdvancesWarning } from '@/components/purchasing/OpenAdvancesWarning'
+import { VendorOrdersToCollect } from '@/components/purchasing/VendorOrdersToCollect'
+import { ActionDialog } from '@/components/shared/ActionDialog'
 import { PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
 import { VAT_RATE, WHT_RATE, WHT_SUBTOTAL_THRESHOLD } from '@/lib/poTax'
 import { PickupAdvice } from '@/components/transport/PickupAdvice'
@@ -56,6 +60,7 @@ type BundleDetail = {
   ordered_at: string | null
   fulfilled_at: string | null
   expected_delivery_date: string | null
+  delivery_mode: DeliveryMode | null
   notes: string | null
   finance_notes: string | null
   expense_id: string | null
@@ -268,6 +273,11 @@ export default function PurchaseOrderPage() {
   // Queue-pickup panel (C3) — raising the transport job right at PO
   // placement instead of only offering a click-through to a separate form.
   const [showQueuePanel, setShowQueuePanel] = useState(false)
+  // How the goods come (520): asked when the order is placed, changeable
+  // while it waits for them.
+  const [deliveryPanel, setDeliveryPanel] = useState<null | 'order' | 'change'>(null)
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('collect')
+  const [deliveryDate, setDeliveryDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [queueDriverId, setQueueDriverId] = useState<string | null>(null)
   const [queueVehicleId, setQueueVehicleId] = useState<string | null>(null)
   const [queueCargoSize, setQueueCargoSize] = useState<VehicleCapacityClass | ''>('')
@@ -478,6 +488,9 @@ export default function PurchaseOrderPage() {
   // Receiving stays open until every line is accounted for — a delivery
   // can come in parts (371).
   const canRecordGrn = (isStockOrLogistics || isAdmin) && status === 'ordered'
+  // Whoever holds the goods records them, the buyer included (520).
+  const canCollect = (isStockOrLogistics || isAdmin || isProcurement || !!profile?.is_logistics_officer) && status === 'ordered'
+  const canChangeDelivery = (isProcurement || isAdmin || isManager || bundle.procurement_officer_id === profile?.id) && ['approved', 'ordered'].includes(status)
   const receiptByItem = new Map(receipts.map(r => [r.bundle_item_id, r]))
   const receivedAny = receipts.some(r => Number(r.received) > 0)
   const outstandingLines = receipts.filter(r => Number(r.outstanding) > 0)
@@ -727,8 +740,10 @@ export default function PurchaseOrderPage() {
         openSdns.some(s => s.status === 'exceptions') ? 'A site signed for less than was sent — procurement needs to confirm the delivery note.'
         : openSdns.length ? 'On its way to site — the project manager signs for it on arrival.'
         : receivedAny ? `Part received — ${outstandingLines.length} line${outstandingLines.length === 1 ? '' : 's'} still to come.${lateDelivery ? ' Delivery is late — follow up with the vendor, or close the order short.' : ''}`
-        : lateDelivery ? `Delivery was expected ${formatDate(bundle.expected_delivery_date)} — follow up with the vendor.`
-        : 'Waiting for the goods. Send site lines on a delivery note for the project manager to sign; record a GRN for what arrives at the store.')
+        : lateDelivery ? (bundle.delivery_mode === 'vendor_delivers'
+            ? `The vendor was to deliver on ${formatDate(bundle.expected_delivery_date)}. Check with the site, then mark what came collected, or follow up with the vendor.`
+            : `Bought on ${formatDate(bundle.expected_delivery_date)} and not marked collected yet. Mark it collected with a photo, or cancel it.`)
+        : 'Waiting for the goods. Whoever collects them marks them collected here, with a photo; the site is told they are on their way.')
     : status === 'fulfilled' ? (bundle.closed_short_at
         ? `Closed short on ${formatDate(bundle.closed_short_at)}${bundle.closed_short_reason ? ` — ${bundle.closed_short_reason}` : ''}.`
         : `Received${bundle.fulfilled_at ? ` on ${formatDate(bundle.fulfilled_at)}` : ''}.`)
@@ -760,9 +775,10 @@ export default function PurchaseOrderPage() {
               ? toast(`Pick which variant was bought for: ${linesMissingVariant.map(i => i.order_items?.item_name ?? 'line').join(', ')} — edit the order`, 'error')
               : transition('submitted') },
           { label: 'Approve', icon: Check, onClick: () => transition('approved', { finance_notes: financeNotes || null }), primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
-          { label: 'Mark as ordered', icon: TruckIcon, onClick: () => transition('ordered'), primary: true, disabled: transitioning, hidden: !canMarkOrdered },
-          { label: 'Send to site', icon: HardHat, to: `/sourcing/${id}/sdn/new`, primary: !canRecordGrn, hidden: !canIssueSdn },
-          { label: 'Record goods received', icon: ClipboardCheck, to: `/sourcing/${id}/grn/new`, primary: true, hidden: !canRecordGrn },
+          { label: 'Mark as ordered', icon: TruckIcon, onClick: () => { setDeliveryMode('collect'); setDeliveryDate(new Date().toISOString().slice(0, 10)); setDeliveryPanel('order') }, primary: true, disabled: transitioning, hidden: !canMarkOrdered || deliveryPanel === 'order' },
+          { label: 'Mark collected', icon: PackageCheck, to: `/sourcing/${id}/collected`, primary: true, hidden: !canCollect },
+          { label: 'Send to site', icon: HardHat, to: `/sourcing/${id}/sdn/new`, primary: !canCollect, hidden: !canIssueSdn },
+          { label: 'Full receipt form', icon: ClipboardCheck, to: `/sourcing/${id}/grn/new`, hidden: !canRecordGrn },
           { label: 'Close short', icon: Scissors, onClick: handleCloseShort, hidden: !canCloseShort },
           { label: 'Request changes', icon: Undo2, onClick: () => setShowRejectPanel(true), hidden: !canReject || showRejectPanel },
           { label: 'Edit', icon: Pencil, to: `/sourcing/${id}/edit`, hidden: !canEdit },
@@ -955,6 +971,51 @@ export default function PurchaseOrderPage() {
           rail={<>
             <Panel title="Next step" icon={ArrowRightCircle}>
               <p className={`text-sm ${lateDelivery ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>{nextStep}</p>
+
+              {(isFinance || isAdmin || isManager || canApprove) && isPayInAdvance && ['submitted', 'approved', 'ordered'].includes(status) && !bundle.expense_id && (
+                <div className="mt-3"><OpenAdvancesWarning vendorId={bundle.vendor_id} exceptBundleId={bundle.id} /></div>
+              )}
+
+              {['drafting', 'submitted', 'approved'].includes(status) && (
+                <div className="mt-3"><VendorOrdersToCollect vendorId={bundle.vendor_id} exceptBundleId={bundle.id} /></div>
+              )}
+
+              {status === 'ordered' && !deliveryPanel && (
+                <p className="mt-3 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+                  <TruckIcon className="h-3.5 w-3.5" /> {deliveryWords(bundle.delivery_mode, bundle.expected_delivery_date)}
+                  {canChangeDelivery && (
+                    <button onClick={() => { setDeliveryMode(bundle.delivery_mode ?? 'collect'); setDeliveryDate(bundle.expected_delivery_date ?? new Date().toISOString().slice(0, 10)); setDeliveryPanel('change') }}
+                      className="font-medium text-brand">Change</button>
+                  )}
+                </p>
+              )}
+              {deliveryPanel && (
+                <ActionDialog title={deliveryPanel === 'order' ? 'Mark as ordered' : 'How the goods come'} confirmLabel={deliveryPanel === 'order' ? 'Mark as ordered' : 'Save'}
+                  description="So the buyer is reminded on the right day, and the site knows when to expect it."
+                  busy={transitioning} canConfirm={!!deliveryDate} onClose={() => setDeliveryPanel(null)}
+                  onConfirm={async () => {
+                    if (deliveryPanel === 'order') {
+                      await transition('ordered', { delivery_mode: deliveryMode, expected_delivery_date: deliveryDate })
+                    } else {
+                      try { await setPoDelivery(bundle.id, deliveryMode, deliveryDate); qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', id] }); qc.invalidateQueries({ queryKey: ['goods-to-collect'] }); toast('Saved', 'success') }
+                      catch (e) { toast((e as Error).message, 'error'); return }
+                    }
+                    setDeliveryPanel(null)
+                  }}>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(['collect', 'vendor_delivers'] as const).map(m => (
+                      <button key={m} onClick={() => setDeliveryMode(m)}
+                        className={`rounded-full border px-3 py-1.5 text-sm ${deliveryMode === m ? 'border-brand bg-brand/10 font-semibold text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+                        {m === 'collect' ? 'We collect it' : 'The vendor delivers'}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="block text-xs font-medium text-slate-500">{deliveryMode === 'collect' ? 'Collected on' : 'Delivered on'}
+                    <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
+                      className="mt-1 block w-full rounded-md border px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                  </label>
+                </ActionDialog>
+              )}
 
               {canApprove && !showRejectPanel && (
                 <div className="mt-3 space-y-1">

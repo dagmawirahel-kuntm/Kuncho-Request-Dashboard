@@ -175,6 +175,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Buying', label: 'Volatility Settings', to: '/procurement/volatility', icon: Settings, roles: ['admin', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Item Variants', to: '/procurement/item-variants', icon: Layers, roles: ['admin', 'executive', 'procurement_officer'] },
       { subgroup: 'Buying', label: 'Item Brands', to: '/procurement/item-brands', icon: Layers, roles: ['admin', 'executive', 'procurement_officer'] },
+      { subgroup: 'Receiving', label: 'To Collect', to: '/receiving', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer', 'operations_manager'], showIfLogisticsOfficer: true },
       { subgroup: 'Receiving', label: 'Goods Received', to: '/goods-received', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'procurement_officer', 'stock_manager', 'logistics_officer'], showIfLogisticsOfficer: true },
       { subgroup: 'Receiving', label: 'Site Deliveries', to: '/site-deliveries', icon: Truck, roles: ['admin', 'executive', 'procurement_officer', 'logistics_officer', 'stock_manager'], showIfLogisticsOfficer: true },
       { subgroup: 'Receiving', label: 'Receipt Collection', to: '/receipt-pickups', icon: PackageCheck, roles: ['admin', 'executive', 'finance', 'logistics_officer', 'operations_manager'], showIfLogisticsOfficer: true },

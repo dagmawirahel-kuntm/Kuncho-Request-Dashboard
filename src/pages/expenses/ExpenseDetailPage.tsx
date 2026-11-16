@@ -30,6 +30,7 @@ import { ISSUE, type ExpenseIssue, vatInside } from '@/lib/expenseQuality'
 import { ExpenseAdminActions, ExpenseAdminHistory } from '@/components/expenses/ExpenseAdminActions'
 import { ExpenseQuestions } from '@/components/expenses/ExpenseQuestions'
 import { useMarkEntityRead } from '@/lib/notifications'
+import { OpenAdvancesWarning } from '@/components/purchasing/OpenAdvancesWarning'
 
 // ── Theme by expense type ─────────────────────────────────────────────────────
 
@@ -752,6 +753,8 @@ export default function ExpenseDetailPage() {
             <Link to={`/expenses/${expense.id}/edit`} className="ml-auto font-medium text-brand hover:underline">Fix it →</Link>
           </div>
         )}
+
+        {showFinanceActions && expense.vendor_id && <OpenAdvancesWarning vendorId={expense.vendor_id} exceptExpenseId={expense.id} />}
 
         {/* Back + actions */}
         <div className="flex items-center justify-between flex-wrap gap-2">

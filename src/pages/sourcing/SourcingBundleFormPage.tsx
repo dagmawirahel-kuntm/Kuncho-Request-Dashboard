@@ -12,6 +12,7 @@ import { checkProjectBudget, logBudgetCheck, type BudgetCheckResult } from '@/li
 import { BundleLineStock } from '@/components/stock/BundleLineStock'
 import { useVariantsForItems } from '@/hooks/useItemVariants'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { VendorOrdersToCollect } from '@/components/purchasing/VendorOrdersToCollect'
 import { Segmented } from '@/components/shared/Segmented'
 import { Panel, RecordHeader, RecordLayout } from '@/components/record/Record'
 import { PO_STATUS, PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
@@ -653,6 +654,7 @@ export default function SourcingBundleFormPage() {
                     placeholder="Not in the list? Type the vendor's name" className={`${fieldCls} mt-2`} />
                 )}
               </div>
+              {vendorId && <div className="sm:col-span-2"><VendorOrdersToCollect vendorId={vendorId} exceptBundleId={id} /></div>}
               <div>
                 <label className={labelCls}>Expected delivery</label>
                 <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className={fieldCls} />
