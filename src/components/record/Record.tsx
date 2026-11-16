@@ -88,7 +88,9 @@ export interface MetaItem { icon?: ElementType; label?: string; value: ReactNode
 
 /**
  * The top of a record page. Sticks to the top while scrolling, so the
- * record's name, status and actions stay in reach.
+ * record's name, status and actions stay in reach. Once the page scrolls it
+ * shrinks to one slim row (name, tabs, actions in the menu); while scrolling
+ * down it slides up out of the way, and comes back on the first scroll up.
  */
 export function RecordHeader({ back, code, title, subtitle, pills, meta, actions = [], tabs }: {
   back: { to: string; label: string }
@@ -102,15 +104,31 @@ export function RecordHeader({ back, code, title, subtitle, pills, meta, actions
 }) {
   const { toast } = useToast()
   const [copied, setCopied] = useState(false)
-  // Once the page scrolls, the header shrinks to the title, status and tabs.
   const sentinel = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState(false)
+  const [hidden, setHidden] = useState(false)
   useEffect(() => {
     const el = sentinel.current
     if (!el || typeof IntersectionObserver === 'undefined') return
-    const io = new IntersectionObserver(([e]) => setCollapsed(!e.isIntersecting), { threshold: 0 })
+    const io = new IntersectionObserver(([e]) => { setCollapsed(!e.isIntersecting); if (e.isIntersecting) setHidden(false) }, { threshold: 0 })
     io.observe(el)
     return () => io.disconnect()
+  }, [])
+  // Slide away on the way down, back on the way up. The page scrolls inside
+  // the app shell's <main>, not the window.
+  useEffect(() => {
+    const scroller: HTMLElement | Window = sentinel.current?.closest('main') ?? window
+    const pos = () => (scroller instanceof Window ? scroller.scrollY : scroller.scrollTop)
+    let last = pos()
+    const onScroll = () => {
+      const y = pos()
+      const d = y - last
+      if (Math.abs(d) < 6) return
+      setHidden(d > 0 && y > 160)
+      last = y
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
   }, [])
   const visible = actions.filter(a => !a.hidden)
   const primary = visible.filter(a => a.primary)
@@ -123,54 +141,68 @@ export function RecordHeader({ back, code, title, subtitle, pills, meta, actions
   return (
     <>
       <div ref={sentinel} aria-hidden className="h-px" />
-      <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-4 border-b px-4 pt-3 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6 dark:border-slate-700"
+      <div className={`sticky -top-4 z-20 -mx-4 -mt-4 sm:-top-6 mb-4 border-b px-4 backdrop-blur transition-transform duration-200 sm:-mx-6 sm:-mt-6 sm:px-6 dark:border-slate-700 ${collapsed ? 'pt-0' : 'pt-3'} ${hidden ? '-translate-y-full' : ''}`}
         style={{ background: 'color-mix(in srgb, var(--color-background) 92%, transparent)' }}>
-        {!collapsed && (
-          <Link to={back.to} className="mb-1 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand">
-            <ChevronLeft className="h-3.5 w-3.5" /> {back.label}
-          </Link>
-        )}
-        <div className={`flex flex-wrap items-start justify-between gap-3 ${collapsed ? 'pb-2' : 'pb-3'}`}>
-          <div className="min-w-0 flex-1">
-            {code && !collapsed && (
-              <button
-                onClick={() => { navigator.clipboard?.writeText(code); setCopied(true); toast('Copied', 'success'); setTimeout(() => setCopied(false), 1500) }}
-                className="mb-0.5 inline-flex items-center gap-1 font-mono text-xs font-bold tracking-wider text-brand hover:opacity-80" title="Copy">
-                {code} {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3 opacity-60" />}
-              </button>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              {collapsed && (
-                <Link to={back.to} aria-label={back.label} className="-ml-1 rounded p-0.5 text-slate-400 hover:text-brand"><ChevronLeft className="h-4 w-4" /></Link>
-              )}
-              <h1 className={`font-bold leading-tight text-slate-900 dark:text-slate-50 ${collapsed ? 'truncate text-base' : 'text-lg sm:text-xl'}`}>{title}</h1>
-              {pills}
+        {collapsed ? (
+          // One slim row: name, tabs, and every action in the menu.
+          <div className="flex items-center gap-3">
+            <div className="flex min-w-0 max-w-[45%] shrink-0 items-center gap-1 py-2 sm:max-w-xs">
+              <Link to={back.to} aria-label={back.label} className="-ml-1 rounded p-0.5 text-slate-400 hover:text-brand"><ChevronLeft className="h-4 w-4" /></Link>
+              <h1 className="truncate text-sm font-bold text-slate-900 dark:text-slate-50" title={typeof title === 'string' ? title : undefined}>{title}</h1>
             </div>
-            {subtitle && !collapsed && <p className="mt-0.5 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
-            {meta && meta.length > 0 && !collapsed && (
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                {meta.map((m, i) => (
-                  <span key={i} className={`inline-flex items-center gap-1 ${m.tone === 'red' ? 'font-medium text-red-600 dark:text-red-400' : m.tone === 'amber' ? 'font-medium text-amber-600 dark:text-amber-400' : ''}`}>
-                    {m.icon && <m.icon className="h-3.5 w-3.5" />}
-                    {m.label && <span className="text-slate-400">{m.label}</span>}
-                    <span>{m.value}</span>
-                  </span>
-                ))}
+            <div className="min-w-0 flex-1">{tabs}</div>
+            {visible.length > 0 && (
+              <div className="shrink-0 py-1">
+                <div className="sm:hidden"><OverflowMenu actions={secondary} /></div>
+                <div className="hidden sm:block"><OverflowMenu actions={[...primary, ...secondary]} /></div>
               </div>
             )}
           </div>
-          {visible.length > 0 && (
-            <div className="flex shrink-0 items-center gap-2">
-              <div className="hidden items-center gap-2 sm:flex">
-                {inline.map(a => <ActionButton key={a.label} a={a} />)}
-                {primary.map(a => <ActionButton key={a.label} a={a} />)}
+        ) : (
+          <>
+            <Link to={back.to} className="mb-1 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand">
+              <ChevronLeft className="h-3.5 w-3.5" /> {back.label}
+            </Link>
+            <div className="flex flex-wrap items-start justify-between gap-3 pb-3">
+              <div className="min-w-0 flex-1">
+                {code && (
+                  <button
+                    onClick={() => { navigator.clipboard?.writeText(code); setCopied(true); toast('Copied', 'success'); setTimeout(() => setCopied(false), 1500) }}
+                    className="mb-0.5 inline-flex items-center gap-1 font-mono text-xs font-bold tracking-wider text-brand hover:opacity-80" title="Copy">
+                    {code} {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3 opacity-60" />}
+                  </button>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl dark:text-slate-50">{title}</h1>
+                  {pills}
+                </div>
+                {subtitle && <p className="mt-0.5 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
+                {meta && meta.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                    {meta.map((m, i) => (
+                      <span key={i} className={`inline-flex items-center gap-1 ${m.tone === 'red' ? 'font-medium text-red-600 dark:text-red-400' : m.tone === 'amber' ? 'font-medium text-amber-600 dark:text-amber-400' : ''}`}>
+                        {m.icon && <m.icon className="h-3.5 w-3.5" />}
+                        {m.label && <span className="text-slate-400">{m.label}</span>}
+                        <span>{m.value}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="sm:hidden"><OverflowMenu actions={secondary} /></div>
-              <div className="hidden sm:block"><OverflowMenu actions={overflow} /></div>
+              {visible.length > 0 && (
+                <div className="flex shrink-0 items-center gap-2">
+                  <div className="hidden items-center gap-2 sm:flex">
+                    {inline.map(a => <ActionButton key={a.label} a={a} />)}
+                    {primary.map(a => <ActionButton key={a.label} a={a} />)}
+                  </div>
+                  <div className="sm:hidden"><OverflowMenu actions={secondary} /></div>
+                  <div className="hidden sm:block"><OverflowMenu actions={overflow} /></div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        {tabs}
+            {tabs}
+          </>
+        )}
       </div>
       {primary.length > 0 && (
         <>

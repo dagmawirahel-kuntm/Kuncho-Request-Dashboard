@@ -10,7 +10,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import type {
   ChartOfAccounts, JournalEntry, JournalLine, OpeningBalance,
-  LedgerPostingFailure, TrialBalanceRow, PlLedgerPreviewRow, BalanceSheetLedgerPreviewRow,
+  LedgerPostingFailure, TrialBalanceRow,
   CashReconciliationCheckRow, SubLedgerBalanceRow, CashFlowStatementRow, CashFlowMovementRow, CashFlowSection,
 } from '@/types/database'
 import {
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import SubLedgersPanel from './ledger/SubLedgersPanel'
 import ChartOfAccountsPanel from './ledger/ChartOfAccountsPanel'
+import { LedgerTree, type LedgerRow } from '@/components/reports/LedgerTree'
 
 const TABS = [
   { key: 'trial-balance', label: 'Trial Balance', icon: Scale },
@@ -698,39 +699,40 @@ function PostingFailuresTab() {
 }
 
 // ── P&L / Balance Sheet Preview ────────────────────────────────────
+// Both by account group (524), from the same functions the Reports pages use.
 function PlBalanceSheetPreviewTab() {
+  const today = new Date()
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const fyStartYear = today.getMonth() > 6 || (today.getMonth() === 6 && today.getDate() >= 8) ? today.getFullYear() : today.getFullYear() - 1
+  const fyStart = `${fyStartYear}-07-08`
+
   const { data: pl = [], isLoading: loadingPl } = useQuery({
-    queryKey: ['v-pl-ledger-preview'],
+    queryKey: ['pl-ledger', fyStart, todayIso],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_pl_ledger_preview').select('*')
+      const { data, error } = await supabase.rpc('pl_ledger', { p_from: fyStart, p_to: todayIso })
       if (error) throw error
-      return data as PlLedgerPreviewRow[]
+      return (data ?? []) as (LedgerRow & { nature: string })[]
     },
   })
   const { data: bs = [], isLoading: loadingBs } = useQuery({
-    queryKey: ['balance-sheet-ledger-preview'],
+    queryKey: ['balance-sheet-ledger', todayIso],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('balance_sheet_ledger_preview', { p_as_of_date: new Date().toISOString().slice(0, 10) })
+      const { data, error } = await supabase.rpc('balance_sheet_ledger', { p_as_of: todayIso })
       if (error) throw error
-      return data as BalanceSheetLedgerPreviewRow[]
+      return ((data ?? []) as (LedgerRow & { nature: string; balance: number })[]).map(r => ({ ...r, amount: Number(r.balance) }))
     },
   })
 
-  const totalRevenue = pl.filter(r => r.nature === 'Revenue').reduce((s, r) => s + r.amount, 0)
-  const totalExpense = pl.filter(r => r.nature === 'Expense').reduce((s, r) => s + r.amount, 0)
+  const totalRevenue = pl.filter(r => r.nature === 'Revenue').reduce((s, r) => s + Number(r.amount), 0)
+  const totalExpense = pl.filter(r => r.nature === 'Expense').reduce((s, r) => s + Number(r.amount), 0)
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <Section title="P&L (Ledger Preview)" sub="Current fiscal period, Revenue and Expense account movement only">
+      <Section title="P&L (Ledger Preview)" sub="This financial year to date, by account group. Click a heading to open it.">
         {loadingPl ? <Empty>Loading…</Empty> : pl.length === 0 ? <Empty>No revenue/expense activity posted this period.</Empty> : (
-          <div className="divide-y dark:divide-slate-700">
-            {pl.map(r => (
-              <div key={r.account_code} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span className="text-slate-700 dark:text-slate-200">{r.account_name}</span>
-                <span className="tabular-nums font-medium">{formatCurrency(r.amount)}</span>
-              </div>
-            ))}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-900/60 font-semibold text-sm">
+          <div>
+            <LedgerTree rows={pl} openDepth={2} />
+            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-900/60 font-semibold text-sm border-t dark:border-slate-700">
               <span>Net Income</span>
               <span className={`tabular-nums ${totalRevenue - totalExpense >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                 {formatCurrency(totalRevenue - totalExpense)}
@@ -739,16 +741,9 @@ function PlBalanceSheetPreviewTab() {
           </div>
         )}
       </Section>
-      <Section title="Balance Sheet (Ledger Preview)" sub="As of today — opening balance plus every journal movement since, cumulative">
+      <Section title="Balance Sheet (Ledger Preview)" sub="As of today, by account group, including opening balances not yet posted">
         {loadingBs ? <Empty>Loading…</Empty> : bs.length === 0 ? <Empty>No Asset/Liability/Equity activity posted yet.</Empty> : (
-          <div className="divide-y dark:divide-slate-700">
-            {bs.map(r => (
-              <div key={r.account_code} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span className="text-slate-700 dark:text-slate-200">{r.account_name}</span>
-                <span className="tabular-nums font-medium">{formatCurrency(r.balance)}</span>
-              </div>
-            ))}
-          </div>
+          <LedgerTree rows={bs} openDepth={1} />
         )}
       </Section>
     </div>

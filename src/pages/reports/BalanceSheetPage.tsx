@@ -3,281 +3,140 @@ import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/lib/utils'
 import { formatEthiopian, toEthiopian, toGregorian, isEthiopianLeapYear } from '@/lib/ethiopianCalendar'
-import { CalendarDays, LayoutGrid, Rows3 } from 'lucide-react'
+import { LedgerTree, type LedgerRow } from '@/components/reports/LedgerTree'
+import { CalendarDays } from 'lucide-react'
 
-interface SectionProps {
-  title: string
-  rows: { label: string; value: number }[]
-  total: number
-  positive?: boolean
+// Local date, not UTC: toISOString() can move the day back in East Africa.
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function Section({ title, rows, total, positive }: SectionProps) {
-  const totalColor = positive === undefined
-    ? 'text-slate-800 dark:text-slate-100'
-    : total >= 0 && positive ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+function Section({ title, rows, total, openDepth = 2 }: { title: string; rows: LedgerRow[]; total: number; openDepth?: number }) {
   return (
     <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
       <div className="px-4 py-3 border-b bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
         <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">{title}</h2>
       </div>
-      <table className="w-full text-sm">
-        <tbody className="divide-y dark:divide-slate-700">
-          {rows.length === 0
-            ? <tr><td colSpan={2} className="px-4 py-4 text-center text-slate-400 dark:text-slate-500 text-xs">No entries</td></tr>
-            : rows.map(r => (
-              <tr key={r.label} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{r.label}</td>
-                <td className="px-4 py-2.5 text-right text-slate-800 dark:text-slate-200">{formatCurrency(r.value)}</td>
-              </tr>
-            ))
-          }
-        </tbody>
-        <tfoot className="border-t bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
-          <tr>
-            <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">Total {title}</td>
-            <td className={`px-4 py-3 text-right font-bold ${totalColor}`}>{formatCurrency(total)}</td>
-          </tr>
-        </tfoot>
-      </table>
+      <LedgerTree rows={rows} openDepth={openDepth} emptyText="No entries" />
+      <div className="border-t px-4 py-3 flex justify-between text-sm font-semibold bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
+        <span className="text-slate-700 dark:text-slate-200">Total {title.toLowerCase()}</span>
+        <span className="tabular-nums font-bold text-slate-800 dark:text-slate-100">{formatCurrency(total)}</span>
+      </div>
     </div>
   )
 }
 
-function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10)
-}
-
+// The Balance Sheet from the ledger (524): every asset, liability and
+// equity account under its headings, as of a date, with the profit not yet
+// closed into equity. Opening balances not yet posted to the ledger are
+// included, so it balances before and after finance posts them.
 export default function BalanceSheetPage() {
   const today = useMemo(() => new Date(), [])
   const [asOfDate, setAsOfDate] = useState(() => toISODate(today))
 
-  // Quick presets: Ethiopian fiscal year-end (for tax filing) and
-  // Gregorian year-end (for budgeting), both computed from "today".
   const gregorianYearEnd = `${today.getFullYear()}-12-31`
   const ethiopianYearNow = toEthiopian(today).year
   const ethiopianYearEnd = useMemo(() => {
     const lastDay = isEthiopianLeapYear(ethiopianYearNow) ? 6 : 5
     return toISODate(toGregorian(ethiopianYearNow, 13, lastDay))
   }, [ethiopianYearNow])
+  // The financial year runs 8 Jul – 7 Jul.
+  const financialYearEnd = useMemo(() => {
+    const y = today.getMonth() > 6 || (today.getMonth() === 6 && today.getDate() >= 8) ? today.getFullYear() + 1 : today.getFullYear()
+    return `${y}-07-07`
+  }, [today])
 
-  const { data: balances = [], isLoading: loadingBalances } = useQuery({
-    queryKey: ['bs-account-balances-asof', asOfDate],
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['balance-sheet-ledger', asOfDate],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('account_balances_asof', { p_cutoff: asOfDate })
+      const { data, error } = await supabase.rpc('balance_sheet_ledger', { p_as_of: asOfDate })
       if (error) throw error
-      return data as { id: string; account_name: string; type: string | null; balance: number }[]
+      return ((data ?? []) as (LedgerRow & { nature: string; balance: number })[]).map(r => ({ ...r, amount: Number(r.balance) }))
     },
   })
 
-  const { data: arTotal = 0 } = useQuery({
-    queryKey: ['bs-ar-asof', asOfDate],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('ar_total_asof', { p_cutoff: asOfDate })
-      if (error) throw error
-      return Number(data ?? 0)
-    },
-  })
-
-  const { data: apRows = [] } = useQuery({
-    queryKey: ['bs-ap-asof', asOfDate],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('ap_by_category_asof', { p_cutoff: asOfDate })
-      if (error) throw error
-      return data as { category_name: string; total_etb: number }[]
-    },
-  })
-
-  const { data: retainedEarnings = 0, isLoading: loadingRE } = useQuery({
-    queryKey: ['bs-retained-earnings-asof', asOfDate],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('retained_earnings_asof', { p_cutoff: asOfDate })
-      if (error) throw error
-      return Number(data ?? 0)
-    },
-  })
-
-  const [assetGrouping, setAssetGrouping] = useState<'category' | 'class'>('category')
-
-  const { data: assetsByCategory = [], isLoading: loadingAssetsByCategory } = useQuery({
-    queryKey: ['bs-assets-by-category-asof', asOfDate],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('assets_by_category_asof', { p_cutoff: asOfDate })
-      if (error) throw error
-      return data as { category_name: string; total_etb: number }[]
-    },
-  })
-
-  const { data: assetsByClass = [], isLoading: loadingAssetsByClass } = useQuery({
-    queryKey: ['bs-assets-by-class-asof', asOfDate],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('assets_by_class_asof', { p_cutoff: asOfDate })
-      if (error) throw error
-      return data as { asset_class: string; total_etb: number }[]
-    },
-  })
-
-  const isLoading = loadingBalances || loadingRE || loadingAssetsByCategory || loadingAssetsByClass
-
-  const assetRows = useMemo(() => {
-    const rows = balances.map(a => ({
-      label: a.type ? `${a.account_name} (${a.type})` : a.account_name,
-      value: Number(a.balance ?? 0),
-    }))
-    if (arTotal > 0) rows.push({ label: 'Accounts Receivable (Invoiced Sales)', value: Number(arTotal) })
-    return rows
-  }, [balances, arTotal])
-
-  const cashAssetTotal = assetRows.reduce((s, r) => s + r.value, 0)
-
-  const capitalizedRows = useMemo(() => {
-    const src = assetGrouping === 'category'
-      ? assetsByCategory.map(r => ({ label: r.category_name, value: Number(r.total_etb) }))
-      : assetsByClass.map(r => ({ label: r.asset_class, value: Number(r.total_etb) }))
-    return src.filter(r => r.value > 0).sort((a, b) => b.value - a.value)
-  }, [assetGrouping, assetsByCategory, assetsByClass])
-
-  const capitalizedTotal = capitalizedRows.reduce((s, r) => s + r.value, 0)
-
-  const assetTotal = cashAssetTotal + capitalizedTotal
-
-  const liabRows = useMemo(() => {
-    return apRows
-      .filter(r => Number(r.total_etb) > 0)
-      .sort((a, b) => Number(b.total_etb) - Number(a.total_etb))
-      .map(r => ({ label: `Accounts Payable: ${r.category_name}`, value: Number(r.total_etb) }))
-  }, [apRows])
-
-  const liabTotal = liabRows.reduce((s, r) => s + r.value, 0)
-
-  const equityRows = [{ label: 'Retained Earnings (cumulative)', value: Number(retainedEarnings) }]
-  const equityTotal = Number(retainedEarnings)
-
+  const assets = rows.filter(r => r.nature === 'Asset')
+  const liabilities = rows.filter(r => r.nature === 'Liability')
+  const equity = rows.filter(r => r.nature === 'Equity')
+  const sum = (rs: LedgerRow[]) => rs.reduce((s, r) => s + Number(r.amount), 0)
+  const assetTotal = sum(assets)
+  const liabTotal = sum(liabilities)
+  const equityTotal = sum(equity)
   const liabPlusEquity = liabTotal + equityTotal
-  const isBalanced = Math.abs(assetTotal - liabPlusEquity) < 0.01
-
+  const isBalanced = Math.abs(assetTotal - liabPlusEquity) < 1
   const isToday = asOfDate === toISODate(today)
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div><h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1></div>
-        <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
-      </div>
-    )
-  }
+  const preset = (label: string, date: string) => (
+    <button onClick={() => setAsOfDate(date)}
+      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${asOfDate === date ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+      {label}
+    </button>
+  )
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Balance Sheet</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Assets = Liabilities + Equity</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">From the ledger: Assets = Liabilities + Equity</p>
         </div>
-
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setAsOfDate(gregorianYearEnd)}
-            className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${asOfDate === gregorianYearEnd ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-          >
-            Gregorian Year-End
-          </button>
-          <button
-            onClick={() => setAsOfDate(ethiopianYearEnd)}
-            className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${asOfDate === ethiopianYearEnd ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-          >
-            Ethiopian Year-End ({ethiopianYearNow} EC)
-          </button>
+          {preset('Financial year-end', financialYearEnd)}
+          {preset('Gregorian year-end', gregorianYearEnd)}
+          {preset(`Ethiopian year-end (${ethiopianYearNow} EC)`, ethiopianYearEnd)}
           {!isToday && (
-            <button
-              onClick={() => setAsOfDate(toISODate(today))}
-              className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
-            >
+            <button onClick={() => setAsOfDate(toISODate(today))}
+              className="rounded-md border px-3 py-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
               Today
             </button>
           )}
           <div className="flex items-center gap-1.5 rounded-md border dark:border-slate-700 px-2.5 py-1.5 bg-white dark:bg-slate-800">
             <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="date"
-              value={asOfDate}
-              max={toISODate(today)}
-              onChange={e => setAsOfDate(e.target.value)}
-              className="text-xs outline-none bg-transparent dark:text-slate-100"
-            />
+            <input type="date" value={asOfDate} onChange={e => e.target.value && setAsOfDate(e.target.value)}
+              className="text-xs outline-none bg-transparent dark:text-slate-100" />
           </div>
         </div>
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-500 -mt-3">
-        As of {new Date(asOfDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
+        As of {new Date(asOfDate + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
         {' · '}{formatEthiopian(asOfDate)} (Ethiopian)
+        {asOfDate > toISODate(today) && ' · later postings are not in yet'}
       </p>
 
-      <div className="rounded-lg border bg-white p-4 flex flex-wrap gap-6 text-sm dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-500 dark:text-slate-400">Total Assets</span>
-          <span className="font-bold text-slate-800 dark:text-slate-100">{formatCurrency(assetTotal)}</span>
-        </div>
-        <div className="text-slate-300 dark:text-slate-600">/</div>
-        <div className="flex items-center gap-2">
-          <span className="text-slate-500 dark:text-slate-400">Liabilities + Equity</span>
-          <span className="font-bold text-slate-800 dark:text-slate-100">{formatCurrency(liabPlusEquity)}</span>
-        </div>
-        <div className="text-slate-300 dark:text-slate-600">/</div>
-        <div className={`font-semibold text-sm ${isBalanced ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
-          {isBalanced ? 'Balanced' : `Difference: ${formatCurrency(Math.abs(assetTotal - liabPlusEquity))}`}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-4">
-          <Section title="Assets" rows={assetRows} total={cashAssetTotal} positive />
-
-          <div className="rounded-lg border bg-white overflow-hidden dark:bg-slate-800 dark:border-slate-700">
-            <div className="px-4 py-3 border-b bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700 flex items-center justify-between gap-2 flex-wrap">
-              <h2 className="font-semibold text-slate-700 text-sm dark:text-slate-200">Capitalized Purchases (Assets, from GRN)</h2>
-              <div className="flex items-center gap-1 rounded-md border dark:border-slate-700 p-0.5">
-                <button
-                  onClick={() => setAssetGrouping('category')}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${assetGrouping === 'category' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                >
-                  <Rows3 className="h-3 w-3" /> By Category
-                </button>
-                <button
-                  onClick={() => setAssetGrouping('class')}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${assetGrouping === 'class' ? 'bg-brand text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                >
-                  <LayoutGrid className="h-3 w-3" /> By Asset Class
-                </button>
-              </div>
+      {isLoading ? (
+        <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</div>
+      ) : (
+        <>
+          <div className="rounded-lg border bg-white p-4 flex flex-wrap gap-6 text-sm dark:bg-slate-800 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 dark:text-slate-400">Total assets</span>
+              <span className="font-bold text-slate-800 dark:text-slate-100">{formatCurrency(assetTotal)}</span>
             </div>
-            <table className="w-full text-sm">
-              <tbody className="divide-y dark:divide-slate-700">
-                {capitalizedRows.length === 0
-                  ? <tr><td colSpan={2} className="px-4 py-4 text-center text-slate-400 dark:text-slate-500 text-xs">No capitalized purchases since the cutover</td></tr>
-                  : capitalizedRows.map(r => (
-                    <tr key={r.label} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">{r.label}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-800 dark:text-slate-200">{formatCurrency(r.value)}</td>
-                    </tr>
-                  ))
-                }
-              </tbody>
-              <tfoot className="border-t bg-slate-50 dark:bg-slate-900/60 dark:border-slate-700">
-                <tr>
-                  <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">Total Capitalized Purchases</td>
-                  <td className="px-4 py-3 text-right font-bold text-green-700 dark:text-green-400">{formatCurrency(capitalizedTotal)}</td>
-                </tr>
-              </tfoot>
-            </table>
+            <div className="text-slate-300 dark:text-slate-600">/</div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 dark:text-slate-400">Liabilities + equity</span>
+              <span className="font-bold text-slate-800 dark:text-slate-100">{formatCurrency(liabPlusEquity)}</span>
+            </div>
+            <div className="text-slate-300 dark:text-slate-600">/</div>
+            <div className={`font-semibold text-sm ${isBalanced ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+              {isBalanced ? 'Balanced' : `Difference: ${formatCurrency(Math.abs(assetTotal - liabPlusEquity))}`}
+            </div>
           </div>
-        </div>
-        <div className="space-y-4">
-          <Section title="Liabilities" rows={liabRows} total={liabTotal} positive={false} />
-          <Section title="Equity" rows={equityRows} total={equityTotal} positive={equityTotal >= 0} />
-        </div>
-      </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Section title="Assets" rows={assets} total={assetTotal} />
+            <div className="space-y-4">
+              <Section title="Liabilities" rows={liabilities} total={liabTotal} />
+              <Section title="Equity" rows={equity} total={equityTotal} />
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            “Profit or loss not yet closed” is revenue less expenses posted so far; it moves into retained earnings when the year is closed.
+            Opening balances entered on the Ledger &amp; Journal page are included even before they are posted as a journal entry.
+          </p>
+        </>
+      )}
     </div>
   )
 }
