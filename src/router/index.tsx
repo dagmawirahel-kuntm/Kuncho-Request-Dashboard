@@ -55,6 +55,7 @@ const VariationDetailPage = lazyPage(() => import('@/pages/variations/VariationD
 const TransportFormPage = lazyPage(() => import('@/pages/transportation/TransportFormPage'))
 const TransportPaymentFormPage = lazyPage(() => import('@/pages/transportation/TransportPaymentFormPage'))
 const PayOutPage = lazyPage(() => import('@/pages/finance/PayOutPage'))
+const ItemLedgersPage = lazyPage(() => import('@/pages/finance/ItemLedgersPage'))
 const DriversPage = lazyPage(() => import('@/pages/transportation/DriversPage'))
 const TripEstimatorPage = lazyPage(() => import('@/pages/transportation/TripEstimatorPage'))
 const StaffPage = lazyPage(() => import('@/pages/staff/StaffPage'))
@@ -515,6 +516,8 @@ export const router = createBrowserRouter([
               // The cashier paying a driver at the gate (433).
               { path: 'finance/pay-out', element: <PayOutPage /> },
               { path: 'month-end', element: <MonthEndPage /> },
+              // Each item carries its ledger account (521).
+              { path: 'finance/item-ledgers', element: <ItemLedgersPage /> },
               { path: 'sales/new', element: <SaleFormPage /> },
               // Engagements many clients pay a set package for (455).
               { path: 'package-receipts', element: <PackageReceiptsPage /> },
