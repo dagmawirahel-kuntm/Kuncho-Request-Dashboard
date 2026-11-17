@@ -117,11 +117,15 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
       && m.unit === group.members.find(x => x.id === group.suggestedKeep)!.unit).map(m => m.id)))
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
+  // "1 box = 120 pcs": how many of the kept item's unit make one of the
+  // other's. Merge restates the other item's movements in the kept unit.
+  const [factors, setFactors] = useState<Record<string, string>>({})
+  const factorOf = (m: StockUsageRow) => (m.unit === keeper.unit ? 1 : Number(factors[m.id]) > 0 ? Number(factors[m.id]) : null)
 
   const toMerge = group.members.filter(m => m.id !== keep && picked.has(m.id))
-  const blocked = toMerge.filter(m => m.unit !== keeper.unit || m.is_tool !== keeper.is_tool)
+  const blocked = toMerge.filter(m => factorOf(m) == null || m.is_tool !== keeper.is_tool)
   const totals = toMerge.reduce((t, m) => ({
-    lines: t.lines + m.request_lines, receipts: t.receipts + m.receipts, issues: t.issues + m.issues, qty: t.qty + Number(m.qty_on_hand),
+    lines: t.lines + m.request_lines, receipts: t.receipts + m.receipts, issues: t.issues + m.issues, qty: t.qty + Number(m.qty_on_hand) * (factorOf(m) ?? 1),
   }), { lines: 0, receipts: 0, issues: 0, qty: 0 })
 
   function refresh() {
@@ -134,6 +138,13 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
 
   async function merge() {
     setBusy(true)
+    for (const m of toMerge.filter(x => x.unit !== keeper.unit)) {
+      const { error } = await supabase.rpc('set_stock_unit_conversion', {
+        p_item: keep, p_from_unit: m.unit, p_factor: factorOf(m), p_note: `Set when merging ${m.item_name}`,
+      })
+      // "pcs" and "piece" are the same unit: nothing to convert
+      if (error && !/same unit/.test(error.message)) { setBusy(false); toast(error.message, 'error'); return }
+    }
     const { error } = await supabase.rpc('merge_stock_items', { p_keep: keep, p_merge: toMerge.map(m => m.id) })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
@@ -200,7 +211,16 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 pl-[5.5rem] sm:pl-0">
+              <div className="flex items-center gap-2 flex-wrap pl-[5.5rem] sm:pl-0">
+                {unitClash && picked.has(m.id) && (
+                  <label className="flex items-center gap-1 text-[11px] text-slate-500" title={`How many ${keeper.unit} make one ${m.unit} of this item`}>
+                    1 {m.unit} =
+                    <input type="number" inputMode="decimal" min="0" step="any" value={factors[m.id] ?? ''}
+                      onChange={e => setFactors(f => ({ ...f, [m.id]: e.target.value }))}
+                      className="w-16 rounded-md border px-1.5 py-1 text-xs tabular-nums dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" placeholder="?" />
+                    {keeper.unit}
+                  </label>
+                )}
                 <UnitSelect value={m.unit} onChange={u => setUnit(m, u)}
                   className={`rounded-md border px-2 py-1 text-xs dark:bg-slate-800 dark:text-slate-100 ${unitClash ? 'border-red-300 dark:border-red-700' : 'dark:border-slate-600'}`} />
               </div>
@@ -214,7 +234,7 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
           <p className="flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400">
             <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
             {blocked.map(b => b.item_name).join(', ')} {blocked.length === 1 ? 'is' : 'are'} counted differently from {keeper.item_name}
-            {' '}({keeper.unit}{keeper.is_tool ? ', tool' : ''}). Set the same unit first — a bag is not a kuntal — or untick {blocked.length === 1 ? 'it' : 'them'}.
+            {' '}({keeper.unit}{keeper.is_tool ? ', tool' : ''}). Say how many {keeper.unit} make one of theirs — a bag is not a kuntal — or, if the unit was just mislabelled, set the same unit. Or untick {blocked.length === 1 ? 'it' : 'them'}.
           </p>
         )}
         {confirming ? (
@@ -224,7 +244,7 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
             </p>
             <p className="text-xs text-amber-800 dark:text-amber-300">
               Moves {totals.lines} request line{totals.lines === 1 ? '' : 's'}, {totals.receipts} receipt{totals.receipts === 1 ? '' : 's'}
-              {totals.issues > 0 && `, ${totals.issues} issue${totals.issues === 1 ? '' : 's'}`} and {totals.qty} {keeper.unit} in the warehouse onto {keeper.item_name},
+              {totals.issues > 0 && `, ${totals.issues} issue${totals.issues === 1 ? '' : 's'}`} and {Math.round(totals.qty * 1000) / 1000} {keeper.unit} in the warehouse onto {keeper.item_name},
               then removes the merged items. Their names are kept as other names for {keeper.item_name}. This can't be undone from here.
             </p>
             <div className="flex gap-2">

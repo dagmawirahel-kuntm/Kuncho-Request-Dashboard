@@ -60,7 +60,7 @@ export interface ReviewQueueRow {
   stock_item_id: string
   item_name: string
   item_unit: string | null
-  reason: 'untagged' | 'outlier'
+  reason: 'untagged' | 'outlier' | 'unit'   // unit: bought in another unit, no conversion yet (528)
   unit_price: number
   unit: string | null
   sourced_at: string

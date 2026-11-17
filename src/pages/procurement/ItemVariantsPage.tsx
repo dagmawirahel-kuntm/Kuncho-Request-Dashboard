@@ -387,6 +387,7 @@ function ReviewTab({ queue, needing, canEdit, openItem }: { queue: ReviewQueueRo
   const { toast } = useToast()
   const [picked, setPicked] = useState<Record<string, string>>({})
   const [linkTo, setLinkTo] = useState<Record<string, string | null>>({})
+  const [factor, setFactor] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
   const groups = useMemo(() => {
@@ -400,6 +401,27 @@ function ReviewTab({ queue, needing, canEdit, openItem }: { queue: ReviewQueueRo
   async function review(ids: string[], variantId: string | null, exclude: boolean) {
     setBusy(true)
     const { error } = await supabase.rpc('review_market_prices', { p_price_ids: ids, p_variant_id: variantId, p_exclude: exclude, p_note: null })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    invalidate()
+  }
+
+  // "1 box of this item = 120 pcs": every price in that unit counts from now on.
+  async function setConversion(r: ReviewQueueRow) {
+    const f = Number(factor[r.price_id])
+    if (!(f > 0) || !r.unit) return
+    setBusy(true)
+    const { error } = await supabase.rpc('set_stock_unit_conversion', { p_item: r.stock_item_id, p_from_unit: r.unit, p_factor: f, p_note: null })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    invalidate()
+    toast(`1 ${r.unit} of ${r.item_name} = ${f} ${r.item_unit} — its ${r.unit} prices now count`, 'success')
+  }
+
+  // The unit was a slip: 200 "roll" of cable at 304 each was 200 m.
+  async function correctUnit(r: ReviewQueueRow) {
+    setBusy(true)
+    const { error } = await supabase.rpc('correct_price_unit', { p_price_id: r.price_id })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
     invalidate()
@@ -449,22 +471,53 @@ function ReviewTab({ queue, needing, canEdit, openItem }: { queue: ReviewQueueRo
               <ul className="divide-y dark:divide-slate-700">
                 {rows.map(r => {
                   const choice = picked[r.price_id] ?? (r.reason === 'untagged' ? guessVariant(r, variants) : r.variant_id) ?? ''
+                  if (r.reason === 'unit') return (
+                    <li key={r.price_id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                      <span className="w-28 shrink-0 text-right font-semibold tabular-nums">{formatCurrency(r.unit_price)}<span className="block text-[10px] font-normal text-slate-400">per {r.unit}</span></span>
+                      <span className="min-w-[12rem] flex-1 text-xs text-slate-500">
+                        <span className="font-semibold text-amber-700 dark:text-amber-400">Bought per {r.unit}, counted in {r.item_unit}. </span>
+                        {[r.bought_as, r.bought_spec?.trim()].filter(Boolean).join(' — ') || '—'}
+                        <span className="text-slate-400"> · {sourceLabel(r.source)}{r.vendor_name ? ` · ${r.vendor_name}` : ''} · {formatDateGC(r.sourced_at)}{r.source_reference ? ` · ${r.source_reference}` : ''}</span>
+                      </span>
+                      <label className="flex items-center gap-1 text-xs text-slate-500">
+                        1 {r.unit} =
+                        <input type="number" inputMode="decimal" min="0" step="any" value={factor[r.price_id] ?? ''} placeholder="?"
+                          onChange={e => setFactor(f => ({ ...f, [r.price_id]: e.target.value }))}
+                          className="w-20 rounded-md border px-2 py-1 text-xs tabular-nums dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                        {r.item_unit}
+                      </label>
+                      <button disabled={busy || !(Number(factor[r.price_id]) > 0)} onClick={() => setConversion(r)} title={`Every ${r.unit} price of this item converts from now on`}
+                        className="inline-flex items-center gap-1 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-40">
+                        <Check className="h-3 w-3" /> Set
+                      </button>
+                      <button disabled={busy} onClick={() => correctUnit(r)} title={`The order line said ${r.unit} by mistake — correct it to ${r.item_unit}`}
+                        className="rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+                        It was per {r.item_unit}
+                      </button>
+                      <button disabled={busy} onClick={() => review([r.price_id], null, true)} title="Not comparable — leave it out of trends"
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+                        <EyeOff className="h-3 w-3" /> Leave out
+                      </button>
+                    </li>
+                  )
                   return (
                     <li key={r.price_id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                       <span className="w-28 shrink-0 text-right font-semibold tabular-nums">{formatCurrency(r.unit_price)}</span>
                       <span className="min-w-[12rem] flex-1 text-xs text-slate-500">
                         {r.reason === 'outlier'
-                          ? <span className="font-semibold text-red-600">Far from the usual {formatCurrency(r.variant_median)} for {r.variant_label}. </span>
+                          ? <span className="font-semibold text-red-600">Far from the usual {formatCurrency(r.variant_median)}{r.variant_label ? ` for ${r.variant_label}` : ''}. </span>
                           : null}
                         {[r.bought_as, r.bought_spec?.trim()].filter(Boolean).join(' — ') || '—'}
                         <span className="text-slate-400"> · {sourceLabel(r.source)}{r.vendor_name ? ` · ${r.vendor_name}` : ''} · {formatDateGC(r.sourced_at)}{r.source_reference ? ` · ${r.source_reference}` : ''}</span>
                       </span>
-                      <select className="w-56 rounded-md border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" value={choice}
-                        onChange={e => setPicked(p => ({ ...p, [r.price_id]: e.target.value }))}>
-                        <option value="">— Which variant? —</option>
-                        {variants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-                      </select>
-                      <button disabled={busy || !choice} onClick={() => review([r.price_id], choice, false)} title={r.reason === 'outlier' ? 'The price is right — keep counting it' : 'Set variant'}
+                      {variants.length > 0 && (
+                        <select className="w-56 rounded-md border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" value={choice}
+                          onChange={e => setPicked(p => ({ ...p, [r.price_id]: e.target.value }))}>
+                          <option value="">— Which variant? —</option>
+                          {variants.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                        </select>
+                      )}
+                      <button disabled={busy || (variants.length > 0 && !choice)} onClick={() => review([r.price_id], choice || null, false)} title={r.reason === 'outlier' ? 'The price is right — keep counting it' : 'Set variant'}
                         className="inline-flex items-center gap-1 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-40">
                         <Check className="h-3 w-3" /> {r.reason === 'outlier' ? 'Keep' : 'Set'}
                       </button>
