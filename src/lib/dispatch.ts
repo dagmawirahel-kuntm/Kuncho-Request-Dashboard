@@ -51,6 +51,8 @@ export interface DispatchRow {
   last_event_note: string | null
   last_event_at: string | null
   last_event_by: string | null
+  buyer_id: string | null       // the PO's buyer — the only one who signs for its goods (531)
+  buyer_name: string | null
 }
 
 /** How a job's delivery was confirmed, in a few words. */
