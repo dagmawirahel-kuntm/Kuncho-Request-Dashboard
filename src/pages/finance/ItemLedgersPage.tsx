@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useCategories } from '@/hooks/useLookups'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { LedgerSuggestions, type LedgerSuggestion } from '@/components/stock/LedgerSuggestions'
 import { Stat } from '@/components/record/Record'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
@@ -69,7 +70,29 @@ export default function ItemLedgersPage() {
     },
   })
 
+  // A second opinion (527): items whose name or look-alikes point to another
+  // ledger than the one they carry, until finance confirms them.
+  const { data: second = new Map<string, LedgerSuggestion>() } = useQuery({
+    queryKey: ['item-ledger-second-opinion'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('item_ledger_second_opinion')
+      if (error) throw error
+      return new Map(((data ?? []) as (LedgerSuggestion & { stock_item_id: string })[]).map(r => [r.stock_item_id, r]))
+    },
+  })
+  // How often the suggestion shown at a GRN was the ledger chosen.
+  const { data: taken } = useQuery({
+    queryKey: ['ledger-suggestion-taken'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('ledger_suggestion_log').select('accepted').not('suggested_category_id', 'is', null)
+      if (error) throw error
+      const rows = (data ?? []) as { accepted: boolean }[]
+      return { total: rows.length, accepted: rows.filter(r => r.accepted).length }
+    },
+  })
+
   const [tab, setTab] = useState<Tab>('need')
+  const [onlyDisagree, setOnlyDisagree] = useState(false)
   const [q, setQ] = useState('')
   const [onlyOpen, setOnlyOpen] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -90,10 +113,27 @@ export default function ItemLedgersPage() {
   const unconfirmed = items.filter(i => i.unconfirmed)
 
   const term = q.trim().toLowerCase()
-  const shownItems = items.filter(i => (!onlyOpen || i.unconfirmed) && (!term || i.item_name.toLowerCase().includes(term)))
+  const shownItems = items.filter(i => (!onlyOpen || i.unconfirmed) && (!onlyDisagree || second.has(i.stock_item_id))
+    && (!term || i.item_name.toLowerCase().includes(term)))
+  const disagreeing = items.filter(i => second.has(i.stock_item_id)).length
+
+  // Suggestions for the items whose receipts wait for a ledger (a handful).
+  const waitingKey = needByItem.map(n => n.stock_item_id ?? n.item).join('|')
+  const { data: waitingSuggestions = new Map<string, LedgerSuggestion[]>() } = useQuery({
+    queryKey: ['waiting-ledger-suggestions', waitingKey],
+    enabled: needByItem.length > 0,
+    queryFn: async () => {
+      const out = new Map<string, LedgerSuggestion[]>()
+      await Promise.all(needByItem.map(async n => {
+        const { data } = await supabase.rpc('suggest_item_ledgers', { p_name: n.item, p_exclude_item: n.stock_item_id })
+        out.set(n.stock_item_id ?? n.item, (data ?? []) as LedgerSuggestion[])
+      }))
+      return out
+    },
+  })
 
   function refresh() {
-    for (const k of ['grn-lines-needing-ledger', 'item-ledger-review', 'equipment-to-register']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['grn-lines-needing-ledger', 'item-ledger-review', 'equipment-to-register', 'item-ledger-second-opinion', 'waiting-ledger-suggestions']) qc.invalidateQueries({ queryKey: [k] })
   }
 
   async function setLedger(itemId: string, category: string | null, stocked: boolean | null) {
@@ -184,8 +224,12 @@ export default function ItemLedgersPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(n.value)}</td>
                     <td className="px-3 py-2">
                       {n.stock_item_id ? (
-                        <SearchableSelect value={null} options={options} placeholder="What is it?" disabled={busy === n.stock_item_id}
-                          onChange={v => v && setLedger(n.stock_item_id!, v, null)} />
+                        <>
+                          <SearchableSelect value={null} options={options} placeholder="What is it?" disabled={busy === n.stock_item_id}
+                            onChange={v => v && setLedger(n.stock_item_id!, v, null)} />
+                          <LedgerSuggestions suggestions={waitingSuggestions.get(n.stock_item_id) ?? []}
+                            onPick={sg => setLedger(n.stock_item_id!, sg.category_id, null)} />
+                        </>
                       ) : <span className="text-xs text-slate-400">Not in the item list yet</span>}
                     </td>
                   </tr>
@@ -207,6 +251,15 @@ export default function ItemLedgersPage() {
             <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
               <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} /> Only not yet confirmed
             </label>
+            <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <input type="checkbox" checked={onlyDisagree} onChange={e => setOnlyDisagree(e.target.checked)} />
+              Only where look-alikes disagree <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{disagreeing}</span>
+            </label>
+            {taken && taken.total > 0 && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Suggestions taken at GRNs: {taken.accepted} of {taken.total} ({Math.round((taken.accepted / taken.total) * 100)}%)
+              </span>
+            )}
           </div>
           <div className="overflow-x-auto rounded-xl border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
             <table className="w-full min-w-[760px] text-sm">
@@ -234,6 +287,13 @@ export default function ItemLedgersPage() {
                       <SearchableSelect value={i.ledger_category_id} options={options} placeholder="What is it?" disabled={busy === i.stock_item_id}
                         onChange={v => v && v !== i.ledger_category_id && setLedger(i.stock_item_id, v, null)} />
                       {i.account_code && <span className="block pt-0.5 text-[10px] text-slate-400">account {i.account_code}</span>}
+                      {second.get(i.stock_item_id) && (
+                        <div className="mt-1">
+                          <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">Second opinion</span>
+                          <LedgerSuggestions compact suggestions={[second.get(i.stock_item_id)!]} value={i.ledger_category_id}
+                            onPick={sg => setLedger(i.stock_item_id, sg.category_id, null)} />
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <input type="checkbox" checked={i.is_stocked} disabled={busy === i.stock_item_id}
