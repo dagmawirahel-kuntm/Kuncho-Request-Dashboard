@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatCurrency, formatCurrencyCompact } from '@/lib/utils'
 import { GROUP_SLOT, STAGES, colorOf, cumulative, groupLabel, lastWeeks, useCostWatch, useCostWatchMoves, useCostWatchTrend, watchAlerts, type WatchGroup, type WatchMove, type WatchProject } from '@/lib/costWatch'
-import { HeatGrid, NeedsALook, PeriodChange } from '@/components/projects/CostWatchViews'
+import { HeatGrid, MomentumMap, NeedsALook, PeriodChange } from '@/components/projects/CostWatchViews'
 import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, RefreshCw, TrendingUp } from 'lucide-react'
 
 // One colour per cost group, fixed by the group (never by rank), from the
@@ -20,11 +20,12 @@ const VARS = `
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const money = (n: number) => formatCurrencyCompact(n)
 const WINDOWS = [7, 30, 90] as const
-type View = 'ranked' | 'heat' | 'change'
+type View = 'ranked' | 'heat' | 'change' | 'momentum'
 const VIEWS: { key: View; label: string }[] = [
   { key: 'ranked', label: 'Ranked' },
   { key: 'heat', label: 'Heat grid' },
   { key: 'change', label: 'Against the period before' },
+  { key: 'momentum', label: 'Momentum map' },
 ]
 
 function change(now: number, before: number) {
@@ -259,6 +260,7 @@ export default function CostWatchPage() {
           </div>
           {view === 'heat' && <HeatGrid projects={projects} days={days} onOpen={openProject} />}
           {view === 'change' && <PeriodChange projects={projects} days={days} onOpen={openProject} />}
+          {view === 'momentum' && <MomentumMap projects={projects} days={days} onOpen={openProject} />}
           {view === 'ranked' && (<>
           {!isLoading && ranked.length === 0 ? <p className="p-6 text-center text-sm text-slate-500">No project has cost on its way.</p> : (
             <ol className="divide-y dark:divide-slate-700">

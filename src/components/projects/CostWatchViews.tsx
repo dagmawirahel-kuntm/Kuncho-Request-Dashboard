@@ -143,3 +143,95 @@ export function PeriodChange({ projects, days, onOpen }: { projects: WatchProjec
     </div>
   )
 }
+
+/**
+ * Each project as a dot: its cost so far, all steps (across, log scale),
+ * against the new cost in the period (up). Big and still growing sits top
+ * right; a small job suddenly spending like a big one sits top left.
+ */
+export function MomentumMap({ projects, days, onOpen }: { projects: WatchProject[]; days: number; onOpen: (projectId: string) => void }) {
+  const [hover, setHover] = useState<{ p: WatchProject; x: number; y: number } | null>(null)
+  const W = 640, H = 340, L = 52, R = 16, T = 16, B = 40
+
+  const chart = useMemo(() => {
+    const pts = projects.filter(p => p.total > 0)
+    if (pts.length === 0) return null
+    const lo = Math.floor(Math.log10(Math.min(...pts.map(p => p.total))))
+    // end a little past the largest project, not at the next power of ten
+    const hi = Math.log10(Math.max(...pts.map(p => p.total)) * 1.5)
+    const yTop = Math.max(...pts.map(p => p.newNow), 1)
+    const step = 10 ** Math.floor(Math.log10(yTop)) * (yTop / 10 ** Math.floor(Math.log10(yTop)) > 5 ? 2 : yTop / 10 ** Math.floor(Math.log10(yTop)) > 2 ? 1 : 0.5)
+    const yMax = Math.ceil(yTop / step) * step
+    const x = (v: number) => L + ((Math.log10(Math.max(v, 10 ** lo)) - lo) / (hi - lo || 1)) * (W - L - R)
+    const y = (v: number) => H - B - (v / yMax) * (H - T - B)
+    const xTicks = Array.from({ length: Math.floor(hi) - lo + 1 }, (_, i) => 10 ** (lo + i))
+    const yTicks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step)
+    // name the five fastest growing, nudged so labels don't sit on each other
+    const named = [...pts].filter(p => p.newNow > 0).sort((a, b) => b.newNow - a.newNow).slice(0, 5)
+      .map(p => ({ p, cx: x(p.total), cy: y(p.newNow), ly: y(p.newNow) + 4 }))
+      .sort((a, b) => a.ly - b.ly)
+    for (let i = 1; i < named.length; i++) if (named[i].ly - named[i - 1].ly < 15) named[i].ly = named[i - 1].ly + 15
+    return { pts, x, y, xTicks, yTicks, named, namedIds: new Set(named.map(n => n.p.id)) }
+  }, [projects])
+
+  if (!chart) return <p className="p-6 text-center text-sm text-slate-500">No project has cost yet.</p>
+  const { pts, x, y, xTicks, yTicks, named, namedIds } = chart
+  const short = (s: string) => (s.length > 24 ? `${s.slice(0, 22)}…` : s)
+  const axis = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : String(n))
+
+  return (
+    <div className="space-y-2 p-3">
+      <div className="relative overflow-x-auto" onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[28rem]" role="img"
+          aria-label={`Projects by cost so far and new cost in ${days} days`}>
+          {yTicks.map(t => (
+            <g key={`y${t}`}>
+              <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="var(--cw-grid)" />
+              <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="var(--cw-axis)">{axis(t)}</text>
+            </g>
+          ))}
+          {xTicks.map(t => (
+            <text key={`x${t}`} x={x(t)} y={H - B + 18} textAnchor={x(t) > W - R - 20 ? 'end' : 'middle'} fontSize={11} fill="var(--cw-axis)">{axis(t)}</text>
+          ))}
+          <text x={(L + W - R) / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--cw-axis)">Cost so far, all steps (log scale)</text>
+          <text x={12} y={(T + H - B) / 2} textAnchor="middle" fontSize={11} fill="var(--cw-axis)" transform={`rotate(-90 12 ${(T + H - B) / 2})`}>New in {days} days</text>
+          <text x={W - R - 4} y={T + 10} textAnchor="end" fontSize={11} fill="var(--cw-axis)">Big and still growing</text>
+          <text x={L + 6} y={T + 10} fontSize={11} fill="var(--cw-axis)">Small but moving fast</text>
+
+          {pts.map(p => {
+            const cx = x(p.total), cy = y(p.newNow), big = namedIds.has(p.id)
+            return (
+              <g key={p.id} className="cursor-pointer" tabIndex={0} role="button" aria-label={`${p.name}: ${formatCurrency(p.total)} so far, +${formatCurrency(p.newNow)} in ${days} days`}
+                onClick={() => onOpen(p.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(p.id) } }}
+                onMouseEnter={() => setHover({ p, x: cx, y: cy })} onFocus={() => setHover({ p, x: cx, y: cy })} onBlur={() => setHover(null)}>
+                <circle cx={cx} cy={cy} r={12} fill="transparent" />
+                <circle cx={cx} cy={cy} r={big ? 6 : 4.5} fill="var(--cw-g1)" fillOpacity={big ? 1 : 0.55} stroke="var(--cw-tip-bg)" strokeWidth={2} />
+              </g>
+            )
+          })}
+
+          {named.map(({ p, cx, cy, ly }) => {
+            const left = cx > L + 190
+            const tx = left ? cx - 12 : cx + 12
+            return (
+              <g key={`l${p.id}`} pointerEvents="none">
+                {Math.abs(ly - 4 - cy) > 3 && <line x1={left ? cx - 6 : cx + 6} y1={cy} x2={left ? tx + 2 : tx - 2} y2={ly - 4} stroke="var(--cw-axis)" strokeWidth={1} />}
+                <text x={tx} y={ly} textAnchor={left ? 'end' : 'start'} fontSize={11.5} fontWeight={500} fill="var(--cw-tip-text)">{short(p.name)}</text>
+              </g>
+            )
+          })}
+        </svg>
+        {hover && (
+          <div className="pointer-events-none absolute z-10 rounded-lg border px-2.5 py-1.5 text-xs shadow-lg"
+            style={{ left: `min(calc(${(hover.x / W) * 100}% + 12px), calc(100% - 14rem))`, top: `calc(${(hover.y / H) * 100}% + 10px)`, background: 'var(--cw-tip-bg)', borderColor: 'var(--cw-tip-border)', color: 'var(--cw-tip-text)' }}>
+            <p className="font-semibold">{hover.p.name}</p>
+            <p className="tabular-nums">{formatCurrency(hover.p.total)} so far</p>
+            <p className="tabular-nums">+{formatCurrency(hover.p.newNow)} in {days} days</p>
+            {hover.p.pm && <p className="opacity-70">{hover.p.pm}</p>}
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-400">The five fastest growing are named. Hover a dot for its figures; tap it to open the project.</p>
+    </div>
+  )
+}
