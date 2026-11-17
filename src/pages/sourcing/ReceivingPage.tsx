@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { prefetchPo } from '@/lib/poDetail'
 import { PROBLEM_KIND, resolveReceiptProblem, useGoodsToCollect, useOpenReceiptProblems, type ToCollect } from '@/lib/receiving'
 import { AlertTriangle, ChevronRight, PackageCheck, Truck } from 'lucide-react'
 
@@ -107,7 +108,7 @@ export default function ReceivingPage() {
           <ul className="divide-y dark:divide-slate-700">
             {shown.map(r => (
               <li key={r.bundle_id} className="flex items-center gap-3 px-4 py-3">
-                <Link to={`/sourcing/${r.bundle_id}`} className="min-w-0 flex-1">
+                <Link to={`/sourcing/${r.bundle_id}`} className="min-w-0 flex-1" onPointerEnter={() => prefetchPo(qc, r.bundle_id)} onTouchStart={() => prefetchPo(qc, r.bundle_id)}>
                   <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
                     {r.bundle_code} <span className="font-normal text-slate-500">· {r.vendor_name ?? '—'}</span>
                   </p>

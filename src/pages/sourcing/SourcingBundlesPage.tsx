@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { prefetchPo } from '@/lib/poDetail'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -251,6 +252,7 @@ export default function PurchaseOrdersPage() {
                   const discount = Number(b.discount_etb ?? 0)
                   return (
                     <div key={b.id} onClick={() => navigate(`/sourcing/${b.id}`)}
+                      onPointerEnter={() => prefetchPo(qc, b.id)} onTouchStart={() => prefetchPo(qc, b.id)}
                       className="group flex cursor-pointer items-center gap-3 bg-white px-4 py-3 transition-colors hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700/40">
                       <div className="hidden shrink-0 rounded-lg bg-slate-100 p-2 text-slate-400 sm:block dark:bg-slate-700">
                         <Truck className="h-4 w-4" />

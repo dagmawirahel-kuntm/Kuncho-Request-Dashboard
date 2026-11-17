@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { deliveryWords, setPoDelivery, type DeliveryMode } from '@/lib/receiving'
 import { OpenAdvancesWarning } from '@/components/purchasing/OpenAdvancesWarning'
+import { fetchPoDetail } from '@/lib/poDetail'
 import { VendorOrdersToCollect } from '@/components/purchasing/VendorOrdersToCollect'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
@@ -260,7 +261,6 @@ export default function PurchaseOrderPage() {
   const [vatOn, setVatOn] = usePoVatToggle()
   const { data: vatGoal } = usePoVatGoal(vatAllowed && vatOn, null)
   // Its T-tag, shared with the expense raised from it (migration 423).
-  const { data: impact, byPo: impactByPo } = useTaxImpact()
 
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
@@ -327,34 +327,16 @@ export default function PurchaseOrderPage() {
   const { data: bundle, isLoading, error: bundleError } = useQuery({
     queryKey: ['sourcing-bundle-detail', id],
     retry: false,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('sourcing_bundles')
-        .select(`
-          *,
-          vendors(vendor_name, wth_eligible, tin, phone_contact, email),
-          procurement_officer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
-          approver:user_profiles!sourcing_bundles_approved_by_fkey(full_name),
-          expenses!sourcing_bundles_expense_id_fkey(id, expense_code, item_service_description, amount_etb, approval_status, payment_state,
-            in_parts, paid_to_date_etb, wht_mode, credit_applied_etb, wht_amount, finance_approved_by, account_id, payment_method,
-            sourcing_bundle_id, expense_type),
-          sourcing_bundle_items(
-            *,
-            order_items(
-              id, stock_item_id, item_name, specifications, unit, quantity, unit_price_est, order_id,
-              orders(request_code, order_name, projects(project_name))
-            )
-          )
-        `)
-        .eq('id', id!)
-        .single()
-      if (error) throw error
-      return data as BundleDetail
-    },
+    queryFn: async () => (await fetchPoDetail(id!)) as unknown as BundleDetail,
   })
+
+  // The tax tag reads a large list; fetch it once the order itself is in.
+  const { data: impact, byPo: impactByPo } = useTaxImpact(!!bundle)
 
   const { data: expenseOptions = [] } = useQuery({
     queryKey: ['expenses-lookup-for-bundle'],
+    // Only a PO without an expense shows "link an existing expense".
+    enabled: !!bundle && !bundle.expense_id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('expenses')
