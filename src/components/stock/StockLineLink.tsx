@@ -25,6 +25,12 @@ export function LinkedStockChip({ stockItemId, requestedQty, onUnlink }: {
         Stock: {item.item_name}{item.item_code ? ` (${item.item_code})` : ''} · {qty} {item.unit} in warehouse
         {!pending && requestedQty ? (covers ? ' — covers this line' : partial ? ' — covers part' : '') : ''}
       </span>
+      {qty > 0 && !item.last_counted_at && (
+        <span className="text-[10px] text-amber-600 dark:text-amber-400"
+          title="This is receipts minus issues. Nobody has counted it yet, so check the shelf before promising it">
+          {item.in_open_count ? 'on paper — count under way' : 'on paper — never counted'}
+        </span>
+      )}
       {pending && qty > 0 && (
         <span className="text-[10px] text-slate-400" title="Items auto-created at goods received are not offered from stock until the stock manager finishes setting them up">
           not set up yet, so not offered from stock

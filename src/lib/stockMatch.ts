@@ -35,6 +35,8 @@ export interface StockItemBrief {
   catalog_status: 'active' | 'pending_setup' | 'inactive'
   qty_on_hand: number
   qty_delivered_to_sites: number
+  last_counted_at: string | null   // last posted stock count that counted it (528)
+  in_open_count: boolean
 }
 
 export interface PurchaseHistoryRow {
@@ -123,7 +125,7 @@ export function useStockItemBrief(id: string | null | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_stock_item_usage')
-        .select('id, item_code, item_name, unit, catalog_status, qty_on_hand, qty_delivered_to_sites')
+        .select('id, item_code, item_name, unit, catalog_status, qty_on_hand, qty_delivered_to_sites, last_counted_at, in_open_count')
         .eq('id', id!)
         .maybeSingle()
       if (error) throw error
