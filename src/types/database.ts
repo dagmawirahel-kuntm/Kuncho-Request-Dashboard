@@ -718,6 +718,15 @@ export interface TransportDriver {
   trips?: number
   last_trip?: string | null
   amount_on_jobs?: number
+  /** Driver list details (529). */
+  licence_number?: string | null
+  owner_name?: string | null      // whose truck, or the broker who sends him
+  home_area?: string | null       // where he waits for work
+  is_blocked?: boolean
+  blocked_reason?: string | null
+  open_jobs?: number
+  last_signed_at?: string | null
+  signed_collections?: number
 }
 
 /** v_transport_vehicle_queue — chained ETA per vehicle, own_fleet jobs only. */
@@ -2765,6 +2774,8 @@ export interface SiteDeliveryNote {
   sign_lat: number | null
   sign_lng: number | null
   photos: DeliveryPhoto[]
+  /** Drawn on the phone when the site signed (529). */
+  signature?: string | null
   grn_id: string | null
   confirmed_by: string | null
   confirmed_at: string | null

@@ -9,8 +9,10 @@ import type { TransportDriver } from '@/types/database'
 
 const input = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100'
 
-type Draft = Pick<TransportDriver, 'full_name' | 'phone' | 'plate_number' | 'vehicle_class' | 'payout_method' | 'bank_name' | 'account_number' | 'account_name'>
-const EMPTY: Draft = { full_name: '', phone: '', plate_number: '', vehicle_class: null, payout_method: null, bank_name: '', account_number: '', account_name: '' }
+type Draft = Pick<TransportDriver, 'full_name' | 'phone' | 'plate_number' | 'vehicle_class' | 'payout_method' | 'bank_name' | 'account_number' | 'account_name'
+  | 'licence_number' | 'owner_name' | 'home_area' | 'is_blocked' | 'blocked_reason' | 'notes'>
+const EMPTY: Draft = { full_name: '', phone: '', plate_number: '', vehicle_class: null, payout_method: null, bank_name: '', account_number: '', account_name: '',
+  licence_number: '', owner_name: '', home_area: '', is_blocked: false, blocked_reason: '', notes: '' }
 
 // The hired / ride-hailing driver of a job, from the driver list
 // (migration 410): pick one we know — their phone, plate, vehicle and how
@@ -35,7 +37,7 @@ export function DriverPicker({ driverId, onPick, typedName, defaultClass, fixed 
   const options = useMemo(() => drivers.filter(d => d.is_active).map(d => ({
     id: d.id,
     label: d.full_name,
-    sub: [d.phone, d.plate_number, d.vehicle_class ? HIRED_CLASS_LABEL[d.vehicle_class] ?? d.vehicle_class : null, d.trips ? `${d.trips} trip${d.trips === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || undefined,
+    sub: [d.is_blocked ? "⚠ don't use" : null, d.phone ?? 'no phone', d.plate_number, d.vehicle_class ? HIRED_CLASS_LABEL[d.vehicle_class] ?? d.vehicle_class : null, d.home_area, d.trips ? `${d.trips} trip${d.trips === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || undefined,
   })), [drivers])
 
   function set<K extends keyof Draft>(k: K, v: Draft[K]) { setDraft(d => ({ ...d, [k]: v })) }
@@ -47,12 +49,17 @@ export function DriverPicker({ driverId, onPick, typedName, defaultClass, fixed 
   function startEdit() {
     if (!driver) return
     setDraft({ full_name: driver.full_name, phone: driver.phone ?? '', plate_number: driver.plate_number ?? '', vehicle_class: driver.vehicle_class,
-      payout_method: driver.payout_method, bank_name: driver.bank_name ?? '', account_number: driver.account_number ?? '', account_name: driver.account_name ?? '' })
+      payout_method: driver.payout_method, bank_name: driver.bank_name ?? '', account_number: driver.account_number ?? '', account_name: driver.account_name ?? '',
+      licence_number: driver.licence_number ?? '', owner_name: driver.owner_name ?? '', home_area: driver.home_area ?? '',
+      is_blocked: !!driver.is_blocked, blocked_reason: driver.blocked_reason ?? '', notes: driver.notes ?? '' })
     setMode('edit')
   }
 
   async function save() {
     if (!draft.full_name.trim()) { toast("Give the driver's name", 'error'); return }
+    // hired drivers have no login: the phone is how we reach them
+    if (mode === 'new' && !draft.phone?.trim()) { toast("Give the driver's phone — it's how we reach him", 'error'); return }
+    if (draft.is_blocked && !draft.blocked_reason?.trim()) { toast("Say why not to use him again", 'error'); return }
     if (draft.payout_method && draft.payout_method !== 'cash' && !draft.account_number?.trim()) { toast(draft.payout_method === 'telebirr' ? 'Give the telebirr number' : 'Give the account number', 'error'); return }
     setSaving(true)
     const row = {
@@ -64,6 +71,12 @@ export function DriverPicker({ driverId, onPick, typedName, defaultClass, fixed 
       bank_name: draft.payout_method === 'bank' ? (draft.bank_name?.trim() || null) : null,
       account_number: draft.payout_method === 'cash' ? null : (draft.account_number?.trim() || null),
       account_name: draft.payout_method === 'bank' ? (draft.account_name?.trim() || null) : null,
+      licence_number: draft.licence_number?.trim() || null,
+      owner_name: draft.owner_name?.trim() || null,
+      home_area: draft.home_area?.trim() || null,
+      is_blocked: !!draft.is_blocked,
+      blocked_reason: draft.is_blocked ? (draft.blocked_reason?.trim() || null) : null,
+      notes: draft.notes?.trim() || null,
     }
     const res = mode === 'edit' && driver
       ? await supabase.from('transport_drivers').update(row).eq('id', driver.id).select('*').single()
@@ -85,12 +98,16 @@ export function DriverPicker({ driverId, onPick, typedName, defaultClass, fixed 
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <input className={input} placeholder="Full name *" value={draft.full_name} onChange={e => set('full_name', e.target.value)} />
-          <input className={input} placeholder="Phone (09…)" inputMode="tel" value={draft.phone ?? ''} onChange={e => set('phone', e.target.value)} />
+          <input className={input} placeholder={mode === 'new' ? 'Phone (09…) *' : 'Phone (09…)'} inputMode="tel" value={draft.phone ?? ''} onChange={e => set('phone', e.target.value)} />
           <input className={input} placeholder="Plate (e.g. 3-A12345 AA)" value={draft.plate_number ?? ''} onChange={e => set('plate_number', e.target.value)} />
           <select className={input} value={draft.vehicle_class ?? ''} onChange={e => set('vehicle_class', e.target.value || null)}>
             <option value="">Vehicle…</option>
             {Object.entries(HIRED_CLASS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          <input className={input} placeholder="Licence no." value={draft.licence_number ?? ''} onChange={e => set('licence_number', e.target.value)} />
+          <input className={input} placeholder="Truck owner / broker" value={draft.owner_name ?? ''} onChange={e => set('owner_name', e.target.value)} />
+          <input className={input} placeholder="Where he waits for work (e.g. Merkato)" value={draft.home_area ?? ''} onChange={e => set('home_area', e.target.value)} />
+          <input className={input} placeholder="Notes (rates, what he carries well…)" value={draft.notes ?? ''} onChange={e => set('notes', e.target.value)} />
         </div>
         <div>
           <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">Paid by</p>
@@ -110,6 +127,17 @@ export function DriverPicker({ driverId, onPick, typedName, defaultClass, fixed 
         )}
         {draft.payout_method === 'telebirr' && (
           <input className={input} placeholder="telebirr number *" inputMode="tel" value={draft.account_number ?? ''} onChange={e => set('account_number', e.target.value)} />
+        )}
+        {mode === 'edit' && (
+          <div className="space-y-2 rounded-md border border-dashed border-red-200 p-2 dark:border-red-900/50">
+            <label className="flex items-center gap-2 text-xs font-medium text-red-700 dark:text-red-400">
+              <input type="checkbox" className="accent-red-600" checked={!!draft.is_blocked} onChange={e => set('is_blocked', e.target.checked)} />
+              Don't use this driver again
+            </label>
+            {draft.is_blocked && (
+              <input className={input} placeholder="Why? (late, damaged goods, overcharged…) *" value={draft.blocked_reason ?? ''} onChange={e => set('blocked_reason', e.target.value)} />
+            )}
+          </div>
         )}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={() => setMode('pick')} className="rounded-md border px-3 py-1.5 text-xs dark:border-slate-600">Back</button>
@@ -131,7 +159,11 @@ export function DriverPicker({ driverId, onPick, typedName, defaultClass, fixed 
             {driver.phone ? <a href={`tel:${driver.phone}`} className="inline-flex items-center gap-1 text-brand hover:underline"><Phone className="h-3 w-3" />{driver.phone}</a> : <span className="text-amber-600">No phone</span>}
             {(driver.plate_number || driver.vehicle_class) && <span className="inline-flex items-center gap-1"><Car className="h-3 w-3" />{[driver.plate_number, driver.vehicle_class ? HIRED_CLASS_LABEL[driver.vehicle_class] ?? driver.vehicle_class : null].filter(Boolean).join(' · ')}</span>}
             {pay ? <span className="inline-flex items-center gap-1"><CreditCard className="h-3 w-3" />{pay}</span> : <span className="text-amber-600">No payment details</span>}
+            {driver.home_area && <span>waits at {driver.home_area}</span>}
+            {driver.owner_name && <span>truck: {driver.owner_name}</span>}
+            {driver.licence_number && <span>licence {driver.licence_number}</span>}
           </p>
+          {driver.is_blocked && <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400">Don't use{driver.blocked_reason ? ` — ${driver.blocked_reason}` : ''}</p>}
         </div>
         <div className="flex gap-1">
           <button type="button" onClick={startEdit} className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-slate-600 dark:border-slate-600 dark:text-slate-300"><Pencil className="h-3 w-3" /> Details</button>

@@ -126,9 +126,14 @@ export function useStockToCheckAfterCleanup(enabled = true) {
 
 export type CollectedLine = { id: string; received: number; damaged?: number; note?: string }
 
-export async function recordCollection(bundleId: string, lines: CollectedLine[], photos: DeliveryPhoto[], notes?: string, vendorReceipt?: string) {
+/** Who took the goods and their signature (529); a photo or this is enough. */
+export interface CollectionSigned { signature: string; name: string; phone?: string; driverId?: string | null; plate?: string }
+
+export async function recordCollection(bundleId: string, lines: CollectedLine[], photos: DeliveryPhoto[], notes?: string, vendorReceipt?: string, signed?: CollectionSigned | null) {
   const { data, error } = await supabase.rpc('record_collection', {
     p_bundle: bundleId, p_lines: lines, p_photos: photos, p_notes: notes || null, p_vendor_receipt: vendorReceipt || null,
+    p_signature: signed?.signature ?? null, p_signed_by: signed?.name.trim() || null, p_signed_phone: signed?.phone?.trim() || null,
+    p_driver: signed?.driverId ?? null, p_plate: signed?.plate?.trim() || null,
   })
   if (error) throw error
   return data as string
