@@ -118,6 +118,7 @@ export const navGroups: NavGroup[] = [
       // has no read grant on that table, so it's left off here. Anyone who
       // manages a project sees it whatever their app role.
       { label: 'Site Daily Reports', to: '/site-foreman/reports', icon: ClipboardCheck, roles: ['admin', 'executive', 'project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
+      { label: 'Cost Watch', to: '/cost-watch', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager'], showIfAssignedProjectManager: true },
       { label: 'Variations', to: '/variations', icon: GitPullRequestArrow, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'sales'] },
       { label: 'Subcontracts', to: '/subcontracts', icon: HardHat, roles: ['admin', 'executive', 'finance', 'project_manager', 'procurement_officer', 'operations_manager'] },
       { label: 'Work Orders', to: '/work-orders', icon: Hammer, roles: ['admin', 'executive', 'finance', 'project_manager', 'operations_manager', 'technician'] },
