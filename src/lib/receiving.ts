@@ -6,7 +6,14 @@ import type { DeliveryPhoto } from '@/types/database'
 // the site has three days to say something is wrong, and every order still
 // waiting for its goods is on one list.
 
-export type DeliveryMode = 'collect' | 'vendor_delivers'
+/** How a PO's goods travel (531). 'collect' is the old value and reads as a hired truck. */
+export type DeliveryMode = 'hired' | 'own_truck' | 'vendor_delivers' | 'collect'
+export const DELIVERY_MODES: { value: DeliveryMode; label: string; hint: string }[] = [
+  { value: 'hired', label: 'Hired truck', hint: 'Found on the day — the buyer records the driver and fare when marking it collected' },
+  { value: 'own_truck', label: 'Our truck', hint: 'Book our truck ahead from this order' },
+  { value: 'vendor_delivers', label: 'The vendor delivers', hint: 'No transport from us — the site signs the delivery note' },
+]
+export const isFetched = (m: DeliveryMode | null | undefined) => m !== 'vendor_delivers'
 
 export interface ToCollect {
   bundle_id: string
@@ -126,14 +133,18 @@ export function useStockToCheckAfterCleanup(enabled = true) {
 
 export type CollectedLine = { id: string; received: number; damaged?: number; note?: string }
 
-/** Who took the goods and their signature (529); a photo or this is enough. */
-export interface CollectionSigned { signature: string; name: string; phone?: string; driverId?: string | null; plate?: string }
+/** How it travelled (531): a hired truck carries its driver and fare. */
+export interface CollectionTruck { kind: 'hired' | 'own' | 'vendor'; driverId?: string | null; driverPhone?: string; plate?: string; fare?: number | null }
 
-export async function recordCollection(bundleId: string, lines: CollectedLine[], photos: DeliveryPhoto[], notes?: string, vendorReceipt?: string, signed?: CollectionSigned | null) {
+/** The buyer's signature (only the PO's buyer may sign) or a photo, and the truck. */
+export async function recordCollection(bundleId: string, lines: CollectedLine[], photos: DeliveryPhoto[], notes?: string, vendorReceipt?: string,
+  signature?: string | null, truck?: CollectionTruck | null) {
   const { data, error } = await supabase.rpc('record_collection', {
     p_bundle: bundleId, p_lines: lines, p_photos: photos, p_notes: notes || null, p_vendor_receipt: vendorReceipt || null,
-    p_signature: signed?.signature ?? null, p_signed_by: signed?.name.trim() || null, p_signed_phone: signed?.phone?.trim() || null,
-    p_driver: signed?.driverId ?? null, p_plate: signed?.plate?.trim() || null,
+    p_signature: signature ?? null, p_truck: truck?.kind ?? null,
+    p_driver: truck?.kind === 'hired' ? truck.driverId ?? null : null,
+    p_driver_phone: truck?.driverPhone?.trim() || null, p_plate: truck?.plate?.trim() || null,
+    p_fare: truck?.kind === 'hired' ? truck.fare ?? null : null,
   })
   if (error) throw error
   return data as string
@@ -157,5 +168,17 @@ export async function setPoDelivery(bundleId: string, mode: DeliveryMode, date: 
 /** "We collect on Mon 16 Nov" / "The vendor delivers on …" */
 export function deliveryWords(mode: DeliveryMode | null | undefined, date: string | null | undefined) {
   const d = date ? new Date(`${date}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : null
-  return mode === 'vendor_delivers' ? `The vendor delivers${d ? ` on ${d}` : ''}` : `We collect it${d ? ` on ${d}` : ''}`
+  return mode === 'vendor_delivers' ? `The vendor delivers${d ? ` on ${d}` : ''}`
+    : mode === 'own_truck' ? `Our truck collects it${d ? ` on ${d}` : ''}`
+    : `We collect it with a hired truck${d ? ` on ${d}` : ''}`
+}
+
+export const EMPTY_TRUCK: CollectionTruck = { kind: 'hired', driverId: null, driverPhone: '', plate: '', fare: null }
+
+/** What still has to be filled in about the truck, or null when it's ready. */
+export function truckProblem(t: CollectionTruck): string | null {
+  if (t.kind !== 'hired') return null
+  if (!t.driverId) return 'Pick the driver who carried it (or add him)'
+  if (!(Number(t.fare) > 0)) return 'Enter the fare agreed with the driver'
+  return null
 }

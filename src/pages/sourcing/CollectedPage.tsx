@@ -5,9 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { PhotoUploader } from '@/components/shared/PhotoUploader'
-import { CollectionSignature } from '@/components/receiving/CollectionSignature'
-import { EMPTY_SIGN, isSigned, type CollectionSign } from '@/lib/collectionSign'
-import { PROBLEM_DAYS, recordCollection } from '@/lib/receiving'
+import { BuyerSignature } from '@/components/receiving/BuyerSignature'
+import { TruckAtCollection } from '@/components/receiving/TruckAtCollection'
+import { EMPTY_TRUCK, PROBLEM_DAYS, recordCollection, truckProblem, type CollectionTruck, type DeliveryMode } from '@/lib/receiving'
 import type { BundleLineReceipt, DeliveryPhoto } from '@/types/database'
 import { ArrowLeft, Check, PackageCheck } from 'lucide-react'
 
@@ -17,6 +17,7 @@ const qty = (n: number) => Number(n).toLocaleString('en-US', { maximumFractionDi
 
 type Bundle = {
   id: string; bundle_code: string; vendor_name: string | null; status: string
+  delivery_mode: DeliveryMode | null; procurement_officer_id: string | null; buyer: { full_name: string } | null
   vendors: { vendor_name: string } | null
   sourcing_bundle_items: { id: string; order_items: { orders: { projects: { project_name: string } | null } | null } | null }[]
 }
@@ -25,8 +26,9 @@ type Draft = { received: string; damaged: string; note: string; open: boolean }
 /**
  * What was collected, counted at the vendor's counter on the phone (520).
  * Whoever holds the goods records them: the buyer, or logistics or the
- * store when they bring them in. Whoever takes the goods signs (529); a
- * photo is optional — uploads timed out on a weak signal. The site is told
+ * store when they bring them in. Only the buyer signs (531) — anyone else
+ * records them with a photo. A truck hired on the day is recorded here with
+ * its driver and fare, and becomes the paid-after trip. The site is told
  * and has three days to say something didn't arrive or was wrong.
  */
 export default function CollectedPage() {
@@ -35,7 +37,8 @@ export default function CollectedPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const { profile } = useAuth()
-  const [sign, setSign] = useState<CollectionSign>(EMPTY_SIGN)
+  const [signature, setSignature] = useState<string | null>(null)
+  const [truckEdit, setTruck] = useState<CollectionTruck | null>(null)
   // What was changed from "all of it came", per line.
   const [edits, setEdits] = useState<Record<string, Partial<Draft>>>({})
   const [photos, setPhotos] = useState<DeliveryPhoto[]>([])
@@ -48,7 +51,7 @@ export default function CollectedPage() {
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await supabase.from('sourcing_bundles')
-        .select('id, bundle_code, vendor_name, status, vendors(vendor_name), sourcing_bundle_items(id, order_items(orders(projects(project_name))))')
+        .select('id, bundle_code, vendor_name, status, delivery_mode, procurement_officer_id, buyer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name), vendors(vendor_name), sourcing_bundle_items(id, order_items(orders(projects(project_name))))')
         .eq('id', id!).single()
       if (error) throw error
       return data as unknown as Bundle
@@ -64,11 +67,33 @@ export default function CollectedPage() {
     },
   })
 
+  // a truck booked ahead for this order (big loads) — its driver and fare come with it
+  const { data: booked } = useQuery({
+    queryKey: ['collect-booked-truck', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('transportation_requests')
+        .select('id, request_name, transport_mode, hired_driver_id, amount, driver:transport_drivers(full_name, phone, plate_number)')
+        .eq('sourcing_bundle_id', id!).in('job_status', ['requested', 'assigned', 'in_progress'])
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data as unknown as { id: string; request_name: string | null; transport_mode: string; hired_driver_id: string | null; amount: number | null
+        driver: { full_name: string; phone: string | null; plate_number: string | null } | null } | null
+    },
+  })
+
   const open = useMemo(() => (lines ?? []).filter(l => Number(l.outstanding) > 0), [lines])
   const done = (lines ?? []).filter(l => Number(l.outstanding) <= 0)
   const draftOf = (l: BundleLineReceipt): Draft => ({ received: String(Number(l.outstanding)), damaged: '', note: '', open: false, ...edits[l.bundle_item_id] })
 
   if (!bundle || !lines) return <div className="py-16 text-center text-sm text-slate-400">Loading…</div>
+
+  const isBuyer = profile?.role === 'admin' || (!!bundle.procurement_officer_id && profile?.id === bundle.procurement_officer_id)
+  // the truck: as edited, else what the order says (a booked job, our truck, the vendor's)
+  const truck: CollectionTruck = truckEdit ?? (booked
+    ? { kind: booked.transport_mode === 'own_fleet' ? 'own' : 'hired', driverId: booked.hired_driver_id, driverPhone: booked.driver?.phone ?? '', plate: booked.driver?.plate_number ?? '', fare: booked.amount ? Number(booked.amount) : null }
+    : bundle.delivery_mode === 'vendor_delivers' ? { ...EMPTY_TRUCK, kind: 'vendor' }
+    : bundle.delivery_mode === 'own_truck' ? { ...EMPTY_TRUCK, kind: 'own' } : EMPTY_TRUCK)
 
   const vendor = bundle.vendors?.vendor_name ?? bundle.vendor_name ?? '—'
   const siteOf = new Map(bundle.sourcing_bundle_items.map(i => [i.id, i.order_items?.orders?.projects?.project_name?.trim() ?? null]))
@@ -83,17 +108,17 @@ export default function CollectedPage() {
     })
     if (bad) { toast(`Check ${bad.item_name}: no more than ${qty(Number(bad.outstanding))} can come, and damaged is part of what came`, 'error'); return }
     if (!taking.length) { toast('Enter what was collected on at least one line', 'error'); return }
-    if (sign.signature && !sign.name.trim()) { toast('Write the name of whoever signed', 'error'); return }
-    if (!isSigned(sign) && !photos.length) { toast('Have whoever takes the goods sign (or add a photo)', 'error'); return }
+    if (!signature && !photos.length) { toast(isBuyer ? 'Sign for the goods (or add a photo)' : 'Add a photo of the goods or the receipt — only the buyer signs', 'error'); return }
+    const tp = truckProblem(truck)
+    if (tp) { toast(tp, 'error'); return }
     setSaving(true)
     try {
       await recordCollection(bundle!.id, taking.map(l => {
         const d = draftOf(l)
         return { id: l.bundle_item_id, received: num(d.received), damaged: num(d.damaged), note: d.note.trim() || undefined }
-      }), photos, notes.trim(), receiptNo.trim(),
-      isSigned(sign) ? { signature: sign.signature!, name: sign.name, phone: sign.phone, driverId: sign.kind === 'driver' ? sign.driverId : null, plate: sign.plate } : null)
+      }), photos, notes.trim(), receiptNo.trim(), signature, truck)
       const { data: after } = await supabase.from('sourcing_bundles').select('status').eq('id', bundle!.id).single()
-      for (const k of ['sourcing-bundle-detail', 'bundle-line-receipts', 'grns-for-bundle', 'goods-to-collect', 'sourcing-bundles', 'grn-register']) qc.invalidateQueries({ queryKey: [k] })
+      for (const k of ['sourcing-bundle-detail', 'bundle-line-receipts', 'grns-for-bundle', 'goods-to-collect', 'sourcing-bundles', 'grn-register', 'dispatch-board', 'transport-drivers', 'transportation-requests']) qc.invalidateQueries({ queryKey: [k] })
       toast(after?.status === 'fulfilled' ? 'Collected: everything on the order is in' : 'Collected: the rest stays open on the order', 'success')
       navigate(`/sourcing/${bundle!.id}`)
     } catch (e) { toast((e as Error).message, 'error') }
@@ -162,9 +187,14 @@ export default function CollectedPage() {
       {done.length > 0 && <p className="text-xs text-slate-400">Already in: {done.map(l => l.item_name).join(', ')}.</p>}
 
       <section className="space-y-3 rounded-2xl border bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-        <CollectionSignature value={sign} onChange={setSign} myName={profile?.full_name ?? ''} />
+        <TruckAtCollection value={truck} onChange={setTruck}
+          booked={booked ? { name: booked.request_name, driver: booked.driver?.full_name ?? null, amount: booked.amount } : null} />
+      </section>
+
+      <section className="space-y-3 rounded-2xl border bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+        <BuyerSignature buyerId={bundle.procurement_officer_id} buyerName={bundle.buyer?.full_name} value={signature} onChange={setSignature} />
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Photo of the goods or the vendor's receipt <span className="font-normal text-slate-400">(optional — skip it on a weak signal)</span></p>
+          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Photo of the goods or the vendor's receipt <span className="font-normal text-slate-400">{isBuyer ? '(optional — skip it on a weak signal)' : '*'}</span></p>
           <PhotoUploader photos={photos} onChange={setPhotos} folder="grn-photos" label="Take a photo" />
         </div>
         <input value={receiptNo} onChange={e => setReceiptNo(e.target.value)} placeholder="Vendor's receipt or delivery note no. (optional)" className={inputCls} />
@@ -174,7 +204,7 @@ export default function CollectedPage() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
         <div className="mx-auto flex max-w-lg items-center gap-3">
           <p className="min-w-0 flex-1 text-xs text-slate-500">
-            {taking.length} of {open.length} line{open.length === 1 ? '' : 's'}{short ? `, ${short} short` : ''}{!isSigned(sign) && !photos.length ? ' · signature needed' : ''}
+            {taking.length} of {open.length} line{open.length === 1 ? '' : 's'}{short ? `, ${short} short` : ''}{!signature && !photos.length ? (isBuyer ? ' · signature needed' : ' · photo needed') : truckProblem(truck) ? ' · truck details needed' : ''}
           </p>
           <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Collected'}

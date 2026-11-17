@@ -52,7 +52,7 @@ export default function ReceivingPage() {
       <div>
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><PackageCheck className="h-5 w-5 text-brand" /> To collect</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Orders still waiting for their goods. When you have them, mark each one collected with a photo. If they aren't coming, cancel the order or close it short.
+          Orders still waiting for their goods. When you have them, mark each one collected — the buyer signs, and a hired truck goes in with its fare. If they aren't coming, cancel the order or close it short.
         </p>
       </div>
 
