@@ -116,6 +116,8 @@ const ProformaDetailPage = lazyPage(() => import('@/pages/sales/ProformaDetailPa
 const InvoiceDocumentPage = lazyPage(() => import('@/pages/invoices/InvoiceDocumentPage'))
 const CompanyProfilePage = lazyPage(() => import('@/pages/settings/CompanyProfilePage'))
 const VerifyDocumentPage = lazyPage(() => import('@/pages/public/VerifyDocumentPage'))
+const TripSheetPage = lazyPage(() => import('@/pages/public/TripSheetPage'))
+const DispatchBoardPage = lazyPage(() => import('@/pages/transportation/DispatchBoardPage'))
 const PaymentRequestPage = lazyPage(() => import('@/pages/clients/PaymentRequestPage'))
 const InvoicesPage = lazyPage(() => import('@/pages/invoices/InvoicesPage'))
 const CarriedForwardPage = lazyPage(() => import('@/pages/invoices/CarriedForwardPage'))
@@ -254,6 +256,8 @@ export const router = createBrowserRouter([
   // The page behind a document's QR code and share link — open to anyone
   // holding the link, no sign-in (verify_document, migration 368).
   { path: '/verify/:token', element: <VerifyDocumentPage /> },
+  // A hired driver's trip sheet, sent by logistics: read only, no sign-in (530).
+  { path: '/trip/:token', element: <TripSheetPage /> },
   {
     element: <ProtectedRoute />,
     children: [
@@ -333,6 +337,7 @@ export const router = createBrowserRouter([
           { path: 'transportation', element: <TransportationPage /> },
           { path: 'transportation/new', element: <TransportFormPage /> },
           { path: 'transportation/drivers', element: <DriversPage /> },
+          { path: 'transportation/dispatch', element: <DispatchBoardPage /> },
           { path: 'transportation/estimate', element: <TripEstimatorPage /> },
           { path: 'transportation/:id/edit', element: <TransportFormPage /> },
           { path: 'transportation/:id/pay', element: <TransportPaymentFormPage /> },

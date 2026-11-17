@@ -3,7 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { PhotoUploader } from '@/components/shared/PhotoUploader'
+import { CollectionSignature } from '@/components/receiving/CollectionSignature'
+import { EMPTY_SIGN, isSigned, type CollectionSign } from '@/lib/collectionSign'
 import { PROBLEM_DAYS, recordCollection } from '@/lib/receiving'
 import type { BundleLineReceipt, DeliveryPhoto } from '@/types/database'
 import { ArrowLeft, Check, PackageCheck } from 'lucide-react'
@@ -22,14 +25,17 @@ type Draft = { received: string; damaged: string; note: string; open: boolean }
 /**
  * What was collected, counted at the vendor's counter on the phone (520).
  * Whoever holds the goods records them: the buyer, or logistics or the
- * store when they bring them in. A photo is required; the site is told and
- * has three days to say something didn't arrive or was wrong.
+ * store when they bring them in. Whoever takes the goods signs (529); a
+ * photo is optional — uploads timed out on a weak signal. The site is told
+ * and has three days to say something didn't arrive or was wrong.
  */
 export default function CollectedPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { toast } = useToast()
+  const { profile } = useAuth()
+  const [sign, setSign] = useState<CollectionSign>(EMPTY_SIGN)
   // What was changed from "all of it came", per line.
   const [edits, setEdits] = useState<Record<string, Partial<Draft>>>({})
   const [photos, setPhotos] = useState<DeliveryPhoto[]>([])
@@ -77,13 +83,15 @@ export default function CollectedPage() {
     })
     if (bad) { toast(`Check ${bad.item_name}: no more than ${qty(Number(bad.outstanding))} can come, and damaged is part of what came`, 'error'); return }
     if (!taking.length) { toast('Enter what was collected on at least one line', 'error'); return }
-    if (!photos.length) { toast("Add a photo of the goods or the vendor's receipt", 'error'); return }
+    if (sign.signature && !sign.name.trim()) { toast('Write the name of whoever signed', 'error'); return }
+    if (!isSigned(sign) && !photos.length) { toast('Have whoever takes the goods sign (or add a photo)', 'error'); return }
     setSaving(true)
     try {
       await recordCollection(bundle!.id, taking.map(l => {
         const d = draftOf(l)
         return { id: l.bundle_item_id, received: num(d.received), damaged: num(d.damaged), note: d.note.trim() || undefined }
-      }), photos, notes.trim(), receiptNo.trim())
+      }), photos, notes.trim(), receiptNo.trim(),
+      isSigned(sign) ? { signature: sign.signature!, name: sign.name, phone: sign.phone, driverId: sign.kind === 'driver' ? sign.driverId : null, plate: sign.plate } : null)
       const { data: after } = await supabase.from('sourcing_bundles').select('status').eq('id', bundle!.id).single()
       for (const k of ['sourcing-bundle-detail', 'bundle-line-receipts', 'grns-for-bundle', 'goods-to-collect', 'sourcing-bundles', 'grn-register']) qc.invalidateQueries({ queryKey: [k] })
       toast(after?.status === 'fulfilled' ? 'Collected: everything on the order is in' : 'Collected: the rest stays open on the order', 'success')
@@ -154,8 +162,9 @@ export default function CollectedPage() {
       {done.length > 0 && <p className="text-xs text-slate-400">Already in: {done.map(l => l.item_name).join(', ')}.</p>}
 
       <section className="space-y-3 rounded-2xl border bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+        <CollectionSignature value={sign} onChange={setSign} myName={profile?.full_name ?? ''} />
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Photo of the goods or the vendor's receipt <span className="text-brand">*</span></p>
+          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Photo of the goods or the vendor's receipt <span className="font-normal text-slate-400">(optional — skip it on a weak signal)</span></p>
           <PhotoUploader photos={photos} onChange={setPhotos} folder="grn-photos" label="Take a photo" />
         </div>
         <input value={receiptNo} onChange={e => setReceiptNo(e.target.value)} placeholder="Vendor's receipt or delivery note no. (optional)" className={inputCls} />
@@ -165,7 +174,7 @@ export default function CollectedPage() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
         <div className="mx-auto flex max-w-lg items-center gap-3">
           <p className="min-w-0 flex-1 text-xs text-slate-500">
-            {taking.length} of {open.length} line{open.length === 1 ? '' : 's'}{short ? `, ${short} short` : ''}{!photos.length ? ' · photo needed' : ''}
+            {taking.length} of {open.length} line{open.length === 1 ? '' : 's'}{short ? `, ${short} short` : ''}{!isSigned(sign) && !photos.length ? ' · signature needed' : ''}
           </p>
           <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Collected'}

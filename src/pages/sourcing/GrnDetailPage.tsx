@@ -13,7 +13,7 @@ import { FactList, Panel, Pill, RecordHeader, RecordLayout, type Tone } from '@/
 import { PhotoUploader } from '@/components/shared/PhotoUploader'
 import { PROBLEM_DAYS, PROBLEM_KIND, reportReceiptProblem, resolveReceiptProblem, useReceiptProblems, type ProblemKind } from '@/lib/receiving'
 import type { DeliveryPhoto, GrnQualityStatus, GrnRegisterRow } from '@/types/database'
-import { AlertTriangle, ClipboardCheck, Printer, Smartphone, Undo2, FileText, Image as ImageIcon, Package } from 'lucide-react'
+import { AlertTriangle, ClipboardCheck, Printer, Smartphone, Undo2, FileText, Image as ImageIcon, Package, PenLine } from 'lucide-react'
 
 type GrnDetail = {
   id: string
@@ -21,6 +21,10 @@ type GrnDetail = {
   photo_url: string | null
   driver_name: string | null
   vehicle_plate: string | null
+  signature: string | null          // who took / handed over the goods (529)
+  signed_by_name: string | null
+  signed_by_phone: string | null
+  signed_at: string | null
   goods_received_note_items: {
     id: string
     quantity_received: number | null
@@ -68,7 +72,7 @@ export default function GrnDetailPage() {
     queryKey: ['grn-detail', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('goods_received_notes')
-        .select('id, photos, photo_url, driver_name, vehicle_plate, goods_received_note_items(id, quantity_received, quantity_accepted, quantity_damaged, quantity_rejected, condition_notes, quality_status, return_status, returned_at, return_reference, categories(category_name), sourcing_bundle_items(sort_order, order_items(item_name, unit)))')
+        .select('id, photos, photo_url, driver_name, vehicle_plate, signature, signed_by_name, signed_by_phone, signed_at, goods_received_note_items(id, quantity_received, quantity_accepted, quantity_damaged, quantity_rejected, condition_notes, quality_status, return_status, returned_at, return_reference, categories(category_name), sourcing_bundle_items(sort_order, order_items(item_name, unit)))')
         .eq('id', id!).single()
       if (error) throw error
       return data as unknown as GrnDetail
@@ -250,6 +254,17 @@ export default function GrnDetailPage() {
                   </div>
                 )}
               </div>
+            </Panel>
+          )}
+          {grn.signature && (
+            <Panel title="Signed for" icon={PenLine}>
+              <img src={grn.signature} alt={`Signature of ${grn.signed_by_name ?? ''}`} className="h-24 rounded-lg border bg-white dark:border-slate-600" />
+              <p className="mt-1 text-xs text-slate-500">
+                {grn.signed_by_name}
+                {grn.signed_by_phone && <> · <a href={`tel:${grn.signed_by_phone}`} className="text-brand hover:underline">{grn.signed_by_phone}</a></>}
+                {grn.vehicle_plate && ` · ${grn.vehicle_plate}`}
+                {grn.signed_at && ` · ${new Date(grn.signed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+              </p>
             </Panel>
           )}
           {photos.length > 0 && (

@@ -11,6 +11,7 @@ import { printHtml } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
 import { buildSdnHtml } from '@/lib/documents/delivery'
 import { PhotoUploader } from '@/components/shared/PhotoUploader'
+import { SignaturePad } from '@/components/shared/SignaturePad'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout } from '@/components/record/Record'
 import { SDN_STATUS } from '@/lib/siteDeliveries'
 import type { DeliveryPhoto, SiteDeliveryNote, SiteDeliveryNoteItem } from '@/types/database'
@@ -45,6 +46,7 @@ export default function SiteDeliveryNotePage() {
 
   const [lines, setLines] = useState<Record<string, LineDraft>>({})
   const [photos, setPhotos] = useState<DeliveryPhoto[]>([])
+  const [signature, setSignature] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -94,13 +96,14 @@ export default function SiteDeliveryNotePage() {
 
   async function sign() {
     if (lineProblem) { toast(`Check ${lineProblem.item_name}: received can't be more than sent, and damaged + refused can't be more than received`, 'error'); return }
-    if (photos.length === 0) { toast('Add at least one photo of the delivery', 'error'); return }
+    if (photos.length === 0 && !signature) { toast('Sign for the delivery (or add a photo)', 'error'); return }
     if (!allClean && !notes.trim() && !items.some(i => draftOf(i).notes.trim())) {
       toast('Say what was wrong — a note on the line or at the bottom', 'error'); return
     }
     setBusy(true)
     const { data, error } = await supabase.rpc('sign_site_delivery_note', {
       p_sdn_id: sdn!.id, p_lines: payload(), p_photos: photos, p_notes: notes || null, p_lat: coords?.lat ?? null, p_lng: coords?.lng ?? null,
+      p_signature: signature,
     })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
@@ -163,7 +166,7 @@ export default function SiteDeliveryNotePage() {
             <div className="flex items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800 dark:border-violet-800/40 dark:bg-violet-900/10 dark:text-violet-300">
               <PenLine className="mt-0.5 h-4 w-4 shrink-0" />
               <p>Count what came off the truck. Change <b>Received</b> if less arrived, and split out anything <b>damaged</b> or that you <b>refused</b>.
-                Take at least one photo. If everything is right, signing records the goods as received.</p>
+                Then sign below — a photo is optional. If everything is right, signing records the goods as received.</p>
             </div>
           )}
           {confirming && (
@@ -215,8 +218,10 @@ export default function SiteDeliveryNotePage() {
           </Panel>
 
           {signing && (
-            <Panel title="Photos and notes" icon={ClipboardCheck}>
+            <Panel title="Sign for it" icon={ClipboardCheck}>
               <div className="space-y-3">
+                <SignaturePad value={signature} onChange={setSignature} label="Sign for what arrived" />
+                <p className="text-[11px] text-slate-400">A photo too, if the signal allows (optional):</p>
                 <PhotoUploader photos={photos} onChange={setPhotos} folder="sdn-photos" label="Take photo" />
                 <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything else about this delivery…"
                   className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
@@ -235,6 +240,12 @@ export default function SiteDeliveryNotePage() {
             </Panel>
           )}
 
+          {sdn.signature && (
+            <Panel title="Signed for" icon={PenLine}>
+              <img src={sdn.signature} alt={`Signature of ${sdn.signed_by_name ?? 'the site'}`} className="h-24 rounded-lg border bg-white dark:border-slate-600" />
+              <p className="mt-1 text-xs text-slate-500">{sdn.signed_by_name ?? '—'}{sdn.signed_at ? ` · ${new Date(sdn.signed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</p>
+            </Panel>
+          )}
           {sdn.photos.length > 0 && (
             <Panel title="Photos from site" icon={ClipboardCheck}>
               <div className="flex flex-wrap gap-2">
