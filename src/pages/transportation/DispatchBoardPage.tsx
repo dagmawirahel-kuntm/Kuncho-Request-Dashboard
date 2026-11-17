@@ -207,12 +207,15 @@ function Place({ label, name, phone, sub, map }: { label: string; name: string |
 
 /** Delivered, confirmed by the person on the phone; their signature receives a PO's goods. */
 function DeliverDialog({ r, onClose }: { r: DispatchRow; onClose: () => void }) {
+  const { profile } = useAuth()
   const { toast } = useToast()
   const refresh = useDispatchRefresh()
   const [note, setNote] = useState('')
   const [signature, setSignature] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const receives = r.po_status === 'ordered' && r.po_open_lines > 0
+  // only the PO's buyer signs for its goods (531)
+  const isBuyer = profile?.role === 'admin' || (!!r.buyer_id && profile?.id === r.buyer_id)
 
   async function save() {
     if (receives && !signature) { toast('Sign to confirm the goods arrived', 'error'); return }
@@ -235,22 +238,31 @@ function DeliverDialog({ r, onClose }: { r: DispatchRow; onClose: () => void }) 
           </div>
           <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
         </div>
-        {receives && (
+        {receives && !isBuyer && (
+          <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>Only <b>{r.buyer_name ?? 'the buyer'}</b>, the buyer, signs for the goods on {r.bundle_code}. Ask them to{' '}
+              <Link to={`/sourcing/${r.sourcing_bundle_id}/collected`} className="font-semibold underline">mark it collected</Link> — that closes this job too.</span>
+          </div>
+        )}
+        {receives && isBuyer && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800/40 dark:bg-amber-900/15 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>This receives all {r.po_open_lines} open line{r.po_open_lines === 1 ? '' : 's'} of {r.bundle_code} in full. If some was short or damaged,{' '}
               <Link to={`/sourcing/${r.sourcing_bundle_id}/collected`} className="font-semibold underline">count it line by line</Link> instead.</span>
           </div>
         )}
+        {!(receives && !isBuyer) && <>
         <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="How do you know? (e.g. driver called from the site, the foreman confirmed)"
           className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Your signature{receives ? ' *' : ' (optional)'}</p>
+          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">{receives ? 'Your signature, as the buyer *' : 'Your signature (optional)'}</p>
           <SignaturePad value={signature} onChange={setSignature} />
         </div>
         <button onClick={save} disabled={busy} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
           {receives ? <PackageCheck className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} {busy ? 'Saving…' : receives ? 'Delivered — receive the goods' : 'Delivered'}
         </button>
+        </>}
       </div>
     </div>
   )

@@ -6,8 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { PhotoUploader } from '@/components/shared/PhotoUploader'
-import { CollectionSignature } from '@/components/receiving/CollectionSignature'
-import { EMPTY_SIGN, isSigned, type CollectionSign } from '@/lib/collectionSign'
+import { BuyerSignature } from '@/components/receiving/BuyerSignature'
 import { useCategories } from '@/hooks/useLookups'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -35,6 +34,8 @@ type BundleForGrn = {
   bundle_code: string
   vendor_name: string | null
   status: string
+  procurement_officer_id: string | null
+  buyer: { full_name: string } | null
   vendors: { vendor_name: string } | null
   sourcing_bundle_items: {
     id: string
@@ -91,7 +92,8 @@ export default function GoodsReceivedNoteFormPage() {
       const { data, error } = await supabase
         .from('sourcing_bundles')
         .select(`
-          id, bundle_code, vendor_name, status,
+          id, bundle_code, vendor_name, status, procurement_officer_id,
+          buyer:user_profiles!sourcing_bundles_procurement_officer_id_fkey(full_name),
           vendors(vendor_name),
           sourcing_bundle_items(id, quantity_actual, order_items(item_name, unit, quantity, sub_categories(parent_category_id), stock_items(ledger_category_id, ledger:categories(category_name))))
         `)
@@ -156,7 +158,8 @@ export default function GoodsReceivedNoteFormPage() {
   const [photos, setPhotos] = useState<DeliveryPhoto[]>([])
   const [deliveryRef, setDeliveryRef] = useState('')
   const [driverName, setDriverName] = useState('')
-  const [sign, setSign] = useState<CollectionSign>(EMPTY_SIGN)
+  // only the PO's buyer signs (531); anyone else records it with a photo
+  const [signature, setSignature] = useState<string | null>(null)
   const [vehiclePlate, setVehiclePlate] = useState('')
   // undefined until someone picks: the open transport job is the default.
   const [pickedTransportId, setTransportId] = useState<string | null | undefined>(undefined)
@@ -241,10 +244,7 @@ export default function GoodsReceivedNoteFormPage() {
       const names = overDelivered.map(it => it.order_items?.item_name ?? 'line').join(', ')
       if (!window.confirm(`More arrived than is still outstanding on: ${names}. Record it anyway?`)) return
     }
-    if (sign.signature && !sign.name.trim()) { setError('Write the name of whoever signed'); return }
-    if (!photos.length && !isSigned(sign) && profile?.role !== 'admin') { setError('Have whoever hands the goods over sign (or add a photo)'); return }
-    const signed = isSigned(sign)
-    const signedDriver = signed && sign.kind === 'driver' ? sign.driverId : null
+    if (!photos.length && !signature && profile?.role !== 'admin') { setError('The buyer signs for the goods — or add a photo of the goods or the vendor\'s receipt'); return }
     setError(''); setSaving(true)
 
     const { data: grnRow, error: grnErr } = await supabase
@@ -257,13 +257,11 @@ export default function GoodsReceivedNoteFormPage() {
         photo_name: photos[0]?.name ?? null,
         photos,
         delivery_note_ref: deliveryRef.trim() || null,
-        driver_name: driverName.trim() || (signedDriver ? sign.name.trim() : null) || jobDriver || null,
-        vehicle_plate: vehiclePlate.trim() || (signedDriver ? sign.plate.trim().toUpperCase() : '') || null,
+        driver_name: driverName.trim() || jobDriver || null,
+        vehicle_plate: vehiclePlate.trim() || null,
         transportation_request_id: transportId,
-        signature: signed ? sign.signature : null,
-        signed_by_name: signed ? sign.name.trim() : null,
-        signed_by_phone: signed ? sign.phone.trim() || null : null,
-        hired_driver_id: signedDriver,
+        signature,
+        signed_by_name: signature ? profile?.full_name ?? null : null,
       }])
       .select('id')
       .single()
@@ -305,11 +303,6 @@ export default function GoodsReceivedNoteFormPage() {
       }))
     }
 
-    // the driver who signed: a phone or plate written here fills the driver list
-    if (signedDriver && (sign.phone.trim() || sign.plate.trim())) {
-      await supabase.rpc('remember_driver_contact', { p_driver: signedDriver, p_phone: sign.phone.trim() || null, p_plate: sign.plate.trim() || null })
-      qc.invalidateQueries({ queryKey: ['transport-drivers'] })
-    }
     const { data: after } = await supabase.from('sourcing_bundles').select('status').eq('id', bundle.id).single()
     dropRecordCache(qc, 'sourcing-bundle-for-grn')
     qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundle.id] })
@@ -456,10 +449,10 @@ export default function GoodsReceivedNoteFormPage() {
       </div>
 
       <div className="rounded-xl border bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-        <CollectionSignature value={sign} onChange={setSign} myName={profile?.full_name ?? ''} question="Who handed the goods over?" />
+        <BuyerSignature buyerId={bundle.procurement_officer_id} buyerName={bundle.buyer?.full_name} value={signature} onChange={setSignature} />
       </div>
 
-      <Field label="Photos (optional — skip on a weak signal)">
+      <Field label={signature ? 'Photos (optional)' : 'Photo of the goods or the vendor\'s receipt'}>
         <PhotoUploader photos={photos} onChange={setPhotos} folder="grn-photos" />
       </Field>
 

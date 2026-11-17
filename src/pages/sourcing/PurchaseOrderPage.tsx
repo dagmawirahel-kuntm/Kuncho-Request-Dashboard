@@ -23,7 +23,7 @@ import {
   Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
   Package, TruckIcon, XCircle, Send, Check, AlertCircle, Printer, Receipt, Link2Off, Plus, ClipboardCheck, Undo2, HardHat, Scissors, TrendingUp, PackageCheck
 } from 'lucide-react'
-import { deliveryWords, setPoDelivery, type DeliveryMode } from '@/lib/receiving'
+import { DELIVERY_MODES, deliveryWords, setPoDelivery, type DeliveryMode } from '@/lib/receiving'
 import { OpenAdvancesWarning } from '@/components/purchasing/OpenAdvancesWarning'
 import { fetchPoDetail } from '@/lib/poDetail'
 import { VendorOrdersToCollect } from '@/components/purchasing/VendorOrdersToCollect'
@@ -276,7 +276,7 @@ export default function PurchaseOrderPage() {
   // How the goods come (520): asked when the order is placed, changeable
   // while it waits for them.
   const [deliveryPanel, setDeliveryPanel] = useState<null | 'order' | 'change'>(null)
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('collect')
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('hired')
   const [deliveryDate, setDeliveryDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [queueDriverId, setQueueDriverId] = useState<string | null>(null)
   const [queueVehicleId, setQueueVehicleId] = useState<string | null>(null)
@@ -466,19 +466,24 @@ export default function PurchaseOrderPage() {
 
   // Fulfillment is no longer a self-service click — it only happens as a
   // side effect of a stock_manager/logistics_officer recording a real GRN.
-  const canRequestTransport = (isProcurement || isAdmin || isManager) && status === 'ordered' && !transportJob
+  // How the goods travel (531): a hired truck (found on the day, recorded
+  // with its fare when marking collected; big loads booked ahead), our own
+  // truck (booked ahead here), or the vendor delivers. 'collect' reads as hired.
+  const mode: DeliveryMode = bundle.delivery_mode === 'vendor_delivers' || bundle.delivery_mode === 'own_truck' ? bundle.delivery_mode : 'hired'
+  const fetched = mode !== 'vendor_delivers'
+  const canRequestTransport = (isProcurement || isAdmin || isManager) && status === 'ordered' && !transportJob && fetched
   // Receiving stays open until every line is accounted for — a delivery
-  // can come in parts (371).
-  const canRecordGrn = (isStockOrLogistics || isAdmin) && status === 'ordered'
-  // Whoever holds the goods records them, the buyer included (520).
-  const canCollect = (isStockOrLogistics || isAdmin || isProcurement || !!profile?.is_logistics_officer) && status === 'ordered'
+  // can come in parts (371). We fetch it: Mark collected. It's brought: receipt form / site note.
+  const canRecordGrn = (isStockOrLogistics || isAdmin) && status === 'ordered' && !fetched
+  // Whoever holds the goods records them; only the buyer signs (531).
+  const canCollect = (isStockOrLogistics || isAdmin || isProcurement || !!profile?.is_logistics_officer) && status === 'ordered' && fetched
   const canChangeDelivery = (isProcurement || isAdmin || isManager || bundle.procurement_officer_id === profile?.id) && ['approved', 'ordered'].includes(status)
   const receiptByItem = new Map(receipts.map(r => [r.bundle_item_id, r]))
   const receivedAny = receipts.some(r => Number(r.received) > 0)
   const outstandingLines = receipts.filter(r => Number(r.outstanding) > 0)
   const openSdns = sdns.filter(s => s.status === 'issued' || s.status === 'exceptions')
   const isIssuer = isProcurement || isAdmin || isManager || role === 'logistics_officer' || !!profile?.is_logistics_officer
-  const canIssueSdn = isIssuer && status === 'ordered' && outstandingLines.some(r => !!r.project_id)
+  const canIssueSdn = isIssuer && status === 'ordered' && !fetched && outstandingLines.some(r => !!r.project_id)
   const canCloseShort = (isProcurement || isAdmin || isManager) && status === 'ordered' && (grns?.length ?? 0) > 0 && openSdns.length === 0
   const transportClearForExpense = !transportJob || transportJob.job_status === 'in_progress' || transportJob.job_status === 'completed'
   // Pay on delivery: the expense is prepared when the whole order has
@@ -724,8 +729,10 @@ export default function PurchaseOrderPage() {
         : receivedAny ? `Part received — ${outstandingLines.length} line${outstandingLines.length === 1 ? '' : 's'} still to come.${lateDelivery ? ' Delivery is late — follow up with the vendor, or close the order short.' : ''}`
         : lateDelivery ? (bundle.delivery_mode === 'vendor_delivers'
             ? `The vendor was to deliver on ${formatDate(bundle.expected_delivery_date)}. Check with the site, then mark what came collected, or follow up with the vendor.`
-            : `Bought on ${formatDate(bundle.expected_delivery_date)} and not marked collected yet. Mark it collected with a photo, or cancel it.`)
-        : 'Waiting for the goods. Whoever collects them marks them collected here, with a photo; the site is told they are on their way.')
+            : `Bought on ${formatDate(bundle.expected_delivery_date)} and not marked collected yet. Mark it collected — the buyer signs — or cancel it.`)
+        : mode === 'vendor_delivers'
+          ? 'Waiting for the vendor to deliver. The site signs the delivery note, or the store records what came.'
+          : 'Waiting for the goods. Mark them collected at the vendor: the buyer signs, and a hired truck is recorded with its fare. The site is told they are on their way.')
     : status === 'fulfilled' ? (bundle.closed_short_at
         ? `Closed short on ${formatDate(bundle.closed_short_at)}${bundle.closed_short_reason ? ` — ${bundle.closed_short_reason}` : ''}.`
         : `Received${bundle.fulfilled_at ? ` on ${formatDate(bundle.fulfilled_at)}` : ''}.`)
@@ -757,14 +764,14 @@ export default function PurchaseOrderPage() {
               ? toast(`Pick which variant was bought for: ${linesMissingVariant.map(i => i.order_items?.item_name ?? 'line').join(', ')} — edit the order`, 'error')
               : transition('submitted') },
           { label: 'Approve', icon: Check, onClick: () => transition('approved', { finance_notes: financeNotes || null }), primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
-          { label: 'Mark as ordered', icon: TruckIcon, onClick: () => { setDeliveryMode('collect'); setDeliveryDate(new Date().toISOString().slice(0, 10)); setDeliveryPanel('order') }, primary: true, disabled: transitioning, hidden: !canMarkOrdered || deliveryPanel === 'order' },
+          { label: 'Mark as ordered', icon: TruckIcon, onClick: () => { setDeliveryMode('hired'); setDeliveryDate(new Date().toISOString().slice(0, 10)); setDeliveryPanel('order') }, primary: true, disabled: transitioning, hidden: !canMarkOrdered || deliveryPanel === 'order' },
           { label: 'Mark collected', icon: PackageCheck, to: `/sourcing/${id}/collected`, primary: true, hidden: !canCollect },
           { label: 'Send to site', icon: HardHat, to: `/sourcing/${id}/sdn/new`, primary: !canCollect, hidden: !canIssueSdn },
           { label: 'Full receipt form', icon: ClipboardCheck, to: `/sourcing/${id}/grn/new`, hidden: !canRecordGrn },
           { label: 'Close short', icon: Scissors, onClick: handleCloseShort, hidden: !canCloseShort },
           { label: 'Request changes', icon: Undo2, onClick: () => setShowRejectPanel(true), hidden: !canReject || showRejectPanel },
           { label: 'Edit', icon: Pencil, to: `/sourcing/${id}/edit`, hidden: !canEdit },
-          { label: 'Queue pickup', icon: TruckIcon, onClick: () => setShowQueuePanel(true), hidden: !canRequestTransport || showQueuePanel },
+          { label: 'Book our truck', icon: TruckIcon, onClick: () => setShowQueuePanel(true), hidden: !canRequestTransport || mode !== 'own_truck' || showQueuePanel },
           { label: 'Print draft', icon: Printer, onClick: () => printHtml(buildPoHtml({ ...poInput, draft: true }), `${bundle.bundle_code} draft`), hidden: poIssuable },
           { label: 'Cancel purchase order', icon: XCircle, onClick: () => { if (window.confirm('Cancel this purchase order? Its items go back to their requests to be sourced again.')) transition('cancelled') }, danger: true, disabled: transitioning, hidden: !canCancel },
           { label: 'Delete', icon: Trash2, onClick: handleDelete, danger: true, hidden: !((isAdmin || isManager) && status === 'drafting') },
@@ -966,7 +973,7 @@ export default function PurchaseOrderPage() {
                 <p className="mt-3 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                   <TruckIcon className="h-3.5 w-3.5" /> {deliveryWords(bundle.delivery_mode, bundle.expected_delivery_date)}
                   {canChangeDelivery && (
-                    <button onClick={() => { setDeliveryMode(bundle.delivery_mode ?? 'collect'); setDeliveryDate(bundle.expected_delivery_date ?? new Date().toISOString().slice(0, 10)); setDeliveryPanel('change') }}
+                    <button onClick={() => { setDeliveryMode(mode); setDeliveryDate(bundle.expected_delivery_date ?? new Date().toISOString().slice(0, 10)); setDeliveryPanel('change') }}
                       className="font-medium text-brand">Change</button>
                   )}
                 </p>
@@ -985,14 +992,15 @@ export default function PurchaseOrderPage() {
                     setDeliveryPanel(null)
                   }}>
                   <div className="flex flex-wrap gap-1.5">
-                    {(['collect', 'vendor_delivers'] as const).map(m => (
-                      <button key={m} onClick={() => setDeliveryMode(m)}
-                        className={`rounded-full border px-3 py-1.5 text-sm ${deliveryMode === m ? 'border-brand bg-brand/10 font-semibold text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
-                        {m === 'collect' ? 'We collect it' : 'The vendor delivers'}
+                    {DELIVERY_MODES.map(m => (
+                      <button key={m.value} onClick={() => setDeliveryMode(m.value)}
+                        className={`rounded-full border px-3 py-1.5 text-sm ${deliveryMode === m.value || (m.value === 'hired' && deliveryMode === 'collect') ? 'border-brand bg-brand/10 font-semibold text-brand' : 'text-slate-600 dark:border-slate-600 dark:text-slate-300'}`}>
+                        {m.label}
                       </button>
                     ))}
                   </div>
-                  <label className="block text-xs font-medium text-slate-500">{deliveryMode === 'collect' ? 'Collected on' : 'Delivered on'}
+                  <p className="text-xs text-slate-500">{DELIVERY_MODES.find(m => m.value === (deliveryMode === 'collect' ? 'hired' : deliveryMode))?.hint}</p>
+                  <label className="block text-xs font-medium text-slate-500">{deliveryMode === 'vendor_delivers' ? 'Delivered on' : 'Collected on'}
                     <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
                       className="mt-1 block w-full rounded-md border px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
                   </label>
@@ -1041,17 +1049,24 @@ export default function PurchaseOrderPage() {
                       <Link to={`/transportation/${transportJob.id}/edit`} className="text-brand hover:underline">{transportJob.request_name ?? 'Transport job'}</Link>
                       <Pill>{transportJob.job_status.replace('_', ' ')}</Pill>
                     </div>
-                  ) : canRequestTransport && !showQueuePanel ? (
+                  ) : status === 'ordered' && mode === 'vendor_delivers' ? (
+                    <p className="text-xs text-slate-500">The vendor delivers — no truck from us. The site signs the delivery note, or the store records what came.</p>
+                  ) : canRequestTransport && !showQueuePanel && mode === 'hired' ? (
                     <div className="space-y-2">
-                    <PickupAdvice bundleId={id} />
-                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-slate-500">A truck is hired on the day. When the goods are collected, {bundle.procurement_officer?.full_name ?? 'the buyer'} records the driver and the fare and signs — that is the trip, and the driver is paid after.</p>
+                      <PickupAdvice bundleId={id} />
+                      <Link to={`/transportation/new?bundle_id=${id}`} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-brand dark:text-slate-300">
+                        <TruckIcon className="h-3.5 w-3.5" /> Book a truck ahead (big loads)
+                      </Link>
+                    </div>
+                  ) : canRequestTransport && !showQueuePanel && mode === 'own_truck' ? (
+                    <div className="space-y-2">
+                      <PickupAdvice bundleId={id} />
                       <button type="button" onClick={() => setShowQueuePanel(true)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
-                        <TruckIcon className="h-3.5 w-3.5" /> Queue pickup
+                        <TruckIcon className="h-3.5 w-3.5" /> Book our truck
                       </button>
-                      <Link to={`/transportation/new?bundle_id=${id}`} className="text-xs text-slate-500 hover:underline">or the full transport form</Link>
                     </div>
-                    </div>
-                  ) : !transportJob && <p className="text-xs text-slate-400">No transport arranged.</p>}
+                  ) : !transportJob && status === 'ordered' && <p className="text-xs text-slate-400">No transport arranged.</p>}
 
                   {canRequestTransport && showQueuePanel && (
                     <div className="space-y-2.5 rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-800/40 dark:bg-violet-900/10">
@@ -1096,7 +1111,7 @@ export default function PurchaseOrderPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={handleQueuePickup} disabled={queuing}
-                          className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-60">{queuing ? 'Queuing…' : 'Queue pickup'}</button>
+                          className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-60">{queuing ? 'Queuing…' : 'Book our truck'}</button>
                         <button type="button" onClick={() => setShowQueuePanel(false)} className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Cancel</button>
                       </div>
                       <p className="text-[11px] text-slate-400">Driver and vehicle can be left blank and dispatched later from Transportation.</p>
