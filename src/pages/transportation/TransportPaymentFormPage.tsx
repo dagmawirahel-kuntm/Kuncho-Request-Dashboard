@@ -42,12 +42,12 @@ export default function TransportPaymentFormPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transportation_requests')
-        .select('id, request_name, amount, project_id, vendor_id, vendor_name, transport_mode, hired_vehicle_class, pickup_location_text, dropoff_location_text, driver:transport_drivers(full_name, phone, payout_method, bank_name, account_number, account_name)')
+        .select('id, request_name, job_status, amount, project_id, vendor_id, vendor_name, transport_mode, hired_vehicle_class, pickup_location_text, dropoff_location_text, driver:transport_drivers(full_name, phone, payout_method, bank_name, account_number, account_name)')
         .eq('id', id!)
         .single()
       if (error) throw error
       return data as unknown as {
-        id: string; request_name: string | null; amount: number | null; project_id: string | null
+        id: string; request_name: string | null; job_status: string; amount: number | null; project_id: string | null
         vendor_id: string | null; vendor_name: string | null; transport_mode: string; hired_vehicle_class: string | null
         pickup_location_text: string | null; dropoff_location_text: string | null
         driver: { full_name: string; phone: string | null; payout_method: 'bank' | 'telebirr' | 'cash' | null; bank_name: string | null; account_number: string | null; account_name: string | null } | null
@@ -154,6 +154,13 @@ export default function TransportPaymentFormPage() {
 
   return (
     <FormPage title="Request payment" backTo={backTo} error={error} saving={saving} saveLabel="Raise payment request" onSave={handleSave}>
+      {job && ['requested', 'assigned', 'in_progress'].includes(job.job_status) && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800/40 dark:bg-amber-900/15 dark:text-amber-300">
+          <Truck className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>This job isn't delivered yet. You can raise the request now, but finance can only approve paying the driver once it is —
+            mark it delivered on the <a href="/transportation/dispatch" className="font-semibold underline">dispatch board</a>, or record the goods collected.</span>
+        </div>
+      )}
       <ol className="grid grid-cols-3 gap-2 text-center text-[11px]">
         {['Check who is paid and how much', 'Raise the request', 'Print or send the request document'].map((t, i) => (
           <li key={t} className={`rounded-lg border px-2 py-1.5 ${i === 0 ? 'border-brand bg-brand/5 font-semibold text-brand' : 'text-slate-500 dark:border-slate-700'}`}>

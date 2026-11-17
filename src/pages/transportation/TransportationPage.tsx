@@ -10,7 +10,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { OwnRecordsBanner } from '@/components/shared/OwnRecordsBanner'
 import { NEXT_STEP, OPEN_JOB_STATUSES, PAY_STAGE, payStageOf, setJobStatus } from '@/lib/transport'
-import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users, Calculator, Banknote, Receipt, Send, UserCircle2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Truck, User, Clock, AlertTriangle, Play, Check, History, ChevronDown, ChevronRight, Phone, Users, Calculator, Banknote, Receipt, Send, UserCircle2, ClipboardList } from 'lucide-react'
 import { PickupBundlesPanel } from '@/components/transport/PickupAdvice'
 
 // Chained ETA per vehicle — own_fleet jobs only, since hired/ride-hailing
@@ -514,6 +514,9 @@ export default function TransportationPage() {
           </button>
           <Link to="/transportation/estimate" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Calculator className="h-4 w-4" /> Estimate a trip
+          </Link>
+          <Link to="/transportation/dispatch" className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <ClipboardList className="h-4 w-4" /> Dispatch board
           </Link>
           <Link to="/transportation/drivers" className="inline-flex items-center gap-1.5 rounded-md border dark:border-slate-600 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
             <Users className="h-4 w-4" /> Drivers
