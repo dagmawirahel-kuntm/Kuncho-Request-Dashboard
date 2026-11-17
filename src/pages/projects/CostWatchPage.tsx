@@ -3,21 +3,29 @@ import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatCurrency, formatCurrencyCompact } from '@/lib/utils'
-import { STAGES, cumulative, lastWeeks, useCostWatch, useCostWatchMoves, useCostWatchTrend, type WatchGroup, type WatchMove, type WatchProject } from '@/lib/costWatch'
+import { GROUP_SLOT, STAGES, colorOf, cumulative, groupLabel, lastWeeks, useCostWatch, useCostWatchMoves, useCostWatchTrend, watchAlerts, type WatchGroup, type WatchMove, type WatchProject } from '@/lib/costWatch'
+import { HeatGrid, NeedsALook, PeriodChange } from '@/components/projects/CostWatchViews'
 import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, RefreshCw, TrendingUp } from 'lucide-react'
 
 // One colour per cost group, fixed by the group (never by rank), from the
 // validated categorical order: light and dark steps of the same hues.
-const GROUP_SLOT: Record<string, number> = { Materials: 1, Labor: 2, Subcontract: 3, Transport: 4, Overhead: 5 }
-const colorOf = (name: string) => (GROUP_SLOT[name] ? `var(--cw-g${GROUP_SLOT[name]})` : 'var(--cw-other)')
-const groupLabel = (name: string) => (name === 'Labor' ? 'Labour' : name)
 const VARS = `
-.cw-root { --cw-g1:#2a78d6; --cw-g2:#eb6834; --cw-g3:#1baf7a; --cw-g4:#eda100; --cw-g5:#e87ba4; --cw-other:#94a3b8; --cw-grid:#eef2f6; --cw-axis:#64748b; --cw-tip-bg:#ffffff; --cw-tip-border:#e2e8f0; --cw-tip-text:#1e293b; }
-.dark .cw-root { --cw-g1:#3987e5; --cw-g2:#d95926; --cw-g3:#199e70; --cw-g4:#c98500; --cw-g5:#d55181; --cw-other:#64748b; --cw-grid:#334155; --cw-axis:#94a3b8; --cw-tip-bg:#0f172a; --cw-tip-border:#334155; --cw-tip-text:#e2e8f0; }
+.cw-root { --cw-g1:#2a78d6; --cw-g2:#eb6834; --cw-g3:#1baf7a; --cw-g4:#eda100; --cw-g5:#e87ba4; --cw-other:#94a3b8; --cw-grid:#eef2f6; --cw-axis:#64748b; --cw-tip-bg:#ffffff; --cw-tip-border:#e2e8f0; --cw-tip-text:#1e293b;
+  --cw-h1:#e6effb; --cw-h2:#b7d3f6; --cw-h3:#86b6ef; --cw-h4:#5598e7; --cw-h5:#2a78d6; --cw-h6:#1c5cab; --cw-h7:#0d366b; }
+.dark .cw-root { --cw-g1:#3987e5; --cw-g2:#d95926; --cw-g3:#199e70; --cw-g4:#c98500; --cw-g5:#d55181; --cw-other:#64748b; --cw-grid:#334155; --cw-axis:#94a3b8; --cw-tip-bg:#0f172a; --cw-tip-border:#334155; --cw-tip-text:#e2e8f0;
+  --cw-h1:#1b2a3d; --cw-h2:#184f95; --cw-h3:#1c5cab; --cw-h4:#256abf; --cw-h5:#3987e5; --cw-h6:#6da7ec; --cw-h7:#b7d3f6; }
+.cw-root .cw-hc { color:#1e293b; } .cw-root .cw-hc5, .cw-root .cw-hc6, .cw-root .cw-hc7 { color:#ffffff; }
+.dark .cw-root .cw-hc { color:#e2e8f0; } .dark .cw-root .cw-hc6, .dark .cw-root .cw-hc7 { color:#0f172a; }
 `
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
 const money = (n: number) => formatCurrencyCompact(n)
 const WINDOWS = [7, 30, 90] as const
+type View = 'ranked' | 'heat' | 'change'
+const VIEWS: { key: View; label: string }[] = [
+  { key: 'ranked', label: 'Ranked' },
+  { key: 'heat', label: 'Heat grid' },
+  { key: 'change', label: 'Against the period before' },
+]
 
 function change(now: number, before: number) {
   if (before <= 0) return now > 0 ? { up: true, text: 'new' } : null
@@ -154,6 +162,14 @@ export default function CostWatchPage() {
   const qc = useQueryClient()
   const [days, setDays] = useState<number>(30)
   const [open, setOpen] = useState<string | null>(null)
+  // how the projects are shown: ranked list, heat grid, or this period against the one before
+  const [view, setView] = useState<View>(() => { try { const v = localStorage.getItem('cost-watch-view'); return VIEWS.some(x => x.key === v) ? v as View : 'ranked' } catch { return 'ranked' } })
+  function pickView(v: View) { setView(v); try { localStorage.setItem('cost-watch-view', v) } catch { /* private window */ } }
+  /** From any view or card: show the project opened in the ranked list. */
+  function openProject(id: string) {
+    setView('ranked'); setOpen(id)
+    requestAnimationFrame(() => document.getElementById(`cw-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   const { data: projects = [], isLoading, isFetching, dataUpdatedAt } = useCostWatch(days)
   const { data: moves = [] } = useCostWatchMoves()
 
@@ -173,6 +189,7 @@ export default function CostWatchPage() {
     return { now, before, groups: [...byGroup.values()].sort((a, b) => a.sort - b.sort) }
   }, [projects])
   const ch = change(totals.now, totals.before)
+  const alerts = useMemo(() => watchAlerts(projects, days), [projects, days])
   const fastest = [...totals.groups].sort((a, b) => b.new_now - a.new_now)[0]
 
   function refresh() {
@@ -227,16 +244,29 @@ export default function CostWatchPage() {
         )}
       </section>
 
+      {!isLoading && <NeedsALook alerts={alerts} onOpen={openProject} />}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        {/* The ranking */}
+        {/* The projects: ranked, as a heat grid, or against the period before */}
         <section className={`${card} min-w-0`}>
+          <div className="flex flex-wrap gap-1 border-b px-3 py-2 dark:border-slate-700" role="tablist" aria-label="How to show the projects">
+            {VIEWS.map(v => (
+              <button key={v.key} role="tab" aria-selected={view === v.key} onClick={() => pickView(v.key)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${view === v.key ? 'bg-brand/10 text-brand' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {view === 'heat' && <HeatGrid projects={projects} days={days} onOpen={openProject} />}
+          {view === 'change' && <PeriodChange projects={projects} days={days} onOpen={openProject} />}
+          {view === 'ranked' && (<>
           {!isLoading && ranked.length === 0 ? <p className="p-6 text-center text-sm text-slate-500">No project has cost on its way.</p> : (
             <ol className="divide-y dark:divide-slate-700">
               {ranked.map((p, i) => {
                 const c = change(p.newNow, p.newBefore)
                 const isOpen = open === p.id
                 return (
-                  <li key={p.id}>
+                  <li key={p.id} id={`cw-${p.id}`} className="scroll-mt-4">
                     <button onClick={() => setOpen(isOpen ? null : p.id)} className="w-full space-y-1.5 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/30" aria-expanded={isOpen}>
                       <div className="flex items-start gap-3">
                         <span className="w-6 shrink-0 pt-0.5 text-sm font-semibold tabular-nums text-slate-400">{i + 1}</span>
@@ -269,6 +299,7 @@ export default function CostWatchPage() {
               })}
             </ol>
           )}
+          </>)}
         </section>
 
         {/* What just moved */}

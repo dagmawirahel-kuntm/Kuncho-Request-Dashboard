@@ -138,3 +138,60 @@ export function cumulative(rows: TrendRow[], weeks: string[]) {
     }),
   }
 }
+
+/** Labour, not Labor, on screen. */
+export const groupLabel = (name: string) => (name === 'Labor' ? 'Labour' : name)
+
+// ── Needs a look: plain rules over the same numbers ──────────────────
+export type AlertLevel = 'act' | 'check'
+export interface WatchAlert { level: AlertLevel; projectId: string; projectName: string; title: string; detail: string; weight: number }
+
+/** The thresholds, in one place so they can be tuned. */
+export const ALERT_RULES = {
+  jumpTimes: 3,          // this period more than 3× the one before …
+  jumpMin: 1_000_000,    // … and over 1M
+  newMin: 1_000_000,     // new spending over 1M with nothing before
+  unpricedMin: 15,       // requested lines with no price
+  noPmMin: 100_000,      // cost with no project manager
+  approvedMin: 1_500_000, // approved to pay, not paid
+}
+
+const short = (n: number) => {
+  const a = Math.abs(n)
+  if (a >= 1e6) return `${(n / 1e6).toFixed(a >= 1e7 ? 1 : 2).replace(/\.?0+$/, '')}M`
+  if (a >= 1e3) return `${Math.round(n / 1e3)}K`
+  return String(Math.round(n))
+}
+
+/** What someone should look at, most urgent and biggest first. */
+export function watchAlerts(projects: WatchProject[], days: number, rules = ALERT_RULES): WatchAlert[] {
+  const out: WatchAlert[] = []
+  const add = (p: WatchProject, level: AlertLevel, title: string, detail: string, weight: number) =>
+    out.push({ level, projectId: p.id, projectName: p.name, title, detail, weight })
+  for (const p of projects) {
+    if (p.value && p.total > p.value) {
+      const what = p.valueSource === 'invoiced' ? 'invoiced so far' : p.valueSource === 'quotation' ? 'the accepted quotation' : 'the contract'
+      add(p, 'act', 'Cost past what it is worth', `${short(p.total)} against ${short(p.value)} (${what}), ${Math.round((p.total / p.value) * 100)}%.`, p.total - p.value)
+    }
+    if (p.newBefore > 0 && p.newNow > rules.jumpTimes * p.newBefore && p.newNow > rules.jumpMin) {
+      add(p, 'check', `${Math.round(p.newNow / p.newBefore)}× the ${days} days before`, `+${short(p.newNow)} in ${days} days against ${short(p.newBefore)} before.`, p.newNow)
+    }
+    if (p.newBefore === 0 && p.newNow > rules.newMin) {
+      add(p, 'check', 'New spending', `+${short(p.newNow)} in ${days} days, nothing the ${days} days before.`, p.newNow)
+    }
+    if (p.unpriced >= rules.unpricedMin) {
+      add(p, 'check', `${p.unpriced} requested lines not priced`, 'No estimate and no past price: the real cost is higher than shown.', p.unpriced * 10_000)
+    }
+    if (!p.pm && p.total > rules.noPmMin) {
+      add(p, 'check', 'No project manager', `${short(p.total)} of cost and nobody answers for it.`, p.total)
+    }
+    if (p.stages.approved > rules.approvedMin) {
+      add(p, 'check', `${short(p.stages.approved)} approved, not paid`, 'Approved to pay and still waiting: suppliers or labour may be chasing it.', p.stages.approved)
+    }
+  }
+  return out.sort((a, b) => (a.level === b.level ? b.weight - a.weight : a.level === 'act' ? -1 : 1))
+}
+
+/** One colour per cost group, fixed by the group (never by rank). */
+export const GROUP_SLOT: Record<string, number> = { Materials: 1, Labor: 2, Subcontract: 3, Transport: 4, Overhead: 5 }
+export const colorOf = (name: string) => (GROUP_SLOT[name] ? `var(--cw-g${GROUP_SLOT[name]})` : 'var(--cw-other)')
