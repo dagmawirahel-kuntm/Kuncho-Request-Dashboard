@@ -84,6 +84,7 @@ const VendorReviewPage = lazyPage(() => import('@/pages/vendors/VendorReviewPage
 const ProjectsPage = lazyPage(() => import('@/pages/projects/ProjectsPage'))
 const ProjectFormPage = lazyPage(() => import('@/pages/projects/ProjectFormPage'))
 const ProjectWorkspacePage = lazyPage(() => import('@/pages/projects/ProjectWorkspacePage'))
+const CostWatchPage = lazyPage(() => import('@/pages/projects/CostWatchPage'))
 const ProjectsWeekPage = lazyPage(() => import('@/pages/projects/ProjectsWeekPage'))
 const OverheadPage = lazyPage(() => import('@/pages/overhead/OverheadPage'))
 const BucketPage = lazyPage(() => import('@/pages/overhead/BucketPage'))
@@ -698,6 +699,12 @@ export const router = createBrowserRouter([
             children: [
               { path: 'projects/:id', element: <ProjectWorkspacePage /> },
             ],
+          },
+          {
+            // Cost watch (527): management sees every project, a project
+            // manager their own; cost_watch() decides which.
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'project_manager', 'operations_manager']} allowAssignedProjectManager />,
+            children: [{ path: 'cost-watch', element: <CostWatchPage /> }],
           },
           {
             // CPO bonds: Finance/manager/PM/admin keep full ownership as
