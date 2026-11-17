@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { BundleLineReceipt, DeliveryPhoto } from '@/types/database'
 import { ClipboardCheck } from 'lucide-react'
+import { LedgerSuggestions, type LedgerSuggestion } from '@/components/stock/LedgerSuggestions'
 
 const inputCls = 'w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
 const numCls = 'w-full rounded-md border px-2 py-1.5 text-sm text-right outline-none focus:ring-2 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100'
@@ -131,6 +132,24 @@ export default function GoodsReceivedNoteFormPage() {
     .filter((c: { category_name: string }) => c.category_name !== 'Multiple' && c.category_name !== 'Inventory')
     .map((c: { id: string; category_name: string }) => ({ id: c.id, label: c.category_name }))
 
+  // Suggestions for lines whose item has no ledger yet (527): the item
+  // list, the name, the purchase request, look-alike items, the supplier.
+  const { data: suggestions } = useQuery({
+    queryKey: ['bundle-ledger-suggestions', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('suggest_bundle_ledgers', { p_bundle: id })
+      if (error) throw error
+      const m = new Map<string, LedgerSuggestion[]>()
+      for (const r of (data ?? []) as (LedgerSuggestion & { bundle_item_id: string; rank: number })[]) {
+        const list = m.get(r.bundle_item_id) ?? []
+        list.push(r)
+        m.set(r.bundle_item_id, list)
+      }
+      return m
+    },
+    enabled: !!id,
+  })
+
   const [notes, setNotes] = useState('')
   const [photos, setPhotos] = useState<DeliveryPhoto[]>([])
   const [deliveryRef, setDeliveryRef] = useState('')
@@ -157,14 +176,31 @@ export default function GoodsReceivedNoteFormPage() {
         quantity_damaged: '0',
         condition_notes: '',
         // The item's ledger when it has one (it is not asked again);
-        // otherwise the PR line's sub-ledger as a starting point.
-        category_id: it.order_items?.stock_items?.ledger_category_id
-          ?? it.order_items?.sub_categories?.parent_category_id ?? null,
+        // otherwise a strong suggestion fills it in below.
+        category_id: it.order_items?.stock_items?.ledger_category_id ?? null,
       }
     }
     setItems(init)
     initialized.current = true
   }, [bundle, receipts])
+
+  // A strong suggestion (85%+) fills an empty ledger once; weaker ones wait
+  // for a tap. The chip shows it was suggested, so the receiver can change it.
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (!suggestions || !initialized.current || prefilled.current) return
+    prefilled.current = true
+    setItems(prev => {
+      const next = { ...prev }
+      for (const [bid, list] of suggestions) {
+        const top = list[0]
+        if (next[bid] && !next[bid].category_id && top && Number(top.confidence) >= 0.85) {
+          next[bid] = { ...next[bid], category_id: top.category_id }
+        }
+      }
+      return next
+    })
+  }, [suggestions, items])
 
   const defaultJob = transportJobs.find(j => j.job_status !== 'completed') ?? transportJobs[0] ?? null
   const transportId = pickedTransportId === undefined ? (defaultJob?.id ?? null) : pickedTransportId
@@ -245,6 +281,20 @@ export default function GoodsReceivedNoteFormPage() {
     setSaving(false)
     if (itemsErr) { setError(itemsErr.message); toast(itemsErr.message, 'error'); return }
 
+    // What was suggested and what was chosen, for lines that had to ask.
+    const asked = lines.filter(it => !it.order_items?.stock_items?.ledger_category_id && items[it.id]?.category_id)
+    if (asked.length > 0) {
+      await supabase.from('ledger_suggestion_log').insert(asked.map(it => {
+        const top = suggestions?.get(it.id)?.[0]
+        return {
+          context: 'grn', ref_id: grnRow.id, item_name: it.order_items?.item_name ?? null,
+          suggested_category_id: top?.category_id ?? null, suggested_source: top?.source ?? null,
+          suggested_confidence: top ? Number(top.confidence) : null,
+          chosen_category_id: items[it.id]?.category_id ?? null,
+        }
+      }))
+    }
+
     const { data: after } = await supabase.from('sourcing_bundles').select('status').eq('id', bundle.id).single()
     dropRecordCache(qc, 'sourcing-bundle-for-grn')
     qc.invalidateQueries({ queryKey: ['sourcing-bundle-detail', bundle.id] })
@@ -319,7 +369,7 @@ export default function GoodsReceivedNoteFormPage() {
                 <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Rejected</th>
                 <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Damaged</th>
                 <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-24">Accepted</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-44">General Ledger *</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-60">General Ledger *</th>
                 <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Note (optional)</th>
               </tr>
             </thead>
@@ -366,6 +416,8 @@ export default function GoodsReceivedNoteFormPage() {
                         <>
                           <SearchableSelect value={draft?.category_id ?? null} onChange={v => setItemField(it.id, 'category_id', v)}
                             options={categoryOptions} placeholder="What is it?" />
+                          <LedgerSuggestions suggestions={suggestions?.get(it.id) ?? []} value={draft?.category_id}
+                            onPick={sg => setItemField(it.id, 'category_id', sg.category_id)} />
                           <span className="block pt-0.5 text-[10px] text-slate-400">New item: saved on it for next time</span>
                         </>
                       )}
