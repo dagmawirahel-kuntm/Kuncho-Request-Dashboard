@@ -12,7 +12,7 @@ import { PaymentRequestActions } from '@/components/shared/PaymentRequestActions
 import type { Payroll, PayrollLineTax } from '@/types/database'
 import { PayrollRunTaxSection } from '@/components/payroll/PayrollRunTaxSection'
 import { PayrollPayPanel } from '@/components/payroll/PayrollPayPanel'
-import { monthOfDates } from '@/lib/payroll'
+import { monthOfDates, type PricedHour } from '@/lib/payroll'
 import { ecMonthName } from '@/lib/ethiopianCalendar'
 import { printPayslips } from '@/lib/payslipPrint'
 
@@ -107,6 +107,17 @@ export default function PayrollDetailPage() {
       const { data, error } = await supabase.from('v_payroll_line_tax').select('*').eq('payroll_id', id!).order('employee_name')
       if (error) throw error
       return data as PayrollLineTax[]
+    },
+  })
+
+  // Overtime priced from hours (532), for the payslips.
+  const { data: otHours = [] } = useQuery({
+    queryKey: ['payroll-overtime-hours', id],
+    enabled: !!id && run?.payroll_type === 'Overtime',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('payroll_overtime_hours').select('*').eq('payroll_id', id!).order('work_date')
+      if (error) throw error
+      return (data ?? []) as PricedHour[]
     },
   })
 
@@ -293,6 +304,7 @@ export default function PayrollDetailPage() {
           gross: Number(t.gross_share ?? 0), paye: Number(t.paye_share ?? 0),
           pension_employee: Number(t.pension_employee_share ?? 0), pension_employer: Number(t.pension_employer_share ?? 0),
           days_paid: t.days_paid, days_in_period: t.days_in_period, tax_fixed: t.tax_fixed,
+          overtime: otHours.filter(h => h.staff_id === t.staff_id),
         }
       }),
     )

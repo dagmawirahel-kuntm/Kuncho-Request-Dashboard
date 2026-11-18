@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dropRecordCache } from '@/lib/queryCache'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Users, Info } from 'lucide-react'
+import { AlertTriangle, Users, Info, Clock } from 'lucide-react'
+import { OvertimeHoursSheet } from '@/components/payroll/OvertimeHoursSheet'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -19,7 +20,8 @@ import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import {
   RUN_KINDS, KIND_NOTE, carriesPension, ecMonthDates, monthOfDates, recentEcMonths, useRunDraft,
-  previewRun, saveRun, type RunKind, type RunInput, type LineInput,
+  previewRun, saveRun, hoursReady, hoursSummary, overtimeOverLimits,
+  type RunKind, type RunInput, type LineInput, type OvertimeHourInput,
 } from '@/lib/payroll'
 
 // A run is built from the staff record: pick the kind and the month it pays
@@ -57,6 +59,8 @@ interface PayLine {
    *  has been paid, because the primary moves. */
   bank_account_id: string | null
   note: string | null
+  /** Overtime runs: the hours behind the amount (532). Null means a typed amount. */
+  hours: OvertimeHourInput[] | null
 }
 
 type StaffAccount = {
@@ -131,11 +135,22 @@ export default function PayrollFormPage() {
     enabled: isEdit,
   })
 
-  if (isEdit && (isLoading || loadingLinks)) {
+  const { data: savedHours = [], isLoading: loadingHours } = useQuery({
+    queryKey: ['payroll-overtime-hours', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('payroll_overtime_hours')
+        .select('staff_id, work_date, hours, night_hours').eq('payroll_id', id).order('work_date')
+      if (error) throw error
+      return (data ?? []) as (OvertimeHourInput & { staff_id: string })[]
+    },
+    enabled: isEdit,
+  })
+
+  if (isEdit && (isLoading || loadingLinks || loadingHours)) {
     return <FormPage title="Edit Payroll" backTo="/payroll" loading onSave={() => {}} />
   }
 
-  return <PayrollFormPageBody id={id} record={record} linkedRows={isEdit ? linkedRows : []} />
+  return <PayrollFormPageBody id={id} record={record} linkedRows={isEdit ? linkedRows : []} savedHours={isEdit ? savedHours : []} />
 }
 
 function monthKeyOf(start: string | null | undefined, end: string | null | undefined) {
@@ -145,7 +160,9 @@ function monthKeyOf(start: string | null | undefined, end: string | null | undef
   return d.start === start && d.end === end ? `${m.y}-${m.m}` : 'custom'
 }
 
-function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?: Payroll; linkedRows: PayrollStaff[] }) {
+function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
+  id?: string; record?: Payroll; linkedRows: PayrollStaff[]; savedHours: (OvertimeHourInput & { staff_id: string })[]
+}) {
   const isEdit = !!id
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -196,8 +213,14 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
       advance_recovery: Number(r.advance_recovery ?? 0),
       bank_account_id: r.staff_bank_account_id ?? null,
       note: r.note ?? null,
+      hours: (() => {
+        const h = savedHours.filter(x => x.staff_id === r.staff_id)
+          .map(x => ({ work_date: x.work_date, hours: Number(x.hours), night_hours: Number(x.night_hours) }))
+        return h.length ? h : null
+      })(),
     })),
   )
+  const [sheetFor, setSheetFor] = useState<string | null>(null)
   const matched = useMemo(() => new Set(linkedRows.filter(r => r.bank_line_id).map(r => r.staff_id)), [linkedRows])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -235,13 +258,18 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
         staff_id: staffId,
         base_net: Number(d?.base_net ?? s?.monthly_salary ?? 0),
         days_paid: d?.days_paid ?? null, days_in_period: d?.days_in_period ?? null,
-        advance_recovery: 0, bank_account_id: null, note: null,
+        advance_recovery: 0, bank_account_id: null, note: null, hours: null,
       }
     }
-    return { staff_id: staffId, base_net: 0, days_paid: null, days_in_period: null, advance_recovery: 0, bank_account_id: null, note: null }
+    return {
+      staff_id: staffId, base_net: 0, days_paid: null, days_in_period: null, advance_recovery: 0, bank_account_id: null, note: null,
+      hours: kind === 'Overtime' ? [] : null,
+    }
   }
 
   function handleStaffSelection(ids: string[]) {
+    const added = ids.find(sid => !lines.some(l => l.staff_id === sid))
+    if (kind === 'Overtime' && added) setSheetFor(added)
     setLines(prev => [
       ...prev.filter(l => ids.includes(l.staff_id)),
       ...ids.filter(sid => !prev.some(l => l.staff_id === sid)).map(lineFor),
@@ -300,16 +328,21 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
     paid_on: form.paid_on || null, pay_period: form.pay_period, payment_method: form.payment_method,
     account_id: form.account_id, transfer_id: form.transfer_id, vrf_id: form.vrf_id, notes: form.notes,
   }), [id, form])
+  // On an Overtime run a line with hours is priced by the database; the
+  // amount it shows comes back with the preview.
+  const fromHours = (l: PayLine) => kind === 'Overtime' && l.hours != null
+  const lineReady = (l: PayLine) => (fromHours(l) ? hoursReady(l.hours!) : l.base_net > 0)
   const lineInputs = useMemo<LineInput[]>(() => lines.map(l => ({
     staff_id: l.staff_id, base_net: l.base_net, advance_recovery: l.advance_recovery,
     days_paid: l.days_paid, days_in_period: l.days_in_period, staff_bank_account_id: l.bank_account_id, note: l.note,
-  })), [lines])
+    ...(kind === 'Overtime' && l.hours != null ? { overtime_hours: l.hours } : {}),
+  })), [lines, kind])
 
   // What saving would work out, refreshed a moment after each change.
   const payload = useDebounced(JSON.stringify({ run: runInput, lines: lineInputs }), 600)
   const { data: preview, error: previewError, isFetching: previewing } = useQuery({
     queryKey: ['payroll-preview', payload],
-    enabled: !isPaid && lines.length > 0 && lines.every(l => l.base_net > 0) && !!form.start_date,
+    enabled: !isPaid && lines.length > 0 && lines.every(lineReady) && !!form.start_date,
     retry: false,
     staleTime: 60000,
     queryFn: () => {
@@ -318,17 +351,20 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
     },
   })
   const previewBy = useMemo(() => new Map((preview?.lines ?? []).map(l => [l.staff_id, l])), [preview])
+  const baseOf = (l: PayLine) => (fromHours(l) ? Number(previewBy.get(l.staff_id)?.base_net ?? 0) : l.base_net)
 
   const totals = useMemo(() => {
     const t = { base: 0, back: 0, net: 0, gross: 0, paye: 0, pe: 0, per: 0 }
     for (const l of lines) {
-      t.base += l.base_net; t.back += l.advance_recovery; t.net += l.base_net - l.advance_recovery
+      const b = baseOf(l)
+      t.base += b; t.back += l.advance_recovery; t.net += b - l.advance_recovery
       const p = previewBy.get(l.staff_id)
       t.gross += Number(p?.gross ?? 0); t.paye += Number(p?.paye ?? 0)
       t.pe += Number(p?.pension_employee ?? 0); t.per += Number(p?.pension_employer ?? 0)
     }
     return t
-  }, [lines, previewBy])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, previewBy, kind])
 
   const approvalStatus = record?.approval_status ?? 'pending'
   const showManagerActions = isEdit && approvalStatus === 'pending' && canApproveAsExecutive(role)
@@ -348,10 +384,11 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
   async function handleSave() {
     if (isPaid) { setError('This run is paid, so its pay and tax are fixed. Set it back from paid on the run page first.'); return }
     if (lines.length === 0) { setError('Add at least one person to the run'); return }
-    const missing = lines.filter(l => !(l.base_net > 0))
+    const missing = lines.filter(l => !lineReady(l))
     if (missing.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setError(`Give ${missing.map(l => (staffById.get(l.staff_id) as any)?.employee_name ?? 'everyone').join(', ')} an amount`)
+      const names = missing.map(l => (staffById.get(l.staff_id) as any)?.employee_name ?? 'everyone').join(', ')
+      setError(missing.some(fromHours) ? `Give ${names} dated hours (or an amount)` : `Give ${names} an amount`)
       return
     }
     setError(''); setSaving(true)
@@ -509,8 +546,11 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
               const p = previewBy.get(l.staff_id)
               const owes = Number(d?.open_advance ?? 0)
               const locked = matched.has(l.staff_id)
+              const hrs = fromHours(l) ? l.hours! : null
+              const over = hrs ? overtimeOverLimits(hrs).length : 0
               return (
-                <div key={l.staff_id} className="grid gap-2 px-3 py-2 border-b dark:border-slate-700 last:border-0 items-start"
+                <div key={l.staff_id} className="border-b dark:border-slate-700 last:border-0">
+                <div className="grid gap-2 px-3 py-2 items-start"
                   style={{ gridTemplateColumns: cols }}>
                   <div className="min-w-0">
                     <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{s?.employee_name ?? d?.employee_name ?? '—'}</p>
@@ -536,8 +576,34 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
                       {l.days_in_period != null && <p className="mt-0.5 text-right text-[10px] text-slate-400">of {l.days_in_period}</p>}
                     </div>
                   )}
-                  <FormattedNumberInput className={cellInput} value={l.base_net || null} disabled={locked}
-                    onChange={n => patchLine(l.staff_id, { base_net: n ?? 0 })} />
+                  {hrs ? (
+                    <div className="flex flex-col items-stretch gap-1">
+                      <button type="button" onClick={() => setSheetFor(sheetFor === l.staff_id ? null : l.staff_id)}
+                        aria-expanded={sheetFor === l.staff_id}
+                        className="inline-flex items-center justify-between gap-1 rounded border border-dashed border-blue-400 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                        <Clock className="h-3.5 w-3.5 shrink-0" />{hrs.length ? hoursSummary(hrs) : 'Add hours'}
+                      </button>
+                      <p className="text-right text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
+                        {previewBy.get(l.staff_id) ? num(baseOf(l)) : '—'}
+                      </p>
+                      <p className="text-right text-[10px] text-blue-600 dark:text-blue-300">
+                        from hours{over ? <span className="ml-1 text-amber-600">· {over} over the limit</span> : ''}
+                        {!locked && (
+                          <button type="button" className="ml-1 underline decoration-dotted"
+                            onClick={() => { patchLine(l.staff_id, { hours: null, base_net: baseOf(l) }); setSheetFor(null) }}>type an amount</button>
+                        )}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <FormattedNumberInput className={cellInput} value={l.base_net || null} disabled={locked}
+                        onChange={n => patchLine(l.staff_id, { base_net: n ?? 0 })} />
+                      {kind === 'Overtime' && !locked && (
+                        <button type="button" className="mt-0.5 block w-full text-right text-[10px] text-blue-600 underline decoration-dotted dark:text-blue-300"
+                          onClick={() => { patchLine(l.staff_id, { hours: [] }); setSheetFor(l.staff_id) }}>work it out from hours</button>
+                      )}
+                    </div>
+                  )}
                   {showBack && (
                     <div>
                       {owes > 0 || l.advance_recovery > 0 ? (
@@ -550,11 +616,18 @@ function PayrollFormPageBody({ id, record, linkedRows }: { id?: string; record?:
                     </div>
                   )}
                   <span className="pt-1 text-sm font-semibold text-slate-800 dark:text-slate-100 text-right tabular-nums">
-                    {num(l.base_net - l.advance_recovery)}
+                    {num(baseOf(l) - l.advance_recovery)}
                   </span>
                   <span className="pt-1 text-sm text-right tabular-nums text-slate-600 dark:text-slate-300">{p ? num(p.gross) : '—'}</span>
                   <span className="pt-1 text-sm text-right tabular-nums text-slate-600 dark:text-slate-300">{p ? num(p.paye) : '—'}</span>
                   {pension && <span className="pt-1 text-sm text-right tabular-nums text-slate-600 dark:text-slate-300">{p ? num(p.pension_employee) : '—'}</span>}
+                </div>
+                {hrs && sheetFor === l.staff_id && (
+                  <OvertimeHoursSheet name={s?.employee_name ?? d?.employee_name ?? 'this person'} rows={hrs}
+                    priced={p?.overtime} pricing={previewing} disabled={locked}
+                    minDate={form.start_date} maxDate={form.end_date ?? form.start_date}
+                    onChange={rows => patchLine(l.staff_id, { hours: rows })} />
+                )}
                 </div>
               )
             })}

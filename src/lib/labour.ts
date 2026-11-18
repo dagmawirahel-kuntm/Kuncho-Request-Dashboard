@@ -95,6 +95,8 @@ export type OvertimeRule = 'company' | 'multiplier' | 'per_hour'
 export type OvertimeSettings = {
   evening_multiplier: number; night_multiplier: number; rest_day_multiplier: number; holiday_multiplier: number
   rest_day: number; updated_at: string; updated_by_name: string | null
+  /** Staff overtime on payroll: hourly rate = salary ÷ this ÷ 8 (532b). */
+  staff_days_per_month?: number | null
 }
 /** The rates in force on one request on one day (labour_overtime_day_rates). */
 export type OvertimeDayRates = {
