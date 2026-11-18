@@ -121,6 +121,8 @@ function Form({ s, canEdit, onSaved, toast }: { s: OvertimeSettings; canEdit: bo
         {s.updated_by_name && <p className="px-4 pb-3 text-[11px] text-slate-400">Last changed by {s.updated_by_name} · {new Date(s.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
       </section>
 
+      <StaffDays s={s} onSaved={onSaved} toast={toast} />
+
       <section className={`${card} space-y-2 p-4 text-sm text-slate-600 dark:text-slate-300`}>
         <h2 className="font-semibold text-slate-800 dark:text-slate-100">Which rate is used</h2>
         <ol className="list-decimal space-y-1.5 pl-5">
@@ -131,5 +133,53 @@ function Form({ s, canEdit, onSaved, toast }: { s: OvertimeSettings; canEdit: bo
         <p className="text-xs text-slate-500">The defaults follow the Labour Proclamation 1156/2019, art. 68. A change applies to work not yet confirmed for pay; confirmed pay sheets keep what they were confirmed at, and each shows how its overtime was priced.</p>
       </section>
     </div>
+  )
+}
+
+// Staff on payroll (532b): the hourly rate is the salary on the date ÷ these
+// days ÷ 8. 26 is a six-day week and how Kuncho has always priced it; 30 is
+// the month payroll counts days paid in. The rates above apply to staff too.
+const STAFF_DAYS = [
+  { days: 26, label: '26 days', hint: 'A six-day week (208 hours). How staff overtime has been priced.' },
+  { days: 30, label: '30 days', hint: 'The 30-day month payroll uses for days paid (240 hours). About 13% less an hour.' },
+]
+function StaffDays({ s, onSaved, toast }: { s: OvertimeSettings; onSaved: () => void; toast: ReturnType<typeof useToast>['toast'] }) {
+  const { hasRole } = useAuth()
+  const canEdit = hasRole('admin', 'finance', 'hr_officer')
+  const days = Number(s.staff_days_per_month ?? 26)
+  const [busy, setBusy] = useState(false)
+  async function pick(d: number) {
+    if (d === days || busy) return
+    setBusy(true)
+    const { error } = await supabase.rpc('set_staff_overtime_days', { p_days: d })
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`Staff overtime now priced on ${d} days a month — runs saved from now on`, 'success')
+    onSaved()
+  }
+  const salary = 12000
+  return (
+    <section className={card}>
+      <div className="border-b px-4 py-3 dark:border-slate-700">
+        <h2 className="font-semibold text-slate-800 dark:text-slate-100">Staff overtime on payroll</h2>
+        <p className="text-xs text-slate-500">Hourly rate = salary on the date ÷ days in a month ÷ 8. The rates above apply.</p>
+      </div>
+      <div className="grid gap-2 p-4 sm:grid-cols-2" role="radiogroup" aria-label="Days in a month for staff overtime">
+        {STAFF_DAYS.map(o => {
+          const on = o.days === days
+          return (
+            <button key={o.days} type="button" role="radio" aria-checked={on} disabled={!canEdit || busy} onClick={() => pick(o.days)}
+              className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-default ${on
+                ? 'border-brand bg-brand/5 ring-1 ring-brand'
+                : 'border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700/40'}`}>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{o.label}{on ? ' · in use' : ''}</p>
+              <p className="text-xs text-slate-500">{o.hint}</p>
+              <p className="mt-1 text-[11px] text-slate-400">On {fmtMoney(salary)} a month, {fmtMoney(salary / o.days / 8)} an hour</p>
+            </button>
+          )
+        })}
+      </div>
+      {!canEdit && <p className="border-t px-4 py-3 text-xs text-slate-500 dark:border-slate-700">Finance, HR or an admin change this.</p>}
+    </section>
   )
 }

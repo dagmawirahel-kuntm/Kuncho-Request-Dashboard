@@ -110,7 +110,63 @@ export interface LineInput {
   days_in_period?: number | null
   staff_bank_account_id?: string | null
   note?: string | null
+  /** Overtime runs (532): the hours behind the amount. When given, the
+   *  database prices them and the sum becomes base_net. */
+  overtime_hours?: OvertimeHourInput[]
 }
+
+/** One date on an overtime hours sheet: the hours, and how many of them were at night (10 pm – 6 am). */
+export interface OvertimeHourInput {
+  work_date: string
+  hours: number
+  night_hours: number
+}
+
+/** A date as the database priced it (payroll_overtime_hours). */
+export interface PricedHour extends OvertimeHourInput {
+  staff_id?: string
+  day_kind: 'working_day' | 'rest_day' | 'holiday'
+  holiday_name: string | null
+  multiplier: number
+  night_multiplier: number
+  salary: number
+  days_per_month: number | null
+  hourly_rate: number
+  amount: number
+}
+
+export function dayKindLabel(h: Pick<PricedHour, 'day_kind' | 'holiday_name'>) {
+  if (h.day_kind === 'holiday') return h.holiday_name ?? 'Holiday'
+  if (h.day_kind === 'rest_day') return 'Rest day'
+  return 'Working day'
+}
+
+/** Over the Labour Proclamation's limits (4 h a day, 12 h a week, Monday to Sunday). They warn; they never block. */
+export function overtimeOverLimits(rows: OvertimeHourInput[]) {
+  const byDay = new Map<string, number>(); const byWeek = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.work_date || !(Number(r.hours) > 0)) continue
+    byDay.set(r.work_date, (byDay.get(r.work_date) ?? 0) + Number(r.hours))
+    const d = new Date(r.work_date + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+    const wk = d.toISOString().slice(0, 10)
+    byWeek.set(wk, (byWeek.get(wk) ?? 0) + Number(r.hours))
+  }
+  const out: string[] = []
+  const nice = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+  for (const [d, h] of byDay) if (h > 4) out.push(`${h} h on ${nice(d)} (limit 4 a day)`)
+  for (const [w, h] of byWeek) if (h > 12) out.push(`${h} h in the week of ${nice(w)} (limit 12 a week)`)
+  return out
+}
+
+export function hoursSummary(rows: OvertimeHourInput[]) {
+  const h = rows.reduce((s, r) => s + (Number(r.hours) || 0), 0)
+  const days = new Set(rows.filter(r => r.work_date).map(r => r.work_date)).size
+  return `${Number(h.toFixed(2))} h · ${days} day${days === 1 ? '' : 's'}`
+}
+
+/** A sheet the database can price: every row dated, hours above 0, night hours within them. */
+export const hoursReady = (rows: OvertimeHourInput[]) =>
+  rows.length > 0 && rows.every(r => !!r.work_date && Number(r.hours) > 0 && Number(r.night_hours) >= 0 && Number(r.night_hours) <= Number(r.hours))
 
 export interface PreviewLine {
   staff_id: string
@@ -121,6 +177,7 @@ export interface PreviewLine {
   paye: number | null
   pension_employee: number | null
   pension_employer: number | null
+  overtime?: PricedHour[] | null
 }
 export interface Preview {
   tax_month: string | null
