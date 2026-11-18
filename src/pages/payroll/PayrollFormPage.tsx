@@ -4,6 +4,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Users, Info, Clock } from 'lucide-react'
 import { OvertimeHoursSheet } from '@/components/payroll/OvertimeHoursSheet'
+import { GroupOvertimeFill } from '@/components/payroll/GroupOvertimeFill'
+import { mergeHours, type GroupFill } from '@/lib/overtimeFill'
 import { supabase } from '@/lib/supabase'
 import { FormPage } from '@/components/shared/FormPage'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -221,6 +223,7 @@ function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
     })),
   )
   const [sheetFor, setSheetFor] = useState<string | null>(null)
+  const [groupOpen, setGroupOpen] = useState(false)
   const matched = useMemo(() => new Set(linkedRows.filter(r => r.bank_line_id).map(r => r.staff_id)), [linkedRows])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -274,6 +277,22 @@ function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
       ...prev.filter(l => ids.includes(l.staff_id)),
       ...ids.filter(sid => !prev.some(l => l.staff_id === sid)).map(lineFor),
     ])
+  }
+  // Fill hours for several people at once; anyone not on the run is added.
+  function applyGroup(fill: GroupFill) {
+    setLines(prev => {
+      const next = prev.map(l => {
+        const add = fill.get(l.staff_id)
+        return add ? { ...l, hours: mergeHours(l.hours, add) } : l
+      })
+      for (const [sid, add] of fill) {
+        if (!next.some(l => l.staff_id === sid)) next.push({ ...lineFor(sid), hours: mergeHours(null, add) })
+      }
+      return next
+    })
+    const dates = Array.from(fill.values()).reduce((n, r) => n + r.length, 0)
+    toast(`Filled ${dates} date${dates === 1 ? '' : 's'} for ${fill.size} ${fill.size === 1 ? 'person' : 'people'}`, 'success')
+    setGroupOpen(false); setSheetFor(null)
   }
   function addEveryone() {
     setLines(prev => [...prev, ...toAdd.map(d => lineFor(d.staff_id))])
@@ -522,6 +541,21 @@ function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
         )}
         <MultiSelect value={lines.map(l => l.staff_id)} onChange={handleStaffSelection} options={staffOptions}
           placeholder={kind === 'Regular' ? 'Or pick people…' : `Pick who gets ${kind.toLowerCase()}…`} />
+        {kind === 'Overtime' && !isPaid && form.start_date && (
+          groupOpen ? (
+            <GroupOvertimeFill
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              people={lines.map(l => ({ id: l.staff_id, name: (staffById.get(l.staff_id) as any)?.employee_name ?? '—' }))}
+              staff={staffOptions.map(o => ({ id: o.id, name: o.label }))}
+              minDate={form.start_date} maxDate={form.end_date ?? form.start_date}
+              onApply={applyGroup} onClose={() => setGroupOpen(false)} />
+          ) : (
+            <button type="button" onClick={() => setGroupOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+              <Users className="h-3.5 w-3.5" /> Fill hours for a group
+            </button>
+          )
+        )}
       </div>
 
       {lines.length > 0 && (
