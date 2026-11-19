@@ -4,24 +4,28 @@
 // person per date. Either way the dates land on each person's hours sheet,
 // replacing a date already there, and the database prices them as usual.
 import { useMemo, useState } from 'react'
-import { ClipboardPaste, Users, X } from 'lucide-react'
+import { ClipboardPaste, FileSpreadsheet, Users, X } from 'lucide-react'
+import { OvertimeWorkbookImport } from '@/components/payroll/OvertimeWorkbookImport'
+import type { StaffForMatch } from '@/lib/otWorkbook'
 import { nice, parseTimesheet, type GroupFill, type Person } from '@/lib/overtimeFill'
 
 const box = 'rounded border px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-brand dark:border-slate-600 dark:bg-slate-800'
 
 export function GroupOvertimeFill({
-  people, staff, minDate, maxDate, onApply, onClose,
+  people, staff, staffForMatch, minDate, maxDate, onApply, onClose,
 }: {
   /** People already on the run. */
   people: Person[]
   /** Everyone on the staff list — a pasted name not yet on the run is added. */
   staff: Person[]
+  /** The staff list with who is on monthly salary, for reading the OT workbook. */
+  staffForMatch: StaffForMatch[]
   minDate: string
   maxDate: string
   onApply: (fill: GroupFill) => void
   onClose: () => void
 }) {
-  const [mode, setMode] = useState<'same' | 'paste'>('same')
+  const [mode, setMode] = useState<'workbook' | 'same' | 'paste'>('workbook')
   const [picked, setPicked] = useState<Set<string>>(() => new Set(people.map(p => p.id)))
   const [dates, setDates] = useState<string[]>([])
   const [dateInput, setDateInput] = useState('')
@@ -51,12 +55,15 @@ export function GroupOvertimeFill({
     <div className="rounded-lg border border-blue-300 bg-white dark:border-blue-800 dark:bg-slate-900/40" role="region" aria-label="Fill overtime for a group">
       <div className="flex flex-wrap items-center gap-2 border-b bg-blue-50 px-3 py-2 dark:border-slate-700 dark:bg-blue-950/40">
         <p className="mr-auto text-sm font-semibold text-slate-800 dark:text-slate-100">Fill hours for a group</p>
+        <button type="button" className={tab(mode === 'workbook')} onClick={() => setMode('workbook')}><FileSpreadsheet className="h-3.5 w-3.5" /> The OT workbook</button>
         <button type="button" className={tab(mode === 'same')} onClick={() => setMode('same')}><Users className="h-3.5 w-3.5" /> Same hours for several people</button>
         <button type="button" className={tab(mode === 'paste')} onClick={() => setMode('paste')}><ClipboardPaste className="h-3.5 w-3.5" /> Paste a timesheet</button>
         <button type="button" onClick={onClose} aria-label="Close" className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
       </div>
 
-      {mode === 'same' ? (
+      {mode === 'workbook' ? (
+        <OvertimeWorkbookImport staff={staffForMatch} minDate={minDate} maxDate={maxDate} onApply={onApply} />
+      ) : mode === 'same' ? (
         <div className="grid gap-4 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div>
             <div className="mb-1 flex items-center justify-between">

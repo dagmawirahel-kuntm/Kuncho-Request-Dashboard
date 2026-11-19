@@ -547,6 +547,8 @@ function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               people={lines.map(l => ({ id: l.staff_id, name: (staffById.get(l.staff_id) as any)?.employee_name ?? '—' }))}
               staff={staffOptions.map(o => ({ id: o.id, name: o.label }))}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              staffForMatch={staff.filter((x: any) => x.status !== 'terminated').map((x: any) => ({ id: x.id, name: x.employee_name, salaried: Number(x.monthly_salary ?? 0) > 0 }))}
               minDate={form.start_date} maxDate={form.end_date ?? form.start_date}
               onApply={applyGroup} onClose={() => setGroupOpen(false)} />
           ) : (
