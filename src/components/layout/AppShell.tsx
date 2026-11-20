@@ -1,4 +1,5 @@
 import { Outlet, useLocation, NavLink, Link } from 'react-router-dom'
+import { useSwitchToNewVersion } from '@/lib/appVersion'
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { ETHIOPIAN_MONTHS } from '@/lib/ethiopianCalendar'
@@ -199,6 +200,7 @@ export function AppShell() {
   // The company's identity for every printed document (migration 368).
   useCompanyProfile()
   const location = useLocation()
+  useSwitchToNewVersion()
   const rawSegments = location.pathname.split('/').filter(Boolean)
   // A tax month (/taxes/2019/1) reads "Taxes › Meskerem 2019".
   const segments = rawSegments[0] === 'taxes' && rawSegments.length === 3 && /^\d+$/.test(rawSegments[1]) && /^\d+$/.test(rawSegments[2])
