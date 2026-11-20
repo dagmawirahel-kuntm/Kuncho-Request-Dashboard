@@ -6,6 +6,8 @@
 import type { PieceJob } from '@/lib/labourDay'
 import { jobCode } from '@/lib/labourPaste'
 
+/** The Unit for a job paid as one price; Measured is then the % done so far. */
+export const FIXED_UNIT = 'Fixed price (% done)'
 const DAYS = ['Mon ሰኞ', 'Tue ማክሰኞ', 'Wed ረቡዕ', 'Thu ሐሙስ', 'Fri ዓርብ', 'Sat ቅዳሜ', 'Sun እሁድ']
 const YELLOW = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF4C2' } } as const
 const GREY = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2F6' } } as const
@@ -22,6 +24,8 @@ type DraftInput = {
   /** What the Where column offers: the PM's projects, Workshop, Stock… */
   wheres: string[]
   jobs: PieceJob[]
+  /** The PM's projects, offered for a new piece job. */
+  projects?: string[]
   /** Trades a new worker can have, as the PM would write them ("Carpenter · አናጢ"). */
   trades?: string[]
   blankRows?: number
@@ -38,11 +42,11 @@ export async function downloadWeekDraft(input: DraftInput) {
 }
 
 /** The draft workbook's bytes. */
-export async function buildWeekDraft({ pmName, week, workers, wheres, jobs, trades = [], blankRows = 8 }: DraftInput): Promise<ArrayBuffer> {
+export async function buildWeekDraft({ pmName, week, workers, wheres, jobs, projects = [], trades = [], blankRows = 8 }: DraftInput): Promise<ArrayBuffer> {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Week report', { views: [{ state: 'frozen', xSplit: 1, ySplit: 7 }] })
-  ws.columns = [{ width: 34 }, ...DAYS.map(() => ({ width: 11 })), { width: 24 }, { width: 16 }, { width: 22 }, { width: 13 }]
+  ws.columns = [{ width: 34 }, ...DAYS.map(() => ({ width: 11 })), { width: 22 }, { width: 18 }, { width: 16 }, { width: 13 }, { width: 22 }, { width: 24 }, { width: 13 }]
   const monday = new Date(`${week}T00:00:00`)
 
   ws.getCell('A1').value = 'Labour week report — casual workers and piece work'
@@ -121,33 +125,46 @@ export async function buildWeekDraft({ pmName, week, workers, wheres, jobs, trad
   r++
 
   // ── Piece work ──
+  // Days line up with the worker rows (B–H). An open job shows its agreed
+  // price and total work, so the PM sees what the crew is paid; a new job
+  // written in gives its own, and comes in as a request for that job.
   ws.getCell(r, 1).value = 'Piece work · ቁራጭ ሥራ'
   ws.getCell(r, 1).font = { bold: true, size: 12 }
-  ws.getCell(r, 3).value = 'Tick (✓ or 1) the days the crew worked. Measured = the amount done this week; for a fixed-price job, the % done so far.'
+  ws.getCell(r, 3).value = 'Tick (✓ or 1) the days the crew worked. Measured = the amount done this week; for a fixed-price job, the % done so far. A new job: fill every yellow cell, with the agreed price and total work.'
   ws.getCell(r, 3).font = { italic: true, color: { argb: 'FF5B6675' } }
   r++
   const ph = ws.getRow(r)
-  ph.values = ['Job', ...DAYS, 'Measured', 'Unit', 'Crew', 'Code']
+  ph.values = ['Job', ...DAYS, 'Measured', 'Unit', 'Agreed price (ETB)', 'Total work', 'Project', 'Crew (names)', 'Code']
   ph.eachCell(c => { c.font = { bold: true }; c.fill = BLUE; c.border = box; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true } })
   r++
-  const jobRows = jobs.length ? jobs : []
-  for (const j of jobRows) {
+  const money = '#,##0.00'
+  for (const j of jobs) {
     const row = ws.getRow(r)
-    row.getCell(1).value = `${j.what} · ${j.project}`
-    row.getCell(1).alignment = { wrapText: true, vertical: 'top' }
-    for (let c = 2; c <= 9; c++) { const cell = row.getCell(c); cell.fill = YELLOW; cell.border = box; cell.alignment = { horizontal: 'center', vertical: 'top' } }
-    row.getCell(10).value = j.basis === 'per_volume' ? (j.unit ?? 'unit') : '% done to date'
-    row.getCell(11).value = j.crew.map(c => c.name).join(', ') || '—'
-    row.getCell(11).alignment = { wrapText: true, vertical: 'top' }
-    row.getCell(12).value = jobCode(j.id)
-    row.getCell(12).font = { color: { argb: 'FF8A94A3' }, size: 9 }
-    for (const c of [1, 10, 11, 12]) row.getCell(c).border = box
+    const vol = j.basis === 'per_volume'
+    row.getCell(1).value = j.what
+    for (let c = 2; c <= 9; c++) { const cell = row.getCell(c); cell.fill = YELLOW; cell.alignment = { horizontal: 'center', vertical: 'top' } }
+    row.getCell(10).value = vol ? (j.unit ?? 'unit') : FIXED_UNIT
+    row.getCell(11).value = vol ? (j.unit_rate != null ? Number(j.unit_rate) : null) : (j.fixed_price != null ? Number(j.fixed_price) : null)
+    row.getCell(11).numFmt = money
+    row.getCell(12).value = vol ? (j.planned_volume != null ? Number(j.planned_volume) : null) : 'whole job'
+    if (vol && j.planned_volume != null) row.getCell(12).numFmt = `#,##0.## "${(j.unit ?? '').replace(/"/g, '')}"`
+    row.getCell(13).value = j.project
+    row.getCell(14).value = j.crew.map(c => c.name).join(', ') || '—'
+    row.getCell(15).value = jobCode(j.id)
+    row.getCell(15).font = { color: { argb: 'FF8A94A3' }, size: 9 }
+    for (const c of [10, 11, 12, 13, 14]) row.getCell(c).fill = GREY
+    for (let c = 1; c <= 15; c++) { const cell = row.getCell(c); cell.border = box; if (c === 1 || c >= 13) cell.alignment = { wrapText: true, vertical: 'top' } }
     r++
   }
-  // Room for a job the PM writes in by name.
-  for (let i = 0; i < 3; i++) {
+  // New jobs the PM writes in, with their terms.
+  const unitList = `"${['m²', 'm', 'm³', 'pcs', 'kg', 'point', FIXED_UNIT].join(',')}"`
+  const projectList = projects.length ? `"${projects.map(x => x.replace(/[",]/g, ' ')).join(',').slice(0, 250)}"` : null
+  for (let i = 0; i < 4; i++) {
     const row = ws.getRow(r)
-    for (let c = 1; c <= 9; c++) { const cell = row.getCell(c); if (c > 1) cell.fill = YELLOW; cell.border = box }
+    for (let c = 1; c <= 15; c++) { const cell = row.getCell(c); if (c <= 14) cell.fill = YELLOW; cell.border = box }
+    row.getCell(10).dataValidation = { type: 'list', allowBlank: true, showErrorMessage: false, formulae: [unitList] }
+    row.getCell(11).numFmt = money
+    if (projectList) row.getCell(13).dataValidation = { type: 'list', allowBlank: true, showErrorMessage: false, formulae: [projectList] }
     r++
   }
   r++

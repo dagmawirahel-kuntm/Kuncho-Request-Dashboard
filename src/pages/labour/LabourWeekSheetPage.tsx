@@ -7,7 +7,9 @@ import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { NewWorkerForm, type NewWorker } from '@/components/labour/NewWorkerForm'
-import { PasteReportDialog, type PastedPiece, type PastedWorker, type ReportNewWorker } from '@/components/labour/PasteReportDialog'
+import { PasteReportDialog, type AskedJob, type NewJobTerms, type PastedPiece, type PastedWorker, type ReportNewWorker } from '@/components/labour/PasteReportDialog'
+import { useAuth } from '@/contexts/AuthContext'
+import { autoApproveRequest } from '@/lib/labourGives'
 import { downloadWeekDraft } from '@/lib/labourWeekDraft'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
@@ -38,6 +40,7 @@ export default function LabourWeekSheetPage() {
   const { me, approver, seeAll, pms } = useDayPeople()
   const { data: settings } = useDaySettings()
   const { data: trades = [] } = useTrades()
+  const { profile } = useAuth()
   const today = isoDay(new Date())
   const week = mondayOf(params.get('week') ?? today)
   const pm = params.get('pm') ?? me?.id ?? null
@@ -247,6 +250,30 @@ export default function LabourWeekSheetPage() {
     return { staff_id: r.staff_id, name: r.name }
   }
 
+  // A piece job the PM's report names with its terms but that isn't one yet:
+  // asked for as a labour request, like the Ask for labour form — approved by
+  // itself only within terms already agreed, otherwise a person decides.
+  async function newJobFromReport(t: NewJobTerms): Promise<AskedJob | null> {
+    const { data: req, error } = await supabase.from('labor_requisitions').insert({
+      project_id: t.project_id, role_needed: t.what.trim(), headcount: Math.max(t.crew.length, 1), start_date: t.start, end_date: null,
+      scope_of_work: null, notes: 'From the PM\'s week report', payment_basis: t.basis, payment_model: 'individual', gang_leader_vendor_id: null,
+      pay_cycle: 'weekly', estimated_day_rate: null, estimated_days: null,
+      unit_rate: t.basis === 'per_volume' ? t.price : null, volume_unit: t.basis === 'per_volume' ? t.unit : null,
+      estimated_total_volume: t.basis === 'per_volume' ? t.total : null, fixed_price_amount: t.basis === 'fixed_price' ? t.price : null,
+      overtime_rule: 'company', is_casual_or_new: false, requested_by: profile?.id, status: 'pending', work_order_id: null,
+    }).select('id').single()
+    if (error) { toast(error.message, 'error'); return null }
+    for (const id of t.crew) {
+      const { error: e } = await supabase.rpc('labour_add_worker', { p_req: req.id, p_staff_id: id })
+      if (e) { toast(`Asked for the job, but adding the crew failed: ${e.message}`, 'error'); break }
+    }
+    const auto = await autoApproveRequest(req.id)
+    qc.invalidateQueries({ queryKey: ['labour-requests'] })
+    if (auto?.approved) await qc.refetchQueries({ queryKey: ['labour-day', pm] })
+    toast(auto?.approved ? `${t.what} approved straight away: ${auto.why}` : `${t.what} sent for approval${auto?.why ? `, because ${auto.why}` : ''}`, 'success')
+    return { id: req.id, approved: !!auto?.approved, why: auto?.why ?? null }
+  }
+
   async function createWorker(w: NewWorker) {
     setBusy('new')
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
@@ -344,6 +371,7 @@ export default function LabourWeekSheetPage() {
         wheres: [...projectNames, ...cols.filter(c => !c.project).map(c => c.label)],
         jobs,
         trades: trades.map(t => tradeName(t.trade_tag)),
+        projects: projectNames,
       })
     } catch (e) {
       toast(`Couldn't make the draft: ${(e as Error).message}`, 'error')
@@ -481,7 +509,7 @@ export default function LabourWeekSheetPage() {
                         <tr key={job.id}>
                           <td className="sticky left-0 z-10 min-w-[10rem] bg-white px-3 py-2 dark:bg-slate-800">
                             <p className="truncate font-medium text-slate-800 dark:text-slate-100">{job.what}</p>
-                            <p className="truncate text-[11px] text-slate-500">{job.project} · {vol ? `${Number(job.unit_rate ?? 0).toLocaleString()}/${job.unit ?? 'unit'}` : fmtMoney(job.fixed_price ?? 0)}</p>
+                            <p className="truncate text-[11px] text-slate-500">{job.project} · {vol ? `${Number(job.unit_rate ?? 0).toLocaleString()}/${job.unit ?? 'unit'}${job.planned_volume ? ` · ${Number(job.planned_volume).toLocaleString()} ${job.unit ?? ''} in all (${fmtMoney(Number(job.unit_rate ?? 0) * Number(job.planned_volume))})` : ''}` : `${fmtMoney(job.fixed_price ?? 0)} for the job`}</p>
                           </td>
                           {dates.map((d, i) => {
                             const on = (row[d]?.present.length ?? 0) > 0
@@ -540,7 +568,8 @@ export default function LabourWeekSheetPage() {
       {pasting && (
         <PasteReportDialog week={week} cols={cols} colTag={colTag}
           workers={casual.map(w => ({ id: w.id, name: w.employee_name }))}
-          jobs={jobs.map(j => ({ id: j.id, what: j.what, project: j.project, basis: j.basis, unit: j.unit }))}
+          jobs={jobs.map(j => ({ id: j.id, what: j.what, project: j.project, basis: j.basis, unit: j.unit, unit_rate: j.unit_rate, fixed_price: j.fixed_price, planned_volume: j.planned_volume }))}
+          onNewJob={newJobFromReport}
           onDraft={downloadDraft}
           onNewWorker={newWorkerFromReport}
           onSheet={new Set(workers.map(w => w.staff_id))}

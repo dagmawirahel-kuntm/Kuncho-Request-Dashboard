@@ -206,16 +206,38 @@ export function parseReport(text: string, workers: PasteWorker[], cols: PasteCol
 // Measured cell is the amount done this week (or % done to date for a
 // fixed-price job). The Code cell ("J:1a2b3c4d") ties the row to its job.
 
-export type PasteJob = { id: string; what: string; project: string; basis: 'per_volume' | 'fixed_price'; unit: string | null }
+export type PasteJob = {
+  id: string; what: string; project: string; basis: 'per_volume' | 'fixed_price'; unit: string | null
+  unit_rate?: number | null; fixed_price?: number | null; planned_volume?: number | null
+}
 export type PastePiece = {
   line: number
   text: string
+  /** The Job cell alone. */
+  name: string
   job_id: string | null
   candidates: PasteJob[]
   /** Index 0–6 → crew there (true), not (null), or the report is silent (undefined). */
   days: (true | null | undefined)[]
   measured: number | null
   problems: string[]
+  /** What the sheet says the job is: its project, unit, agreed price and total work (a new job's terms). */
+  project: string
+  unit: string
+  price: number | null
+  total: number | null
+  /** Crew names as written. */
+  crew: string[]
+  /** A note that doesn't stop the row (the sheet's price differs from the agreed one). */
+  warning: string | null
+}
+
+/** A unit cell meaning "one price for the whole job". */
+export const isFixedUnit = (u: string) => /fixed|lump|% ?done|ጠቅላላ|ኮንትራት/i.test(u)
+
+const amount = (raw: string) => {
+  const n = Number(raw.replace(/[^\d.]/g, ''))
+  return raw.trim() && n > 0 ? n : null
 }
 
 /** Is this line the Piece work block's title or header? Worker rows stop here. */
@@ -238,7 +260,11 @@ export function parsePieces(text: string, jobs: PasteJob[]): PastePiece[] {
   const find = (re: RegExp) => head.findIndex(c => re.test(norm(c)))
   const dayCols = Array(7).fill(-1)
   head.forEach((c, col) => { const d = dayIndex(c); if (d >= 0 && dayCols[d] < 0) dayCols[d] = col })
-  const L = { name: 0, days: dayCols, measured: find(/^(measured|amount|done|ልኬት|የተሰራ)/), code: find(/^code/) }
+  const L = {
+    name: 0, days: dayCols, measured: find(/^(measured|done this|ልኬት|የተሰራ)/), code: find(/^code/),
+    project: find(/^(project|site|where|ፕሮጀክት|ሳይት)/), unit: find(/^(unit|መለኪያ)/),
+    price: find(/^(agreed|price|rate|ዋጋ)/), total: find(/^(total work|total|planned|quantity|ጠቅላላ)/), crew: find(/^(crew|ቡድን|ሠራተኞች)/),
+  }
   const out: PastePiece[] = []
   const tabbed = lines[at].includes('\t')
   for (at = at + 1; at < lines.length; at++) {
@@ -253,13 +279,22 @@ export function parsePieces(text: string, jobs: PasteJob[]): PastePiece[] {
     const marked = L.days.some(c => c >= 0 && (cells[c] ?? '').trim() && !/^[-–—·0]$/.test((cells[c] ?? '').trim()))
     const measuredRaw = L.measured >= 0 ? (cells[L.measured] ?? '').trim() : ''
     if (!name && !code) continue
+    const project = L.project >= 0 ? (cells[L.project] ?? '').trim() : ''
+    const unit = L.unit >= 0 ? (cells[L.unit] ?? '').trim() : ''
+    const price = L.price >= 0 ? amount(cells[L.price] ?? '') : null
+    const total = L.total >= 0 ? amount(cells[L.total] ?? '') : null
+    const crew = L.crew >= 0 ? (cells[L.crew] ?? '').split(/[,;/፣]+/).map(x => x.trim()).filter(x => x && x !== '—') : []
     if (!marked && !measuredRaw) continue   // a job nobody worked on this week
     const problems: string[] = []
     let candidates: PasteJob[] = []
     const byCode = code.match(/^j:([0-9a-f]{4,})/i)
     if (byCode) candidates = jobs.filter(j => j.id.toLowerCase().startsWith(byCode[1].toLowerCase()))
+    if (!candidates.length && name && project) {
+      const n = norm(name), pr = norm(project)
+      candidates = jobs.filter(j => norm(j.what) === n && (norm(j.project) === pr || norm(j.project).startsWith(pr) || pr.startsWith(norm(j.project))))
+    }
     if (!candidates.length && name) {
-      const n = norm(name)
+      const n = norm(project ? `${name} · ${project}` : name)
       const full = (j: PasteJob) => norm(`${j.what} · ${j.project}`)
       candidates = jobs.filter(j => full(j) === n)
       if (!candidates.length) candidates = jobs.filter(j => norm(j.what) === n || full(j).startsWith(n))
@@ -279,10 +314,20 @@ export function parsePieces(text: string, jobs: PasteJob[]): PastePiece[] {
       if (m) measured = Number(m[1]); else problems.push(`Measured "${measuredRaw}" isn't a number`)
     }
     if (!candidates.length) problems.push('Not one of this PM\'s open jobs this week')
+    // The sheet's price against the agreed one: worth a look, not a stop.
+    let warning: string | null = null
+    const job = candidates.length === 1 ? candidates[0] : null
+    if (job && price != null) {
+      const agreed = job.basis === 'per_volume' ? job.unit_rate : job.fixed_price
+      if (agreed != null && Math.abs(Number(agreed) - price) > 0.005) {
+        warning = `The sheet says ${price.toLocaleString()}${job.basis === 'per_volume' ? ` a ${job.unit ?? 'unit'}` : ''}; the agreed price is ${Number(agreed).toLocaleString()}`
+      }
+    }
     out.push({
-      line: at + 1, text: name || code,
-      job_id: candidates.length === 1 ? candidates[0].id : null,
+      line: at + 1, text: [name || code, project].filter(Boolean).join(' · '), name: name || code,
+      job_id: job?.id ?? null,
       candidates: candidates.length > 1 ? candidates : [], days, measured, problems,
+      project, unit, price, total, crew, warning,
     })
   }
   return out
