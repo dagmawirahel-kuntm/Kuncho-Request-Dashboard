@@ -35,11 +35,11 @@ export interface StatementPerson {
 const money = (n: number | null | undefined) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const h = (n: number) => Number(n.toFixed(2)).toLocaleString('en-US')
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const KIND_COLOR: Record<PricedHour['day_kind'], string> = { working_day: '#1f7a5c', rest_day: '#5b4bc4', holiday: '#b0610e' }
-const KIND_SOFT: Record<PricedHour['day_kind'], string> = { working_day: '#e3f3ec', rest_day: '#ece9fb', holiday: '#fbeedd' }
-const KIND_NAME: Record<PricedHour['day_kind'], string> = { working_day: 'Working days (after hours)', rest_day: 'Rest days', holiday: 'Public holidays' }
+export const KIND_COLOR: Record<PricedHour['day_kind'], string> = { working_day: '#1f7a5c', rest_day: '#5b4bc4', holiday: '#b0610e' }
+export const KIND_SOFT: Record<PricedHour['day_kind'], string> = { working_day: '#e3f3ec', rest_day: '#ece9fb', holiday: '#fbeedd' }
+export const KIND_NAME: Record<PricedHour['day_kind'], string> = { working_day: 'Working days (after hours)', rest_day: 'Rest days', holiday: 'Public holidays' }
 
-const CSS = `
+export const STATEMENT_CSS = `
   @page { size: A4; margin: 11mm; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: Arial, "Noto Sans Ethiopic", sans-serif; color: #15202b; margin: 0; font-size: 10.5px; }
@@ -222,5 +222,5 @@ export function printOvertimeStatements(run: StatementRun, people: StatementPers
   const withHours = people.filter(p => p.hours.length > 0)
   if (!withHours.length) return false
   const body = (withHours.length > 1 ? summary(run, withHours) : '') + withHours.map(p => statement(run, p)).join('')
-  return printHtml(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(`Overtime statements ${run.payroll_record ?? ''}`.trim())}</title><style>${CSS}</style></head><body>${body}</body></html>`)
+  return printHtml(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(`Overtime statements ${run.payroll_record ?? ''}`.trim())}</title><style>${STATEMENT_CSS}</style></head><body>${body}</body></html>`)
 }

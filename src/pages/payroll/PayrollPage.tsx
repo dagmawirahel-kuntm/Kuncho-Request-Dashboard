@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Payroll } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Clock } from 'lucide-react'
 import { monthOfDates } from '@/lib/payroll'
 import { ecMonthName } from '@/lib/ethiopianCalendar'
 
@@ -95,9 +95,14 @@ export default function PayrollPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h1 className="text-xl font-bold text-slate-800">Payroll</h1><p className="text-sm text-slate-500">Salary, overtime, bonus, allowance and back-pay runs, by the month they pay for</p></div>
-        <Link to="/payroll/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-          <Plus className="h-4 w-4" /> New Run
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/payroll/overtime" className="flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+            <Clock className="h-4 w-4" /> Overtime by month
+          </Link>
+          <Link to="/payroll/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+            <Plus className="h-4 w-4" /> New Run
+          </Link>
+        </div>
       </div>
       {isLoading ? <div className="py-12 text-center text-sm text-slate-400">Loading…</div> : <DataTable columns={columns} data={data} searchPlaceholder="Search payroll…" persistKey="payroll" initialGlobalFilter={searchParams.get('q') ?? undefined} tableName="payroll" queryKeys={['payroll', 'payroll-lookup']} />}
     </div>

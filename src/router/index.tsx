@@ -73,6 +73,7 @@ const ItemBrandsPage = lazyPage(() => import('@/pages/procurement/ItemBrandsPage
 const PayrollPage = lazyPage(() => import('@/pages/payroll/PayrollPage'))
 const PayrollFormPage = lazyPage(() => import('@/pages/payroll/PayrollFormPage'))
 const PayrollDetailPage = lazyPage(() => import('@/pages/payroll/PayrollDetailPage'))
+const OvertimeMonthPage = lazyPage(() => import('@/pages/payroll/OvertimeMonthPage'))
 const VendorsPage = lazyPage(() => import('@/pages/vendors/VendorsPage'))
 const VendorFormPage = lazyPage(() => import('@/pages/vendors/VendorFormPage'))
 const VendorDetailPage = lazyPage(() => import('@/pages/vendors/VendorDetailPage'))
@@ -649,6 +650,7 @@ export const router = createBrowserRouter([
               { path: 'staff/:id/edit', element: <StaffFormPage /> },
               { path: 'finance/labor-expense-drafts', element: <LaborExpenseDraftsPage /> },
               { path: 'payroll', element: <PayrollPage /> },
+              { path: 'payroll/overtime', element: <OvertimeMonthPage /> },
               { path: 'payroll/new', element: <PayrollFormPage /> },
               { path: 'payroll/:id/edit', element: <PayrollFormPage /> },
               { path: 'payroll/:id', element: <PayrollDetailPage /> },
