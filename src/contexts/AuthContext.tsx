@@ -58,8 +58,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error as Error | null }
   }
 
+  // Sign out of this browser only. The default ('global') ended every session
+  // the person had — their phone, other tabs, other computers — so logging out
+  // in one place asked for a login everywhere else.
   async function signOut() {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
   }
 
   async function refreshProfile() {
