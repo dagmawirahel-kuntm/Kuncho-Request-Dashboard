@@ -2,13 +2,19 @@ import { useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ClipboardPaste, Download, Hammer, Lock, Upload, UserPlus, X } from 'lucide-react'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { halfDays, tradeName, useTrades, WEEKDAYS } from '@/lib/labourDay'
-import { dayLabel } from '@/lib/labour'
-import { matchTrade, mergePieces, parseNewWorkers, parsePieces, parseReport, type PasteNewWorker, type PasteCol, type PasteDay, type PasteJob, type PastePiece, type PasteRow, type PasteWorker } from '@/lib/labourPaste'
+import { addDays, dayLabel, fmtMoney } from '@/lib/labour'
+import { isFixedUnit, matchTrade, matchWorker, mergePieces, parseNewWorkers, parsePieces, parseReport, type PasteNewWorker, type PasteCol, type PasteDay, type PasteJob, type PastePiece, type PasteRow, type PasteWorker } from '@/lib/labourPaste'
 import { workbookToText } from '@/lib/labourWeekDraft'
 
 export type PastedWorker = { staff_id: string; days: (PasteDay | null | undefined)[] }
 /** What it takes to add someone new from the report (labour_day_new_worker). */
 export type ReportNewWorker = { name: string; phone: string; trade: string; rate: number }
+/** A piece job the report names that isn't one yet: its terms, to ask for it (a labour request). */
+export type NewJobTerms = {
+  what: string; project_id: string; basis: 'per_volume' | 'fixed_price'; unit: string | null
+  price: number; total: number | null; crew: string[]; start: string
+}
+export type AskedJob = { id: string; approved: boolean; why: string | null }
 export type PastedPiece = { job_id: string; days: (true | null | undefined)[]; measured: number | null }
 
 const EXAMPLE = `Abebe Kebede: 1 1 1 ½ 1 1 - Solomon Apartment
@@ -20,7 +26,7 @@ Mesfin Girma: 1 1 1+2 1 1 ½ - Bole Villa repair`
  * typed on a phone — read it, check who and where, and fill the week sheet.
  * Nothing is saved here: the grid is filled, and Save / Send do the rest.
  */
-export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, editable, defaultWhere, onClose, onFill, onDraft, onNewWorker }: {
+export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, editable, defaultWhere, onClose, onFill, onDraft, onNewWorker, onNewJob }: {
   week: string
   cols: PasteCol[]
   colTag: (key: string) => string
@@ -37,7 +43,17 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
   onDraft?: () => void
   /** Add a worker the report names who isn't on file; resolves to the new worker, or null. */
   onNewWorker?: (w: ReportNewWorker) => Promise<{ staff_id: string; name: string } | null>
+  /** Ask for a piece job the report names with its terms; resolves to the request, or null. */
+  onNewJob?: (t: NewJobTerms) => Promise<AskedJob | null>
 }) {
+  const projects = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of cols) if (c.project_id && c.project) m.set(c.project_id, c.project)
+    return [...m].map(([id, name]) => ({ id, name }))
+  }, [cols])
+  const [asking, setAsking] = useState<{ line: number; t: NewJobTerms } | null>(null)
+  const [asked, setAsked] = useState<Record<number, AskedJob>>({})
+  const [busyJob, setBusyJob] = useState(false)
   const { data: trades = [] } = useTrades()
   const [newRows, setNewRows] = useState<PasteNewWorker[]>([])
   const [creating, setCreating] = useState<{ line: number; w: ReportNewWorker } | null>(null)
@@ -82,6 +98,32 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
   }
   // Listed under New workers but given no days: nothing to add yet.
   const newWithoutDays = newRows.filter(n => !(rows ?? []).some(r => r.name.toLowerCase().trim() === n.name.toLowerCase().trim()))
+  // A new job's terms, from its row: the project by name, fixed price when
+  // the unit says so (or there's no total), the crew names matched to workers.
+  function termsFor(p: PastePiece): NewJobTerms {
+    const pr = p.project.toLowerCase().trim()
+    const proj = projects.find(x => x.name.toLowerCase() === pr) ?? projects.find(x => pr && (x.name.toLowerCase().startsWith(pr) || pr.startsWith(x.name.toLowerCase())))
+      ?? (projects.length === 1 ? projects[0] : undefined)
+    const fixed = isFixedUnit(p.unit) || (!p.unit && p.total == null)
+    const first = p.days.findIndex(d => d === true)
+    return {
+      what: p.name, project_id: proj?.id ?? '', basis: fixed ? 'fixed_price' : 'per_volume', unit: fixed ? null : (p.unit || 'm²'),
+      price: p.price ?? 0, total: fixed ? null : p.total, start: addDays(week, Math.max(first, 0)),
+      crew: p.crew.map(n => matchWorker(n, workers)).filter(m => m.length === 1).map(m => m[0].id),
+    }
+  }
+  const crewMissing = (p: PastePiece) => p.crew.filter(n => matchWorker(n, workers).length !== 1)
+  const termsOk = (t: NewJobTerms) => t.what.trim().length > 1 && !!t.project_id && t.price > 0 && (t.basis === 'fixed_price' || (!!t.unit && (t.total ?? 0) > 0))
+  async function askJob() {
+    if (!asking || !onNewJob) return
+    setBusyJob(true)
+    const r = await onNewJob(asking.t)
+    setBusyJob(false)
+    if (!r) return
+    setAsked(a => ({ ...a, [asking.line]: r }))
+    if (r.approved) setPickedJob(x => ({ ...x, [asking.line]: r.id }))
+    setAsking(null)
+  }
   const jobOf = (p: PastePiece) => (p.line in pickedJob ? pickedJob[p.line] : p.job_id)
   const readyPieces = pieces.filter(p => !p.problems.filter(x => !x.startsWith('Not one of')).length && jobOf(p))
   const who = (r: PasteRow) => (r.line in picked ? picked[r.line] : r.staff_id)
@@ -246,18 +288,70 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
                     const job = id ? jobById.get(id) : undefined
                     const bad = p.problems.some(x => !x.startsWith('Not one of'))
                     return (
-                      <tr key={p.line} className={bad || !id ? 'bg-red-50/60 dark:bg-red-900/10' : ''}>
+                      <tr key={p.line} className={bad || (!id && p.price == null) ? 'bg-red-50/60 dark:bg-red-900/10' : !id ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}>
                         <td className="px-3 py-1.5 align-top">
                           <p className="font-medium text-slate-700 dark:text-slate-200">{p.text}</p>
-                          {p.problems.filter(x => id ? !x.startsWith('Not one of') : true).map(x => <p key={x} className="text-[11px] text-red-600 dark:text-red-400">{x}</p>)}
+                          {p.problems.filter(x => !x.startsWith('Not one of') || (!id && p.price == null)).map(x => <p key={x} className="text-[11px] text-red-600 dark:text-red-400">{x}</p>)}
+                          {!id && p.price != null && !asked[p.line] && <p className="text-[11px] text-amber-700 dark:text-amber-300">A new job on the sheet, with its price</p>}
                         </td>
                         <td className="min-w-[12rem] px-3 py-1.5 align-top">
-                          {p.job_id && !(p.line in pickedJob) ? (
-                            <span className="text-emerald-700 dark:text-emerald-400">{job?.what} · {job?.project}</span>
+                          {p.warning && <p className="mb-0.5 text-[11px] text-amber-700 dark:text-amber-300">{p.warning}</p>}
+                          {asked[p.line] && !asked[p.line].approved ? (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-300">Asked for — waiting for approval{asked[p.line].why ? `, because ${asked[p.line].why}` : ''}. Read the sheet again once it's approved to fill its days.</p>
+                          ) : p.job_id && !(p.line in pickedJob) ? (
+                            <span className="text-emerald-700 dark:text-emerald-400">{job?.what} · {job?.project}
+                              {job && <span className="block text-[10px] text-slate-500">{job.basis === 'per_volume' ? `${fmtMoney(job.unit_rate ?? 0)} a ${job.unit ?? 'unit'}${job.planned_volume ? ` · ${Number(job.planned_volume).toLocaleString()} ${job.unit ?? ''} in all` : ''}` : `${fmtMoney(job.fixed_price ?? 0)} for the job`}</span>}
+                            </span>
+                          ) : asked[p.line]?.approved ? (
+                            <span className="text-emerald-700 dark:text-emerald-400">{job ? `${job.what} · ${job.project}` : p.name} <span className="text-[10px] text-slate-500">· new, approved</span></span>
+                          ) : asking?.line === p.line ? (
+                            <div className="space-y-1.5 rounded-lg border border-brand/30 bg-brand/5 p-2">
+                              <input value={asking.t.what} onChange={e => setAsking({ ...asking, t: { ...asking.t, what: e.target.value } })} aria-label="The work"
+                                className="w-full rounded border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
+                              <SearchableSelect value={asking.t.project_id || null} onChange={v => setAsking({ ...asking, t: { ...asking.t, project_id: v ?? '' } })} placeholder="Project…"
+                                options={projects.map(x => ({ id: x.id, label: x.name }))} />
+                              <div className="flex gap-1 text-[11px]">
+                                {(['per_volume', 'fixed_price'] as const).map(b => (
+                                  <button key={b} type="button" onClick={() => setAsking({ ...asking, t: { ...asking.t, basis: b, unit: b === 'fixed_price' ? null : (asking.t.unit || 'm²') } })}
+                                    className={`rounded px-2 py-0.5 ${asking.t.basis === b ? 'bg-brand text-white' : 'border dark:border-slate-600'}`}>{b === 'per_volume' ? 'Price per unit' : 'One price for the job'}</button>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                <input value={asking.t.price || ''} onChange={e => setAsking({ ...asking, t: { ...asking.t, price: Number(e.target.value) || 0 } })} inputMode="decimal"
+                                  placeholder={asking.t.basis === 'per_volume' ? 'Price a unit' : 'Agreed price'} aria-label="Agreed price" className="w-24 rounded border px-2 py-1 text-right text-xs dark:border-slate-600 dark:bg-slate-900" />
+                                {asking.t.basis === 'per_volume' && (
+                                  <>
+                                    <input value={asking.t.unit ?? ''} onChange={e => setAsking({ ...asking, t: { ...asking.t, unit: e.target.value } })} placeholder="Unit" aria-label="Unit"
+                                      className="w-14 rounded border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
+                                    <input value={asking.t.total ?? ''} onChange={e => setAsking({ ...asking, t: { ...asking.t, total: Number(e.target.value) || null } })} inputMode="decimal" placeholder="Total work"
+                                      aria-label="Total work" className="w-20 rounded border px-2 py-1 text-right text-xs dark:border-slate-600 dark:bg-slate-900" />
+                                  </>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-500">
+                                {asking.t.price > 0 && (asking.t.basis === 'fixed_price' ? `${fmtMoney(asking.t.price)} for the whole job` : asking.t.total ? `${fmtMoney(asking.t.price)} × ${asking.t.total} ${asking.t.unit ?? ''} = ${fmtMoney(asking.t.price * asking.t.total)} in all` : '')}
+                                {' · '}Crew: {asking.t.crew.length ? asking.t.crew.map(id => byId.get(id)).join(', ') : 'none named'}
+                                {crewMissing(p).length ? ` · not found: ${crewMissing(p).join(', ')} (add them as new workers first)` : ''}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <button type="button" onClick={askJob} disabled={busyJob || !termsOk(asking.t)}
+                                  className="rounded bg-brand px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40">{busyJob ? 'Asking…' : 'Ask for this job'}</button>
+                                <button type="button" onClick={() => setAsking(null)} className="text-[11px] text-slate-500">Cancel</button>
+                                <span className="text-[10px] text-slate-500">Approved by itself only within agreed terms; otherwise a person decides.</span>
+                              </div>
+                            </div>
                           ) : (
-                            <SearchableSelect value={pickedJob[p.line] ?? null} onChange={v => setPickedJob(x => ({ ...x, [p.line]: v }))}
-                              placeholder={p.candidates.length ? 'Which job?' : 'Pick the job'}
-                              options={(p.candidates.length ? p.candidates : jobs).map(j => ({ id: j.id, label: `${j.what} · ${j.project}` }))} />
+                            <>
+                              <SearchableSelect value={pickedJob[p.line] ?? null} onChange={v => setPickedJob(x => ({ ...x, [p.line]: v }))}
+                                placeholder={p.candidates.length ? 'Which job?' : 'Pick the job'}
+                                options={(p.candidates.length ? p.candidates : jobs).map(j => ({ id: j.id, label: `${j.what} · ${j.project}` }))} />
+                              {onNewJob && !p.candidates.length && !pickedJob[p.line] && (
+                                <button type="button" onClick={() => setAsking({ line: p.line, t: termsFor(p) })}
+                                  className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline">
+                                  <Hammer className="h-3 w-3" /> A new job — ask for it{p.price ? ` at ${fmtMoney(p.price)}${p.unit && !isFixedUnit(p.unit) ? ` a ${p.unit}` : ''}` : ''}
+                                </button>
+                              )}
+                            </>
                           )}
                         </td>
                         {p.days.map((d, i) => (
