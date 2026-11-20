@@ -1,12 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ClipboardPaste, Download, Hammer, Lock, Upload, X } from 'lucide-react'
+import { AlertTriangle, ClipboardPaste, Download, Hammer, Lock, Upload, UserPlus, X } from 'lucide-react'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import { halfDays, WEEKDAYS } from '@/lib/labourDay'
+import { halfDays, tradeName, useTrades, WEEKDAYS } from '@/lib/labourDay'
 import { dayLabel } from '@/lib/labour'
-import { mergePieces, parsePieces, parseReport, type PasteCol, type PasteDay, type PasteJob, type PastePiece, type PasteRow, type PasteWorker } from '@/lib/labourPaste'
+import { matchTrade, mergePieces, parseNewWorkers, parsePieces, parseReport, type PasteNewWorker, type PasteCol, type PasteDay, type PasteJob, type PastePiece, type PasteRow, type PasteWorker } from '@/lib/labourPaste'
 import { workbookToText } from '@/lib/labourWeekDraft'
 
 export type PastedWorker = { staff_id: string; days: (PasteDay | null | undefined)[] }
+/** What it takes to add someone new from the report (labour_day_new_worker). */
+export type ReportNewWorker = { name: string; phone: string; trade: string; rate: number }
 export type PastedPiece = { job_id: string; days: (true | null | undefined)[]; measured: number | null }
 
 const EXAMPLE = `Abebe Kebede: 1 1 1 ½ 1 1 - Solomon Apartment
@@ -18,7 +20,7 @@ Mesfin Girma: 1 1 1+2 1 1 ½ - Bole Villa repair`
  * typed on a phone — read it, check who and where, and fill the week sheet.
  * Nothing is saved here: the grid is filled, and Save / Send do the rest.
  */
-export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, editable, defaultWhere, onClose, onFill, onDraft }: {
+export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, editable, defaultWhere, onClose, onFill, onDraft, onNewWorker }: {
   week: string
   cols: PasteCol[]
   colTag: (key: string) => string
@@ -33,7 +35,14 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
   onFill: (rows: PastedWorker[], pieces: PastedPiece[]) => void
   /** Download this week's draft for the PM. */
   onDraft?: () => void
+  /** Add a worker the report names who isn't on file; resolves to the new worker, or null. */
+  onNewWorker?: (w: ReportNewWorker) => Promise<{ staff_id: string; name: string } | null>
 }) {
+  const { data: trades = [] } = useTrades()
+  const [newRows, setNewRows] = useState<PasteNewWorker[]>([])
+  const [creating, setCreating] = useState<{ line: number; w: ReportNewWorker } | null>(null)
+  const [busyNew, setBusyNew] = useState(false)
+  const [made, setMade] = useState<Record<string, string>>({})
   const [text, setText] = useState('')
   const [rows, setRows] = useState<PasteRow[] | null>(null)
   const [pieces, setPieces] = useState<PastePiece[]>([])
@@ -42,10 +51,10 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
   const [fileErr, setFileErr] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const jobById = useMemo(() => new Map(jobs.map(j => [j.id, j])), [jobs])
-  const byId = useMemo(() => new Map(workers.map(w => [w.id, w.name])), [workers])
+  const byId = useMemo(() => new Map([...workers.map(w => [w.id, w.name] as const), ...Object.entries(made)]), [workers, made])
 
   const readText = (t: string) => {
-    setRows(parseReport(t, workers, cols, defaultWhere, onSheet)); setPieces(parsePieces(t, jobs)); setPicked({}); setPickedJob({})
+    setRows(parseReport(t, workers, cols, defaultWhere, onSheet)); setPieces(parsePieces(t, jobs)); setNewRows(parseNewWorkers(t)); setPicked({}); setPickedJob({}); setCreating(null)
   }
   const read = () => readText(text)
   async function readFile(f: File) {
@@ -55,6 +64,24 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
       setText(t); readText(t)
     } catch (e) { setFileErr(`Couldn't read ${f.name}: ${(e as Error).message}`) }
   }
+  // The New workers block's details for a name, if the PM gave them.
+  const detailsFor = (name: string): ReportNewWorker => {
+    const n = name.toLowerCase().replace(/\s+/g, ' ').trim()
+    const d = newRows.find(x => x.name.toLowerCase().replace(/\s+/g, ' ').trim() === n)
+    return { name, phone: d?.phone ?? '', trade: d ? matchTrade(d.trade, trades) ?? '' : '', rate: d?.rate ?? 0 }
+  }
+  async function createNew() {
+    if (!creating || !onNewWorker) return
+    setBusyNew(true)
+    const r = await onNewWorker(creating.w)
+    setBusyNew(false)
+    if (!r) return
+    setMade(m => ({ ...m, [r.staff_id]: r.name }))
+    setPicked(p => ({ ...p, [creating.line]: r.staff_id }))
+    setCreating(null)
+  }
+  // Listed under New workers but given no days: nothing to add yet.
+  const newWithoutDays = newRows.filter(n => !(rows ?? []).some(r => r.name.toLowerCase().trim() === n.name.toLowerCase().trim()))
   const jobOf = (p: PastePiece) => (p.line in pickedJob ? pickedJob[p.line] : p.job_id)
   const readyPieces = pieces.filter(p => !p.problems.filter(x => !x.startsWith('Not one of')).length && jobOf(p))
   const who = (r: PasteRow) => (r.line in picked ? picked[r.line] : r.staff_id)
@@ -140,9 +167,41 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
                           {r.staff_id && !(r.line in picked) ? (
                             <span className="text-emerald-700 dark:text-emerald-400">{byId.get(r.staff_id)}</span>
                           ) : (
-                            <SearchableSelect value={picked[r.line] ?? null} onChange={v => setPicked(p => ({ ...p, [r.line]: v }))}
-                              placeholder={r.candidates.length ? 'Which one?' : 'Not found — pick'}
-                              options={(r.candidates.length ? r.candidates : workers).map(w => ({ id: w.id, label: w.name }))} />
+                            picked[r.line] && made[picked[r.line]!] ? (
+                              <span className="text-emerald-700 dark:text-emerald-400">{made[picked[r.line]!]} <span className="text-[10px] text-slate-500">· new, HR verifies</span></span>
+                            ) : (
+                            <>
+                              <SearchableSelect value={picked[r.line] ?? null} onChange={v => setPicked(p => ({ ...p, [r.line]: v }))}
+                                placeholder={r.candidates.length ? 'Which one?' : 'Not found — pick'}
+                                options={(r.candidates.length ? r.candidates : workers).map(w => ({ id: w.id, label: w.name }))} />
+                              {onNewWorker && !picked[r.line] && creating?.line !== r.line && (
+                                <button type="button" onClick={() => setCreating({ line: r.line, w: detailsFor(r.name) })}
+                                  className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline">
+                                  <UserPlus className="h-3 w-3" /> Add {r.name} as a new worker{newRows.some(n => n.name.toLowerCase().trim() === r.name.toLowerCase().trim()) ? ' (details in the sheet)' : ''}
+                                </button>
+                              )}
+                              {creating?.line === r.line && (
+                                <div className="mt-1.5 space-y-1.5 rounded-lg border border-brand/30 bg-brand/5 p-2">
+                                  <input value={creating.w.name} onChange={e => setCreating({ ...creating, w: { ...creating.w, name: e.target.value } })} aria-label="Full name"
+                                    className="w-full rounded border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
+                                  <SearchableSelect value={creating.w.trade || null} onChange={v => setCreating({ ...creating, w: { ...creating.w, trade: v ?? '' } })} placeholder="Trade…"
+                                    options={trades.map(t => ({ id: t.trade_tag, label: tradeName(t.trade_tag), sub: t.codename_amharic ?? undefined }))} />
+                                  <div className="flex gap-1.5">
+                                    <input value={creating.w.rate || ''} onChange={e => setCreating({ ...creating, w: { ...creating.w, rate: Number(e.target.value) || 0 } })} inputMode="decimal" placeholder="Day rate"
+                                      aria-label="Day rate" className="w-24 rounded border px-2 py-1 text-right text-xs dark:border-slate-600 dark:bg-slate-900" />
+                                    <input value={creating.w.phone} onChange={e => setCreating({ ...creating, w: { ...creating.w, phone: e.target.value } })} inputMode="tel" placeholder="Phone (optional)"
+                                      aria-label="Phone" className="min-w-0 flex-1 rounded border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button type="button" onClick={createNew} disabled={busyNew || creating.w.name.trim().length < 2 || !creating.w.trade || !(creating.w.rate > 0)}
+                                      className="rounded bg-brand px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40">{busyNew ? 'Adding…' : 'Add worker'}</button>
+                                    <button type="button" onClick={() => setCreating(null)} className="text-[11px] text-slate-500">Cancel</button>
+                                    <span className="text-[10px] text-slate-500">The rate is a proposal; HR verifies before pay.</span>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                            )
                           )}
                         </td>
                         {r.days.map((d, i) => (
@@ -163,6 +222,11 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
                 </tbody>
               </table>
             </div>
+          )}
+          {rows && newWithoutDays.length > 0 && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+              Under New workers but with no days in the worker rows: {newWithoutDays.map(n => n.name).join(', ')}. Add their days to a worker row and read it again to bring them in.
+            </p>
           )}
           {rows && pieces.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-sky-200 dark:border-sky-900/50">

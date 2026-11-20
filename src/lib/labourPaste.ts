@@ -166,7 +166,7 @@ export function parseReport(text: string, workers: PasteWorker[], cols: PasteCol
     const L = layout ?? { name: 0, days: [1, 2, 3, 4, 5, 6, 7], where: 8, ot: 9 }
     const name = (cells[L.name] ?? '').trim()
     // The Piece work block starts below the workers (parsePieces reads it).
-    if (isPieceStart(name)) break
+    if (isPieceStart(name) || isNewWorkersStart(name)) break
     // The template's totals and its grey example row are not workers.
     if (!name || /^(total|sum|ድምር|example|e\.g\.?\b|ምሳሌ)/i.test(name)) continue
     const problems: string[] = []
@@ -298,4 +298,49 @@ export function mergePieces<T extends { job_id: string; days: (true | null | und
     if (r.measured != null) had.measured = r.measured
   }
   return [...by.values()]
+}
+
+// ── New workers in the report ─────────────────────────────────────────────
+// The draft's New workers block: Full name · Phone · Trade · Day rate. Their
+// days go in the worker rows like anyone's; this block is what's needed to
+// add them (labour_day_new_worker): HR verifies before they're paid.
+
+export type PasteNewWorker = { line: number; name: string; phone: string; trade: string; rate: number | null }
+
+/** Is this line the New workers block's title? Worker rows stop here too. */
+export const isNewWorkersStart = (firstCell: string) => /^(new workers?|አዲስ)/i.test(norm(firstCell))
+
+export function parseNewWorkers(text: string): PasteNewWorker[] {
+  const lines = text.replace(/\r/g, '').split('\n')
+  // The header: a line with Trade and Day rate (or Rate) in it.
+  let at = lines.findIndex(l => { const c = cellsOf(l).map(norm); return c.some(x => /^(trade|ሙያ)/.test(x)) && c.some(x => /rate|ክፍያ|ደመወዝ/.test(x)) })
+  if (at < 0) return []
+  const head = cellsOf(lines[at]).map(norm)
+  const col = (re: RegExp, dflt: number) => { const i = head.findIndex(x => re.test(x)); return i >= 0 ? i : dflt }
+  const L = { name: col(/^(new worker|full name|name|ስም|አዲስ)/, 0), phone: col(/^(phone|ስልክ)/, 1), trade: col(/^(trade|ሙያ)/, 2), rate: col(/rate|ክፍያ|ደመወዝ/, 3) }
+  const tabbed = lines[at].includes('\t')
+  const out: PasteNewWorker[] = []
+  for (at = at + 1; at < lines.length; at++) {
+    const raw = lines[at]
+    if (!raw.trim()) continue
+    if (tabbed && !raw.includes('\t')) continue
+    const c = cellsOf(raw)
+    const name = (c[L.name] ?? '').trim()
+    if (isPieceStart(name)) break
+    if (!name || /^(example|e\.g|ምሳሌ)/i.test(name)) continue
+    const rate = Number((c[L.rate] ?? '').replace(/[^\d.]/g, ''))
+    out.push({ line: at + 1, name, phone: (c[L.phone] ?? '').trim(), trade: (c[L.trade] ?? '').trim(), rate: rate > 0 ? rate : null })
+  }
+  return out
+}
+
+/** "Carpenter", "አናጢ" or "carpenter" → the trade tag. */
+export function matchTrade(text: string, trades: { trade_tag: string; codename_english: string; codename_amharic: string | null }[]): string | null {
+  const t = norm(text).replace(/_/g, ' ')
+  if (!t) return null
+  const names = (x: typeof trades[number]) => [x.trade_tag.replace(/_/g, ' '), x.codename_english, x.codename_amharic ?? ''].map(n => norm(n))
+  const exact = trades.filter(x => names(x).includes(t))
+  if (exact.length === 1) return exact[0].trade_tag
+  const part = trades.filter(x => names(x).some(n => n && (n.startsWith(t) || t.startsWith(n))))
+  return part.length === 1 ? part[0].trade_tag : null
 }

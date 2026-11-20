@@ -22,6 +22,8 @@ type DraftInput = {
   /** What the Where column offers: the PM's projects, Workshop, Stock… */
   wheres: string[]
   jobs: PieceJob[]
+  /** Trades a new worker can have, as the PM would write them ("Carpenter · አናጢ"). */
+  trades?: string[]
   blankRows?: number
 }
 
@@ -36,7 +38,7 @@ export async function downloadWeekDraft(input: DraftInput) {
 }
 
 /** The draft workbook's bytes. */
-export async function buildWeekDraft({ pmName, week, workers, wheres, jobs, blankRows = 8 }: DraftInput): Promise<ArrayBuffer> {
+export async function buildWeekDraft({ pmName, week, workers, wheres, jobs, trades = [], blankRows = 8 }: DraftInput): Promise<ArrayBuffer> {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Week report', { views: [{ state: 'frozen', xSplit: 1, ySplit: 7 }] })
@@ -97,6 +99,27 @@ export async function buildWeekDraft({ pmName, week, workers, wheres, jobs, blan
   total.getCell(11).value = { formula: `SUM(K${firstWorker}:K${lastWorker})` }
   r += 2
 
+  // ── New workers ──
+  ws.getCell(r, 1).value = 'New workers · አዲስ ሠራተኞች'
+  ws.getCell(r, 1).font = { bold: true, size: 12 }
+  ws.getCell(r, 3).value = 'Someone not on the list: write their days in a worker row above, and their details here. HR verifies them before they are paid.'
+  ws.getCell(r, 3).font = { italic: true, color: { argb: 'FF5B6675' } }
+  r++
+  const nh = ws.getRow(r)
+  nh.getCell(1).value = 'New worker (full name)'; nh.getCell(2).value = 'Phone'; nh.getCell(4).value = 'Trade'; nh.getCell(6).value = 'Day rate'
+  ws.mergeCells(r, 2, r, 3); ws.mergeCells(r, 4, r, 5)
+  for (const c of [1, 2, 4, 6]) { const cell = nh.getCell(c); cell.font = { bold: true }; cell.fill = GREY; cell.border = box; cell.alignment = { horizontal: 'center' } }
+  r++
+  const tradeList = trades.length ? `"${trades.map(t => t.replace(/[",]/g, ' ')).join(',').slice(0, 250)}"` : null
+  for (let i = 0; i < 4; i++) {
+    ws.mergeCells(r, 2, r, 3); ws.mergeCells(r, 4, r, 5)
+    for (const c of [1, 2, 4, 6]) { const cell = ws.getCell(r, c); cell.fill = YELLOW; cell.border = box }
+    ws.getCell(r, 2).numFmt = '@'
+    if (tradeList) ws.getCell(r, 4).dataValidation = { type: 'list', allowBlank: true, showErrorMessage: false, formulae: [tradeList] }
+    r++
+  }
+  r++
+
   // ── Piece work ──
   ws.getCell(r, 1).value = 'Piece work · ቁራጭ ሥራ'
   ws.getCell(r, 1).font = { bold: true, size: 12 }
@@ -145,11 +168,16 @@ export async function workbookToText(buffer: ArrayBuffer): Promise<string> {
     const cells: string[] = []
     for (let c = 1; c <= Math.max(row.cellCount, 12); c++) {
       const cell = row.getCell(c)
+      // A merged cell's other parts repeat (or break on) the first one's value: leave them empty.
+      if (cell.isMerged && cell.master && cell.master.address !== cell.address) { cells.push(''); continue }
       const v = cell.value
       let t: string
-      if (v instanceof Date) t = v.toISOString().slice(0, 10)
-      else if (v && typeof v === 'object' && 'formula' in v) t = ''   // totals, dates: not report data
-      else t = (cell.text ?? '').toString()
+      if (v == null) t = ''
+      else if (v instanceof Date) t = v.toISOString().slice(0, 10)
+      else if (typeof v === 'object' && 'formula' in v) t = ''   // totals, dates: not report data
+      else if (typeof v === 'object' && 'richText' in v) t = (v.richText as { text?: string }[]).map(x => x.text ?? '').join('')
+      else if (typeof v === 'object' && 'text' in v) t = String((v as { text: unknown }).text ?? '')
+      else t = String(v)
       cells.push(t.replace(/[\t\n\r]+/g, ' ').trim())
     }
     lines.push(cells.join('\t').replace(/\t+$/, ''))
