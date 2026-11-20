@@ -1,7 +1,7 @@
 import { Fragment, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Pencil, AlertTriangle, Landmark, Printer } from 'lucide-react'
+import { Pencil, AlertTriangle, Landmark, Printer, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserProfiles } from '@/hooks/useLookups'
@@ -15,6 +15,7 @@ import { PayrollPayPanel } from '@/components/payroll/PayrollPayPanel'
 import { monthOfDates, type PricedHour } from '@/lib/payroll'
 import { ecMonthName } from '@/lib/ethiopianCalendar'
 import { printPayslips } from '@/lib/payslipPrint'
+import { printOvertimeStatements } from '@/lib/overtimeStatementPrint'
 
 // A payroll run had no page of its own — the list went straight to the edit
 // form — so there was nowhere to issue the one document finance actually
@@ -120,6 +121,57 @@ export default function PayrollDetailPage() {
       return (data ?? []) as PricedHour[]
     },
   })
+
+  // Earlier overtime of the same people, for the statements' month-on-month view.
+  const otStaff = useMemo(() => Array.from(new Set(otHours.map(h => h.staff_id).filter(Boolean))) as string[], [otHours])
+  const { data: otHistory = [] } = useQuery({
+    queryKey: ['payroll-overtime-history', id, otStaff.join(',')],
+    enabled: !!id && otStaff.length > 0 && !!run?.start_date,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('payroll_overtime_hours')
+        .select('staff_id, hours, amount, payroll:payroll_id (start_date, end_date, is_archived)')
+        .in('staff_id', otStaff).neq('payroll_id', id!)
+      if (error) throw error
+      return (data ?? []) as unknown as { staff_id: string; hours: number; amount: number; payroll: { start_date: string | null; end_date: string | null; is_archived: boolean | null } | null }[]
+    },
+  })
+
+  function overtimeStatements(staffId?: string) {
+    if (!run) return
+    const byStaff = new Map(lines.map(l => [l.staff_id, l]))
+    const chosen = taxLines.filter(t => !staffId || t.staff_id === staffId)
+    const history = (sid: string) => {
+      const months = new Map<string, { label: string; key: number; hours: number; take_home: number }>()
+      for (const x of otHistory) {
+        if (x.staff_id !== sid || !x.payroll?.start_date || x.payroll.is_archived || !run.start_date || x.payroll.start_date >= run.start_date) continue
+        const m = monthOfDates(x.payroll.start_date, x.payroll.end_date)
+        if (!m) continue
+        const k = `${m.y}-${m.m}`
+        const cur = months.get(k) ?? { label: m.label, key: m.y * 100 + m.m, hours: 0, take_home: 0 }
+        cur.hours += Number(x.hours); cur.take_home += Number(x.amount)
+        months.set(k, cur)
+      }
+      return [...months.values()].sort((a, b) => a.key - b.key)
+    }
+    const ok = printOvertimeStatements(
+      {
+        payroll_record: run.payroll_record, start_date: run.start_date, end_date: run.end_date,
+        month_label: monthOfDates(run.start_date, run.end_date)?.label ?? null,
+        paid_on: run.paid_on ?? null, is_paid: run.payment_status === 'paid',
+      },
+      chosen.map(t => {
+        const l = byStaff.get(t.staff_id)
+        return {
+          staff_id: t.staff_id, name: t.employee_name, role: l?.staff?.role ?? null,
+          account: l?.account_number ? `${l.bank_name ?? ''} ${l.account_number}`.trim() : null,
+          hours: otHours.filter(h => h.staff_id === t.staff_id),
+          take_home: Number(t.base_net ?? 0), gross: Number(t.gross_share ?? 0), paye: Number(t.paye_share ?? 0), tax_fixed: t.tax_fixed,
+          history: history(t.staff_id),
+        }
+      }),
+    )
+    if (!ok) toast(otHours.length ? 'Allow pop-ups to print the statements' : 'No one on this run has overtime hours', 'error')
+  }
 
   // Whether the company itself banks where a payee does. A bank we hold no
   // account at means an outward transfer — a different charge and a slower
@@ -348,6 +400,16 @@ export default function PayrollDetailPage() {
           >
             <Printer className="h-3.5 w-3.5" /> Payslips
           </button>
+          {run.payroll_type === 'Overtime' && otHours.length > 0 && (
+            <button
+              type="button"
+              onClick={() => overtimeStatements()}
+              title="What each person worked: the days, hours by kind of day, each date at its rate, the limits and earlier months"
+              className="flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              <Clock className="h-3.5 w-3.5" /> Overtime statements
+            </button>
+          )}
           {/* The run-wide sheet. It is the summary somebody signs, not an
               instruction to any one bank — those are issued per group in the
               table below, each with its own code and revision history. */}
