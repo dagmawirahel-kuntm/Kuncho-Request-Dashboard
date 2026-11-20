@@ -165,6 +165,8 @@ export function parseReport(text: string, workers: PasteWorker[], cols: PasteCol
     const { cells } = split
     const L = layout ?? { name: 0, days: [1, 2, 3, 4, 5, 6, 7], where: 8, ot: 9 }
     const name = (cells[L.name] ?? '').trim()
+    // The Piece work block starts below the workers (parsePieces reads it).
+    if (isPieceStart(name) || isNewWorkersStart(name)) break
     // The template's totals and its grey example row are not workers.
     if (!name || /^(total|sum|ድምር|example|e\.g\.?\b|ምሳሌ)/i.test(name)) continue
     const problems: string[] = []
@@ -187,10 +189,158 @@ export function parseReport(text: string, workers: PasteWorker[], cols: PasteCol
       day.ot += ot.hours[d] ?? 0
       days[d] = day
     }
+    // A name with nothing against it (the draft lists recent workers): not in this report.
+    if (days.every(d => d == null) && !problems.length && !Object.keys(ot.hours).length) continue
     // Two people fit the name: the one already on this PM's sheet.
     let candidates = matchWorker(name, workers)
     if (candidates.length > 1 && candidates.filter(c => onSheet.has(c.id)).length === 1) candidates = candidates.filter(c => onSheet.has(c.id))
     rows.push({ line: i + 1, name, staff_id: candidates.length === 1 ? candidates[0].id : null, candidates: candidates.length > 1 ? candidates : [], days, problems })
   }
   return rows
+}
+
+// ── Piece work in the report ─────────────────────────────────────────────
+// The week draft (labourWeekDraft) has a Piece work block under the workers:
+// Job · Mon … Sun · Measured · Unit · Crew · Code. A day cell marked (✓, x,
+// 1 or the number of crew there) means the job's crew worked that day; the
+// Measured cell is the amount done this week (or % done to date for a
+// fixed-price job). The Code cell ("J:1a2b3c4d") ties the row to its job.
+
+export type PasteJob = { id: string; what: string; project: string; basis: 'per_volume' | 'fixed_price'; unit: string | null }
+export type PastePiece = {
+  line: number
+  text: string
+  job_id: string | null
+  candidates: PasteJob[]
+  /** Index 0–6 → crew there (true), not (null), or the report is silent (undefined). */
+  days: (true | null | undefined)[]
+  measured: number | null
+  problems: string[]
+}
+
+/** Is this line the Piece work block's title or header? Worker rows stop here. */
+export const isPieceStart = (firstCell: string) => /^(piece work|piece-work|ቁራጭ|jobs?(\s|$)|ስራ(\s|$)|ሥራ(\s|$))/i.test(norm(firstCell))
+
+export const jobCode = (id: string) => `J:${id.slice(0, 8)}`
+
+function cellsOf(line: string) {
+  return line.includes('\t') ? line.split('\t') : line.split(/[;,]/)
+}
+
+export function parsePieces(text: string, jobs: PasteJob[]): PastePiece[] {
+  const lines = text.replace(/\r/g, '').split('\n')
+  let at = lines.findIndex(l => {
+    const c = cellsOf(l)
+    return isPieceStart(c[0] ?? '') && c.map(dayIndex).filter(d => d >= 0).length >= 3
+  })
+  if (at < 0) return []
+  const head = cellsOf(lines[at])
+  const find = (re: RegExp) => head.findIndex(c => re.test(norm(c)))
+  const dayCols = Array(7).fill(-1)
+  head.forEach((c, col) => { const d = dayIndex(c); if (d >= 0 && dayCols[d] < 0) dayCols[d] = col })
+  const L = { name: 0, days: dayCols, measured: find(/^(measured|amount|done|ልኬት|የተሰራ)/), code: find(/^code/) }
+  const out: PastePiece[] = []
+  const tabbed = lines[at].includes('\t')
+  for (at = at + 1; at < lines.length; at++) {
+    const raw = lines[at]
+    if (!raw.trim()) continue
+    // Copied from Excel, a row is tab-separated: a line without tabs is a note under the table.
+    if (tabbed && !raw.includes('\t')) continue
+    const cells = cellsOf(raw)
+    const name = (cells[L.name] ?? '').trim()
+    if (/^(total|sum|ድምር|example|e\.g\.?\b|ምሳሌ|pm signature|send the photo|days counts)/i.test(name)) continue
+    const code = L.code >= 0 ? (cells[L.code] ?? '').trim() : ''
+    const marked = L.days.some(c => c >= 0 && (cells[c] ?? '').trim() && !/^[-–—·0]$/.test((cells[c] ?? '').trim()))
+    const measuredRaw = L.measured >= 0 ? (cells[L.measured] ?? '').trim() : ''
+    if (!name && !code) continue
+    if (!marked && !measuredRaw) continue   // a job nobody worked on this week
+    const problems: string[] = []
+    let candidates: PasteJob[] = []
+    const byCode = code.match(/^j:([0-9a-f]{4,})/i)
+    if (byCode) candidates = jobs.filter(j => j.id.toLowerCase().startsWith(byCode[1].toLowerCase()))
+    if (!candidates.length && name) {
+      const n = norm(name)
+      const full = (j: PasteJob) => norm(`${j.what} · ${j.project}`)
+      candidates = jobs.filter(j => full(j) === n)
+      if (!candidates.length) candidates = jobs.filter(j => norm(j.what) === n || full(j).startsWith(n))
+      if (!candidates.length) candidates = jobs.filter(j => n.length >= 4 && full(j).includes(n))
+    }
+    const days: PastePiece['days'] = Array(7).fill(undefined)
+    for (let d = 0; d < 7; d++) {
+      if (L.days[d] < 0) continue
+      const v = (cells[L.days[d]] ?? '').trim().toLowerCase()
+      if (NONE.has(v)) { days[d] = null; continue }
+      if (FULL.has(v) || /^\d+(\.\d+)?$/.test(v) || HALF.has(v)) { days[d] = true; continue }
+      problems.push(`${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d]}: "${v}" — tick it or leave it empty`)
+    }
+    let measured: number | null = null
+    if (measuredRaw && !NONE.has(measuredRaw.toLowerCase())) {
+      const m = measuredRaw.replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*%?/)
+      if (m) measured = Number(m[1]); else problems.push(`Measured "${measuredRaw}" isn't a number`)
+    }
+    if (!candidates.length) problems.push('Not one of this PM\'s open jobs this week')
+    out.push({
+      line: at + 1, text: name || code,
+      job_id: candidates.length === 1 ? candidates[0].id : null,
+      candidates: candidates.length > 1 ? candidates : [], days, measured, problems,
+    })
+  }
+  return out
+}
+
+/** Rows naming the same job (the draft's row and one written in by hand): one row, days added together. */
+export function mergePieces<T extends { job_id: string; days: (true | null | undefined)[]; measured: number | null }>(rows: T[]): T[] {
+  const by = new Map<string, T>()
+  for (const r of rows) {
+    const had = by.get(r.job_id)
+    if (!had) { by.set(r.job_id, { ...r, days: [...r.days] }); continue }
+    had.days = had.days.map((d, i) => (d === true || r.days[i] === true ? true : d === null || r.days[i] === null ? null : undefined))
+    if (r.measured != null) had.measured = r.measured
+  }
+  return [...by.values()]
+}
+
+// ── New workers in the report ─────────────────────────────────────────────
+// The draft's New workers block: Full name · Phone · Trade · Day rate. Their
+// days go in the worker rows like anyone's; this block is what's needed to
+// add them (labour_day_new_worker): HR verifies before they're paid.
+
+export type PasteNewWorker = { line: number; name: string; phone: string; trade: string; rate: number | null }
+
+/** Is this line the New workers block's title? Worker rows stop here too. */
+export const isNewWorkersStart = (firstCell: string) => /^(new workers?|አዲስ)/i.test(norm(firstCell))
+
+export function parseNewWorkers(text: string): PasteNewWorker[] {
+  const lines = text.replace(/\r/g, '').split('\n')
+  // The header: a line with Trade and Day rate (or Rate) in it.
+  let at = lines.findIndex(l => { const c = cellsOf(l).map(norm); return c.some(x => /^(trade|ሙያ)/.test(x)) && c.some(x => /rate|ክፍያ|ደመወዝ/.test(x)) })
+  if (at < 0) return []
+  const head = cellsOf(lines[at]).map(norm)
+  const col = (re: RegExp, dflt: number) => { const i = head.findIndex(x => re.test(x)); return i >= 0 ? i : dflt }
+  const L = { name: col(/^(new worker|full name|name|ስም|አዲስ)/, 0), phone: col(/^(phone|ስልክ)/, 1), trade: col(/^(trade|ሙያ)/, 2), rate: col(/rate|ክፍያ|ደመወዝ/, 3) }
+  const tabbed = lines[at].includes('\t')
+  const out: PasteNewWorker[] = []
+  for (at = at + 1; at < lines.length; at++) {
+    const raw = lines[at]
+    if (!raw.trim()) continue
+    if (tabbed && !raw.includes('\t')) continue
+    const c = cellsOf(raw)
+    const name = (c[L.name] ?? '').trim()
+    if (isPieceStart(name)) break
+    if (!name || /^(example|e\.g|ምሳሌ)/i.test(name)) continue
+    const rate = Number((c[L.rate] ?? '').replace(/[^\d.]/g, ''))
+    out.push({ line: at + 1, name, phone: (c[L.phone] ?? '').trim(), trade: (c[L.trade] ?? '').trim(), rate: rate > 0 ? rate : null })
+  }
+  return out
+}
+
+/** "Carpenter", "አናጢ" or "carpenter" → the trade tag. */
+export function matchTrade(text: string, trades: { trade_tag: string; codename_english: string; codename_amharic: string | null }[]): string | null {
+  const t = norm(text).replace(/_/g, ' ')
+  if (!t) return null
+  const names = (x: typeof trades[number]) => [x.trade_tag.replace(/_/g, ' '), x.codename_english, x.codename_amharic ?? ''].map(n => norm(n))
+  const exact = trades.filter(x => names(x).includes(t))
+  if (exact.length === 1) return exact[0].trade_tag
+  const part = trades.filter(x => names(x).some(n => n && (n.startsWith(t) || t.startsWith(n))))
+  return part.length === 1 ? part[0].trade_tag : null
 }

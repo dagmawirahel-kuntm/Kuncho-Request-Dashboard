@@ -7,13 +7,14 @@ import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { NewWorkerForm, type NewWorker } from '@/components/labour/NewWorkerForm'
-import { PasteReportDialog, type PastedWorker } from '@/components/labour/PasteReportDialog'
+import { PasteReportDialog, type PastedPiece, type PastedWorker, type ReportNewWorker } from '@/components/labour/PasteReportDialog'
+import { downloadWeekDraft } from '@/lib/labourWeekDraft'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
-  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, WEEKDAYS, halfDays, tradeName, useDayPeople, useDaySettings,
+  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, WEEKDAYS, halfDays, tradeName, useDayPeople, useDaySettings, useTrades,
   type Bucket, type DaySheet, type DayStatus, type PieceJob,
 } from '@/lib/labourDay'
-import { CalendarRange, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Plus, Save, Send, UserPlus, X } from 'lucide-react'
+import { CalendarRange, ChevronLeft, ChevronRight, ClipboardPaste, Copy, FileDown, Plus, Save, Send, UserPlus, X } from 'lucide-react'
 
 type Col = { key: string; bucket: Bucket; project_id: string | null; project: string | null; label: string; tag: string }
 type Cell = { paid: number; alloc: Record<string, number>; ot: number; night: number; note: string | null }
@@ -36,6 +37,7 @@ export default function LabourWeekSheetPage() {
   const [params, setParams] = useSearchParams()
   const { me, approver, seeAll, pms } = useDayPeople()
   const { data: settings } = useDaySettings()
+  const { data: trades = [] } = useTrades()
   const today = isoDay(new Date())
   const week = mondayOf(params.get('week') ?? today)
   const pm = params.get('pm') ?? me?.id ?? null
@@ -231,6 +233,20 @@ export default function LabourWeekSheetPage() {
     for (const k of ['labour-day', 'labour-day-board', 'labour-flags', 'labour-day-unpaid', 'labour-day-todo']) qc.invalidateQueries({ queryKey: [k] })
   }
 
+  // A worker the PM's report names who isn't on file yet (Paste a report).
+  async function newWorkerFromReport(w: ReportNewWorker) {
+    const { data, error } = await supabase.rpc('labour_day_new_worker', {
+      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: w.rate, p_phone: w.phone.trim() || null, p_photo: null,
+    })
+    if (error) { toast(error.message, 'error'); return null }
+    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number; trade: string }
+    qc.invalidateQueries({ queryKey: ['labour-casual-workers'] })
+    qc.invalidateQueries({ queryKey: ['my-workers-details'] })
+    setExtraWorkers(x => (x.some(e => e.staff_id === r.staff_id) ? x : [...x, { staff_id: r.staff_id, name: r.name, trade: r.trade, day_rate: r.day_rate, photo_url: null, verified: false }]))
+    toast(r.existing ? `${r.name} is already on file under that phone — using them` : `${r.name} added. Their ID, bank and photo go on Worker details; HR verifies before they're paid.`, 'success')
+    return { staff_id: r.staff_id, name: r.name }
+  }
+
   async function createWorker(w: NewWorker) {
     setBusy('new')
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
@@ -254,7 +270,7 @@ export default function LabourWeekSheetPage() {
 
   // A pasted report (PasteReportDialog): each worker's days in it replace
   // theirs on the grid; days it doesn't cover, and locked days, stay.
-  function fillFromReport(rows: PastedWorker[]) {
+  function fillFromReport(rows: PastedWorker[], pieces: PastedPiece[] = []) {
     // Only days the report changes count as changed: a blank Sunday stays unsaved.
     const touched = new Set<string>()
     const next = { ...cells }
@@ -271,11 +287,67 @@ export default function LabourWeekSheetPage() {
       next[r.staff_id] = row
     }
     setCells(next)
+    // Piece work: the job's crew on each day the report ticks; the week's
+    // measurement on the last ticked day it can still go on.
+    if (pieces.length) {
+      const out = { ...jobDays }
+      for (const p of pieces) {
+          const job = jobs.find(x => x.id === p.job_id)
+          if (!job) continue
+          const row = { ...(out[job.id] ?? {}) }
+          p.days.forEach((d, i) => {
+            if (d === undefined) return
+            const date = dates[i]
+            const present = d ? job.crew.map(c => c.staff_id) : []
+            const before = row[date] ?? { present: [], measured: null }
+            if (before.present.length !== present.length) touched.add(date)
+            row[date] = { ...before, present }
+          })
+          if (p.measured != null) {
+            const ticked = p.days.map((d, i) => (d && dayInfo(i).editable ? dates[i] : null)).filter((x): x is string => !!x)
+            const target = ticked[ticked.length - 1] ?? dates.filter((_, i) => dayInfo(i).editable).pop()
+            if (target) { row[target] = { present: row[target]?.present ?? [], measured: p.measured }; touched.add(target) }
+          }
+          out[job.id] = row
+      }
+      setJobDays(out)
+    }
     const add = rows.filter(r => !workers.some(w => w.staff_id === r.staff_id)).map(r => casual.find(x => x.id === r.staff_id)).filter(x => !!x)
     if (add.length) setExtraWorkers(x => [...x, ...add.map(w => ({ staff_id: w.id, name: w.employee_name, trade: w.trade_tag, day_rate: w.day_rate, photo_url: w.photo_url, verified: !!w.verified_at }))])
     setDirtyDays(x => new Set([...x, ...touched]))
     setPasting(false)
-    toast(`Filled ${rows.length} worker${rows.length === 1 ? '' : 's'} from the report. Check the grid, then Save or Send.`, 'success')
+    toast(`Filled ${rows.length} worker${rows.length === 1 ? '' : 's'}${pieces.length ? ` and ${pieces.length} piece job${pieces.length === 1 ? '' : 's'}` : ''} from the report. Check the grid, then Save or Send.`, 'success')
+  }
+
+  // The week's draft for the PM: the template with their recent workers and
+  // open piece jobs (with each crew) already written in.
+  async function downloadDraft() {
+    if (!pm) return
+    setBusy('draft')
+    try {
+      const { data, error } = await supabase.from('labour_day_workers')
+        .select('staff_id, staff:staff_id (employee_name, employment_type), labour_days!inner (pm_staff_id, work_date)')
+        .eq('labour_days.pm_staff_id', pm).gte('labour_days.work_date', addDays(week, -28)).lte('labour_days.work_date', addDays(week, 6))
+      if (error) throw error
+      const names = new Map<string, string>()
+      for (const w of workers) names.set(w.staff_id, w.name)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (data ?? []) as any[]) if (r.staff?.employee_name) names.set(r.staff_id, r.staff.employee_name)
+      // Piece-work crews are paid by the job: they go under Piece work, not as day workers.
+      const crew = new Set(jobs.flatMap(j => j.crew.map(c => c.staff_id)))
+      const projectNames = Array.from(new Set(cols.filter(c => c.project).map(c => c.project!)))
+      await downloadWeekDraft({
+        pmName: pms.find(p => p.id === pm)?.name ?? me?.employee_name ?? 'PM',
+        week,
+        workers: [...names].filter(([id]) => !crew.has(id)).map(([, name]) => ({ name, where: projectNames.length === 1 ? projectNames[0] : null }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+        wheres: [...projectNames, ...cols.filter(c => !c.project).map(c => c.label)],
+        jobs,
+        trades: trades.map(t => tradeName(t.trade_tag)),
+      })
+    } catch (e) {
+      toast(`Couldn't make the draft: ${(e as Error).message}`, 'error')
+    } finally { setBusy(null) }
   }
   const projectBuild = cols.filter(c => c.bucket === 'build')
 
@@ -384,6 +456,8 @@ export default function LabourWeekSheetPage() {
                   <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><Plus className="h-3.5 w-3.5" /> Add a worker</button>
                 )}
                 <button onClick={() => setPasting(true)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><ClipboardPaste className="h-3.5 w-3.5" /> Paste a report</button>
+                <button onClick={downloadDraft} disabled={busy === 'draft'} title="The Excel sheet for the PM, with their workers and piece jobs filled in"
+                  className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand disabled:opacity-50 dark:border-slate-600 dark:text-slate-200"><FileDown className="h-3.5 w-3.5" /> {busy === 'draft' ? 'Making…' : 'Week draft (.xlsx)'}</button>
                 {!newWorker && (
                   <button onClick={() => setNewWorker({ name: '', phone: '', trade: '', rate: '', photo: null })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200"><UserPlus className="h-3.5 w-3.5" /> New worker</button>
                 )}
@@ -466,6 +540,9 @@ export default function LabourWeekSheetPage() {
       {pasting && (
         <PasteReportDialog week={week} cols={cols} colTag={colTag}
           workers={casual.map(w => ({ id: w.id, name: w.employee_name }))}
+          jobs={jobs.map(j => ({ id: j.id, what: j.what, project: j.project, basis: j.basis, unit: j.unit }))}
+          onDraft={downloadDraft}
+          onNewWorker={newWorkerFromReport}
           onSheet={new Set(workers.map(w => w.staff_id))}
           editable={dates.map((_, i) => dayInfo(i).editable)}
           defaultWhere={projectBuild.length === 1 ? projectBuild[0].key : null}
