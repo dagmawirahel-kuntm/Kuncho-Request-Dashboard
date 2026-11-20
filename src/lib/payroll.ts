@@ -141,23 +141,6 @@ export function dayKindLabel(h: Pick<PricedHour, 'day_kind' | 'holiday_name'>) {
   return 'Working day'
 }
 
-/** Over the Labour Proclamation's limits (4 h a day, 12 h a week, Monday to Sunday). They warn; they never block. */
-export function overtimeOverLimits(rows: OvertimeHourInput[]) {
-  const byDay = new Map<string, number>(); const byWeek = new Map<string, number>()
-  for (const r of rows) {
-    if (!r.work_date || !(Number(r.hours) > 0)) continue
-    byDay.set(r.work_date, (byDay.get(r.work_date) ?? 0) + Number(r.hours))
-    const d = new Date(r.work_date + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
-    const wk = d.toISOString().slice(0, 10)
-    byWeek.set(wk, (byWeek.get(wk) ?? 0) + Number(r.hours))
-  }
-  const out: string[] = []
-  const nice = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
-  for (const [d, h] of byDay) if (h > 4) out.push(`${h} h on ${nice(d)} (limit 4 a day)`)
-  for (const [w, h] of byWeek) if (h > 12) out.push(`${h} h in the week of ${nice(w)} (limit 12 a week)`)
-  return out
-}
-
 export function hoursSummary(rows: OvertimeHourInput[]) {
   const h = rows.reduce((s, r) => s + (Number(r.hours) || 0), 0)
   const days = new Set(rows.filter(r => r.work_date).map(r => r.work_date)).size

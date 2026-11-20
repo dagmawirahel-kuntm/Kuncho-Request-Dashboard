@@ -5,7 +5,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Clock, Printer } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency } from '@/lib/utils'
-import { overtimeOverLimits } from '@/lib/payroll'
 import { otHoursOf, useOvertimeMonths } from '@/lib/overtimeMonth'
 import { printOvertimeMonth } from '@/lib/overtimeMonthPrint'
 
@@ -35,7 +34,6 @@ export default function OvertimeMonthPage() {
       cost: M.people.reduce((s, p) => s + p.cost, 0),
       paye: M.people.reduce((s, p) => s + p.paye, 0),
       kinds: KIND.map(k => ({ ...k, hours: all.filter(x => x.day_kind === k.k).reduce((s, x) => s + Number(x.hours), 0) })),
-      over: M.people.filter(p => overtimeOverLimits(p.hours).length).length,
     }
   }, [M])
   const prevHours = (id: string) => { const p = before[0]?.people.find(x => x.staff_id === id); return p ? otHoursOf(p) : null }
@@ -74,7 +72,6 @@ export default function OvertimeMonthPage() {
             <p className="text-sm text-slate-600 dark:text-slate-300">
               {M.people.length} people worked <b>{hrs(t.hours)} hours</b> of overtime in {M.label}, costing the company <b>{formatCurrency(t.cost)}</b>
               {before[0] ? <> — {t.hours >= totalsHours(before[0]) ? 'up' : 'down'} {hrs(Math.abs(t.hours - totalsHours(before[0])))} h on {before[0].label}</> : ''}.
-              {t.over ? <> {t.over} went past the legal limit at least once.</> : ''}
               <span className="ml-1 text-slate-400">Runs: {M.runs.map(r => r.record).filter(Boolean).join(', ')}</span>
             </p>
             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-slate-200 sm:grid-cols-5 dark:border-slate-700 dark:bg-slate-700">
@@ -98,7 +95,7 @@ export default function OvertimeMonthPage() {
                     const h = otHoursOf(p), ph = prevHours(p.staff_id)
                     return (
                       <tr key={p.staff_id}>
-                        <td className="px-3 py-2"><p className="font-medium text-slate-800 dark:text-slate-100">{p.name}</p><p className="text-xs text-slate-500">{p.role ?? ''}{overtimeOverLimits(p.hours).length ? <span className="ml-1 rounded bg-amber-50 px-1.5 text-amber-700">past limit</span> : ''}{p.typed && !p.hours.length ? <span className="ml-1 rounded bg-slate-100 px-1.5 text-slate-600">amount only</span> : ''}</p></td>
+                        <td className="px-3 py-2"><p className="font-medium text-slate-800 dark:text-slate-100">{p.name}</p><p className="text-xs text-slate-500">{p.role ?? ''}{p.typed && !p.hours.length ? <span className="ml-1 rounded bg-slate-100 px-1.5 text-slate-600">amount only</span> : ''}</p></td>
                         <td className="px-3 py-2">
                           <div className="flex h-2.5 overflow-hidden rounded bg-slate-100 dark:bg-slate-700" style={{ width: `${h / maxH * 100}%` }}>
                             {KIND.map(k => { const v = p.hours.filter(x => x.day_kind === k.k).reduce((s, x) => s + Number(x.hours), 0); return <div key={k.k} className={k.cls} style={{ width: `${h ? v / h * 100 : 0}%` }} /> })}

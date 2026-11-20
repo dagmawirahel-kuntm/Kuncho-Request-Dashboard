@@ -22,7 +22,7 @@ import { CashReceiptUploader } from '@/components/shared/CashReceiptUploader'
 import { FormattedNumberInput } from '@/components/shared/FormattedNumberInput'
 import {
   RUN_KINDS, KIND_NOTE, carriesPension, ecMonthDates, monthOfDates, recentEcMonths, useRunDraft,
-  previewRun, saveRun, hoursReady, hoursSummary, overtimeOverLimits,
+  previewRun, saveRun, hoursReady, hoursSummary,
   type RunKind, type RunInput, type LineInput, type OvertimeHourInput,
 } from '@/lib/payroll'
 
@@ -583,7 +583,6 @@ function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
               const owes = Number(d?.open_advance ?? 0)
               const locked = matched.has(l.staff_id)
               const hrs = fromHours(l) ? l.hours! : null
-              const over = hrs ? overtimeOverLimits(hrs).length : 0
               return (
                 <div key={l.staff_id} className="border-b dark:border-slate-700 last:border-0">
                 <div className="grid gap-2 px-3 py-2 items-start"
@@ -623,7 +622,7 @@ function PayrollFormPageBody({ id, record, linkedRows, savedHours }: {
                         {previewBy.get(l.staff_id) ? num(baseOf(l)) : '—'}
                       </p>
                       <p className="text-right text-[10px] text-blue-600 dark:text-blue-300">
-                        from hours{over ? <span className="ml-1 text-amber-600">· {over} over the limit</span> : ''}
+                        from hours
                         {!locked && (
                           <button type="button" className="ml-1 underline decoration-dotted"
                             onClick={() => { patchLine(l.staff_id, { hours: null, base_net: baseOf(l) }); setSheetFor(null) }}>type an amount</button>

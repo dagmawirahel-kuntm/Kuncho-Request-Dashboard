@@ -1,12 +1,12 @@
 // The month's overtime for the whole company, printed: what everyone worked
 // and what it cost, across every Overtime run that pays for the month — the
-// day-by-day load, the kinds of day, who carried the hours, roles, the months
-// before, and the legal limits. Two A4 pages, signed by HR, finance and the
+// day-by-day load, the kinds of day, who carried the hours, roles and the
+// months before. Two A4 pages, signed by HR, finance and the
 // approver.
 import { companyName, esc } from '@/lib/documentTheme'
 import { toEthiopian } from '@/lib/ethiopianCalendar'
 import { printHtml } from '@/lib/leavePrint'
-import { overtimeOverLimits, type PricedHour } from '@/lib/payroll'
+import type { PricedHour } from '@/lib/payroll'
 import { otHoursOf, type OtMonth, type OtPersonMonth } from '@/lib/overtimeMonth'
 import { KIND_COLOR, KIND_NAME, KIND_SOFT, STATEMENT_CSS } from '@/lib/overtimeStatementPrint'
 
@@ -112,9 +112,8 @@ function everyone(M: OtMonth, before: OtMonth[]) {
     <tr><th>Employee</th><th class="num">Days</th><th class="num">Working day</th><th class="num">Rest day</th><th class="num">Holiday</th><th class="num">Night</th><th class="num">Total h</th><th class="num">${prev ? `vs ${esc(prev.label)}` : 'Change'}</th><th class="num">Take-home</th><th class="num">Gross</th></tr>
     ${M.people.map(p => {
       const t = otHoursOf(p), ph = prevHours(p.staff_id)
-      const over = overtimeOverLimits(p.hours).length
       const delta = ph == null ? '<span class="muted">new</span>' : `<span class="${t - ph > 0 ? 'delta-up' : t - ph < 0 ? 'delta-down' : 'muted'}">${t - ph >= 0 ? '+' : '−'}${h(Math.abs(t - ph))}</span>`
-      return `<tr><td><b>${esc(p.name)}</b>${over ? ' <span class="chip" style="background:#fff3d6;color:#8a5a00">past limit</span>' : ''}${p.typed && !p.hours.length ? ' <span class="chip" style="background:#eef1f4;color:#5b6675">amount only</span>' : ''}<br/><span class="muted">${esc(p.role ?? '')}</span></td>
+      return `<tr><td><b>${esc(p.name)}</b>${p.typed && !p.hours.length ? ' <span class="chip" style="background:#eef1f4;color:#5b6675">amount only</span>' : ''}<br/><span class="muted">${esc(p.role ?? '')}</span></td>
         <td class="num">${new Set(p.hours.map(x => x.work_date)).size || '—'}</td><td class="num">${h(kindH(p, 'working_day'))}</td><td class="num">${h(kindH(p, 'rest_day'))}</td><td class="num">${h(kindH(p, 'holiday'))}</td>
         <td class="num">${h(p.hours.reduce((s, x) => s + Number(x.night_hours), 0))}</td><td class="num"><b>${h(t)}</b></td><td class="num">${delta}</td><td class="num">${money(p.take_home)}</td><td class="num">${money(p.gross)}</td></tr>`
     }).join('')}
@@ -125,14 +124,13 @@ function everyone(M: OtMonth, before: OtMonth[]) {
 export function printOvertimeMonth(M: OtMonth, before: OtMonth[]): boolean {
   const t = totals(M)
   const maxKind = Math.max(...t.kinds.map(k => k.hours), 1)
-  const over = M.people.filter(p => overtimeOverLimits(p.hours).length)
   const head = (title: string) => `<header>
     <div><div class="co">${esc(companyName())}</div><h1>${esc(title)}</h1></div>
     <div class="ref"><b>${esc(M.label)}</b><br/>${esc(M.runs.map(r => r.record ?? '').filter(Boolean).join(', '))}<br/>${M.runs.every(r => r.paid) ? 'Paid' : `${M.runs.filter(r => r.paid).length} of ${M.runs.length} run${M.runs.length === 1 ? '' : 's'} paid`}</div>
   </header>`
   const page1 = `<section class="page">
     ${head('Overtime statement — the whole company')}
-    <p class="lead">${M.people.length} people worked <b>${h(t.hours)} hours</b> of overtime in ${esc(M.label)}, ${t.hours ? Math.round(t.night / t.hours * 100) : 0}% of it at night. It costs the company <b>${money(t.cost)} ETB</b>: ${money(t.take)} paid to them and ${money(t.paye)} in income tax.${over.length ? ` ${over.length} ${over.length === 1 ? 'person' : 'people'} went past the legal limit at least once.` : ' Everyone stayed within the legal limits.'}</p>
+    <p class="lead">${M.people.length} people worked <b>${h(t.hours)} hours</b> of overtime in ${esc(M.label)}, ${t.hours ? Math.round(t.night / t.hours * 100) : 0}% of it at night. It costs the company <b>${money(t.cost)} ETB</b>: ${money(t.take)} paid to them and ${money(t.paye)} in income tax.</p>
     <div class="tiles">
       <div class="tile key"><b>${M.people.length}</b><span>People</span></div>
       <div class="tile key"><b>${h(t.hours)} h</b><span>Overtime worked</span></div>
@@ -159,7 +157,6 @@ export function printOvertimeMonth(M: OtMonth, before: OtMonth[]): boolean {
     ${head('Overtime — everyone this month')}
     ${everyone(M, before)}
     <div class="legend" style="margin-top:6px">${KINDS.map(k => `<span><i style="background:${KIND_SOFT[k]};border:1px solid ${KIND_COLOR[k]}"></i>${KIND_NAME[k]}</span>`).join('')}</div>
-    ${over.length ? `<div class="note"><b>Past the legal limit (4 h a day, 12 h a week):</b> ${esc(over.map(p => `${p.name} (${overtimeOverLimits(p.hours).length}×)`).join(', '))}. Paid as worked; their own statements say when.</div>` : '<div class="ok">Everyone stayed within the legal limits of 4 hours a day and 12 hours a week.</div>'}
     ${t.typed ? `<p class="muted" style="margin-top:6px">${money(t.typed)} ETB of take-home was entered as an amount with no hours behind it ("amount only"); it counts in the money, not in the hours.</p>` : ''}
     <div class="sign"><div>Prepared by (HR)</div><div>Checked by (Finance)</div><div>Approved by (General Manager)</div></div>
   </section>`

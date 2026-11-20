@@ -1,13 +1,13 @@
 // Overtime statements (532): the work behind a person's overtime pay, one A4
 // page each, after a one-page summary of the run. Where the payslip says what
 // was paid, this shows what was done — the days on a month calendar, hours by
-// kind of day, each date at its rate, the legal limits, and how the month
+// kind of day, each date at its rate, and how the month
 // compares with the ones before — for the person to check and sign.
 import { companyName, esc } from '@/lib/documentTheme'
 import { formatEthiopian, toEthiopian } from '@/lib/ethiopianCalendar'
 import { formatDateGC } from '@/lib/utils'
 import { printHtml } from '@/lib/leavePrint'
-import { dayKindLabel, overtimeOverLimits, type PricedHour } from '@/lib/payroll'
+import { dayKindLabel, type PricedHour } from '@/lib/payroll'
 
 export interface StatementRun {
   payroll_record: string | null
@@ -146,7 +146,6 @@ function statement(run: StatementRun, p: StatementPerson) {
   const first = rows[0]
   const kinds = byKind(rows)
   const maxKind = Math.max(...kinds.map(k => k.hours), 1)
-  const limits = overtimeOverLimits(rows)
   return `<section class="page">
     ${head(run, 'Overtime statement')}
     <div class="who">
@@ -181,7 +180,6 @@ function statement(run: StatementRun, p: StatementPerson) {
       <tr class="tot"><td colspan="3">Total</td><td class="num">${h(total)}</td><td class="num">${night ? h(night) : '—'}</td><td></td><td class="num">${money(amount)}</td></tr>
     </table>
     <p class="muted" style="margin:5px 0 0">${first ? `Hourly rate: salary ${money(first.salary)} ÷ ${h(Number(first.days_per_month ?? 26))} days ÷ 8 hours = ${money(first.hourly_rate)}. Each hour is paid at that rate times the multiple for its kind of day; night hours at the higher of the night and day rates.` : ''}${p.tax_fixed ? '' : ' Tax shown is an estimate until the run is paid.'}</p>
-    ${limits.length ? `<div class="note"><b>Past the legal limit (4 h a day, 12 h a week):</b> ${esc(limits.join('; '))}. Paid as worked; worth a word about the workload.</div>` : '<div class="ok">Within the legal limits of 4 hours a day and 12 hours a week throughout.</div>'}
     <div class="sign"><div>Prepared by (HR)</div><div>Approved by</div><div>Received and agreed (employee)</div></div>
   </section>`
 }
@@ -190,7 +188,7 @@ function summary(run: StatementRun, people: StatementPerson[]) {
   const rows = people.map(p => {
     const k = byKind(p.hours)
     const total = p.hours.reduce((s, r) => s + Number(r.hours), 0)
-    return { p, total, days: p.hours.length, k, over: overtimeOverLimits(p.hours).length }
+    return { p, total, days: p.hours.length, k }
   }).sort((a, b) => b.total - a.total)
   const sum = (f: (r: typeof rows[number]) => number) => rows.reduce((s, r) => s + f(r), 0)
   const max = Math.max(...rows.map(r => r.total), 1)
@@ -206,13 +204,12 @@ function summary(run: StatementRun, people: StatementPerson[]) {
     </div>
     <table>
       <tr><th>Employee</th><th style="width:28%"></th><th class="num">Days</th><th class="num">Working day</th><th class="num">Rest day</th><th class="num">Holiday</th><th class="num">Total h</th><th class="num">Take-home</th><th class="num">Gross</th></tr>
-      ${rows.map(r => `<tr><td><b>${esc(r.p.name)}</b>${r.over ? ' <span class="chip" style="background:#fff3d6;color:#8a5a00">past limit</span>' : ''}<br/><span class="muted">${esc(r.p.role ?? '')}</span></td>
+      ${rows.map(r => `<tr><td><b>${esc(r.p.name)}</b><br/><span class="muted">${esc(r.p.role ?? '')}</span></td>
         <td><div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:#eef1f4;width:${r.total / max * 100}%">${r.k.map(k => `<div style="width:${r.total ? k.hours / r.total * 100 : 0}%;background:${KIND_COLOR[k.k]}"></div>`).join('')}</div></td>
         <td class="num">${r.days}</td><td class="num">${h(r.k[0].hours)}</td><td class="num">${h(r.k[1].hours)}</td><td class="num">${h(r.k[2].hours)}</td><td class="num"><b>${h(r.total)}</b></td><td class="num">${money(r.p.take_home)}</td><td class="num">${money(r.p.gross)}</td></tr>`).join('')}
       <tr class="tot"><td colspan="2">Total</td><td class="num">${sum(r => r.days)}</td><td class="num">${h(sum(r => r.k[0].hours))}</td><td class="num">${h(sum(r => r.k[1].hours))}</td><td class="num">${h(sum(r => r.k[2].hours))}</td><td class="num">${h(sum(r => r.total))}</td><td class="num">${money(sum(r => r.p.take_home))}</td><td class="num">${money(sum(r => r.p.gross))}</td></tr>
     </table>
     <div class="legend" style="margin-top:6px">${(['working_day', 'rest_day', 'holiday'] as const).map(k => `<span><i style="background:${KIND_COLOR[k]}"></i>${KIND_NAME[k]}</span>`).join('')}</div>
-    ${rows.some(r => r.over) ? `<div class="note">${rows.filter(r => r.over).length} ${rows.filter(r => r.over).length === 1 ? 'person went' : 'people went'} past the legal limit of 4 hours a day or 12 a week at least once — their statements say when.</div>` : ''}
     <div class="sign"><div>Prepared by (HR)</div><div>Checked by (Finance)</div><div>Approved by</div></div>
   </section>`
 }

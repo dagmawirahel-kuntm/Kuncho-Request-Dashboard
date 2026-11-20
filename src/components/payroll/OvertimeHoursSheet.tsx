@@ -4,7 +4,7 @@
 // sum becomes the line's take-home.
 import { Plus, X } from 'lucide-react'
 import { formatEthiopian } from '@/lib/ethiopianCalendar'
-import { dayKindLabel, hoursSummary, overtimeOverLimits, type OvertimeHourInput, type PricedHour } from '@/lib/payroll'
+import { dayKindLabel, hoursSummary, type OvertimeHourInput, type PricedHour } from '@/lib/payroll'
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const cell = 'w-full rounded border px-2 py-1 text-sm tabular-nums outline-none focus:ring-1 focus:ring-brand dark:border-slate-600 dark:bg-slate-800'
@@ -28,7 +28,6 @@ export function OvertimeHoursSheet({
 }) {
   const byDate = new Map((priced ?? []).map(p => [p.work_date, p]))
   const first = priced?.[0]
-  const limits = overtimeOverLimits(rows)
   const total = rows.reduce((s, r) => s + Number(byDate.get(r.work_date)?.amount ?? 0), 0)
   const set = (i: number, patch: Partial<OvertimeHourInput>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   const num = (v: string) => (v === '' ? 0 : Math.max(0, Number(v)))
@@ -77,11 +76,6 @@ export function OvertimeHoursSheet({
           })}
         </div>
       </div>
-      {limits.length > 0 && (
-        <p className="mx-3 mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
-          Over the legal limit: {limits.join('; ')}. The run can still be saved; the payslip shows the hours.
-        </p>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40">
         {!disabled ? (
           <button type="button" onClick={() => onChange([...rows, { work_date: '', hours: 2, night_hours: 0 }])}
