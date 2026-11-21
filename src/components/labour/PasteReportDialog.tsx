@@ -113,7 +113,8 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
     }
   }
   const crewMissing = (p: PastePiece) => p.crew.filter(n => matchWorker(n, workers).length !== 1)
-  const termsOk = (t: NewJobTerms) => t.what.trim().length > 1 && !!t.project_id && t.price > 0 && (t.basis === 'fixed_price' || (!!t.unit && (t.total ?? 0) > 0))
+  // Someone has to be paid for it: a job with no crew can't be paid (534).
+  const termsOk = (t: NewJobTerms) => t.what.trim().length > 1 && !!t.project_id && t.price > 0 && t.crew.length > 0 && (t.basis === 'fixed_price' || (!!t.unit && (t.total ?? 0) > 0))
   async function askJob() {
     if (!asking || !onNewJob) return
     setBusyJob(true)
@@ -328,11 +329,26 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
                                   </>
                                 )}
                               </div>
-                              <p className="text-[10px] text-slate-500">
-                                {asking.t.price > 0 && (asking.t.basis === 'fixed_price' ? `${fmtMoney(asking.t.price)} for the whole job` : asking.t.total ? `${fmtMoney(asking.t.price)} × ${asking.t.total} ${asking.t.unit ?? ''} = ${fmtMoney(asking.t.price * asking.t.total)} in all` : '')}
-                                {' · '}Crew: {asking.t.crew.length ? asking.t.crew.map(id => byId.get(id)).join(', ') : 'none named'}
-                                {crewMissing(p).length ? ` · not found: ${crewMissing(p).join(', ')} (add them as new workers first)` : ''}
-                              </p>
+                              {asking.t.price > 0 && (
+                                <p className="text-[10px] text-slate-500">{asking.t.basis === 'fixed_price' ? `${fmtMoney(asking.t.price)} for the whole job` : asking.t.total ? `${fmtMoney(asking.t.price)} × ${asking.t.total} ${asking.t.unit ?? ''} = ${fmtMoney(asking.t.price * asking.t.total)} in all` : ''}</p>
+                              )}
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">Crew — who is paid:</span>
+                                  {asking.t.crew.map(id => (
+                                    <span key={id} className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 py-0.5 pl-2 pr-1 text-[10px] dark:bg-slate-700">
+                                      {byId.get(id)}
+                                      <button type="button" aria-label={`Take ${byId.get(id)} off the crew`} onClick={() => setAsking({ ...asking, t: { ...asking.t, crew: asking.t.crew.filter(x => x !== id) } })}
+                                        className="rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-600"><X className="h-2.5 w-2.5" /></button>
+                                    </span>
+                                  ))}
+                                  {!asking.t.crew.length && <span className="text-[10px] font-medium text-red-600">nobody yet — add at least one</span>}
+                                </div>
+                                <SearchableSelect value={null} placeholder="Add someone to the crew…"
+                                  onChange={v => v && !asking.t.crew.includes(v) && setAsking({ ...asking, t: { ...asking.t, crew: [...asking.t.crew, v] } })}
+                                  options={workers.filter(w => !asking.t.crew.includes(w.id)).map(w => ({ id: w.id, label: w.name }))} />
+                                {crewMissing(p).length > 0 && <p className="text-[10px] text-amber-700 dark:text-amber-300">On the sheet but not found: {crewMissing(p).join(', ')} — add them as new workers first, or pick them above.</p>}
+                              </div>
                               <div className="flex items-center gap-2">
                                 <button type="button" onClick={askJob} disabled={busyJob || !termsOk(asking.t)}
                                   className="rounded bg-brand px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40">{busyJob ? 'Asking…' : 'Ask for this job'}</button>
