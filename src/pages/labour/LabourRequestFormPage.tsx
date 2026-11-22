@@ -14,6 +14,7 @@ import { DetailsFields } from '@/components/labour/WorkerDetails'
 import { useDaySettings } from '@/lib/labourDay'
 import { BASIS_HINT, BASIS_LABEL, estimateOf, fmtMoney, isoDay, overtimeSummary, useLabourSites, useOvertimeSettings, type OvertimeRule, type PayBasis, type PayCycle } from '@/lib/labour'
 import { autoApproveRequest } from '@/lib/labourGives'
+import { PieceRateHistory } from '@/components/labour/PieceRateHistory'
 import { ArrowLeft, ArrowRight, Check, HardHat, Plus, X, CalendarDays, Ruler, Tag } from 'lucide-react'
 
 const input = 'w-full rounded-lg border px-3 py-2.5 text-base sm:text-sm outline-none focus:ring-2 focus:ring-brand dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
@@ -419,6 +420,13 @@ function RequestForm({ seed }: { seed: Seed | null }) {
               <div><Label>About how much in total</Label><input className={input} inputMode="decimal" value={totalQty} onChange={e => setTotalQty(e.target.value)} placeholder={unit} /></div>
             </div>
           </>)}
+          {(basis === 'per_volume' || basis === 'fixed_price') && roster.length > 0 && (
+            <PieceRateHistory staff={roster} work={`${work} ${scope}`.trim()} unit={basis === 'per_volume' ? unit : null}
+              onUse={r => {
+                setBasis(r.basis)
+                if (r.basis === 'per_volume') { setUnit(r.unit ?? unit); setUnitRate(String(r.price)) } else setPrice(String(r.price))
+              }} />
+          )}
           {basis === 'fixed_price' && (
             <div>
               <Label hint="Paid in parts as the task is done, by % complete.">Agreed price for the whole task (ETB)</Label>

@@ -5,6 +5,7 @@ import { halfDays, tradeName, useTrades, WEEKDAYS } from '@/lib/labourDay'
 import { addDays, dayLabel, fmtMoney } from '@/lib/labour'
 import { isFixedUnit, matchTrade, matchWorker, mergePieces, parseNewWorkers, parsePieces, parseReport, type PasteNewWorker, type PasteCol, type PasteDay, type PasteJob, type PastePiece, type PasteRow, type PasteWorker } from '@/lib/labourPaste'
 import { workbookToText } from '@/lib/labourWeekDraft'
+import { PieceRateHistory } from '@/components/labour/PieceRateHistory'
 
 export type PastedWorker = { staff_id: string; days: (PasteDay | null | undefined)[] }
 /** What it takes to add someone new from the report (labour_day_new_worker). */
@@ -333,6 +334,9 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
                                 {' · '}Crew: {asking.t.crew.length ? asking.t.crew.map(id => byId.get(id)).join(', ') : 'none named'}
                                 {crewMissing(p).length ? ` · not found: ${crewMissing(p).join(', ')} (add them as new workers first)` : ''}
                               </p>
+                              <PieceRateHistory compact staff={asking.t.crew.map(id => ({ id, name: byId.get(id) ?? '' }))} work={asking.t.what}
+                                unit={asking.t.basis === 'per_volume' ? asking.t.unit : null}
+                                onUse={r => setAsking({ ...asking, t: { ...asking.t, basis: r.basis, unit: r.basis === 'per_volume' ? (r.unit ?? asking.t.unit) : null, price: r.price } })} />
                               <div className="flex items-center gap-2">
                                 <button type="button" onClick={askJob} disabled={busyJob || !termsOk(asking.t)}
                                   className="rounded bg-brand px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40">{busyJob ? 'Asking…' : 'Ask for this job'}</button>
