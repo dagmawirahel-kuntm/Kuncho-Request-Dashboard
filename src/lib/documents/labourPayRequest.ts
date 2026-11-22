@@ -28,7 +28,7 @@ export function buildPayRequestHtml(r: PayRequestPrint): string {
     <td class="c">${n + 1}</td>
     <td><div style="font-weight:600">${esc(l.name)}</div>${l.crew_leader ? '<div style="font-size:8.4pt;color:#6b6453">Crew leader — paid for the crew</div>' : ''}
       ${!l.verified ? '<div style="font-size:8.4pt;color:#a33">Not verified by HR</div>' : ''}${l.held ? '<div style="font-size:8.4pt;color:#a33">Pay held until HR verifies</div>' : ''}</td>
-    <td class="r">${num(l.days)}</td>
+    <td class="r">${l.days != null ? num(l.days) : ''}${l.piece_work ? `<div style="font-size:8.6pt;text-align:right">${esc(l.piece_work)}</div>` : ''}${l.days == null && !l.piece_work ? '—' : ''}</td>
     <td class="r">${esc(docMoney(l.gross))}</td>
     <td class="r">${Number(l.deduction) > 0 ? `${esc(docMoney(l.deduction))}${l.deduction_note ? `<div style="font-size:8.2pt;color:#6b6453">${esc(l.deduction_note)}</div>` : ''}` : '—'}</td>
     <td class="r" style="font-weight:600">${esc(docMoney(l.net))}</td>
@@ -63,7 +63,7 @@ ${renderHeading('Pay sheets')}
 ${renderHeading('Workers')}
 <table class="doc-table">
   <thead><tr>
-    <th class="c" style="width:28px">${bi('#')}</th><th>Worker</th><th class="r" style="width:50px">${bi('Days')}</th>
+    <th class="c" style="width:28px">${bi('#')}</th><th>Worker</th><th class="r" style="width:96px">${bi('Days')} / work</th>
     <th class="r" style="width:90px">Gross</th><th class="r" style="width:90px">Advance</th><th class="r" style="width:95px">To send</th><th style="width:130px">Bank</th>
   </tr></thead>
   <tbody>${rows}</tbody>

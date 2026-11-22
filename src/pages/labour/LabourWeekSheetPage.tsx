@@ -40,7 +40,10 @@ export default function LabourWeekSheetPage() {
   const { me, approver, seeAll, pms } = useDayPeople()
   const { data: settings } = useDaySettings()
   const { data: trades = [] } = useTrades()
-  const { profile } = useAuth()
+  const { profile, hasRole } = useAuth()
+  const canSetRate = hasRole('admin', 'hr_officer')
+  // Rates set here this visit, before the sheets reload.
+  const [rateSet, setRateSet] = useState<Record<string, number>>({})
   const today = isoDay(new Date())
   const week = mondayOf(params.get('week') ?? today)
   const pm = params.get('pm') ?? me?.id ?? null
@@ -380,7 +383,21 @@ export default function LabourWeekSheetPage() {
   const projectBuild = cols.filter(c => c.bucket === 'build')
 
   const anyEditable = dates.some((_, i) => dayInfo(i).editable)
-  const weekCost = workers.reduce((s, w) => s + dates.reduce((t, d) => t + (cells[w.staff_id]?.[d]?.paid ?? 0) * Number(w.day_rate ?? 0), 0), 0)
+  const rateOf = (w: WRow) => rateSet[w.staff_id] ?? (w.day_rate ? Number(w.day_rate) : null)
+  const weekCost = workers.reduce((s, w) => s + dates.reduce((t, d) => t + (cells[w.staff_id]?.[d]?.paid ?? 0) * Number(rateOf(w) ?? 0), 0), 0)
+  // Piece workers carry no day rate; one is asked for only when they are put
+  // on day work. HR sets it (worker_set_day_rate); day pay waits until then.
+  async function setDayRate(w: WRow) {
+    const raw = window.prompt(`${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`)
+    if (raw == null) return
+    const rate = Number(raw.replace(/[^\d.]/g, ''))
+    if (!(rate > 0)) { toast('A day rate is more than 0', 'error'); return }
+    const { error } = await supabase.rpc('worker_set_day_rate', { p_staff: w.staff_id, p_rate: rate })
+    if (error) { toast(error.message, 'error'); return }
+    setRateSet(x => ({ ...x, [w.staff_id]: rate }))
+    for (const k of ['labour-casual-workers', 'labour-day']) qc.invalidateQueries({ queryKey: [k] })
+    toast(`${w.name}: ${rate.toLocaleString()} a day`, 'success')
+  }
   const due = (() => { const dow = settings?.week_due_dow ?? 6; return addDays(week, dow - 1) })()
   const editingCell = editing ? cells[editing.staff]?.[editing.date] ?? null : null
 
@@ -443,7 +460,9 @@ export default function LabourWeekSheetPage() {
                           <WorkerAvatar url={w.photo_url} name={w.name} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate font-medium text-slate-800 dark:text-slate-100">{w.name}</p>
-                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {w.day_rate ? `${Number(w.day_rate).toLocaleString()}/day` : <span className="text-red-600">no day rate</span>}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
+                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {rateOf(w) ? `${Number(rateOf(w)).toLocaleString()}/day` : canSetRate
+                              ? <button type="button" onClick={() => setDayRate(w)} className="text-red-600 underline decoration-dotted">no day rate — set it</button>
+                              : <span className="text-red-600" title="Paid by the piece so far. HR sets a day rate before their day work is paid.">no day rate — HR sets it</span>}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
                           </div>
                         </div>
                       </td>
