@@ -28,6 +28,8 @@ export type RequestLine = {
   gross: number; deduction: number; deduction_note: string | null; net: number
   bank: string | null; account_number: string | null; account_holder: string | null
   verified: boolean; held: boolean; expense_codes: string | null
+  /** Piece or fixed-price work, in words ("150 m² putty work"); days count day work only (535). */
+  piece_work?: string | null
 }
 
 export type RequestRow = {
