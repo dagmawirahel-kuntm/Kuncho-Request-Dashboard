@@ -1,0 +1,143 @@
+# Weekly backup of the Supabase project to OneDrive.
+#
+# The Free plan has no automatic backups, so this takes one every Sunday at
+# 04:17 Addis (01:17 UTC): the database (roles, schema and data, which takes in
+# auth.users, so logins come back too) and every file in Storage,
+# packed into one dated .tar.gz (encrypted when BACKUP_PASSPHRASE is set) and
+# copied to OneDrive. Backups older than 60 days are removed from OneDrive.
+# Run it by hand any time: Actions → Weekly backup → Run workflow.
+#
+# Setup (repository Settings → Secrets and variables → Actions):
+#
+#   SUPABASE_DB_URL            Supabase → Connect → Session pooler connection
+#                              string, with the database password filled in.
+#                              (Not the direct one: GitHub's runners have no
+#                              IPv6, and the direct host is IPv6 only.)
+#   SUPABASE_URL               https://<project-ref>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY  Supabase → Project Settings → API keys
+#   RCLONE_CONFIG              the whole rclone.conf with a remote named
+#                              [onedrive] — made once on a computer with
+#                              `rclone config` (see the operations manual).
+#   BACKUP_PASSPHRASE          optional, recommended: encrypts the archive
+#                              (gpg, AES-256). Keep it somewhere safe outside
+#                              OneDrive: without it the backup can't be opened.
+#   GH_PAT                     optional, needed for a personal OneDrive: a
+#                              fine-grained token for this repository with
+#                              "Secrets: read and write". Microsoft replaces the
+#                              sign-in token as it is used; this saves the new
+#                              one back into RCLONE_CONFIG so the backup keeps
+#                              working past 90 days.
+#
+#   Variable ONEDRIVE_FOLDER   optional, defaults to "Kuncho Backups".
+
+name: Weekly backup
+
+on:
+  schedule:
+    - cron: '17 1 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ONEDRIVE_FOLDER: ${{ vars.ONEDRIVE_FOLDER || 'Kuncho Backups' }}
+      RCLONE_VERSION: v1.69.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install script dependencies
+        run: npm ci --include=dev --ignore-scripts
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump the database
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          test -n "$DB_URL" || { echo "::error::SUPABASE_DB_URL is not set"; exit 1; }
+          mkdir -p backup/db
+          supabase db dump --db-url "$DB_URL" -f backup/db/roles.sql --role-only
+          supabase db dump --db-url "$DB_URL" -f backup/db/schema.sql
+          supabase db dump --db-url "$DB_URL" -f backup/db/data.sql --use-copy --data-only
+          ls -lh backup/db
+
+      - name: Download Storage files
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/backup-storage.ts backup/storage
+
+      - name: Pack (and encrypt)
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          name="kuncho-backup-$(date -u +%Y-%m-%d)"
+          tar -czf "$name.tar.gz" -C backup .
+          rm -rf backup
+          if [ -n "$PASSPHRASE" ]; then
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+                --symmetric --cipher-algo AES256 -o "$name.tar.gz.gpg" "$name.tar.gz" <<< "$PASSPHRASE"
+            rm "$name.tar.gz"
+            echo "ARCHIVE=$name.tar.gz.gpg" >> "$GITHUB_ENV"
+          else
+            echo "::warning::BACKUP_PASSPHRASE is not set: the backup goes to OneDrive unencrypted"
+            echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+          fi
+          ls -lh kuncho-backup-*
+
+      - name: Install rclone
+        run: |
+          curl -fsSL -o rclone.zip "https://downloads.rclone.org/$RCLONE_VERSION/rclone-$RCLONE_VERSION-linux-amd64.zip"
+          unzip -q rclone.zip
+          sudo install -m 755 "rclone-$RCLONE_VERSION-linux-amd64/rclone" /usr/local/bin/rclone
+          rm -rf rclone.zip "rclone-$RCLONE_VERSION-linux-amd64"
+          rclone version
+
+      - name: Upload to OneDrive
+        env:
+          RCLONE_CONF_TEXT: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          test -n "$RCLONE_CONF_TEXT" || { echo "::error::RCLONE_CONFIG is not set"; exit 1; }
+          export RCLONE_CONFIG="$RUNNER_TEMP/rclone.conf"
+          printf '%s\n' "$RCLONE_CONF_TEXT" > "$RCLONE_CONFIG"
+          cp "$RCLONE_CONFIG" "$RUNNER_TEMP/rclone.conf.orig"
+          rclone copy "$ARCHIVE" "onedrive:$ONEDRIVE_FOLDER" --onedrive-chunk-size 10M
+          rclone ls "onedrive:$ONEDRIVE_FOLDER" --include "$ARCHIVE"
+          # Keep about 8 weekly backups.
+          rclone delete "onedrive:$ONEDRIVE_FOLDER" --min-age 60d --include 'kuncho-backup-*'
+          echo "Uploaded $ARCHIVE to OneDrive: $ONEDRIVE_FOLDER"
+
+      - name: Save the refreshed OneDrive sign-in
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          conf="$RUNNER_TEMP/rclone.conf"
+          [ -f "$conf" ] || exit 0
+          if cmp -s "$conf" "$RUNNER_TEMP/rclone.conf.orig"; then echo "Sign-in unchanged"; exit 0; fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::The OneDrive sign-in was refreshed but GH_PAT is not set, so it was not saved. A personal OneDrive will stop working within 90 days."
+            exit 0
+          fi
+          gh secret set RCLONE_CONFIG --repo "$GITHUB_REPOSITORY" < "$conf"
+          echo "Saved the refreshed sign-in to RCLONE_CONFIG"
+
+      - name: Clean up
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/rclone.conf* kuncho-backup-*
