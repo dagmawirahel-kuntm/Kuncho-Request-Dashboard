@@ -165,11 +165,11 @@ export default function LabourDaySheetPage() {
   async function createWorker(w: NewWorker) {
     setBusy('new')
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
-      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate), p_phone: w.phone.trim() || null, p_photo: w.photo,
+      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate) > 0 ? Number(w.rate) : null, p_phone: w.phone.trim() || null, p_photo: w.photo,
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
-    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number; trade: string }
+    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number | null; trade: string }
     setNewWorker(null)
     qc.invalidateQueries({ queryKey: ['labour-casual-workers'] })
     qc.invalidateQueries({ queryKey: ['my-workers-details'] })

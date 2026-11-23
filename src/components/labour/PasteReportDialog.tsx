@@ -231,16 +231,16 @@ export function PasteReportDialog({ week, cols, colTag, workers, jobs, onSheet, 
                                   <SearchableSelect value={creating.w.trade || null} onChange={v => setCreating({ ...creating, w: { ...creating.w, trade: v ?? '' } })} placeholder="Trade…"
                                     options={trades.map(t => ({ id: t.trade_tag, label: tradeName(t.trade_tag), sub: t.codename_amharic ?? undefined }))} />
                                   <div className="flex gap-1.5">
-                                    <input value={creating.w.rate || ''} onChange={e => setCreating({ ...creating, w: { ...creating.w, rate: Number(e.target.value) || 0 } })} inputMode="decimal" placeholder="Day rate"
+                                    <input value={creating.w.rate || ''} onChange={e => setCreating({ ...creating, w: { ...creating.w, rate: Number(e.target.value) || 0 } })} inputMode="decimal" placeholder="Day rate (if day work)"
                                       aria-label="Day rate" className="w-24 rounded border px-2 py-1 text-right text-xs dark:border-slate-600 dark:bg-slate-900" />
                                     <input value={creating.w.phone} onChange={e => setCreating({ ...creating, w: { ...creating.w, phone: e.target.value } })} inputMode="tel" placeholder="Phone (optional)"
                                       aria-label="Phone" className="min-w-0 flex-1 rounded border px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <button type="button" onClick={createNew} disabled={busyNew || creating.w.name.trim().length < 2 || !creating.w.trade || !(creating.w.rate > 0)}
+                                    <button type="button" onClick={createNew} disabled={busyNew || creating.w.name.trim().length < 2 || !creating.w.trade}
                                       className="rounded bg-brand px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40">{busyNew ? 'Adding…' : 'Add worker'}</button>
                                     <button type="button" onClick={() => setCreating(null)} className="text-[11px] text-slate-500">Cancel</button>
-                                    <span className="text-[10px] text-slate-500">The rate is a proposal; HR verifies before pay.</span>
+                                    <span className="text-[10px] text-slate-500">Leave the rate blank for piece work; HR verifies before pay.</span>
                                   </div>
                                 </div>
                               )}

@@ -242,10 +242,10 @@ export default function LabourWeekSheetPage() {
   // A worker the PM's report names who isn't on file yet (Paste a report).
   async function newWorkerFromReport(w: ReportNewWorker) {
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
-      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: w.rate, p_phone: w.phone.trim() || null, p_photo: null,
+      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: w.rate > 0 ? w.rate : null, p_phone: w.phone.trim() || null, p_photo: null,
     })
     if (error) { toast(error.message, 'error'); return null }
-    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number; trade: string }
+    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number | null; trade: string }
     qc.invalidateQueries({ queryKey: ['labour-casual-workers'] })
     qc.invalidateQueries({ queryKey: ['my-workers-details'] })
     setExtraWorkers(x => (x.some(e => e.staff_id === r.staff_id) ? x : [...x, { staff_id: r.staff_id, name: r.name, trade: r.trade, day_rate: r.day_rate, photo_url: null, verified: false }]))
@@ -280,11 +280,11 @@ export default function LabourWeekSheetPage() {
   async function createWorker(w: NewWorker) {
     setBusy('new')
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
-      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate), p_phone: w.phone.trim() || null, p_photo: w.photo,
+      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate) > 0 ? Number(w.rate) : null, p_phone: w.phone.trim() || null, p_photo: w.photo,
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
-    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number; trade: string }
+    const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number | null; trade: string }
     setNewWorker(null)
     qc.invalidateQueries({ queryKey: ['labour-casual-workers'] })
     qc.invalidateQueries({ queryKey: ['my-workers-details'] })
