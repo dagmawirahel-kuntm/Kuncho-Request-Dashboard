@@ -313,6 +313,7 @@ function Line({ id, l, editable, sharedWith, onChange }: { id: string; l: Reques
           </p>
           <p className="text-xs text-slate-500">
             {l.days != null ? `${Number(l.days)} day${Number(l.days) === 1 ? '' : 's'} · ` : ''}
+            {l.piece_work ? `${l.piece_work} · ` : ''}
             {l.account_number ? `${l.bank ?? 'Bank'} ${l.account_number}` : <span className="text-red-600">No bank account</span>}
           </p>
           <div className="mt-0.5 flex flex-wrap gap-1">

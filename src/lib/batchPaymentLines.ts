@@ -110,6 +110,8 @@ export function buildBatchLines(expenses: BatchExpense[], workers: BatchWorkerRo
       // A crew rollup: one line per worker, as before. Its vendor (set only
       // for gang-leader requisitions) still routes the money to the vendor.
       const isVolume = e.labor_requisitions?.payment_basis === 'per_volume'
+      // A fixed-price job keeps the % done where day work keeps days (535).
+      const isFixed = e.labor_requisitions?.payment_basis === 'fixed_price'
       const weights = rows.map(r => Number(r.subtotal ?? 0)) // overtime is inside subtotal
       const whtParts = prorate(wht, weights)
       const creditParts = prorate(credit, weights)
@@ -119,7 +121,7 @@ export function buildBatchLines(expenses: BatchExpense[], workers: BatchWorkerRo
         bankAccount: w.staff?.bank_account ?? null,
         bankName: w.staff?.bank?.account_name ?? null,
         units: w.days_worked,
-        unitLabel: isVolume ? (e.labor_requisitions?.volume_unit ?? 'units') : 'days',
+        unitLabel: isVolume ? (e.labor_requisitions?.volume_unit ?? 'units') : isFixed ? '% done' : 'days',
         rate: w.day_rate, subtotal: w.subtotal,
         overtimeHours: w.overtime_hours, overtimeAmount: w.overtime_amount,
         gangSize: w.gang_size, gangMemberNames: w.gang_member_names,
