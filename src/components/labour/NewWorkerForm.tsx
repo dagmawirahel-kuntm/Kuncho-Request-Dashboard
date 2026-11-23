@@ -12,7 +12,7 @@ export function NewWorkerForm({ value: w, onChange, onSave, onCancel, busy }: {
 }) {
   const { data: trades = [] } = useTrades()
   const set = (patch: Partial<NewWorker>) => onChange({ ...w, ...patch })
-  const ok = w.name.trim().length > 1 && !!w.trade && Number(w.rate) > 0
+  const ok = w.name.trim().length > 1 && !!w.trade && !(Number(w.rate) < 0)
   const input = 'rounded-lg border px-3 py-2 text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
   return (
     <div className="space-y-3 border-t bg-slate-50 px-3 py-3 dark:border-slate-700 dark:bg-slate-900/40">
@@ -25,12 +25,12 @@ export function NewWorkerForm({ value: w, onChange, onSave, onCancel, busy }: {
       <div className="flex flex-wrap items-center gap-2">
         <SearchableSelect className="min-w-[12rem] flex-1" value={w.trade || null} onChange={v => set({ trade: v ?? '' })}
           options={trades.map(t => ({ id: t.trade_tag, label: tradeName(t.trade_tag), sub: t.codename_amharic ?? undefined }))} placeholder="Trade…" />
-        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Day rate
-          <input value={w.rate} onChange={e => set({ rate: e.target.value })} inputMode="decimal" placeholder="e.g. 900" className={`${input} w-28 text-right`} />
+        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Day rate <span className="text-slate-400">(day work only)</span>
+          <input value={w.rate} onChange={e => set({ rate: e.target.value })} inputMode="decimal" placeholder="blank: piece work" className={`${input} w-28 text-right`} />
           ETB
         </label>
       </div>
-      <p className="text-[11px] text-slate-500">The day rate is your proposal: HR confirms or corrects it when they verify the worker, and their pay waits until then. A phone already on file brings back that person instead of making a new one.</p>
+      <p className="text-[11px] text-slate-500">The day rate is your proposal for day work; leave it blank for someone paid by the piece. HR confirms the worker before they're paid. A phone already on file brings back that person instead of making a new one.</p>
       <div className="flex justify-end gap-2">
         <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500">Cancel</button>
         <button onClick={onSave} disabled={!ok || busy} className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">

@@ -168,7 +168,6 @@ function StaffFormBody({ id, record }: { id?: string; record?: Staff }) {
     ? [
         { label: 'Trade', ok: !!form.trade_tag },
         { label: 'Phone', ok: !!form.phone_number?.trim() },
-        { label: 'Day rate', ok: Number(form.day_rate) > 0 },
         { label: 'Photo', ok: !!form.photo_url },
       ]
     : [
