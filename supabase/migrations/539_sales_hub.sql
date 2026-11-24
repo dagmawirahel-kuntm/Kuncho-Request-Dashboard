@@ -82,6 +82,9 @@ END $$;
 DROP TRIGGER IF EXISTS trg_clients_sales_guard ON clients;
 CREATE TRIGGER trg_clients_sales_guard BEFORE INSERT OR UPDATE ON clients
   FOR EACH ROW EXECUTE FUNCTION clients_sales_guard();
+-- A trigger function: nobody calls it directly (538 closes functions to anon;
+-- this one is made after that ran).
+REVOKE EXECUTE ON FUNCTION clients_sales_guard() FROM PUBLIC, anon;
 
 -- ── 3. Sales files deal documents ────────────────────────────────────────
 DROP POLICY IF EXISTS client_attachments_sales_documents ON client_attachments;
