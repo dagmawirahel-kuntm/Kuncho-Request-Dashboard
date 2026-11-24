@@ -603,7 +603,7 @@ BEGIN
   r := r || CASE WHEN n = 0 THEN ' ok=no-costs' ELSE ' FAIL=sees-costs' END;
   INSERT INTO proformas (client_id, date, validity_days, lines_total, subtotal, vat_amount, total, status, created_by)
     VALUES (c, current_date, 30, 1000, 1000, 150, 1150, 'draft', u_sales) RETURNING id INTO pid;
-  INSERT INTO proforma_items (proforma_id, description, qty, unit, unit_price, vat_rate, sort_order) VALUES (pid, 'test', 1, 'ls', 1000, 15, 0);
+  INSERT INTO proforma_items (proforma_id, description, qty, unit, unit_price, vat_rate, sort_order) VALUES (pid, 'test', 1, 'ls', 1000, 0.15, 0);
   r := r || ' ok=writes-draft';
   BEGIN
     INSERT INTO proforma_item_costs (proforma_item_id, cost_per_unit, cost_source) SELECT id, 1, 'manual' FROM proforma_items WHERE proforma_id = pid;
@@ -616,7 +616,7 @@ BEGIN
     r := r || ' FAIL=edits-sent-terms';
   EXCEPTION WHEN others THEN r := r || ' ok=sent-terms-locked'; END;
   BEGIN
-    INSERT INTO proforma_items (proforma_id, description, qty, unit, unit_price, vat_rate, sort_order) VALUES (pid, 'late', 1, 'ls', 1, 15, 1);
+    INSERT INTO proforma_items (proforma_id, description, qty, unit, unit_price, vat_rate, sort_order) VALUES (pid, 'late', 1, 'ls', 1, 0.15, 1);
     r := r || ' FAIL=adds-line-to-sent';
   EXCEPTION WHEN others THEN r := r || ' ok=sent-lines-locked'; END;
   r := r || CASE WHEN can_issue_document('proforma') AND NOT can_issue_document('invoice') THEN ' ok=issues-proforma-not-invoice' ELSE ' FAIL=issue-rights' END;
