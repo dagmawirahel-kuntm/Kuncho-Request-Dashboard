@@ -50,7 +50,7 @@ export function useOvertimeMonths(monthsBack = 8) {
       const ids = live.map(r => r.id as string)
       const [hoursQ, linesQ] = await Promise.all([
         supabase.from('payroll_overtime_hours').select('*').in('payroll_id', ids),
-        supabase.from('v_payroll_line_tax').select('payroll_id, staff_id, employee_name, base_net, gross_share, paye_share, employer_cost_share').in('payroll_id', ids),
+        supabase.from('v_payroll_line_tax_app').select('payroll_id, staff_id, employee_name, base_net, gross_share, paye_share, employer_cost_share').in('payroll_id', ids),
       ])
       if (hoursQ.error) throw hoursQ.error
       if (linesQ.error) throw linesQ.error

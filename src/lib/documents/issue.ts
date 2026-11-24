@@ -26,10 +26,12 @@ export interface IssuedDocument {
   void_reason: string | null
 }
 
-/** Roles that can file each kind of document (can_issue_document, migration 368). */
+/** Roles that can file each kind of document (can_issue_document, migrations 368 and 537). */
 export function canIssue(type: IssuedDocType, role: string | null | undefined) {
   const r = role ?? ''
-  return type === 'purchase_order' ? ['admin', 'executive', 'finance', 'procurement_officer'].includes(r) : ['admin', 'executive', 'finance'].includes(r)
+  if (type === 'purchase_order') return ['admin', 'executive', 'finance', 'procurement_officer'].includes(r)
+  if (type === 'proforma') return ['admin', 'executive', 'finance', 'sales'].includes(r)
+  return ['admin', 'executive', 'finance'].includes(r)
 }
 
 export const verifyUrl = (token: string) => `${window.location.origin}/verify/${token}`

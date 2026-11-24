@@ -56,6 +56,9 @@ export default function ProformaDetailPage() {
   const { role, user } = useAuth()
   const canSeeCost = COST_ROLES.includes(role ?? '')
   const canWrite = ['admin', 'executive', 'finance'].includes(role ?? '')
+  // Sales writes proformas and moves them along (537); approving a discount,
+  // requesting payment and making the project BOQ stay with canWrite.
+  const canSell = canWrite || role === 'sales'
   const { data: company } = useCompanyProfile()
   const { data: signoff } = useCompanySignoff()
   const [dialog, setDialog] = useState<null | 'decline' | 'copy-to'>(null)
@@ -253,7 +256,7 @@ export default function ProformaDetailPage() {
             partyEmail={pf.clients?.email} partyPhone={pf.clients?.phone_number} total={Number(pf.total)}
             build={verify => buildProformaHtml({ ...input, verify })} disabled={!live || needsApproval} />
         )}
-        {canWrite && (
+        {canSell && (
           <>
             {live && !needsApproval && pf.status !== 'accepted' && pf.status !== 'converted' && (
               <button onClick={() => update({ status: 'accepted', accepted_at: new Date().toISOString(), declined_at: null, decline_reason: null }, 'Marked accepted')} disabled={busy} className={tbtn}>
@@ -272,12 +275,12 @@ export default function ProformaDetailPage() {
             <button onClick={() => setDialog('copy-to')} className={tbtn} title="Start another client's proforma from this one: same lines, their own changes and price">
               <UserPlus className="h-4 w-4" /> Copy for another client
             </button>
-            {live && !needsApproval && requested < Number(pf.total) - 1 && (
+            {canWrite && live && !needsApproval && requested < Number(pf.total) - 1 && (
               <Link to={`/clients/${pf.client_id}/payment-request?proforma_id=${pf.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700">
                 <ArrowRight className="h-4 w-4" /> Request payment
               </Link>
             )}
-            {pf.project_id && live && (
+            {canWrite && pf.project_id && live && (
               <button onClick={makeBoq} disabled={busy} className={tbtn} title="The job went ahead: turn these lines into the project's draft BOQ"><ClipboardList className="h-4 w-4" /> Make it the project BOQ</button>
             )}
           </>
@@ -332,7 +335,7 @@ export default function ProformaDetailPage() {
                 ...(pf.accepted_at ? [{ label: 'Accepted', value: formatDateTime(pf.accepted_at), tone: 'green' as const }] : []),
                 ...(pf.declined_at ? [{ label: 'Declined', value: formatDateTime(pf.declined_at), hint: pf.decline_reason ?? undefined, tone: 'red' as const }] : []),
               ]} />
-              {!pf.clients?.tin && <p className="mt-2 text-xs text-amber-600">The client has no TIN on record, so none is printed. <Link to={`/clients/${pf.client_id}/edit`} className="underline">Add it</Link>.</p>}
+              {!pf.clients?.tin && <p className="mt-2 text-xs text-amber-600">The client has no TIN on record, so none is printed. {canWrite ? <><Link to={`/clients/${pf.client_id}/edit`} className="underline">Add it</Link>.</> : 'Ask finance to add it.'}</p>}
             </Panel>
 
             <InflationFacts pf={pf} />

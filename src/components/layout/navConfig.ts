@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Banknote, Receipt, ShoppingCart, Truck, FolderKanban, Users, DollarSign, CreditCard, TrendingUp, FileText, Package, MapPin, Clock, Wallet, BarChart3, Building2, Layers, Archive, Shield, Globe2, BookOpen, ArrowLeftRight, PieChart, Scale, Warehouse, Wrench, ClipboardList, CalendarDays, Car, Route, PenTool, FileSignature, Target, CalendarClock, ClipboardCheck, UserCheck, AlertTriangle, HardHat, Network, Send, Hammer, Award, Briefcase, Upload, Landmark, PackageCheck, Settings, Tag, Copy, ShieldCheck, Activity, History,
   Boxes, CalendarRange, IdCard,
   GitPullRequestArrow,
+  Handshake,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMyManagedProjects, useMySiteForemanProjects } from '@/hooks/useMyStaff'
@@ -154,9 +155,10 @@ export const navGroups: NavGroup[] = [
     title: 'Sales',
     icon: Target,
     items: [
+      { label: 'Sales Hub', to: '/sales-hub', icon: Handshake, roles: ['admin', 'executive', 'finance', 'sales'] },
       { label: 'Sales Journey', to: '/sales-journey', icon: Target, roles: ['admin', 'executive', 'finance', 'sales'] },
-      { label: 'Opportunities', to: '/opportunities', icon: Target },
-      { label: 'Contracts', to: '/contracts', icon: FileSignature },
+      { label: 'Opportunities', to: '/opportunities', icon: Target, roles: ['admin', 'executive', 'finance', 'sales', 'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager', 'logistics_officer', 'design', 'hse_officer', 'operations_manager'], showIfAssignedProjectManager: true },
+      { label: 'Contracts', to: '/contracts', icon: FileSignature, roles: ['admin', 'executive', 'finance', 'sales', 'procurement_officer', 'hr_officer', 'project_manager', 'stock_manager', 'logistics_officer', 'design', 'hse_officer', 'operations_manager'], showIfAssignedProjectManager: true },
       // What Kuncho sells, its prices and costs (migration 337).
       { label: 'Services Catalog', to: '/catalog', icon: Package, roles: ['admin', 'executive', 'finance', 'project_manager', 'sales'] },
       { label: 'CPO Bonds', to: '/cpo-bonds', icon: Shield, roles: ['admin', 'executive', 'finance', 'project_manager', 'sales'] },
@@ -212,7 +214,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Collect', label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { subgroup: 'Collect', label: 'Package Receipts', to: '/package-receipts', icon: Boxes, roles: ['admin', 'finance'] },
       { subgroup: 'Collect', label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
-      { subgroup: 'Collect', label: 'Proformas', to: '/proformas', icon: FileText, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Collect', label: 'Proformas', to: '/proformas', icon: FileText, roles: ['admin', 'executive', 'finance', 'sales'] },
       { subgroup: 'Collect', label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Collect', label: 'Owed from Last Year', to: '/invoices/carried-forward', icon: History, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Books & bank', label: 'Ledger & Journal', to: '/finance/ledger', icon: Scale, roles: ['admin', 'executive', 'finance'] },

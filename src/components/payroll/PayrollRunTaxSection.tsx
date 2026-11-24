@@ -22,7 +22,7 @@ export function PayrollRunTaxSection({ payrollId, onPayslip }: { payrollId: stri
     queryKey: ['payroll-line-tax', payrollId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('v_payroll_line_tax')
+        .from('v_payroll_line_tax_app')
         .select('*')
         .eq('payroll_id', payrollId)
         .order('employee_name')

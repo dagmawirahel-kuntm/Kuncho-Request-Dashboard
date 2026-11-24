@@ -17,7 +17,7 @@ export function StaffTaxCostSection({ staffId }: { staffId: string }) {
     queryKey: ['staff-tax-cost', staffId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('v_payroll_tax_by_staff_period')
+        .from('v_payroll_tax_by_staff_period_app')
         .select('*')
         .eq('staff_id', staffId)
         .order('ec_year', { ascending: false })
