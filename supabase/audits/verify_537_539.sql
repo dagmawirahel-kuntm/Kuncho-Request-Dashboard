@@ -541,13 +541,20 @@ DECLARE
   n int; m int; ok boolean;
   u_staff uuid; u_pm uuid; u_fin uuid; u_sales uuid;
   c uuid; pid uuid; payroll_total int;
+  extra text;
 BEGIN
   -- As the database owner, before switching to app users.
   SELECT count(*) INTO n FROM _pre_auth_fns f WHERE NOT has_function_privilege('authenticated', f.oid, 'EXECUTE');
   r := r || CASE WHEN n = 0 THEN 'ok=signed-in-keep-all-functions' ELSE 'FAIL=signed-in-lost-' || n || '-functions' END;
-  SELECT count(*) INTO n FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
-   WHERE s.nspname = 'public' AND has_function_privilege('anon', p.oid, 'EXECUTE');
-  r := r || CASE WHEN n = 3 THEN ' ok=anon-calls-only-3-functions' ELSE ' FAIL=anon-calls-' || n || '-functions' END;
+  -- Extension internals (btree_gist, pg_trgm) are left as they come; count the rest.
+  SELECT count(*), string_agg(p.oid::regprocedure::text, ', ')
+         FILTER (WHERE p.proname NOT IN ('verify_document', 'driver_trip_sheet', 'email_allowed_for_signup'))
+    INTO n, extra
+    FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
+   WHERE s.nspname = 'public' AND has_function_privilege('anon', p.oid, 'EXECUTE')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e');
+  r := r || CASE WHEN n = 3 THEN ' ok=anon-calls-only-the-3-public-functions'
+                 ELSE ' FAIL=anon-calls-' || n || '-functions[' || COALESCE(extra, '') || ']' END;
   ok := NOT has_table_privilege('anon', 'public.v_payroll_line_tax', 'SELECT')
     AND NOT has_table_privilege('anon', 'public.v_payroll_line_tax_app', 'SELECT')
     AND NOT has_table_privilege('anon', 'public.proformas', 'SELECT')
