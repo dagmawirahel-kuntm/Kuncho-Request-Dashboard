@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { CrewRoster } from '@/components/labour/CrewRoster'
 import { addDays, dayLabel, isoDay } from '@/lib/labour'
 import { REQUEST_STATUS, WEEKDAYS, crewInEffect, crewSpan, tradeName, useDayPeople, useDaySettings, useTrades, type CrewRequest } from '@/lib/labourDay'
 import { Check, ClipboardList, Minus, Plus, Send, Square, Trash2, Users, X } from 'lucide-react'
@@ -155,7 +156,10 @@ export default function LabourDayRequestsPage() {
             {seeAll && <SearchableSelect className="min-w-[13rem]" value={pm} onChange={v => setQ('pm', v)} options={pms.map(p => ({ id: p.id, label: p.name }))} placeholder="For which PM?" />}
           </div>
           {now ? (
-            <p className="text-sm text-slate-700 dark:text-slate-200"><b>{crewText(now)}</b> <span className="text-slate-500">· {crewSpan(now)} · {now.code}</span></p>
+            <>
+              <p className="text-sm text-slate-700 dark:text-slate-200"><b>{crewText(now)}</b> <span className="text-slate-500">· {crewSpan(now)} · {now.code}</span></p>
+              <CrewRoster pm={pm} crew={now} />
+            </>
           ) : <p className="text-sm text-slate-500">No crew approved yet. Set one below.</p>}
           {upcoming.map(r => (
             <p key={r.id} className={`text-xs ${r.status === 'approved' ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>

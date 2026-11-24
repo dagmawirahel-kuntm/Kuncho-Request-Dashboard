@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
+import { CrewRoster } from '@/components/labour/CrewRoster'
 import { BASIS_LABEL, STAGE, dayLabel, fmtMoney, isoDay, stageOf, useLabourSites, type LabourRequest } from '@/lib/labour'
 import { REQUEST_STATUS, crewInEffect, tradeName, useDayPeople, useDaySettings, weekdaysLabel, type CrewRequest } from '@/lib/labourDay'
 import { setTerms, useTerms } from '@/lib/labourGives'
@@ -79,9 +80,12 @@ export default function LabourCrewPage() {
           <div className="space-y-2 px-4 py-3 text-sm">
             {!me ? <p className="text-slate-500">Your login isn't linked to a staff record, so there is no crew of your own to show.</p>
               : now ? (
-                <p className="text-slate-700 dark:text-slate-200">
-                  <b>{people(now)}</b> <span className="text-slate-500">· {weekdaysLabel(now.weekdays)} · since {dayLabel(now.work_date)}{now.ends_on ? ` until ${dayLabel(now.ends_on)}` : ''}</span>
-                </p>
+                <>
+                  <p className="text-slate-700 dark:text-slate-200">
+                    <b>{people(now)}</b> <span className="text-slate-500">· {weekdaysLabel(now.weekdays)} · since {dayLabel(now.work_date)}{now.ends_on ? ` until ${dayLabel(now.ends_on)}` : ''}</span>
+                  </p>
+                  <CrewRoster pm={me.id} crew={now} />
+                </>
               ) : <p className="text-slate-500">No crew is approved for today.</p>}
             {next.map(r => (
               <p key={r.id} className="text-xs text-slate-500">

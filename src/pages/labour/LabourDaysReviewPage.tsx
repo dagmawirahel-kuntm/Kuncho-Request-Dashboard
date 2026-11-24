@@ -114,6 +114,9 @@ export default function LabourDaysReviewPage() {
                             {r.changes ? ` · ${r.changes} change${r.changes === 1 ? '' : 's'} logged` : ''}
                           </p>
                         </div>
+                        {r.request_status === 'approved' && r.workers > 0 && r.workers !== r.requested && (
+                          <Pill tone="amber">{r.workers > r.requested ? `${r.workers - r.requested} over crew` : `${r.requested - r.workers} short of crew`}</Pill>
+                        )}
                         {r.mismatched > 0 && <Pill tone="red">{r.mismatched} don't add up</Pill>}
                         <Pill tone={DAY_STATUS[r.status].tone}>{DAY_STATUS[r.status].label}</Pill>
                         <ChevronRight className="h-4 w-4 text-slate-300" />

@@ -308,7 +308,7 @@ export default function LabourDaySheetPage() {
               </span>
             ) : <span className="text-slate-500">No approved crew for this day.</span>}
             {askedVsCame.map(([t, v]) => (
-              <span key={t} className={`rounded-full px-2 py-0.5 text-xs ${v.came > v.asked ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
+              <span key={t} className={`rounded-full px-2 py-0.5 text-xs ${v.came > v.asked ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' : v.came < v.asked ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                 {tradeName(t === 'none' ? null : t)}: {v.came}{v.asked ? ` of ${v.asked}` : ''}
               </span>
             ))}
