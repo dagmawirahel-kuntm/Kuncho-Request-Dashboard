@@ -131,13 +131,19 @@ export default function LabourWeekSheetPage() {
   }, [sheets])
   const colTag = (key: string) => cols.find(c => c.key === key)?.tag ?? '?'
 
-  // Workers: anyone on a saved day this week, plus anyone added here.
+  // The crew carried in from before the week: the last day sheet before the
+  // first day here that isn't saved yet. Its workers are listed (with empty
+  // days) so a new week doesn't start from nobody.
+  const carryIdx = sheets.findIndex((s, i) => inRange(dates[i]) && !!s?.prefilled_from && s.prefilled_from < week)
+  const carried = carryIdx >= 0 ? sheets[carryIdx] : null
+  // Workers: anyone on a saved day this week, the crew carried in, plus anyone added here.
   const workers: WRow[] = useMemo(() => {
     const m = new Map<string, WRow>()
     for (const s of sheets) if (s && saved(s)) for (const w of s.workers) m.set(w.staff_id, { staff_id: w.staff_id, name: w.name, trade: w.trade, day_rate: w.day_rate, photo_url: w.photo_url, verified: w.verified })
+    for (const w of carried?.workers ?? []) if (!m.has(w.staff_id)) m.set(w.staff_id, { staff_id: w.staff_id, name: w.name, trade: w.trade, day_rate: w.day_rate, photo_url: w.photo_url, verified: w.verified })
     for (const w of extraWorkers) m.set(w.staff_id, w)
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [sheets, extraWorkers])
+  }, [sheets, extraWorkers, carried])
   const jobs: PieceJob[] = useMemo(() => {
     const m = new Map<string, PieceJob>()
     for (const s of sheets) for (const job of s?.jobs ?? []) if (!m.has(job.id)) m.set(job.id, job)
@@ -172,6 +178,24 @@ export default function LabourWeekSheetPage() {
     setJobDays(j => {
       const next: typeof j = {}
       for (const [id, row] of Object.entries(j)) next[id] = { ...row, [to]: { present: row[from]?.present ?? [], measured: row[to]?.measured ?? null } }
+      return next
+    })
+    markDirty(to)
+  }
+
+  // The first day of a new week, the same as the last day sheet before it.
+  function sameAsCarried(i: number) {
+    if (!carried) return
+    const to = dates[i]
+    setCells(c => {
+      const next = { ...c }
+      for (const w of carried.workers) {
+        next[w.staff_id] = { ...(next[w.staff_id] ?? {}) }
+        next[w.staff_id][to] = {
+          paid: Number(w.paid_days), ot: 0, night: 0, note: null,
+          alloc: Object.fromEntries(w.alloc.map(a => [PROJECT_BUCKETS.includes(a.bucket) ? cellKey(a.bucket, a.project_id) : a.bucket, Number(a.days)])),
+        }
+      }
       return next
     })
     markDirty(to)
@@ -441,6 +465,9 @@ export default function LabourWeekSheetPage() {
                           <div className="flex flex-col items-center gap-1">
                             <Link to={`/labour/day?date=${d}${seeAll && pm ? `&pm=${pm}` : ''}`} className="hover:text-brand">{WEEKDAYS[i]} {new Date(`${d}T00:00:00`).getDate()}</Link>
                             {inRange(d) ? <Pill tone={DAY_STATUS[status].tone}>{status === 'none' ? 'Empty' : DAY_STATUS[status].label}</Pill> : <span className="text-[10px] text-slate-400">{d > today ? 'Not yet' : 'Before start'}</span>}
+                            {editable && i === carryIdx && carried?.prefilled_from && (i === 0 || !inRange(dates[i - 1])) && (
+                              <button onClick={() => sameAsCarried(i)} title={`Same as ${dayLabel(carried.prefilled_from)}`} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-brand"><Copy className="h-3 w-3" /> as {dayLabel(carried.prefilled_from)}</button>
+                            )}
                             {editable && i > 0 && inRange(dates[i - 1]) && (
                               <button onClick={() => sameAsDayBefore(i)} title="Same as the day before" className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-brand"><Copy className="h-3 w-3" /> as {WEEKDAYS[i - 1]}</button>
                             )}
@@ -513,6 +540,12 @@ export default function LabourWeekSheetPage() {
             )}
             {anyEditable && newWorker && <NewWorkerForm value={newWorker} onChange={setNewWorker} busy={busy === 'new'} onCancel={() => setNewWorker(null)} onSave={() => createWorker(newWorker)} />}
           </div>
+
+          {carried?.prefilled_from && !dates.some((_, i) => saved(sheets[i])) && workers.length > 0 && (
+            <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900 dark:border-blue-800/40 dark:bg-blue-900/10 dark:text-blue-200">
+              Your crew from {dayLabel(carried.prefilled_from)} is listed. Copy that day into {WEEKDAYS[carryIdx]} with “as {dayLabel(carried.prefilled_from)}”, then “as {WEEKDAYS[carryIdx]}” on the next days — and change only who was off.
+            </p>
+          )}
 
           {jobs.length > 0 && (
             <div className={`${card} overflow-hidden`}>
