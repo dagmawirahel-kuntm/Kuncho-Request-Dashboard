@@ -212,7 +212,7 @@ export const navGroups: NavGroup[] = [
       { subgroup: 'Collect', label: 'Sales', to: '/sales', icon: TrendingUp, roles: ['admin', 'executive', 'finance', 'sales'] },
       { subgroup: 'Collect', label: 'Package Receipts', to: '/package-receipts', icon: Boxes, roles: ['admin', 'finance'] },
       { subgroup: 'Collect', label: 'Clients', to: '/clients', icon: Users, roles: ['admin', 'executive', 'finance'] },
-      { subgroup: 'Collect', label: 'Proformas', to: '/proformas', icon: FileText, roles: ['admin', 'executive', 'finance'] },
+      { subgroup: 'Collect', label: 'Proformas', to: '/proformas', icon: FileText, roles: ['admin', 'executive', 'finance', 'sales'] },
       { subgroup: 'Collect', label: 'Invoices', to: '/invoices', icon: Receipt, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Collect', label: 'Owed from Last Year', to: '/invoices/carried-forward', icon: History, roles: ['admin', 'executive', 'finance'] },
       { subgroup: 'Books & bank', label: 'Ledger & Journal', to: '/finance/ledger', icon: Scale, roles: ['admin', 'executive', 'finance'] },

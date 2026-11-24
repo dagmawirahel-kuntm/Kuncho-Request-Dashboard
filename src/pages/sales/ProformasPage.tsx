@@ -7,6 +7,7 @@ import type { Proforma, ProformaStatus } from '@/types/database'
 import { ChevronDown, FileText, FilePlus, Percent, Plus, ShieldAlert } from 'lucide-react'
 import { effectiveStatus } from '@/lib/documents/proformaDocument'
 import { ClientPickerDialog } from '@/components/shared/ClientPickerDialog'
+import { useAuth } from '@/contexts/AuthContext'
 
 type ProformaRow = Proforma & { clients: { client_name: string } | null; discount_amount?: number | null; lines_total?: number | null }
 
@@ -30,6 +31,9 @@ export default function ProformasPage() {
   const [showOld, setShowOld] = useState(false)
   const navigate = useNavigate()
   const [picking, setPicking] = useState(false)
+  // Sales reads and writes proformas (537); requesting payment stays finance's.
+  const { role } = useAuth()
+  const canRequestPay = ['admin', 'executive', 'finance'].includes(role ?? '')
   const { data: proformas = [], isLoading } = useQuery({
     queryKey: ['proformas'],
     queryFn: async () => {
@@ -194,7 +198,7 @@ export default function ProformasPage() {
               <span className={`inline-block self-center justify-self-start rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${STATUS_CLS[effectiveStatus(p)]}`}>
                 {effectiveStatus(p) === 'superseded' ? 'replaced' : effectiveStatus(p)}
               </span>
-              {p.client_id && !discountBy.get(p.id)?.needs_approval && (taken.get(p.id)?.requested ?? 0) < Number(p.total ?? 0) - 1 ? (
+              {canRequestPay && p.client_id && !discountBy.get(p.id)?.needs_approval && (taken.get(p.id)?.requested ?? 0) < Number(p.total ?? 0) - 1 ? (
                 <Link to={`/clients/${p.client_id}/payment-request?proforma_id=${p.id}`}
                   className="inline-flex items-center gap-1 self-center justify-self-start rounded-md border dark:border-slate-600 px-2 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
                   <FilePlus className="h-3.5 w-3.5" /> Request
