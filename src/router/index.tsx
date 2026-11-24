@@ -113,6 +113,7 @@ const ClientsPage = lazyPage(() => import('@/pages/clients/ClientsPage'))
 const ClientDetailPage = lazyPage(() => import('@/pages/clients/ClientDetailPage'))
 const ClientFormPage = lazyPage(() => import('@/pages/clients/ClientFormPage'))
 const ProformaInvoicePage = lazyPage(() => import('@/pages/clients/ProformaInvoicePage'))
+const SalesHubPage = lazyPage(() => import('@/pages/sales/hub/SalesHubPage'))
 const ProformaDetailPage = lazyPage(() => import('@/pages/sales/ProformaDetailPage'))
 const InvoiceDocumentPage = lazyPage(() => import('@/pages/invoices/InvoiceDocumentPage'))
 const CompanyProfilePage = lazyPage(() => import('@/pages/settings/CompanyProfilePage'))
@@ -509,6 +510,8 @@ export const router = createBrowserRouter([
               { path: 'proformas', element: <ProformasPage /> },
               { path: 'proformas/:id', element: <ProformaDetailPage /> },
               { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
+              // Everything about selling in one place (539).
+              { path: 'sales-hub', element: <SalesHubPage /> },
             ],
           },
           {

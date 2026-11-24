@@ -49,7 +49,7 @@ export function StaffPayrollSection({ staffId, canManage }: { staffId: string; c
   const { data: lines = [] } = useQuery({
     queryKey: ['staff-payroll-lines', staffId],
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_payroll_line_tax').select('*').eq('staff_id', staffId)
+      const { data, error } = await supabase.from('v_payroll_line_tax_app').select('*').eq('staff_id', staffId)
       if (error) throw error
       return (data ?? []) as PayrollLineTax[]
     },

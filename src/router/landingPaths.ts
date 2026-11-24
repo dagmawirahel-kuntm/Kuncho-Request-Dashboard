@@ -15,7 +15,7 @@ export const ROLE_LANDING: Partial<Record<UserRole, string>> = {
   stock_manager: '/stock-manager-view',
   logistics_officer: '/logistics-view',
   design: '/design-view',
-  sales: '/sales-view',
+  sales: '/sales-hub',
   hr_officer: '/hr-view',
   hse_officer: '/hse-view',
   staff: '/my-home',
@@ -32,7 +32,7 @@ export const DEPARTMENT_LANDING: Record<string, string> = {
   'Operations/Construction': '/ops-manager-view',
   'Procurement & Logistics': '/procurement',
   'Finance & Admin': '/finance/payments',
-  'Business Development/Sales': '/sales-view',
+  'Business Development/Sales': '/sales-hub',
   'HR & People': '/hr-view',
   'HSE': '/hse-view',
 }
