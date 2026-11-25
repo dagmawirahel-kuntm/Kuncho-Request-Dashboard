@@ -19,13 +19,13 @@ export function DetailsStatePill({ state }: { state: DetailsState }) {
 
 /** The details the person hiring fills in: ID, trade, rate, bank. Name,
  *  phone and photo are included unless the caller already asks for them.
- *  Phone and ID are optional until the worker's 4th hire (483). */
+ *  Phone and ID are optional (542). */
 export function DetailsFields({ value, onChange, withIdentity = true, withRate = true, idNeeded = false }: {
   value: DetailsInput; onChange: (patch: DetailsInput) => void; withIdentity?: boolean; withRate?: boolean; idNeeded?: boolean
 }) {
   const { data: banks = [] } = useBanks()
   const { data: trades = [] } = useTradeRoster()
-  const optional = idNeeded ? null : <span className="font-normal text-slate-400"> — optional until their 4th hire</span>
+  const optional = idNeeded ? null : <span className="font-normal text-slate-400"> — optional</span>
   return (
     <div className="space-y-3">
       {withIdentity && <>
@@ -126,9 +126,6 @@ export function WorkerDetailsSheet({ who, name, onClose }: { who: Who; name: str
               <p className="text-xs text-amber-700 dark:text-amber-300">Still missing: {d.gaps.join(', ')}. Their pay is held until HR has confirmed them.</p>
             ) : !d.returned_reason && d.details_at && (
               <p className="flex items-center gap-2 text-xs text-sky-700 dark:text-sky-300"><CheckCircle2 className="h-4 w-4" /> Complete — with HR to confirm</p>
-            )}
-            {who.staff_id && (d.hires ?? 0) > 0 && (
-              <p className="text-xs text-slate-500">Hired {d.hires} time{d.hires === 1 ? '' : 's'} on requests since 28 Oct 2026{d.id_needed ? ' — their phone and ID are needed now.' : '. Phone and ID are needed from their 4th hire.'}</p>
             )}
             <DetailsFields value={v} onChange={p => setPatch(x => ({ ...x, ...p }))} withRate={!!who.staff_id} idNeeded={!!d.id_needed} />
             {(d.shares_with?.length ?? 0) > 0 && (

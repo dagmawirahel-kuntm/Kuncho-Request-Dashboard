@@ -412,7 +412,10 @@ export default function LabourWeekSheetPage() {
   // Piece workers carry no day rate; one is asked for only when they are put
   // on day work. HR sets it (worker_set_day_rate); day pay waits until then.
   async function setDayRate(w: WRow) {
-    const raw = window.prompt(`${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`)
+    const current = rateOf(w)
+    const raw = window.prompt(current
+      ? `Day rate for ${w.name} (birr a day). Days not paid yet are paid at the new rate.`
+      : `${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`, current ? String(current) : '')
     if (raw == null) return
     const rate = Number(raw.replace(/[^\d.]/g, ''))
     if (!(rate > 0)) { toast('A day rate is more than 0', 'error'); return }
@@ -487,7 +490,9 @@ export default function LabourWeekSheetPage() {
                           <WorkerAvatar url={w.photo_url} name={w.name} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate font-medium text-slate-800 dark:text-slate-100">{w.name}</p>
-                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {rateOf(w) ? `${Number(rateOf(w)).toLocaleString()}/day` : canSetRate
+                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {rateOf(w) ? (canSetRate
+                              ? <button type="button" onClick={() => setDayRate(w)} title="Change the day rate" className="underline decoration-dotted hover:text-brand">{Number(rateOf(w)).toLocaleString()}/day</button>
+                              : `${Number(rateOf(w)).toLocaleString()}/day`) : canSetRate
                               ? <button type="button" onClick={() => setDayRate(w)} className="text-red-600 underline decoration-dotted">no day rate — set it</button>
                               : <span className="text-red-600" title="Paid by the piece so far. HR sets a day rate before their day work is paid.">no day rate — HR sets it</span>}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
                           </div>
