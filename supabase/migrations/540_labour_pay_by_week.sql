@@ -25,6 +25,8 @@ CREATE OR REPLACE FUNCTION public.labour_week_of(p_date date)
 RETURNS date LANGUAGE sql IMMUTABLE SET search_path TO 'public' AS $f$
   SELECT p_date - (extract(isodow FROM p_date)::int - 1)
 $f$;
+REVOKE EXECUTE ON FUNCTION public.labour_week_of(date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.labour_week_of(date) TO authenticated, service_role;
 
 -- ── A pay run can start on a day (the week's Monday) as well as end on one ──
 DROP FUNCTION IF EXISTS public.confirm_labour_day_pay(uuid, date, text);
