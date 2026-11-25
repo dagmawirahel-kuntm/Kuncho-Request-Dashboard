@@ -16,6 +16,8 @@ import { VendorOrdersToCollect } from '@/components/purchasing/VendorOrdersToCol
 import { Segmented } from '@/components/shared/Segmented'
 import { Panel, RecordHeader, RecordLayout } from '@/components/record/Record'
 import { PO_STATUS, PRICE_CHECK_PERCENT, priceOverEstimate } from '@/lib/purchasing'
+import { groupOptions, useLedgerGroups } from '@/lib/ledgerGroups'
+import { useHeldRequesters } from '@/lib/dailyUse'
 import {
   Plus, Trash2, Search, Package, AlertCircle, ShieldAlert, Zap, Layers, Tag,
   Save, Store, Truck, Banknote, ClipboardList, Receipt, TrendingUp,
@@ -30,6 +32,7 @@ type OrderRow = {
   priority: string | null
   required_by_date: string | null
   is_new_item: boolean
+  requested_by_user_id: string | null
   projects: { project_name: string } | null
 }
 
@@ -95,6 +98,10 @@ export default function SourcingBundleFormPage() {
   const [itemSearch, setItemSearch] = useState<string>('')
   const [bundleItems, setBundleItems] = useState<BundleLineItem[]>([])
   const [existingLoaded, setExistingLoaded] = useState(false)
+  // The general ledger procurement picks (547); finance picks the sub ledger inside it.
+  const [generalLedger, setGeneralLedger] = useState<string | null>(null)
+  const { groups: ledgerGroups, groupOf } = useLedgerGroups()
+  const { data: heldPeople = [] } = useHeldRequesters()
 
   const { data: existingBundle } = useQuery({
     queryKey: ['sourcing-bundle', id],
@@ -138,7 +145,7 @@ export default function SourcingBundleFormPage() {
     queryFn: async () => {
       const data = await fetchAllRows((from, to) => supabase
         .from('orders')
-        .select('id, request_code, order_name, project_id, approval_status, priority, required_by_date, is_new_item, projects(project_name)')
+        .select('id, request_code, order_name, project_id, approval_status, priority, required_by_date, is_new_item, requested_by_user_id, projects(project_name)')
         .neq('approval_status', 'rejected')
         .order('created_at', { ascending: false }).order('id')
         .range(from, to))
@@ -160,10 +167,19 @@ export default function SourcingBundleFormPage() {
       return data as unknown as OrderItemRow[]
     },
   })
+  // A request whose requester needs an admin's approval waits until it has one (547).
+  const heldIds = useMemo(() => new Set(heldPeople.map(p => p.id)), [heldPeople])
+  const isHeld = (o: OrderRow) => o.approval_status === 'pending' && !!o.requested_by_user_id && heldIds.has(o.requested_by_user_id)
+  const heldLineCount = useMemo(() => {
+    const held = new Set(approvedOrders.filter(isHeld).map(o => o.id))
+    return openOrderItems.filter(i => held.has(i.order_id) && i.status === 'pending').length
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openOrderItems, approvedOrders, heldIds])
   const allOrderItems = useMemo(() => {
-    const sourceable = new Set(approvedOrders.map(o => o.id))
+    const sourceable = new Set(approvedOrders.filter(o => !isHeld(o)).map(o => o.id))
     return openOrderItems.filter(i => sourceable.has(i.order_id))
-  }, [openOrderItems, approvedOrders])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openOrderItems, approvedOrders, heldIds])
 
   const { data: bundledItemIds = new Set<string>() } = useQuery({
     queryKey: ['bundled-order-item-ids', id],
@@ -274,6 +290,7 @@ export default function SourcingBundleFormPage() {
     setDiscountValue(existingBundle.discount_kind && existingBundle.discount_kind !== 'none'
       ? String(existingBundle.discount_value ?? '') : '')
     setDiscountReason(existingBundle.discount_reason ?? '')
+    setGeneralLedger((existingBundle as { general_ledger_id?: string | null }).general_ledger_id ?? null)
     setExistingLoaded(true)
   }, [existingBundle, existingLoaded])
 
@@ -306,6 +323,21 @@ export default function SourcingBundleFormPage() {
 
   const selectedIds = useMemo(() => new Set(bundleItems.map(i => i.order_item_id)), [bundleItems])
   const { data: variantsByItem } = useVariantsForItems(bundleItems.map(i => i.stock_item_id))
+  // The general ledger the items point to, when they all point to one (547).
+  const lineStockIds = useMemo(() => [...new Set(bundleItems.map(i => i.stock_item_id).filter((x): x is string => !!x))].sort(), [bundleItems])
+  const { data: itemLedgers = [] } = useQuery({
+    queryKey: ['stock-item-ledgers', lineStockIds],
+    enabled: lineStockIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('stock_items').select('id, ledger_category_id').in('id', lineStockIds)
+      if (error) throw error
+      return (data ?? []) as { id: string; ledger_category_id: string | null }[]
+    },
+  })
+  const suggestedLedger = useMemo(() => {
+    const gs = new Set(itemLedgers.map(r => (r.ledger_category_id ? groupOf.get(r.ledger_category_id)?.id : undefined)).filter(Boolean))
+    return gs.size === 1 ? [...gs][0]! : null
+  }, [itemLedgers, groupOf])
 
   const availableItems = useMemo(() =>
     allOrderItems.filter(item => !bundledItemIds.has(item.id) && !selectedIds.has(item.id)),
@@ -491,6 +523,7 @@ export default function SourcingBundleFormPage() {
         discount_kind: discountKind,
         discount_value: discountKind === 'none' ? 0 : (parseFloat(discountValue) || 0),
         discount_reason: discountKind === 'none' ? null : (discountReason.trim() || null),
+        ...({ general_ledger_id: generalLedger ?? suggestedLedger } as Partial<SourcingBundleInsert>),
       }
       // Only stamp the procurement officer at creation — editing
       // shouldn't silently reassign attribution to whoever last saved.
@@ -673,6 +706,13 @@ export default function SourcingBundleFormPage() {
                 )}
               </div>
               <div className="sm:col-span-2">
+                <label className={labelCls}>General ledger</label>
+                <SearchableSelect value={generalLedger ?? suggestedLedger} onChange={setGeneralLedger} options={groupOptions(ledgerGroups)} placeholder="What kind of purchase is this…" />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {!generalLedger && suggestedLedger ? 'Suggested from the items on it. ' : ''}Pick the broad kind — finance picks the exact sub ledger when they approve.
+                </p>
+              </div>
+              <div className="sm:col-span-2">
                 <label className={labelCls}>Notes for finance</label>
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Why this vendor, lead time, anything finance should know…"
                   className={`${fieldCls} resize-none`} />
@@ -765,6 +805,11 @@ export default function SourcingBundleFormPage() {
 
           <Panel title="Add from purchase requests" icon={Layers} count={availableItems.length} padded={false}>
             <div className="border-b px-4 py-3 dark:border-slate-700">
+              {heldLineCount > 0 && (
+                <p className="mb-2 flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {heldLineCount} line{heldLineCount === 1 ? '' : 's'} wait for an admin to approve their request before they can be ordered.
+                </p>
+              )}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input type="text" value={itemSearch} onChange={e => setItemSearch(e.target.value)}

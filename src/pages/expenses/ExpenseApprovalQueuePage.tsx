@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useCategories } from '@/hooks/useLookups'
+import { subLedgerOptions, useLedgerGroups } from '@/lib/ledgerGroups'
 import { canApproveAsFinance } from '@/lib/expenseAccess'
 import { formatCurrency, formatCurrencyCompact, formatDate } from '@/lib/utils'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
@@ -452,7 +453,20 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
 }) {
   const { toast } = useToast()
   const { data: categories = [] } = useCategories()
-  const categoryOptions = useMemo(() => (categories as { id: string; category_name: string }[]).map(c => ({ id: c.id, label: c.category_name })), [categories])
+  // A PO bill carries procurement's general ledger (547): its sub ledgers come first.
+  const needsLedger = r.expense_type === 'purchase_order' && r.issues.includes('no_ledger')
+  const { data: poGl } = useQuery({
+    queryKey: ['bill-po-general-ledger', r.id],
+    enabled: needsLedger,
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await supabase.from('sourcing_bundles').select('general_ledger_id').eq('expense_id', r.id).maybeSingle()
+      return (data?.general_ledger_id as string | null) ?? null
+    },
+  })
+  const { groups: ledgerGroups } = useLedgerGroups()
+  const categoryOptions = useMemo(() => subLedgerOptions(ledgerGroups, categories as { id: string; category_name: string }[], poGl), [ledgerGroups, categories, poGl])
+  const poGlName = ledgerGroups.find(g => g.id === poGl)?.name
   const [mode, setMode] = useState<'reject' | 'ask' | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -613,7 +627,10 @@ function QueueRow({ row: r, ctx: c, signals, me, impact, period, canApprove, sho
               onChange={v => v && update(fromProjectChoice(v), 'Project set')} />
           )}
           {r.issues.includes('no_ledger') && (
-            <SearchableSelect value={r.category_id} onChange={id => id && update({ category_id: id }, 'Ledger set')} options={categoryOptions} placeholder="Pick the general ledger…" />
+            <div>
+              <SearchableSelect value={r.category_id} onChange={id => id && update({ category_id: id }, 'Ledger set')} options={categoryOptions} placeholder={poGlName ? `A sub ledger of ${poGlName}…` : 'Pick the ledger…'} />
+              {poGlName && <p className="mt-0.5 text-[10px] text-amber-800/80 dark:text-amber-300/80">Procurement: {poGlName}</p>}
+            </div>
           )}
         </div>
       )}

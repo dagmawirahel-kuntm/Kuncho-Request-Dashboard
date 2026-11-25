@@ -41,6 +41,7 @@ const FuelRequestFormPage = lazyPage(() => import('@/pages/expenses/FuelRequestF
 const ExpenseApprovalQueuePage = lazyPage(() => import('@/pages/expenses/ExpenseApprovalQueuePage'))
 const ExpenseFixPage = lazyPage(() => import('@/pages/expenses/ExpenseFixPage'))
 const OrdersPage = lazyPage(() => import('@/pages/orders/OrdersPage'))
+const DailyUsePage = lazyPage(() => import('@/pages/orders/DailyUsePage'))
 const OrderFormPage = lazyPage(() => import('@/pages/orders/OrderFormPage'))
 const OrderDetailPage = lazyPage(() => import('@/pages/orders/OrderDetailPage'))
 const StockItemsPage = lazyPage(() => import('@/pages/stock/StockItemsPage'))
@@ -310,6 +311,10 @@ export const router = createBrowserRouter([
           { path: 'orders/new', element: <Navigate to="/purchase-requests/new" replace /> },
           { path: 'orders/:id/edit', element: <Navigate to="/purchase-requests" replace /> },
           { path: 'purchase-requests', element: <OrdersPage /> },
+          {
+            element: <ProtectedRoute allowedRoles={['admin', 'executive', 'finance', 'operations_manager', 'procurement_officer', 'stock_manager']} />,
+            children: [{ path: 'purchase-requests/daily-use', element: <DailyUsePage /> }],
+          },
           { path: 'purchase-requests/:id', element: <OrderDetailPage /> },
           {
             // Procurement officers may view requests but cannot create or edit them
