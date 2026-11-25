@@ -11,6 +11,7 @@ import { PasteReportDialog, type AskedJob, type NewJobTerms, type PastedPiece, t
 import { useAuth } from '@/contexts/AuthContext'
 import { autoApproveRequest } from '@/lib/labourGives'
 import { downloadWeekDraft } from '@/lib/labourWeekDraft'
+import { RATE_QUERY_KEYS, rateMessage, setWorkerRate, useTradeRates } from '@/lib/labourRates'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
   BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, WEEKDAYS, halfDays, tradeName, useDayPeople, useDaySettings, useTrades,
@@ -41,7 +42,11 @@ export default function LabourWeekSheetPage() {
   const { data: settings } = useDaySettings()
   const { data: trades = [] } = useTrades()
   const { profile, hasRole } = useAuth()
-  const canSetRate = hasRole('admin', 'hr_officer')
+  // Admin and operations set rates (above a trade's standard, as an approved raise);
+  // HR sets the rate of a trade with no standard; anyone else asks for a raise (545).
+  const canSetRate = hasRole('admin', 'operations_manager')
+  const { data: tradeRates = [] } = useTradeRates()
+  const isHr = hasRole('hr_officer')
   // Rates set here this visit, before the sheets reload.
   const [rateSet, setRateSet] = useState<Record<string, number>>({})
   const today = isoDay(new Date())
@@ -413,18 +418,25 @@ export default function LabourWeekSheetPage() {
   // on day work. HR sets it (worker_set_day_rate); day pay waits until then.
   async function setDayRate(w: WRow) {
     const current = rateOf(w)
-    const raw = window.prompt(current
-      ? `Day rate for ${w.name} (birr a day). Days not paid yet are paid at the new rate.`
-      : `${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`, current ? String(current) : '')
+    const std = tradeRates.find(t => t.trade_tag === w.trade)?.day_rate
+    const raw = window.prompt(std
+      ? `${w.name} — ${tradeName(w.trade)} standard is ${Number(std).toLocaleString()} a day.\n${canSetRate ? 'New rate' : 'Rate to ask for (admin or operations approve)'} (birr a day):`
+      : current
+        ? `Day rate for ${w.name} (birr a day). Days not paid yet are paid at the new rate.`
+        : `${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`, current ? String(current) : '')
     if (raw == null) return
     const rate = Number(raw.replace(/[^\d.]/g, ''))
     if (!(rate > 0)) { toast('A day rate is more than 0', 'error'); return }
-    const { error } = await supabase.rpc('worker_set_day_rate', { p_staff: w.staff_id, p_rate: rate })
-    if (error) { toast(error.message, 'error'); return }
-    setRateSet(x => ({ ...x, [w.staff_id]: rate }))
-    for (const k of ['labour-casual-workers', 'labour-day']) qc.invalidateQueries({ queryKey: [k] })
-    toast(`${w.name}: ${rate.toLocaleString()} a day`, 'success')
+    const reason = std && rate > Number(std) && !canSetRate ? window.prompt('Why does this worker get more than the standard?') : null
+    if (std && rate > Number(std) && !canSetRate && !reason?.trim()) return
+    try {
+      const r = await setWorkerRate(w.staff_id, rate, reason)
+      if (r.status !== 'requested') setRateSet(x => ({ ...x, [w.staff_id]: Number(r.rate) }))
+      RATE_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+      toast(rateMessage(w.name, r), 'success')
+    } catch (e) { toast((e as Error).message, 'error') }
   }
+
   const due = (() => { const dow = settings?.week_due_dow ?? 6; return addDays(week, dow - 1) })()
   const editingCell = editing ? cells[editing.staff]?.[editing.date] ?? null : null
 
@@ -490,11 +502,16 @@ export default function LabourWeekSheetPage() {
                           <WorkerAvatar url={w.photo_url} name={w.name} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate font-medium text-slate-800 dark:text-slate-100">{w.name}</p>
-                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {rateOf(w) ? (canSetRate
-                              ? <button type="button" onClick={() => setDayRate(w)} title="Change the day rate" className="underline decoration-dotted hover:text-brand">{Number(rateOf(w)).toLocaleString()}/day</button>
-                              : `${Number(rateOf(w)).toLocaleString()}/day`) : canSetRate
-                              ? <button type="button" onClick={() => setDayRate(w)} className="text-red-600 underline decoration-dotted">no day rate — set it</button>
-                              : <span className="text-red-600" title="Paid by the piece so far. HR sets a day rate before their day work is paid.">no day rate — HR sets it</span>}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
+                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {(() => {
+                              const std = tradeRates.find(t => t.trade_tag === w.trade)?.day_rate
+                              const r = rateOf(w)
+                              // With a standard, anyone on the sheet can ask for a raise; without one, HR or operations set it.
+                              const canTap = std ? (canSetRate || anyEditable) : (canSetRate || isHr)
+                              const label = r ? `${Number(r).toLocaleString()}/day${std && Number(r) > Number(std) ? ' (raise)' : ''}` : 'no day rate'
+                              if (!canTap) return r ? label : <span className="text-red-600" title="Paid by the piece so far. HR sets a day rate before their day work is paid.">no day rate — HR sets it</span>
+                              return <button type="button" onClick={() => setDayRate(w)} title={std ? (canSetRate ? 'Change the day rate' : 'Ask for a raise') : 'Set the day rate'}
+                                className={`underline decoration-dotted hover:text-brand ${r ? '' : 'text-red-600'}`}>{r ? label : 'no day rate — set it'}</button>
+                            })()}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
                           </div>
                         </div>
                       </td>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { rateMessage, type SetRateResult } from '@/lib/labourRates'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -258,10 +259,10 @@ function Review({ id, canAct, verified, onDone }: { id: string; canAct: boolean;
   // The site proposes the day rate (493); HR confirms or corrects it here.
   async function saveRate() {
     setBusy(true)
-    const { error } = await supabase.rpc('worker_set_day_rate', { p_staff: id, p_rate: Number(rate) })
+    const { data, error } = await supabase.rpc('worker_set_day_rate', { p_staff: id, p_rate: Number(rate) })
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
-    toast('Day rate changed', 'success'); setRate(null); onDone()
+    toast(rateMessage(d?.name ?? 'Worker', data as SetRateResult), 'success'); setRate(null); onDone()
   }
   async function sendBack() {
     setBusy(true)
