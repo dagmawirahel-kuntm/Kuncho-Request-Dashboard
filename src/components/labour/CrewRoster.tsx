@@ -3,15 +3,15 @@ import { supabase } from '@/lib/supabase'
 import { dayLabel, isoDay } from '@/lib/labour'
 import { tradeName, type CrewRequest, type DaySheet } from '@/lib/labourDay'
 
-// Who is actually on the PM's crew, against what is approved, by trade.
+// Who is actually on the project's crew, against what is approved, by trade.
 // The approved crew is only a count per trade ("31 workers"); the names come
 // from the latest day sheet — today's if saved, else the last one before.
-export function CrewRoster({ pm, crew }: { pm: string; crew: Pick<CrewRequest, 'labour_day_request_lines'> }) {
+export function CrewRoster({ project, crew }: { project: string; crew: Pick<CrewRequest, 'labour_day_request_lines'> }) {
   const today = isoDay(new Date())
   const { data: sheet, isLoading } = useQuery({
-    queryKey: ['labour-day', pm, today],
+    queryKey: ['labour-day', project, today],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('labour_day_get', { p_pm: pm, p_date: today })
+      const { data, error } = await supabase.rpc('labour_day_get', { p_project: project, p_date: today })
       if (error) throw error
       return data as DaySheet
     },
