@@ -217,6 +217,7 @@ const LabourWorkersPage = lazyPage(() => import('@/pages/labour/LabourWorkersPag
 const LabourPayRequestPage = lazyPage(() => import('@/pages/labour/LabourPayRequestPage'))
 const LabourDaySheetPage = lazyPage(() => import('@/pages/labour/LabourDaySheetPage'))
 const LabourCrewPage = lazyPage(() => import('@/pages/labour/LabourCrewPage'))
+const LabourPmWorkersPage = lazyPage(() => import('@/pages/labour/LabourPmWorkersPage'))
 const LabourDayRequestsPage = lazyPage(() => import('@/pages/labour/LabourDayRequestsPage'))
 const LabourDaysReviewPage = lazyPage(() => import('@/pages/labour/LabourDaysReviewPage'))
 const LabourWeekSheetPage = lazyPage(() => import('@/pages/labour/LabourWeekSheetPage'))
@@ -848,6 +849,7 @@ export const router = createBrowserRouter([
           { path: 'labour/requests/:id', element: <LabourPayRequestPage /> },
           { path: 'labour/day', element: <LabourDaySheetPage /> },
           { path: 'labour/crew', element: <LabourCrewPage /> },
+          { path: 'labour/crew/workers', element: <LabourPmWorkersPage /> },
           { path: 'labour/week-sheet', element: <LabourWeekSheetPage /> },
           { path: 'labour/day-requests', element: <LabourDayRequestsPage /> },
           { path: 'labour/days', element: <LabourDaysReviewPage /> },
