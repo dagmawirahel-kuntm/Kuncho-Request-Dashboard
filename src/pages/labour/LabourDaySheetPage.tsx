@@ -11,7 +11,7 @@ import { PayWeekBanner, SitePulseCard, WorkerHistorySheet, WorkerSlipsSheet } fr
 import { useDoorStatus } from '@/lib/labourGives'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
-  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, tradeName, useDayPeople, weekdaysLabel,
+  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, REQUEST_STATUS, halfDays, pickProject, projectLabel, tradeName, useDayPeople, useLabourProjects, weekdaysLabel,
   type Alloc, type Bucket, type DaySheet, type PieceJob, type SheetWorker,
 } from '@/lib/labourDay'
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Hammer, Lock, MessageCircle, Plus, Ruler, Save, Send, Sheet, Tag, Trash2, Undo2, UserPlus, X } from 'lucide-react'
@@ -34,17 +34,18 @@ export default function LabourDaySheetPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [params, setParams] = useSearchParams()
-  const { me, approver, seeAll, pms, isLoading: loadingPeople } = useDayPeople()
+  const { me, approver } = useDayPeople()
+  const { data: projects = [], isLoading: loadingProjects } = useLabourProjects()
   const today = isoDay(new Date())
   const date = params.get('date') ?? today
-  const pm = params.get('pm') ?? me?.id ?? null
+  const project = pickProject(params.get('project'), projects, me?.id)
   const setQ = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n }, { replace: true })
 
   const { data: sheet, isLoading, error } = useQuery({
-    queryKey: ['labour-day', pm, date],
-    enabled: !!pm,
+    queryKey: ['labour-day', project, date],
+    enabled: !!project,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('labour_day_get', { p_pm: pm, p_date: date })
+      const { data, error } = await supabase.rpc('labour_day_get', { p_project: project, p_date: date })
       if (error) throw error
       return data as DaySheet
     },
@@ -61,17 +62,6 @@ export default function LabourDaySheetPage() {
       return (data ?? []) as { id: string; employee_name: string; trade_tag: string | null; day_rate: number | null; photo_url: string | null; verified_at: string | null }[]
     },
   })
-  const { data: allProjects = [] } = useQuery({
-    queryKey: ['labour-day-all-projects'],
-    staleTime: 300_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('projects').select('id, project_name, is_internal, costing_closed_at, active_for_year')
-        .eq('active_for_year', true).order('project_name')
-      if (error) throw error
-      return ((data ?? []) as { id: string; project_name: string; is_internal: boolean | null; costing_closed_at: string | null }[])
-        .filter(p => !p.is_internal && !p.costing_closed_at)
-    },
-  })
 
   // The draft being edited.
   const [rows, setRows] = useState<Row[]>([])
@@ -81,7 +71,6 @@ export default function LabourDaySheetPage() {
   const [returnNote, setReturnNote] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
-  const [addingProject, setAddingProject] = useState<string | null>(null)
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [newWorker, setNewWorker] = useState<NewWorker | null>(null)
   // What recording gives back (515): each worker's week to tell them, and a worker's record.
@@ -165,7 +154,7 @@ export default function LabourDaySheetPage() {
   async function createWorker(w: NewWorker) {
     setBusy('new')
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
-      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate) > 0 ? Number(w.rate) : null, p_phone: w.phone.trim() || null, p_photo: w.photo,
+      p_project: project, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate) > 0 ? Number(w.rate) : null, p_phone: w.phone.trim() || null, p_photo: w.photo,
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
@@ -182,11 +171,6 @@ export default function LabourDaySheetPage() {
     }
     toast(r.existing ? `${r.name} is already on file under that phone — added to the sheet` : `${r.name} added. Fill in their ID and bank on Worker details; HR verifies before they're paid.`, 'success')
   }
-  function addProject(id: string | null) {
-    setAddingProject(null)
-    const p = allProjects.find(x => x.id === id)
-    if (p && !projectCols.some(c => c.id === p.id)) setExtra(e => [...e, { id: p.id, name: p.project_name }])
-  }
 
   const payload = () => rows.map(r => ({
     staff_id: r.staff_id, paid_days: r.paid_days, overtime_hours: r.overtime_hours || 0, overtime_night_hours: r.overtime_night_hours || 0, note: r.note,
@@ -199,7 +183,7 @@ export default function LabourDaySheetPage() {
   }))
   const jobsActive = jobs.some(j => j.present.length || j.measured !== '')
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['labour-day', pm, date] })
+    qc.invalidateQueries({ queryKey: ['labour-day', project, date] })
     qc.invalidateQueries({ queryKey: ['labour-day-board'] })
     qc.invalidateQueries({ queryKey: ['labour-flags'] })
     qc.invalidateQueries({ queryKey: ['labour-day-unpaid'] })
@@ -207,7 +191,7 @@ export default function LabourDaySheetPage() {
   async function save(submit: boolean) {
     setBusy(submit ? 'send' : 'save')
     const { data, error } = await supabase.rpc('labour_day_save', {
-      p_pm: pm, p_date: date, p_workers: payload(), p_submit: submit, p_reason: locked ? reason.trim() || null : null, p_jobs: jobPayload(),
+      p_project: project, p_date: date, p_workers: payload(), p_submit: submit, p_reason: locked ? reason.trim() || null : null, p_jobs: jobPayload(),
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
@@ -237,10 +221,9 @@ export default function LabourDaySheetPage() {
   }, [sheet, rows])
   const dayCost = rows.reduce((s, r) => s + r.paid_days * Number(r.day_rate ?? 0), 0)
 
-  const pmOptions = pms.map(p => ({ id: p.id, label: p.name }))
+  const projectPick = projects.map(p => ({ id: p.project_id, label: projectLabel(p) }))
   const workerOptions = workers.filter(w => !rows.some(r => r.staff_id === w.id))
     .map(w => ({ id: w.id, label: w.employee_name, sub: [tradeName(w.trade_tag), w.day_rate ? `${Number(w.day_rate).toLocaleString()} ETB/day` : 'no day rate'].join(' · ') }))
-  const projectOptions = allProjects.filter(p => !projectCols.some(c => c.id === p.id)).map(p => ({ id: p.id, label: p.project_name }))
   const cellCls = 'h-9 w-12 rounded-lg border text-sm font-semibold tabular-nums transition'
 
   return (
@@ -248,10 +231,10 @@ export default function LabourDaySheetPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><Sheet className="h-5 w-5 text-brand" /> Day sheet</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Who was paid for the day, and where the day went.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{sheet?.project ? <><b className="text-slate-700 dark:text-slate-200">{sheet.project.name}</b>{sheet.pm?.name ? ` · ${sheet.pm.name}` : ''} — </> : ''}who was paid for the day, and how it went.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link to={`/labour/week-sheet?week=${date}${seeAll && pm ? `&pm=${pm}` : ''}`} className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Week</Link>
+          <Link to={`/labour/week-sheet?week=${date}${project ? `&project=${project}` : ''}`} className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Week</Link>
           <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Crew request</Link>
           {approver && <Link to="/labour/days" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Review days</Link>}
         </div>
@@ -265,19 +248,19 @@ export default function LabourDaySheetPage() {
         </label>
         <button onClick={() => setQ('date', addDays(date, 1))} disabled={date >= today} className="rounded-lg border p-2 disabled:opacity-40 dark:border-slate-600" aria-label="Next day"><ChevronRight className="h-4 w-4" /></button>
         <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{dayLabel(date)}</span>
-        {seeAll && (
-          <SearchableSelect className="min-w-[14rem] flex-1 sm:flex-none" value={pm} onChange={v => setQ('pm', v)} options={pmOptions} placeholder="Whose sheet?" />
+        {projects.length > 1 && (
+          <SearchableSelect className="min-w-[14rem] flex-1 sm:flex-none" value={project} onChange={v => setQ('project', v)} options={projectPick} placeholder="Which project?" />
         )}
         {sheet && <Pill tone={DAY_STATUS[status].tone}>{DAY_STATUS[status].label}</Pill>}
         {sheet?.day?.paid && <Pill tone="green">Pay confirmed</Pill>}
       </div>
       <PayWeekBanner date={date} />
 
-      {!pm && !loadingPeople && (
-        <p className={`${card} p-6 text-center text-sm text-slate-500`}>{seeAll ? 'Pick whose sheet to open.' : 'Your login isn\'t linked to a staff record, so there is no sheet to open. Ask HR to link it.'}</p>
+      {!project && !loadingProjects && (
+        <p className={`${card} p-6 text-center text-sm text-slate-500`}>You don't run the labour of any project. A project's day sheet is filled in by its PM, or by operations.</p>
       )}
       {error && <p className={`${card} p-4 text-sm text-red-600`}>{(error as Error).message}</p>}
-      {pm && isLoading && <p className="p-6 text-center text-sm text-slate-400">Loading…</p>}
+      {project && isLoading && <p className="p-6 text-center text-sm text-slate-400">Loading…</p>}
 
       {sheet && (
         <>
@@ -308,7 +291,7 @@ export default function LabourDaySheetPage() {
               </span>
             ) : <span className="text-slate-500">No approved crew for this day.</span>}
             {askedVsCame.map(([t, v]) => (
-              <span key={t} className={`rounded-full px-2 py-0.5 text-xs ${v.came > v.asked ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
+              <span key={t} className={`rounded-full px-2 py-0.5 text-xs ${v.came > v.asked ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' : v.came < v.asked ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                 {tradeName(t === 'none' ? null : t)}: {v.came}{v.asked ? ` of ${v.asked}` : ''}
               </span>
             ))}
@@ -418,16 +401,6 @@ export default function LabourDaySheetPage() {
                   <button onClick={() => { setNewWorker({ name: '', phone: '', trade: '', rate: '', photo: null }); setAdding(null) }}
                     className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">
                     <UserPlus className="h-3.5 w-3.5" /> New worker
-                  </button>
-                )}
-                {addingProject !== null ? (
-                  <div className="flex w-full items-center gap-2 sm:w-80">
-                    <SearchableSelect className="flex-1" value={null} onChange={addProject} options={projectOptions} placeholder="Find a project…" />
-                    <button onClick={() => setAddingProject(null)} className="rounded p-1.5 text-slate-400"><X className="h-4 w-4" /></button>
-                  </div>
-                ) : (
-                  <button onClick={() => setAddingProject('')} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">
-                    <Plus className="h-3.5 w-3.5" /> Add a project column
                   </button>
                 )}
                 <p className="ml-auto text-[11px] text-slate-500">Tap a box: the rest of the day → ½ → empty.</p>

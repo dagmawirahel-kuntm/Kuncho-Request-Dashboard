@@ -40,7 +40,7 @@ export function EmployeeSchedule({ filing, canEdit }: { filing: ScheduleReturn; 
     enabled: lines.length === 0,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('v_payroll_tax_by_staff_period').select('*')
+        .from('v_payroll_tax_by_staff_period_app').select('*')
         .eq('ec_year', filing.period_ec_year).eq('ec_month', filing.period_ec_month!)
         .gt('net_paid', 0)
       if (error) throw error

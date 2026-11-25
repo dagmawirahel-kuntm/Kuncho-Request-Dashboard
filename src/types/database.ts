@@ -3002,6 +3002,10 @@ export interface Opportunity {
   /** The associate (outside Kuncho) who referred it. */
   referrer_name: string | null
   lost_reason: string | null
+  /** Migration 539: what happens next, by when, and the chance of winning (null: the stage's default). */
+  next_step?: string | null
+  next_step_due?: string | null
+  win_chance?: number | null
   stage_changed_at: string | null
   created_at: string
   updated_at: string

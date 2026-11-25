@@ -99,6 +99,9 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
         brought_by_staff_id: record.brought_by_staff_id,
         referrer_name: record.referrer_name,
         lost_reason: record.lost_reason,
+        next_step: record.next_step ?? null,
+        next_step_due: record.next_step_due ?? null,
+        win_chance: record.win_chance ?? null,
       }
       : { stage: 'lead', client_id: prefillClientId ?? undefined }
   )
@@ -112,6 +115,7 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
     if (!form.title) { setError('Title is required'); return }
     if (form.stage === 'won' && !form.client_id) { setError('A won deal needs its client — select or add the client first'); return }
     if (form.stage === 'lost' && !form.lost_reason?.trim()) { setError('Say why the deal was lost'); return }
+    if (form.next_step_due && !form.next_step?.trim()) { setError('Say what the next step is for that date'); return }
     const payload = form.stage === 'lost' ? form : { ...form, lost_reason: null }
     setSaving(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -189,6 +193,18 @@ function OpportunityFormPageBody({ id, record }: { id?: string; record?: Opportu
         </Field>
         <Field label="Expected Close Date">
           <input type="date" className={inputCls} value={form.expected_close_date ?? ''} onChange={e => set('expected_close_date', e.target.value || null)} />
+        </Field>
+      </div>
+      {/* Migration 539: the hub chases the next step and weights the pipeline by the win chance. */}
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3">
+        <Field label="Next step">
+          <input className={inputCls} placeholder="e.g. Send the revised proforma" value={form.next_step ?? ''} onChange={e => set('next_step', e.target.value || null)} />
+        </Field>
+        <Field label="By">
+          <input type="date" className={inputCls} value={form.next_step_due ?? ''} onChange={e => set('next_step_due', e.target.value || null)} />
+        </Field>
+        <Field label="Win chance %">
+          <input type="number" min={0} max={100} placeholder="Stage default" className={`${inputCls} w-32`} value={form.win_chance ?? ''} onChange={e => set('win_chance', e.target.value === '' ? null : Math.max(0, Math.min(100, parseInt(e.target.value, 10))))} />
         </Field>
       </div>
       <Field label="Notes">

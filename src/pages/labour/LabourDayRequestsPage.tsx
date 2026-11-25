@@ -6,14 +6,15 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
+import { CrewRoster } from '@/components/labour/CrewRoster'
 import { addDays, dayLabel, isoDay } from '@/lib/labour'
-import { REQUEST_STATUS, WEEKDAYS, crewInEffect, crewSpan, tradeName, useDayPeople, useDaySettings, useTrades, type CrewRequest } from '@/lib/labourDay'
+import { REQUEST_STATUS, WEEKDAYS, crewInEffect, crewSpan, pickProject, projectLabel, tradeName, useDayPeople, useDaySettings, useLabourProjects, useTrades, type CrewRequest } from '@/lib/labourDay'
 import { Check, ClipboardList, Minus, Plus, Send, Square, Trash2, Users, X } from 'lucide-react'
 
 type Line = { trade: string; headcount: number }
 type Span = 'until_changed' | 'one_day' | 'until_date'
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
-const SELECT = 'id, code, pm_staff_id, work_date, ends_on, weekdays, status, note, created_by_name, submitted_at, decided_by_name, decided_at, decision_note, staff:pm_staff_id(employee_name), labour_day_request_lines(trade_tag, headcount)'
+const SELECT = 'id, code, pm_staff_id, project_id, projects:project_id(project_name), work_date, ends_on, weekdays, status, note, created_by_name, submitted_at, decided_by_name, decided_at, decision_note, staff:pm_staff_id(employee_name), labour_day_request_lines(trade_tag, headcount)'
 
 // The PM's standing crew (492): how many of each trade, on which days, until
 // they change it. Each change is approved by operations before it starts. No
@@ -22,13 +23,16 @@ export default function LabourDayRequestsPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [params, setParams] = useSearchParams()
-  const { me, approver, seeAll, pms } = useDayPeople()
+  const { me, approver } = useDayPeople()
+  const { data: projects = [] } = useLabourProjects()
   const { data: settings } = useDaySettings()
   const { data: trades = [] } = useTrades()
   const today = isoDay(new Date())
   const tomorrow = addDays(today, 1)
   const date = params.get('date') ?? (settings?.starts_on && settings.starts_on > tomorrow ? settings.starts_on : tomorrow)
-  const pm = params.get('pm') ?? me?.id ?? null
+  // The crew belongs to the project (546); its PM asks for it.
+  const project = pickProject(params.get('project'), projects, me?.id)
+  const projectInfo = projects.find(p => p.project_id === project) ?? null
   const setQ = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n }, { replace: true })
 
   const { data: list = [], isLoading } = useQuery({
@@ -40,7 +44,7 @@ export default function LabourDayRequestsPage() {
       return (data ?? []) as unknown as CrewRequest[]
     },
   })
-  const mineAll = list.filter(r => r.pm_staff_id === pm)
+  const mineAll = list.filter(r => r.project_id === project)
   const current = mineAll.find(r => r.work_date === date) ?? null
   const nowDate = settings?.starts_on && settings.starts_on > today ? settings.starts_on : today
   const now = crewInEffect(mineAll, nowDate)
@@ -57,7 +61,7 @@ export default function LabourDayRequestsPage() {
   // Load the form from the request starting that day, or else the crew
   // that would be in effect, so a change starts from what's there.
   const base = current ?? before
-  const formKey = `${pm}|${date}|${current?.id ?? ''}|${current?.status ?? ''}|${before?.id ?? ''}`
+  const formKey = `${project}|${date}|${current?.id ?? ''}|${current?.status ?? ''}|${before?.id ?? ''}`
   const [loadedKey, setLoadedKey] = useState('')
   if (loadedKey !== formKey) {
     setLoadedKey(formKey)
@@ -70,7 +74,7 @@ export default function LabourDayRequestsPage() {
 
   const started = !!settings?.starts_on
   const tooLate = date <= today
-  const canAsk = !!pm && started && !tooLate && date >= (settings?.starts_on ?? '9999') && (!!me && pm === me.id || approver)
+  const canAsk = !!project && started && !tooLate && date >= (settings?.starts_on ?? '9999') && (approver || (!!me && projectInfo?.pm_staff_id === me.id))
   const headcount = lines.reduce((s, l) => s + (l.headcount || 0), 0)
   const ends = span === 'one_day' ? date : span === 'until_date' ? endsOn || null : null
 
@@ -83,7 +87,7 @@ export default function LabourDayRequestsPage() {
     if (span === 'until_date' && !endsOn) { toast('Pick the last day', 'error'); return }
     setBusy(stop ? 'stop' : submit ? 'send' : 'save')
     const { data: savedId, error } = await supabase.rpc('labour_day_request_save', {
-      p_pm: pm, p_date: date,
+      p_project: project, p_date: date,
       p_lines: stop ? [] : lines.filter(l => l.trade && l.headcount > 0).map(l => ({ trade: l.trade, headcount: l.headcount })),
       p_note: note.trim() || null, p_submit: submit || stop,
       p_ends_on: stop ? null : ends, p_weekdays: stop ? [1, 2, 3, 4, 5, 6, 7] : days,
@@ -107,7 +111,7 @@ export default function LabourDayRequestsPage() {
   }
 
   const toApprove = approver ? list.filter(r => r.status === 'submitted' && r.work_date > today).sort((a, b) => a.work_date.localeCompare(b.work_date)) : []
-  const history = list.filter(r => (seeAll ? !params.get('pm') || r.pm_staff_id === pm : r.pm_staff_id === me?.id)).slice(0, 40)
+  const history = list.filter(r => r.project_id === project).slice(0, 40)
   const tradeOptions = trades.map(t => ({ id: t.trade_tag, label: tradeName(t.trade_tag), sub: t.codename_amharic ?? undefined }))
   const crewText = (r: CrewRequest) => r.labour_day_request_lines.length
     ? r.labour_day_request_lines.map(l => `${l.headcount} ${tradeName(l.trade_tag).toLowerCase()}`).join(', ')
@@ -118,7 +122,7 @@ export default function LabourDayRequestsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><ClipboardList className="h-5 w-5 text-brand" /> Labour request</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Your standing crew: how many of each trade, on which days, until you change it. Operations approves each change before it starts.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Each project's standing crew: how many of each trade, on which days, until it changes. The project's PM asks; operations approves each change before it starts.</p>
         </div>
         <Link to="/labour/day" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Day sheet</Link>
       </div>
@@ -136,7 +140,7 @@ export default function LabourDayRequestsPage() {
             {toApprove.map(r => (
               <li key={r.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{r.staff?.employee_name ?? '—'} · {crewSpan(r)}</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{r.projects?.project_name ?? 'No project'} · {r.staff?.employee_name ?? '—'} · {crewSpan(r)}</p>
                   <p className="text-xs text-slate-500">{r.code} · {crewText(r)}{r.note ? ` · “${r.note}”` : ''}</p>
                 </div>
                 <button onClick={() => decide(r, false)} disabled={busy === r.id} className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300"><X className="h-3.5 w-3.5" /> Reject</button>
@@ -148,14 +152,17 @@ export default function LabourDayRequestsPage() {
       )}
 
       {/* The crew in effect */}
-      {pm && started && (
+      {project && started && (
         <section className={`${card} space-y-2 p-4`}>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="flex flex-1 items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><Users className="h-4 w-4 text-slate-400" /> Crew now{seeAll && pms.find(p => p.id === pm) ? ` · ${pms.find(p => p.id === pm)!.name}` : ''}</h2>
-            {seeAll && <SearchableSelect className="min-w-[13rem]" value={pm} onChange={v => setQ('pm', v)} options={pms.map(p => ({ id: p.id, label: p.name }))} placeholder="For which PM?" />}
+            <h2 className="flex flex-1 items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><Users className="h-4 w-4 text-slate-400" /> Crew now{projectInfo ? ` · ${projectLabel(projectInfo)}` : ''}</h2>
+            {projects.length > 1 && <SearchableSelect className="min-w-[13rem]" value={project} onChange={v => setQ('project', v)} options={projects.map(p => ({ id: p.project_id, label: projectLabel(p) }))} placeholder="Which project?" />}
           </div>
           {now ? (
-            <p className="text-sm text-slate-700 dark:text-slate-200"><b>{crewText(now)}</b> <span className="text-slate-500">· {crewSpan(now)} · {now.code}</span></p>
+            <>
+              <p className="text-sm text-slate-700 dark:text-slate-200"><b>{crewText(now)}</b> <span className="text-slate-500">· {crewSpan(now)} · {now.code}</span></p>
+              <CrewRoster project={project} crew={now} />
+            </>
           ) : <p className="text-sm text-slate-500">No crew approved yet. Set one below.</p>}
           {upcoming.map(r => (
             <p key={r.id} className={`text-xs ${r.status === 'approved' ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>
@@ -254,9 +261,9 @@ export default function LabourDayRequestsPage() {
           <ul className="divide-y dark:divide-slate-700">
             {history.map(r => (
               <li key={r.id}>
-                <button onClick={() => { setQ('date', r.work_date); if (seeAll) setQ('pm', r.pm_staff_id) }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                <button onClick={() => setQ('date', r.work_date)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-slate-800 dark:text-slate-100">{crewSpan(r)}{seeAll ? ` · ${r.staff?.employee_name ?? ''}` : ''}</p>
+                    <p className="truncate text-sm text-slate-800 dark:text-slate-100">{crewSpan(r)}</p>
                     <p className="truncate text-xs text-slate-500">{r.code} · {crewText(r)}</p>
                   </div>
                   <Pill tone={REQUEST_STATUS[r.status].tone}>{REQUEST_STATUS[r.status].label}</Pill>

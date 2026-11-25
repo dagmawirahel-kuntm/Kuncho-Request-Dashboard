@@ -11,9 +11,10 @@ import { PasteReportDialog, type AskedJob, type NewJobTerms, type PastedPiece, t
 import { useAuth } from '@/contexts/AuthContext'
 import { autoApproveRequest } from '@/lib/labourGives'
 import { downloadWeekDraft } from '@/lib/labourWeekDraft'
+import { RATE_QUERY_KEYS, rateMessage, setWorkerRate, useTradeRates } from '@/lib/labourRates'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
 import {
-  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, WEEKDAYS, halfDays, tradeName, useDayPeople, useDaySettings, useTrades,
+  BUCKET_LABEL, BUCKET_SHORT, DAY_STATUS, OTHER_BUCKETS, PROJECT_BUCKETS, WEEKDAYS, halfDays, pickProject, projectLabel, tradeName, useDayPeople, useDaySettings, useLabourProjects, useTrades,
   type Bucket, type DaySheet, type DayStatus, type PieceJob,
 } from '@/lib/labourDay'
 import { CalendarRange, ChevronLeft, ChevronRight, ClipboardPaste, Copy, FileDown, Plus, Save, Send, UserPlus, X } from 'lucide-react'
@@ -37,16 +38,24 @@ export default function LabourWeekSheetPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [params, setParams] = useSearchParams()
-  const { me, approver, seeAll, pms } = useDayPeople()
+  const { me, approver } = useDayPeople()
+  const { data: projects = [] } = useLabourProjects()
   const { data: settings } = useDaySettings()
   const { data: trades = [] } = useTrades()
   const { profile, hasRole } = useAuth()
-  const canSetRate = hasRole('admin', 'hr_officer')
+  // Admin and operations set rates (above a trade's standard, as an approved raise);
+  // HR sets the rate of a trade with no standard; anyone else asks for a raise (545).
+  const canSetRate = hasRole('admin', 'operations_manager')
+  const { data: tradeRates = [] } = useTradeRates()
+  const isHr = hasRole('hr_officer')
   // Rates set here this visit, before the sheets reload.
   const [rateSet, setRateSet] = useState<Record<string, number>>({})
   const today = isoDay(new Date())
   const week = mondayOf(params.get('week') ?? today)
-  const pm = params.get('pm') ?? me?.id ?? null
+  // The project whose week this is (546); its PM signs the pay.
+  const project = pickProject(params.get('project'), projects, me?.id)
+  const pm = project
+  const projectInfo = projects.find(p => p.project_id === project) ?? null
   const setQ = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n }, { replace: true })
   const dates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(week, i)), [week])
   const startsOn = settings?.starts_on ?? null
@@ -57,7 +66,7 @@ export default function LabourWeekSheetPage() {
       queryKey: ['labour-day', pm, d],
       enabled: !!pm && inRange(d),
       queryFn: async () => {
-        const { data, error } = await supabase.rpc('labour_day_get', { p_pm: pm, p_date: d })
+        const { data, error } = await supabase.rpc('labour_day_get', { p_project: project, p_date: d })
         if (error) throw error
         return data as DaySheet
       },
@@ -131,13 +140,19 @@ export default function LabourWeekSheetPage() {
   }, [sheets])
   const colTag = (key: string) => cols.find(c => c.key === key)?.tag ?? '?'
 
-  // Workers: anyone on a saved day this week, plus anyone added here.
+  // The crew carried in from before the week: the last day sheet before the
+  // first day here that isn't saved yet. Its workers are listed (with empty
+  // days) so a new week doesn't start from nobody.
+  const carryIdx = sheets.findIndex((s, i) => inRange(dates[i]) && !!s?.prefilled_from && s.prefilled_from < week)
+  const carried = carryIdx >= 0 ? sheets[carryIdx] : null
+  // Workers: anyone on a saved day this week, the crew carried in, plus anyone added here.
   const workers: WRow[] = useMemo(() => {
     const m = new Map<string, WRow>()
     for (const s of sheets) if (s && saved(s)) for (const w of s.workers) m.set(w.staff_id, { staff_id: w.staff_id, name: w.name, trade: w.trade, day_rate: w.day_rate, photo_url: w.photo_url, verified: w.verified })
+    for (const w of carried?.workers ?? []) if (!m.has(w.staff_id)) m.set(w.staff_id, { staff_id: w.staff_id, name: w.name, trade: w.trade, day_rate: w.day_rate, photo_url: w.photo_url, verified: w.verified })
     for (const w of extraWorkers) m.set(w.staff_id, w)
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [sheets, extraWorkers])
+  }, [sheets, extraWorkers, carried])
   const jobs: PieceJob[] = useMemo(() => {
     const m = new Map<string, PieceJob>()
     for (const s of sheets) for (const job of s?.jobs ?? []) if (!m.has(job.id)) m.set(job.id, job)
@@ -172,6 +187,24 @@ export default function LabourWeekSheetPage() {
     setJobDays(j => {
       const next: typeof j = {}
       for (const [id, row] of Object.entries(j)) next[id] = { ...row, [to]: { present: row[from]?.present ?? [], measured: row[to]?.measured ?? null } }
+      return next
+    })
+    markDirty(to)
+  }
+
+  // The first day of a new week, the same as the last day sheet before it.
+  function sameAsCarried(i: number) {
+    if (!carried) return
+    const to = dates[i]
+    setCells(c => {
+      const next = { ...c }
+      for (const w of carried.workers) {
+        next[w.staff_id] = { ...(next[w.staff_id] ?? {}) }
+        next[w.staff_id][to] = {
+          paid: Number(w.paid_days), ot: 0, night: 0, note: null,
+          alloc: Object.fromEntries(w.alloc.map(a => [PROJECT_BUCKETS.includes(a.bucket) ? cellKey(a.bucket, a.project_id) : a.bucket, Number(a.days)])),
+        }
+      }
       return next
     })
     markDirty(to)
@@ -231,7 +264,7 @@ export default function LabourWeekSheetPage() {
       && (dirtyDays.has(d) || (submit && hasContent(d) && dayInfo(i).status !== 'submitted')))
     if (!days.length) { toast(submit ? 'Nothing new to send' : 'Nothing changed', 'info'); return }
     setBusy(submit ? 'send' : 'save')
-    const { data, error } = await supabase.rpc('labour_week_save', { p_pm: pm, p_days: days.map(dayPayload), p_submit: submit })
+    const { data, error } = await supabase.rpc('labour_week_save', { p_project: project, p_days: days.map(dayPayload), p_submit: submit })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
     const r = data as { mismatches: number }
@@ -242,7 +275,7 @@ export default function LabourWeekSheetPage() {
   // A worker the PM's report names who isn't on file yet (Paste a report).
   async function newWorkerFromReport(w: ReportNewWorker) {
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
-      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: w.rate > 0 ? w.rate : null, p_phone: w.phone.trim() || null, p_photo: null,
+      p_project: project, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: w.rate > 0 ? w.rate : null, p_phone: w.phone.trim() || null, p_photo: null,
     })
     if (error) { toast(error.message, 'error'); return null }
     const r = data as { staff_id: string; name: string; existing: boolean; day_rate: number | null; trade: string }
@@ -280,7 +313,7 @@ export default function LabourWeekSheetPage() {
   async function createWorker(w: NewWorker) {
     setBusy('new')
     const { data, error } = await supabase.rpc('labour_day_new_worker', {
-      p_pm: pm, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate) > 0 ? Number(w.rate) : null, p_phone: w.phone.trim() || null, p_photo: w.photo,
+      p_project: project, p_name: w.name.trim(), p_trade: w.trade, p_day_rate: Number(w.rate) > 0 ? Number(w.rate) : null, p_phone: w.phone.trim() || null, p_photo: w.photo,
     })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
@@ -357,7 +390,7 @@ export default function LabourWeekSheetPage() {
     try {
       const { data, error } = await supabase.from('labour_day_workers')
         .select('staff_id, staff:staff_id (employee_name, employment_type), labour_days!inner (pm_staff_id, work_date)')
-        .eq('labour_days.pm_staff_id', pm).gte('labour_days.work_date', addDays(week, -28)).lte('labour_days.work_date', addDays(week, 6))
+        .eq('labour_days.project_id', project).gte('labour_days.work_date', addDays(week, -28)).lte('labour_days.work_date', addDays(week, 6))
       if (error) throw error
       const names = new Map<string, string>()
       for (const w of workers) names.set(w.staff_id, w.name)
@@ -367,7 +400,7 @@ export default function LabourWeekSheetPage() {
       const crew = new Set(jobs.flatMap(j => j.crew.map(c => c.staff_id)))
       const projectNames = Array.from(new Set(cols.filter(c => c.project).map(c => c.project!)))
       await downloadWeekDraft({
-        pmName: pms.find(p => p.id === pm)?.name ?? me?.employee_name ?? 'PM',
+        pmName: [projectInfo?.project_name, projectInfo?.pm_name].filter(Boolean).join(' · ') || 'PM',
         week,
         workers: [...names].filter(([id]) => !crew.has(id)).map(([, name]) => ({ name, where: projectNames.length === 1 ? projectNames[0] : null }))
           .sort((a, b) => a.name.localeCompare(b.name)),
@@ -388,16 +421,26 @@ export default function LabourWeekSheetPage() {
   // Piece workers carry no day rate; one is asked for only when they are put
   // on day work. HR sets it (worker_set_day_rate); day pay waits until then.
   async function setDayRate(w: WRow) {
-    const raw = window.prompt(`${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`)
+    const current = rateOf(w)
+    const std = tradeRates.find(t => t.trade_tag === w.trade)?.day_rate
+    const raw = window.prompt(std
+      ? `${w.name} — ${tradeName(w.trade)} standard is ${Number(std).toLocaleString()} a day.\n${canSetRate ? 'New rate' : 'Rate to ask for (admin or operations approve)'} (birr a day):`
+      : current
+        ? `Day rate for ${w.name} (birr a day). Days not paid yet are paid at the new rate.`
+        : `${w.name} has no day rate — they've been paid by the piece so far.\nDay rate for day work (birr a day):`, current ? String(current) : '')
     if (raw == null) return
     const rate = Number(raw.replace(/[^\d.]/g, ''))
     if (!(rate > 0)) { toast('A day rate is more than 0', 'error'); return }
-    const { error } = await supabase.rpc('worker_set_day_rate', { p_staff: w.staff_id, p_rate: rate })
-    if (error) { toast(error.message, 'error'); return }
-    setRateSet(x => ({ ...x, [w.staff_id]: rate }))
-    for (const k of ['labour-casual-workers', 'labour-day']) qc.invalidateQueries({ queryKey: [k] })
-    toast(`${w.name}: ${rate.toLocaleString()} a day`, 'success')
+    const reason = std && rate > Number(std) && !canSetRate ? window.prompt('Why does this worker get more than the standard?') : null
+    if (std && rate > Number(std) && !canSetRate && !reason?.trim()) return
+    try {
+      const r = await setWorkerRate(w.staff_id, rate, reason)
+      if (r.status !== 'requested') setRateSet(x => ({ ...x, [w.staff_id]: Number(r.rate) }))
+      RATE_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+      toast(rateMessage(w.name, r), 'success')
+    } catch (e) { toast((e as Error).message, 'error') }
   }
+
   const due = (() => { const dow = settings?.week_due_dow ?? 6; return addDays(week, dow - 1) })()
   const editingCell = editing ? cells[editing.staff]?.[editing.date] ?? null : null
 
@@ -406,10 +449,10 @@ export default function LabourWeekSheetPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><CalendarRange className="h-5 w-5 text-brand" /> Week sheet</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Your week on one grid. Send it by {dayLabel(due)}.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{projectInfo ? <><b className="text-slate-700 dark:text-slate-200">{projectInfo.project_name}</b>{projectInfo.pm_name ? ` · ${projectInfo.pm_name}` : ''} — </> : ''}the project's week on one grid. Send it by {dayLabel(due)}.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to={`/labour/day${pm && seeAll ? `?pm=${pm}` : ''}`} className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">One day</Link>
+          <Link to={`/labour/day${project ? `?project=${project}` : ''}`} className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">One day</Link>
           <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Crew request</Link>
           {approver && <Link to="/labour/days" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300">Review days</Link>}
         </div>
@@ -419,7 +462,7 @@ export default function LabourWeekSheetPage() {
         <button onClick={() => setQ('week', addDays(week, -7))} className="rounded-lg border p-2 dark:border-slate-600" aria-label="Week before"><ChevronLeft className="h-4 w-4" /></button>
         <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{dayLabel(week)} – {dayLabel(addDays(week, 6))}</span>
         <button onClick={() => setQ('week', addDays(week, 7))} disabled={addDays(week, 7) > today} className="rounded-lg border p-2 disabled:opacity-40 dark:border-slate-600" aria-label="Next week"><ChevronRight className="h-4 w-4" /></button>
-        {seeAll && <SearchableSelect className="min-w-[14rem] flex-1 sm:flex-none" value={pm} onChange={v => setQ('pm', v)} options={pms.map(p => ({ id: p.id, label: p.name }))} placeholder="Whose week?" />}
+        {projects.length > 1 && <SearchableSelect className="min-w-[14rem] flex-1 sm:flex-none" value={project} onChange={v => setQ('project', v)} options={projects.map(p => ({ id: p.project_id, label: projectLabel(p) }))} placeholder="Which project?" />}
         <span className="ml-auto text-xs text-slate-500">{fmtMoney(weekCost)} day workers this week</span>
       </div>
 
@@ -439,8 +482,11 @@ export default function LabourWeekSheetPage() {
                       return (
                         <th key={d} className="min-w-[6.5rem] border-l px-1 py-1.5 font-medium dark:border-slate-700">
                           <div className="flex flex-col items-center gap-1">
-                            <Link to={`/labour/day?date=${d}${seeAll && pm ? `&pm=${pm}` : ''}`} className="hover:text-brand">{WEEKDAYS[i]} {new Date(`${d}T00:00:00`).getDate()}</Link>
+                            <Link to={`/labour/day?date=${d}${project ? `&project=${project}` : ''}`} className="hover:text-brand">{WEEKDAYS[i]} {new Date(`${d}T00:00:00`).getDate()}</Link>
                             {inRange(d) ? <Pill tone={DAY_STATUS[status].tone}>{status === 'none' ? 'Empty' : DAY_STATUS[status].label}</Pill> : <span className="text-[10px] text-slate-400">{d > today ? 'Not yet' : 'Before start'}</span>}
+                            {editable && i === carryIdx && carried?.prefilled_from && (i === 0 || !inRange(dates[i - 1])) && (
+                              <button onClick={() => sameAsCarried(i)} title={`Same as ${dayLabel(carried.prefilled_from)}`} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-brand"><Copy className="h-3 w-3" /> as {dayLabel(carried.prefilled_from)}</button>
+                            )}
                             {editable && i > 0 && inRange(dates[i - 1]) && (
                               <button onClick={() => sameAsDayBefore(i)} title="Same as the day before" className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-brand"><Copy className="h-3 w-3" /> as {WEEKDAYS[i - 1]}</button>
                             )}
@@ -460,9 +506,16 @@ export default function LabourWeekSheetPage() {
                           <WorkerAvatar url={w.photo_url} name={w.name} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate font-medium text-slate-800 dark:text-slate-100">{w.name}</p>
-                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {rateOf(w) ? `${Number(rateOf(w)).toLocaleString()}/day` : canSetRate
-                              ? <button type="button" onClick={() => setDayRate(w)} className="text-red-600 underline decoration-dotted">no day rate — set it</button>
-                              : <span className="text-red-600" title="Paid by the piece so far. HR sets a day rate before their day work is paid.">no day rate — HR sets it</span>}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
+                            <p className="truncate text-[11px] text-slate-500">{tradeName(w.trade)} · {(() => {
+                              const std = tradeRates.find(t => t.trade_tag === w.trade)?.day_rate
+                              const r = rateOf(w)
+                              // With a standard, anyone on the sheet can ask for a raise; without one, HR or operations set it.
+                              const canTap = std ? (canSetRate || anyEditable) : (canSetRate || isHr)
+                              const label = r ? `${Number(r).toLocaleString()}/day${std && Number(r) > Number(std) ? ' (raise)' : ''}` : 'no day rate'
+                              if (!canTap) return r ? label : <span className="text-red-600" title="Paid by the piece so far. HR sets a day rate before their day work is paid.">no day rate — HR sets it</span>
+                              return <button type="button" onClick={() => setDayRate(w)} title={std ? (canSetRate ? 'Change the day rate' : 'Ask for a raise') : 'Set the day rate'}
+                                className={`underline decoration-dotted hover:text-brand ${r ? '' : 'text-red-600'}`}>{r ? label : 'no day rate — set it'}</button>
+                            })()}{!w.verified && <span className="text-amber-600"> · not verified</span>}</p>
                           </div>
                         </div>
                       </td>
@@ -513,6 +566,12 @@ export default function LabourWeekSheetPage() {
             )}
             {anyEditable && newWorker && <NewWorkerForm value={newWorker} onChange={setNewWorker} busy={busy === 'new'} onCancel={() => setNewWorker(null)} onSave={() => createWorker(newWorker)} />}
           </div>
+
+          {carried?.prefilled_from && !dates.some((_, i) => saved(sheets[i])) && workers.length > 0 && (
+            <p className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900 dark:border-blue-800/40 dark:bg-blue-900/10 dark:text-blue-200">
+              Your crew from {dayLabel(carried.prefilled_from)} is listed. Copy that day into {WEEKDAYS[carryIdx]} with “as {dayLabel(carried.prefilled_from)}”, then “as {WEEKDAYS[carryIdx]}” on the next days — and change only who was off.
+            </p>
+          )}
 
           {jobs.length > 0 && (
             <div className={`${card} overflow-hidden`}>
@@ -601,7 +660,7 @@ export default function LabourWeekSheetPage() {
         <CellEditor
           name={workers.find(w => w.staff_id === editing.staff)?.name ?? ''} date={editing.date} cols={cols}
           cell={editingCell} editable={dayInfo(dates.indexOf(editing.date)).editable}
-          dayLink={`/labour/day?date=${editing.date}${seeAll && pm ? `&pm=${pm}` : ''}`}
+          dayLink={`/labour/day?date=${editing.date}${project ? `&project=${project}` : ''}`}
           onClose={() => setEditing(null)}
           onSave={c => { setCell(editing.staff, editing.date, c); setEditing(null) }}
         />

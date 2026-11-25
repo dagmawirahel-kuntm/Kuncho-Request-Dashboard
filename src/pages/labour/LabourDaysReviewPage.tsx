@@ -40,7 +40,7 @@ export default function LabourDaysReviewPage() {
     const { error } = await supabase.rpc('labour_day_lock', { p_day: r.day_id, p_note: null })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
-    toast(`${r.pm_name} · ${dayLabel(r.work_date)} locked`, 'success')
+    toast(`${r.project_name} · ${dayLabel(r.work_date)} locked`, 'success')
     qc.invalidateQueries({ queryKey: ['labour-day-board'] })
     qc.invalidateQueries({ queryKey: ['labour-flags'] })
   }
@@ -65,7 +65,7 @@ export default function LabourDaysReviewPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100"><CalendarCheck className="h-5 w-5 text-brand" /> Review days</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Every PM's day sheet: asked for, recorded, adds up — then locked.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Every project's day sheet: asked for, recorded, adds up — then locked.</p>
         </div>
         <div className="flex gap-2">
           <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-600 dark:text-slate-300">Crew requests</Link>
@@ -103,10 +103,10 @@ export default function LabourDaysReviewPage() {
                 <p className="bg-slate-50 px-4 py-1.5 text-xs font-semibold text-slate-500 dark:bg-slate-900/40">{dayLabel(d)}{d === today ? ' · today' : d > today ? ' · upcoming' : ''}</p>
                 <ul className="divide-y dark:divide-slate-700">
                   {rows.map(r => (
-                    <li key={`${r.pm_staff_id}-${d}`} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-                      <Link to={`/labour/day?date=${d}&pm=${r.pm_staff_id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                    <li key={`${r.project_id}-${d}`} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+                      <Link to={`/labour/day?date=${d}&project=${r.project_id}`} className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.pm_name}</p>
+                          <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{r.project_name}{r.pm_name ? <span className="font-normal text-slate-500"> · {r.pm_name}</span> : null}</p>
                           <p className="truncate text-xs text-slate-500">
                             {r.request_status ? `Crew ${r.requested} (${REQUEST_STATUS[r.request_status].label.toLowerCase()})` : 'No crew request'}
                             {' · '}{r.workers ? `${r.workers} on the sheet, ${halfDays(Number(r.paid_days))} days` : r.jobs ? '' : 'nothing recorded'}
@@ -114,6 +114,9 @@ export default function LabourDaysReviewPage() {
                             {r.changes ? ` · ${r.changes} change${r.changes === 1 ? '' : 's'} logged` : ''}
                           </p>
                         </div>
+                        {r.request_status === 'approved' && r.workers > 0 && r.workers !== r.requested && (
+                          <Pill tone="amber">{r.workers > r.requested ? `${r.workers - r.requested} over crew` : `${r.requested - r.workers} short of crew`}</Pill>
+                        )}
                         {r.mismatched > 0 && <Pill tone="red">{r.mismatched} don't add up</Pill>}
                         <Pill tone={DAY_STATUS[r.status].tone}>{DAY_STATUS[r.status].label}</Pill>
                         <ChevronRight className="h-4 w-4 text-slate-300" />

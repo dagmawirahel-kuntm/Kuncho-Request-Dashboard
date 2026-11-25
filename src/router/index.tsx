@@ -114,6 +114,7 @@ const ClientsPage = lazyPage(() => import('@/pages/clients/ClientsPage'))
 const ClientDetailPage = lazyPage(() => import('@/pages/clients/ClientDetailPage'))
 const ClientFormPage = lazyPage(() => import('@/pages/clients/ClientFormPage'))
 const ProformaInvoicePage = lazyPage(() => import('@/pages/clients/ProformaInvoicePage'))
+const SalesHubPage = lazyPage(() => import('@/pages/sales/hub/SalesHubPage'))
 const ProformaDetailPage = lazyPage(() => import('@/pages/sales/ProformaDetailPage'))
 const InvoiceDocumentPage = lazyPage(() => import('@/pages/invoices/InvoiceDocumentPage'))
 const CompanyProfilePage = lazyPage(() => import('@/pages/settings/CompanyProfilePage'))
@@ -217,6 +218,8 @@ const LabourWorkersPage = lazyPage(() => import('@/pages/labour/LabourWorkersPag
 const LabourPayRequestPage = lazyPage(() => import('@/pages/labour/LabourPayRequestPage'))
 const LabourDaySheetPage = lazyPage(() => import('@/pages/labour/LabourDaySheetPage'))
 const LabourCrewPage = lazyPage(() => import('@/pages/labour/LabourCrewPage'))
+const LabourPmWorkersPage = lazyPage(() => import('@/pages/labour/LabourPmWorkersPage'))
+const LabourRatesPage = lazyPage(() => import('@/pages/labour/LabourRatesPage'))
 const LabourDayRequestsPage = lazyPage(() => import('@/pages/labour/LabourDayRequestsPage'))
 const LabourDaysReviewPage = lazyPage(() => import('@/pages/labour/LabourDaysReviewPage'))
 const LabourWeekSheetPage = lazyPage(() => import('@/pages/labour/LabourWeekSheetPage'))
@@ -475,12 +478,9 @@ export const router = createBrowserRouter([
               // unlike sales/new (INSERT) and the other tables below, where
               // manager's RLS grant is read-only.
               { path: 'sales/:id/edit', element: <SaleFormPage /> },
-              { path: 'proformas', element: <ProformasPage /> },
-              { path: 'proformas/:id', element: <ProformaDetailPage /> },
               { path: 'settings/company', element: <CompanyProfilePage /> },
               { path: 'clients', element: <ClientsPage /> },
               { path: 'clients/:id', element: <ClientDetailPage /> },
-              { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
               { path: 'clients/:id/payment-request', element: <PaymentRequestPage /> },
               // Tax Summary was a Gregorian-month filing-status grid over
               // tax_engagements; Tax Filings replaced it with Ethiopian
@@ -510,6 +510,15 @@ export const router = createBrowserRouter([
               { path: 'sales-journey', element: <SalesJourneyPage /> },
               // One client's whole relationship (migration 334).
               { path: 'sales-journey/clients/:id', element: <ClientHistoryPage /> },
+              // Sales writes proformas (537): drafts, revisions, copies, sent /
+              // accepted / declined and the numbered copy. Costs, discount
+              // approval, payment requests and the BOQ stay finance's — the
+              // page hides them and RLS refuses them.
+              { path: 'proformas', element: <ProformasPage /> },
+              { path: 'proformas/:id', element: <ProformaDetailPage /> },
+              { path: 'clients/:id/proforma', element: <ProformaInvoicePage /> },
+              // Everything about selling in one place (539).
+              { path: 'sales-hub', element: <SalesHubPage /> },
             ],
           },
           {
@@ -846,6 +855,8 @@ export const router = createBrowserRouter([
           { path: 'labour/requests/:id', element: <LabourPayRequestPage /> },
           { path: 'labour/day', element: <LabourDaySheetPage /> },
           { path: 'labour/crew', element: <LabourCrewPage /> },
+          { path: 'labour/crew/workers', element: <LabourPmWorkersPage /> },
+          { path: 'labour/rates', element: <LabourRatesPage /> },
           { path: 'labour/week-sheet', element: <LabourWeekSheetPage /> },
           { path: 'labour/day-requests', element: <LabourDayRequestsPage /> },
           { path: 'labour/days', element: <LabourDaysReviewPage /> },

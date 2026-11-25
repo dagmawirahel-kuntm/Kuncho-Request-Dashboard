@@ -5,13 +5,14 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Pill } from '@/components/record/Record'
+import { CrewRoster } from '@/components/labour/CrewRoster'
 import { BASIS_LABEL, STAGE, dayLabel, fmtMoney, isoDay, stageOf, useLabourSites, type LabourRequest } from '@/lib/labour'
-import { REQUEST_STATUS, crewInEffect, tradeName, useDayPeople, useDaySettings, weekdaysLabel, type CrewRequest } from '@/lib/labourDay'
+import { REQUEST_STATUS, crewInEffect, tradeName, useDayPeople, useDaySettings, useLabourProjects, weekdaysLabel, type CrewRequest } from '@/lib/labourDay'
 import { setTerms, useTerms } from '@/lib/labourGives'
 import { ArrowLeft, ChevronRight, Hammer, Plus, Users } from 'lucide-react'
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
-const CREW = 'id, code, pm_staff_id, work_date, ends_on, weekdays, status, note, created_by_name, submitted_at, decided_by_name, decided_at, decision_note, staff:pm_staff_id(employee_name), labour_day_request_lines(trade_tag, headcount)'
+const CREW = 'id, code, pm_staff_id, project_id, work_date, ends_on, weekdays, status, note, created_by_name, submitted_at, decided_by_name, decided_at, decision_note, staff:pm_staff_id(employee_name), labour_day_request_lines(trade_tag, headcount)'
 const people = (r: CrewRequest) => r.labour_day_request_lines.filter(l => l.headcount > 0).map(l => `${l.headcount} ${tradeName(l.trade_tag).toLowerCase()}`).join(', ') || 'nobody'
 
 // Who is working, and on what terms: the standing crew of day workers and
@@ -31,11 +32,16 @@ export default function LabourCrewPage() {
   const [limit, setLimit] = useState<string | null>(null)
   const today = isoDay(new Date())
 
+  // Crews belong to projects (546): the projects this person manages, or all for operations.
+  const { approver } = useDayPeople()
+  const { data: allProjects = [] } = useLabourProjects()
+  const myProjects = allProjects.filter(p => !p.internal && (approver || (!!me && p.pm_staff_id === me.id)))
+  const projectIds = myProjects.map(p => p.project_id)
   const { data: crews = [] } = useQuery({
-    queryKey: ['labour-day-requests', 'mine', me?.id],
-    enabled: dayStarted && !!me?.id,
+    queryKey: ['labour-day-requests', 'projects', projectIds.join(',')],
+    enabled: dayStarted && projectIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase.from('labour_day_requests').select(CREW).eq('pm_staff_id', me!.id).order('work_date', { ascending: false }).limit(30)
+      const { data, error } = await supabase.from('labour_day_requests').select(CREW).in('project_id', projectIds).order('work_date', { ascending: false }).limit(200)
       if (error) throw error
       return (data ?? []) as unknown as CrewRequest[]
     },
@@ -53,8 +59,13 @@ export default function LabourCrewPage() {
 
   const siteIds = new Set(sites.map(s => s.id))
   const jobs = requests.filter(r => (everywhere || siteIds.has(r.project_id)) && ['waiting', 'active'].includes(stageOf(r)))
-  const now = crewInEffect(crews, today)
-  const next = crews.filter(r => r.work_date > today && ['submitted', 'approved', 'draft'].includes(r.status)).sort((a, b) => a.work_date.localeCompare(b.work_date))
+  const crewOf = (projectId: string) => {
+    const list = crews.filter(r => r.project_id === projectId)
+    return {
+      now: crewInEffect(list, today),
+      next: list.filter(r => r.work_date > today && ['submitted', 'approved', 'draft'].includes(r.status)).sort((a, b) => a.work_date.localeCompare(b.work_date)),
+    }
+  }
 
   async function saveTerms(auto: boolean | null, lim: number | null) {
     try { await setTerms(auto, lim); setLimit(null); qc.invalidateQueries({ queryKey: ['labour-terms'] }); toast('Saved', 'success') }
@@ -74,22 +85,42 @@ export default function LabourCrewPage() {
         <section className={card}>
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3 dark:border-slate-700">
             <h2 className="font-semibold text-slate-800 dark:text-slate-100">Day workers</h2>
-            <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">{now ? 'Change the crew' : 'Ask for a crew'}</Link>
+            <div className="flex gap-2">
+              <Link to="/labour/crew/workers" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">All workers</Link>
+              <Link to="/labour/rates" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">Rates</Link>
+            </div>
           </div>
-          <div className="space-y-2 px-4 py-3 text-sm">
-            {!me ? <p className="text-slate-500">Your login isn't linked to a staff record, so there is no crew of your own to show.</p>
-              : now ? (
-                <p className="text-slate-700 dark:text-slate-200">
-                  <b>{people(now)}</b> <span className="text-slate-500">· {weekdaysLabel(now.weekdays)} · since {dayLabel(now.work_date)}{now.ends_on ? ` until ${dayLabel(now.ends_on)}` : ''}</span>
-                </p>
-              ) : <p className="text-slate-500">No crew is approved for today.</p>}
-            {next.map(r => (
-              <p key={r.id} className="text-xs text-slate-500">
-                From {dayLabel(r.work_date)}: {people(r)} <Pill tone={REQUEST_STATUS[r.status].tone}>{REQUEST_STATUS[r.status].label}</Pill>
-                {r.decided_by_name === 'Kuncho (automatic)' && ' · approved by itself: no more people than before'}
-              </p>
-            ))}
-          </div>
+          {myProjects.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-slate-500">You don't manage a project, so there is no crew to show. A crew belongs to a project and its PM asks for it.</p>
+          ) : (
+            <ul className="divide-y dark:divide-slate-700">
+              {myProjects.map(p => {
+                const { now, next } = crewOf(p.project_id)
+                return (
+                  <li key={p.project_id} className="space-y-2 px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="flex-1 font-medium text-slate-800 dark:text-slate-100">{p.project_name}{p.pm_name ? <span className="font-normal text-slate-500"> · {p.pm_name}</span> : null}</p>
+                      <Link to={`/labour/day-requests?project=${p.project_id}`} className="text-xs font-medium text-brand hover:underline">{now ? 'Change the crew' : 'Ask for a crew'}</Link>
+                    </div>
+                    {now ? (
+                      <>
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <b>{people(now)}</b> <span className="text-slate-500">· {weekdaysLabel(now.weekdays)} · since {dayLabel(now.work_date)}{now.ends_on ? ` until ${dayLabel(now.ends_on)}` : ''}</span>
+                        </p>
+                        <CrewRoster project={p.project_id} crew={now} />
+                      </>
+                    ) : <p className="text-slate-500">No crew is approved for today.</p>}
+                    {next.map(r => (
+                      <p key={r.id} className="text-xs text-slate-500">
+                        From {dayLabel(r.work_date)}: {people(r)} <Pill tone={REQUEST_STATUS[r.status].tone}>{REQUEST_STATUS[r.status].label}</Pill>
+                        {r.decided_by_name === 'Kuncho (automatic)' && ' · approved by itself: no more people than before'}
+                      </p>
+                    ))}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </section>
       )}
 

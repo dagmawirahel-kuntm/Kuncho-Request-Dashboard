@@ -16,7 +16,7 @@ export function LabourFlagsPanel({ compact = false }: { compact?: boolean }) {
   const groups = [
     {
       key: 'days', title: 'Days that don\'t add up', hint: 'Allocated labour isn\'t the same as the paid day, nothing was recorded, or it\'s waiting for review.',
-      items: f.day_mismatches.map(d => ({ key: `${d.pm_staff_id}-${d.date}`, to: `/labour/day?date=${d.date}&pm=${d.pm_staff_id}`, text: `${d.pm} · ${dayLabel(d.date)}`, sub: d.why })),
+      items: f.day_mismatches.map(d => ({ key: `${d.project_id}-${d.date}`, to: `/labour/day?date=${d.date}&project=${d.project_id}`, text: `${d.project} · ${dayLabel(d.date)}${d.pm ? ` · ${d.pm}` : ''}`, sub: d.why })),
     },
     {
       key: 'budget', title: 'Over their labour budget', hint: 'Labour so far, every way it was recorded, against the project\'s Labor budget.',

@@ -105,7 +105,7 @@ export default function PayrollDetailPage() {
     queryKey: ['payroll-line-tax', id],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await supabase.from('v_payroll_line_tax').select('*').eq('payroll_id', id!).order('employee_name')
+      const { data, error } = await supabase.from('v_payroll_line_tax_app').select('*').eq('payroll_id', id!).order('employee_name')
       if (error) throw error
       return data as PayrollLineTax[]
     },
