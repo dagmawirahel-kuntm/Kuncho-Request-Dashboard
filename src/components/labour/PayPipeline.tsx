@@ -98,7 +98,7 @@ export function PayPipeline({ canPrepare }: { canPrepare: boolean }) {
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t px-4 py-2.5 text-xs text-slate-500 dark:border-slate-700">
         <span className="min-w-0 flex-1">
-          {auto ? <>Every <b className="text-slate-700 dark:text-slate-200">{cutoff}</b> the locked days become one pay request per site manager, ready to sign.</>
+          {auto ? <>Every <b className="text-slate-700 dark:text-slate-200">{cutoff}</b> each PM's locked days become one pay request per week, ready to sign.</>
             : 'The pay request is not prepared automatically.'}
         </span>
         {canPrepare && <button onClick={toggle} className="font-medium text-slate-500 hover:text-brand">{auto ? 'Turn off' : 'Turn on'}</button>}
