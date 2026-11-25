@@ -178,7 +178,7 @@ export default function LabourHomePage() {
         {([
           // One place for who is working and on what terms: the standing crew and the jobs (519).
           { word: 'Crew', does: 'Who is working', to: '/labour/crew', icon: <Users className="h-5 w-5" />, n: 0,
-            more: [{ to: '/labour/new', label: 'New job' }, ...(dayStarted ? [{ to: '/labour/day-requests', label: 'Change the crew' }] : []), { to: '/labour/crew/workers', label: 'Workers by PM' }, { to: '/labour/workers', label: 'Worker details' }] },
+            more: [{ to: '/labour/new', label: 'New job' }, ...(dayStarted ? [{ to: '/labour/day-requests', label: 'Change the crew' }] : []), { to: '/labour/crew/workers', label: 'Workers by PM' }, { to: '/labour/rates', label: 'Trades & rates' }, { to: '/labour/workers', label: 'Worker details' }] },
           // Once day sheets have started, day-rate and piece work is recorded there; the job-by-job screen is for crew-leader jobs.
           dayStarted
             ? { word: 'Days', does: "Today's sheet", to: '/labour/day', icon: <ClipboardCheck className="h-5 w-5" />, n: 0,

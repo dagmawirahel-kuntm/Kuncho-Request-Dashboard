@@ -9,6 +9,7 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { WorkerAvatar } from '@/components/labour/WorkerPhoto'
 import { addDays, dayLabel, isoDay } from '@/lib/labour'
 import { halfDays, tradeName, useDayPeople } from '@/lib/labourDay'
+import { RATE_QUERY_KEYS, rateMessage, setWorkerRate, useOpenRaises, useTradeRates } from '@/lib/labourRates'
 import { ArrowLeft, Users } from 'lucide-react'
 
 type Row = {
@@ -29,7 +30,12 @@ export default function LabourPmWorkersPage() {
   const { toast } = useToast()
   const { hasRole } = useAuth()
   const { me, seeAll, pms } = useDayPeople()
-  const canSetRate = hasRole('admin', 'hr_officer')
+  const canSetRate = hasRole('admin', 'hr_officer', 'operations_manager')
+  const canApprove = hasRole('admin', 'operations_manager')
+  const { data: tradeRates = [] } = useTradeRates()
+  const { data: raises = [] } = useOpenRaises()
+  const stdOf = (w: Row) => tradeRates.find(t => t.trade_tag === w.trade)?.day_rate ?? null
+  const raiseOf = (w: Row, st: 'pending' | 'approved') => raises.find(r => r.staff_id === w.staff_id && r.status === st)
   const [params, setParams] = useSearchParams()
   const pm = params.get('pm') ?? me?.id ?? null
   const setPm = (v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set('pm', v); else n.delete('pm'); return n }, { replace: true })
@@ -49,15 +55,22 @@ export default function LabourPmWorkersPage() {
   })
 
   async function setRate(w: Row) {
-    const raw = window.prompt(`Day rate for ${w.name} (birr a day):`, w.day_rate ? String(w.day_rate) : '')
+    const std = stdOf(w)
+    const raw = window.prompt(std
+      ? `${w.name} — ${tradeName(w.trade)} standard is ${Number(std).toLocaleString()} a day.\n${canApprove ? 'New rate' : 'Rate to ask for (admin or operations approve)'} (birr a day):`
+      : `Day rate for ${w.name} (birr a day):`, w.day_rate ? String(w.day_rate) : '')
     if (raw == null) return
     const rate = Number(raw.replace(/[^\d.]/g, ''))
     if (!(rate > 0)) { toast('A day rate is more than 0', 'error'); return }
-    const { error } = await supabase.rpc('worker_set_day_rate', { p_staff: w.staff_id, p_rate: rate })
-    if (error) { toast(error.message, 'error'); return }
-    toast(`${w.name}: ${rate.toLocaleString()} a day`, 'success')
-    for (const k of ['labour-pm-workers', 'labour-casual-workers', 'labour-day', 'labour-pay-weeks']) qc.invalidateQueries({ queryKey: [k] })
+    const reason = std && rate > Number(std) ? window.prompt('Why does this worker get more than the standard?') : null
+    if (std && rate > Number(std) && !canApprove && !reason?.trim()) return
+    try {
+      const r = await setWorkerRate(w.staff_id, rate, reason)
+      toast(rateMessage(w.name, r), 'success')
+      RATE_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+    } catch (e) { toast((e as Error).message, 'error') }
   }
+
 
   const counts = {
     all: rows.length,
@@ -119,6 +132,8 @@ export default function LabourPmWorkersPage() {
                       <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{w.name}</p>
                       <p className="truncate text-xs text-slate-500">
                         {tradeName(w.trade)} · {w.day_rate ? `${Number(w.day_rate).toLocaleString()}/day` : w.needs_rate ? <span className="font-medium text-red-600">no day rate</span> : 'piece work'}
+                        {stdOf(w) ? (raiseOf(w, 'approved') ? <span className="text-violet-600"> · raise (standard {Number(stdOf(w)).toLocaleString()})</span> : ' · standard') : ''}
+                        {raiseOf(w, 'pending') && <span className="text-blue-600"> · {Number(raiseOf(w, 'pending')!.rate).toLocaleString()} asked</span>}
                         {w.phone ? ` · ${w.phone}` : ''}
                       </p>
                       <p className="truncate text-[11px] text-slate-400">
@@ -133,6 +148,9 @@ export default function LabourPmWorkersPage() {
                       {!w.active && <Pill>Inactive</Pill>}
                       {w.needs_rate && canSetRate && (
                         <button onClick={() => setRate(w)} className="rounded-lg border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20">Set day rate</button>
+                      )}
+                      {stdOf(w) && !raiseOf(w, 'pending') && (
+                        <button onClick={() => setRate(w)} className="rounded-lg border px-2 py-1 text-xs font-medium text-slate-600 hover:border-brand dark:border-slate-600 dark:text-slate-300">{canApprove ? 'Change rate' : 'Ask for a raise'}</button>
                       )}
                     </div>
                   </li>

@@ -11,8 +11,8 @@ export type Candidate = {
 
 // The words people type for the work, to the trade tags workers carry.
 const WORK_TRADES: [RegExp, string[]][] = [
-  [/mason|block|hcb/i, ['mason', 'meson']],
-  [/plaster/i, ['plasterer', 'mason', 'meson']],
+  [/mason|block|hcb/i, ['mason']],
+  [/plaster/i, ['plasterer', 'mason']],
   [/carpent|wood|form ?work/i, ['carpenter']],
   [/paint/i, ['painter']],
   [/putty|gypsum/i, ['putty_worker', 'painter']],

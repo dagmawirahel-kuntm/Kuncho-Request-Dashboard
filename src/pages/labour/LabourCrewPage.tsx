@@ -77,6 +77,7 @@ export default function LabourCrewPage() {
             <h2 className="font-semibold text-slate-800 dark:text-slate-100">Day workers</h2>
             <div className="flex gap-2">
               <Link to="/labour/crew/workers" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">All workers</Link>
+              <Link to="/labour/rates" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">Rates</Link>
               <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">{now ? 'Change the crew' : 'Ask for a crew'}</Link>
             </div>
           </div>
