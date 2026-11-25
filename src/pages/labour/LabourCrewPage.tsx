@@ -75,7 +75,10 @@ export default function LabourCrewPage() {
         <section className={card}>
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3 dark:border-slate-700">
             <h2 className="font-semibold text-slate-800 dark:text-slate-100">Day workers</h2>
-            <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">{now ? 'Change the crew' : 'Ask for a crew'}</Link>
+            <div className="flex gap-2">
+              <Link to="/labour/crew/workers" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">All workers</Link>
+              <Link to="/labour/day-requests" className="rounded-lg border px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-brand dark:border-slate-600 dark:text-slate-200">{now ? 'Change the crew' : 'Ask for a crew'}</Link>
+            </div>
           </div>
           <div className="space-y-2 px-4 py-3 text-sm">
             {!me ? <p className="text-slate-500">Your login isn't linked to a staff record, so there is no crew of your own to show.</p>
