@@ -17,7 +17,7 @@ import { DocumentActions } from '@/components/documents/DocumentActions'
 import type { SourcingBundleStatus, TransportJobStatus, VehicleCapacityClass, SuggestedVehicle, SourcingBundlePaymentPattern, SourcingBundleDiscountKind, BundleLineReceipt, SdnStatus } from '@/types/database'
 import { SDN_STATUS } from '@/lib/siteDeliveries'
 import { useVariantsForItems } from '@/hooks/useItemVariants'
-import { useStaff } from '@/hooks/useLookups'
+import { useCategories, useStaff } from '@/hooks/useLookups'
 import { FactList, Panel, Pill, RecordHeader, RecordLayout, StatusSteps, type Tone } from '@/components/record/Record'
 import {
   Pencil, FileText, Clock, CheckCircle2, Building2, Trash2, ArrowRightCircle,
@@ -37,6 +37,8 @@ import { useTaxImpact } from '@/lib/taxImpact'
 import { TaxTag } from '@/components/tax/TaxTag'
 import { useMarkEntityRead } from '@/lib/notifications'
 import { ExpensePaymentsPanel } from '@/components/payments/ExpensePaymentsPanel'
+import { PoPaymentPanel } from '@/components/purchasing/PoPaymentPanel'
+import { usePoPaymentStatus } from '@/lib/poPayment'
 import { PaymentPlanEditor } from '@/components/payments/PaymentPlanEditor'
 import { PART_KIND_LABEL, WHT_MODE_LABEL, newRowKey, savePoPlan } from '@/lib/expensePayments'
 import type { ExpenseWhtMode, PoPlanPart } from '@/types/database'
@@ -139,6 +141,7 @@ function buildPoHtml(p: {
   netPayable: number
   vendorTin?: string | null
   vendorPhone?: string | null
+  payTo?: string | null
   signoff?: CompanySignoff | null
   verify?: VerifyInfo | null
   draft?: boolean
@@ -202,7 +205,7 @@ ${renderLetterhead({
   ],
   gradient: 'purchaseOrder',
 })}
-${renderParty({ label: 'Vendor', name: vendorDisplay, tin: p.vendorTin, lines: [p.vendorPhone], right: people })}
+${renderParty({ label: 'Vendor', name: vendorDisplay, tin: p.vendorTin, lines: [p.vendorPhone, p.payTo], right: people })}
 <table class="doc-table">
   <thead>
     <tr>
@@ -264,6 +267,11 @@ export default function PurchaseOrderPage() {
 
   const [financeNotes, setFinanceNotes] = useState<string>('')
   const [showRejectPanel, setShowRejectPanel] = useState(false)
+  // Finance picks the general ledger as they approve, so the bill is cleared to pay when it's made (538).
+  const [approveLedger, setApproveLedger] = useState<string | null>(null)
+  const { data: ledgerCats = [] } = useCategories()
+  const ledgerOptions = useMemo(() => (ledgerCats as { id: string; category_name: string }[]).map(c => ({ id: c.id, label: c.category_name })), [ledgerCats])
+  const { data: payStatus } = usePoPaymentStatus(id, ['admin', 'finance', 'procurement_officer', 'operations_manager', 'executive'].includes(role ?? ''))
   const [transitioning, setTransitioning] = useState(false)
   const [closingAdvance, setClosingAdvance] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
@@ -542,6 +550,7 @@ export default function PurchaseOrderPage() {
   const vendorRow = (bundle as unknown as { vendors: { tin?: string | null; phone_contact?: string | null; email?: string | null } | null }).vendors
   const poInput = { bundle, vendorDisplay, sortedItems, itemsSubtotal, discountEtb, grandTotal, vatAmount, grossTotal, whtAmount, whtEligible, netPayable,
     vendorTin: vendorRow?.tin ?? null, vendorPhone: vendorRow?.phone_contact ?? null, signoff: signoff ?? null,
+    payTo: payStatus?.pay_to?.account ? `Pay to: ${[payStatus.pay_to.bank, payStatus.pay_to.account].filter(Boolean).join(' · ')}` : null,
     variantLabels: Object.fromEntries(sortedItems.map(i => [i.id, variantLabel(i)]).filter((e): e is [string, string] => !!e[1])) }
   // An approved order is what goes to the vendor; before that it's a draft.
   const poIssuable = ['approved', 'ordered', 'fulfilled'].includes(status)
@@ -763,7 +772,10 @@ export default function PurchaseOrderPage() {
             onClick: () => linesMissingVariant.length
               ? toast(`Pick which variant was bought for: ${linesMissingVariant.map(i => i.order_items?.item_name ?? 'line').join(', ')} — edit the order`, 'error')
               : transition('submitted') },
-          { label: 'Approve', icon: Check, onClick: () => transition('approved', { finance_notes: financeNotes || null }), primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
+          { label: 'Approve', icon: Check, onClick: () => (isFinance || isAdmin) && !approveLedger
+              ? toast('Pick the general ledger — the payment is cleared with the approval', 'error')
+              : transition('approved', { finance_notes: financeNotes || null, ...((isFinance || isAdmin) ? { ledger_category_id: approveLedger } : {}) }),
+            primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
           { label: 'Mark as ordered', icon: TruckIcon, onClick: () => { setDeliveryMode('hired'); setDeliveryDate(new Date().toISOString().slice(0, 10)); setDeliveryPanel('order') }, primary: true, disabled: transitioning, hidden: !canMarkOrdered || deliveryPanel === 'order' },
           { label: 'Mark collected', icon: PackageCheck, to: `/sourcing/${id}/collected`, primary: true, hidden: !canCollect },
           { label: 'Send to site', icon: HardHat, to: `/sourcing/${id}/sdn/new`, primary: !canCollect, hidden: !canIssueSdn },
@@ -1007,6 +1019,17 @@ export default function PurchaseOrderPage() {
                 </ActionDialog>
               )}
 
+              {canApprove && !showRejectPanel && (isFinance || isAdmin) && (
+                <div className="mt-3 space-y-1">
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">General ledger</label>
+                  <SearchableSelect value={approveLedger} onChange={setApproveLedger} options={ledgerOptions} placeholder="Pick the general ledger…" />
+                  <p className="text-[11px] text-slate-500">Approving also clears the payment: the bill is ready to pay when it's made, to the account under Pay to. Someone else in finance pays it.</p>
+                </div>
+              )}
+              {canApprove && !showRejectPanel && !(isFinance || isAdmin) && (
+                <p className="mt-3 text-[11px] text-slate-500">You approve the order within your limit; finance approves the payment before the cashier pays it.</p>
+              )}
+
               {canApprove && !showRejectPanel && (
                 <div className="mt-3 space-y-1">
                   <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Note with the approval (optional)</label>
@@ -1224,24 +1247,18 @@ export default function PurchaseOrderPage() {
                 onClose={() => setPlanOpen(false)} />
             )}
 
-            {['ordered', 'fulfilled'].includes(status) && (isAdmin || isManager || isFinance || isProcurement) && (
+            {status === 'approved' && (isAdmin || isManager || isFinance || isProcurement || isOperationsManager) && (
+              <Panel title="Pay to" icon={Receipt}>
+                <PoPaymentPanel bundleId={bundle.id} poStatus={status} payInAdvance={isPayInAdvance} />
+              </Panel>
+            )}
+
+            {['ordered', 'fulfilled'].includes(status) && (isAdmin || isManager || isFinance || isProcurement || isOperationsManager) && (
               <Panel title="Payment" icon={Receipt}>
                 {bundle.expenses ? (
                   <div className="space-y-2">
-                    <Link to={`/expenses/${bundle.expenses.id}`} className="block rounded-lg border px-3 py-2 hover:border-brand dark:border-slate-600">
-                      <span className="font-mono text-xs font-semibold text-brand">{bundle.expenses.expense_code}</span>
-                      <span className="block truncate text-sm text-slate-700 dark:text-slate-200">{bundle.expenses.item_service_description}</span>
-                      {bundle.expenses.amount_etb != null && <span className="text-sm font-semibold tabular-nums">{formatCurrency(bundle.expenses.amount_etb)}</span>}
-                    </Link>
+                    <PoPaymentPanel bundleId={bundle.id} poStatus={status} payInAdvance={isPayInAdvance} />
                     <div className="flex flex-wrap items-center gap-2">
-                      <Pill tone={bundle.expenses.payment_state === 'paid' ? 'green' : bundle.expenses.payment_state === 'advance' ? 'amber' : bundle.expenses.approval_status === 'pending' ? 'slate' : 'blue'}>
-                        {bundle.expenses.payment_state === 'paid' ? 'Paid'
-                          : bundle.expenses.in_parts ? `In parts — ${formatCurrency(bundle.expenses.paid_to_date_etb)} paid so far`
-                          : bundle.expenses.payment_state === 'advance' ? 'Advance sent — awaiting GRN'
-                          : bundle.expenses.payment_state === 'approved_to_pay' ? (isPayInAdvance ? 'Approved — ready to send advance' : 'Approved — ready to pay')
-                          : bundle.expenses.approval_status === 'pending' ? 'Awaiting finance approval'
-                          : 'Unpaid'}
-                      </Pill>
                       <button onClick={() => linkExpense(null)} className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-500">
                         <Link2Off className="h-3 w-3" /> Unlink
                       </button>
