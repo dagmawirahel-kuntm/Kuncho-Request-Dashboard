@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { Pill, type Tone } from '@/components/record/Record'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { addDays, dayLabel, fmtMoney, isoDay } from '@/lib/labour'
-import { useDayPeople } from '@/lib/labourDay'
+import { projectLabel, useDayPeople, useLabourProjects } from '@/lib/labourDay'
 import { CalendarDays, ChevronRight, Undo2 } from 'lucide-react'
 
 type Stage = 'days' | 'prepare' | 'send' | 'finance' | 'paid' | 'nothing'
@@ -18,6 +18,7 @@ type WeekRow = {
   requests: { id: string; code: string; status: string }[]
   run_from: string | null; run_to: string | null
   stage: Stage
+  project_id: string; project_name: string
 }
 
 const card = 'rounded-2xl border bg-white dark:border-slate-700 dark:bg-slate-800'
@@ -38,28 +39,29 @@ export function WeekPay() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { me, approver, seeAll, pms } = useDayPeople()
-  const [pm, setPm] = useState<string | null>(null)
+  const { me, approver } = useDayPeople()
+  const { data: projects = [] } = useLabourProjects()
+  const [project, setProject] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const from = addDays(mondayOf(isoDay(new Date())), -35)
 
   const { data: weeks = [], isLoading } = useQuery({
-    queryKey: ['labour-pay-weeks', from, pm],
+    queryKey: ['labour-pay-weeks', from, project],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('labour_pay_weeks', { p_from: from, p_pm: pm })
+      const { data, error } = await supabase.rpc('labour_pay_weeks', { p_from: from, p_project: project })
       if (error) throw error
       return (data ?? []) as WeekRow[]
     },
   })
   const refresh = () => ['labour-pay-weeks', 'labour-pay-pipeline', 'labour-pay-requests', 'labour-payable-drafts', 'labour-day', 'labour-day-board', 'labour-flags', 'labour-pay-sheets-recent']
     .forEach(k => qc.invalidateQueries({ queryKey: [k] }))
-  const canRun = (w: WeekRow) => approver || w.pm_staff_id === me?.id
-  const key = (w: WeekRow) => `${w.pm_staff_id}|${w.week_of}`
+  const canRun = (w: WeekRow) => approver || (!!me && w.pm_staff_id === me.id)
+  const key = (w: WeekRow) => `${w.project_id}|${w.week_of}`
   const weekLabel = (w: string) => `${dayLabel(w)} – ${dayLabel(addDays(w, 6))}`
 
   async function prepare(w: WeekRow) {
     setBusy(key(w))
-    const { data, error } = await supabase.rpc('labour_week_pay_prepare', { p_pm: w.pm_staff_id, p_week: w.week_of })
+    const { data, error } = await supabase.rpc('labour_week_pay_prepare', { p_project: w.project_id, p_week: w.week_of })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
     const r = data as { request_id: string; code: string; total: number }
@@ -70,11 +72,11 @@ export function WeekPay() {
 
   async function undo(w: WeekRow) {
     const wider = w.run_from && w.run_to && (w.run_from < w.week_of || w.run_to > addDays(w.week_of, 6))
-    const reason = prompt(`Undo the pay for ${w.pm_name}, week of ${dayLabel(w.week_of)}?${wider ? `\n\nThis pay was made together with ${dayLabel(w.run_from!)} – ${dayLabel(w.run_to!)}; all of it comes back.` : ''}\n\nWhy?`)
+    const reason = prompt(`Undo the pay for ${w.project_name}, week of ${dayLabel(w.week_of)}?${wider ? `\n\nThis pay was made together with ${dayLabel(w.run_from!)} – ${dayLabel(w.run_to!)}; all of it comes back.` : ''}\n\nWhy?`)
     if (!reason?.trim()) return
     const sendBack = confirm('Also send the days back to the PM to rewrite?\n\nOK — send them back.\nCancel — keep them locked (you can still change them).')
     setBusy(key(w))
-    const { data, error } = await supabase.rpc('labour_week_pay_undo', { p_pm: w.pm_staff_id, p_week: w.week_of, p_reason: reason.trim(), p_send_back: sendBack })
+    const { data, error } = await supabase.rpc('labour_week_pay_undo', { p_project: w.project_id, p_week: w.week_of, p_reason: reason.trim(), p_send_back: sendBack })
     setBusy(null)
     if (error) { toast(error.message, 'error'); return }
     const r = data as { from: string; to: string; total: number; requests: string | null; sent_back: number }
@@ -90,9 +92,9 @@ export function WeekPay() {
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 dark:border-slate-700">
         <div className="min-w-0 flex-1">
           <h2 className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100"><CalendarDays className="h-4 w-4 text-brand" /> Pay by week</h2>
-          <p className="text-xs text-slate-500">Each PM's week, Monday to Sunday, is paid on its own request.</p>
+          <p className="text-xs text-slate-500">Each project's week, Monday to Sunday, is paid on its own request, signed by the project's PM.</p>
         </div>
-        {seeAll && <SearchableSelect className="min-w-[12rem]" value={pm} onChange={setPm} options={pms.map(p => ({ id: p.id, label: p.name }))} placeholder="All PMs" />}
+        {projects.length > 1 && <SearchableSelect className="min-w-[12rem]" value={project} onChange={setProject} options={projects.map(p => ({ id: p.project_id, label: projectLabel(p) }))} placeholder="All projects" />}
       </div>
       {isLoading ? <p className="p-6 text-center text-sm text-slate-400">Loading…</p> : weeks.length === 0 ? (
         <p className="p-6 text-center text-sm text-slate-500">No day sheets in the last few weeks.</p>
@@ -111,9 +113,9 @@ export function WeekPay() {
                     <li key={key(w)} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                          {w.pm_name} <span className="tabular-nums">· {fmtMoney(Number(w.amount))}</span>
+                          {w.project_name} <span className="tabular-nums">· {fmtMoney(Number(w.amount))}</span>{w.pm_name && <span className="font-normal text-slate-500"> · {w.pm_name}</span>}
                         </p>
-                        {w.projects.length > 0 && (
+                        {w.projects.length > 1 && (
                           <p className="text-xs text-slate-500">{w.projects.map(p => `${p.name.trim()} ${fmtMoney(Number(p.amount))}`).join(' · ')}</p>
                         )}
                         <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
@@ -126,7 +128,7 @@ export function WeekPay() {
                       </div>
                       <Pill tone={st.tone}>{st.label}</Pill>
                       {w.stage === 'days' && (
-                        <Link to={approver ? '/labour/days' : `/labour/week-sheet?week=${w.week_of}`} className="text-xs font-medium text-brand hover:underline">
+                        <Link to={approver ? '/labour/days' : `/labour/week-sheet?week=${w.week_of}&project=${w.project_id}`} className="text-xs font-medium text-brand hover:underline">
                           {approver ? 'Review days' : 'Week sheet'}
                         </Link>
                       )}

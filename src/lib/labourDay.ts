@@ -45,7 +45,10 @@ export type SheetWorker = {
   paid: boolean; elsewhere: number; alloc: Alloc[]
 }
 export type DaySheet = {
-  pm: { id: string; name: string | null }
+  /** The project this sheet is for (546). */
+  project?: { id: string; name: string; internal: boolean }
+  /** The project's PM. */
+  pm: { id: string | null; name: string | null }
   date: string
   starts_on: string | null
   can_edit: boolean
@@ -87,6 +90,8 @@ export type CrewRequest = {
   created_by_name: string | null; submitted_at: string | null; decided_by_name: string | null; decided_at: string | null; decision_note: string | null
   staff: { employee_name: string } | null
   labour_day_request_lines: { trade_tag: string; headcount: number }[]
+  project_id?: string | null
+  projects?: { project_name: string } | null
 }
 export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 /** "Mon–Sat", "Mon Wed Fri", "every day". */
@@ -116,6 +121,7 @@ export type BoardRow = {
   workers: number; paid_days: number; allocated_days: number; mismatched: number
   request_id: string | null; request_code: string | null; request_status: RequestStatus | null; requested: number; changes: number
   jobs: number
+  project_id: string; project_name: string
 }
 
 export type DaySettings = {
@@ -184,7 +190,7 @@ export const halfDays = (n: number) => (n === 0.5 ? '½' : Number.isInteger(n) ?
 /** The four flags (labour_flags). */
 export type LabourFlags = {
   costing_open_days: number
-  day_mismatches: { pm_staff_id: string; pm: string; date: string; status: DayStatus; why: string }[]
+  day_mismatches: { pm_staff_id: string | null; pm: string | null; project_id: string; project: string; date: string; status: DayStatus; why: string }[]
   over_budget: { project_id: string; project: string; cost: number; budget: number; over: number }[]
   costing_open: { project_id: string; project: string; delivered_at: string; days: number }[]
   awaiting_inspection: { check_id: string; code: string; project_id: string; project: string; received_at: string; items: number }[]
@@ -256,3 +262,24 @@ export const STAGE_LABEL: Record<ProjectClosing['stage'], { label: string; tone:
 }
 
 export const DEFAULT_CHECKLIST = ['Complete — nothing missing', 'No scratches or dents', 'Finish and paint intact', 'Fittings and hardware work', 'Clean']
+
+/** A project whose labour this person runs or can see (546): labour belongs to
+ *  the project, and the PM is whoever manages it now. */
+export type LabourProject = { project_id: string; project_name: string; pm_staff_id: string | null; pm_name: string | null; internal: boolean }
+export function useLabourProjects() {
+  return useQuery({
+    queryKey: ['labour-my-projects'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('labour_my_projects')
+      if (error) throw error
+      return (data ?? []) as LabourProject[]
+    },
+  })
+}
+/** The project in ?project=, else the first site the person manages, else the first they can see. */
+export function pickProject(param: string | null, projects: LabourProject[], meId: string | null | undefined) {
+  if (param) return param
+  return (projects.find(p => !p.internal && p.pm_staff_id && p.pm_staff_id === meId) ?? projects.find(p => !p.internal) ?? projects[0])?.project_id ?? null
+}
+export const projectLabel = (p: LabourProject) => `${p.project_name}${p.pm_name ? ` · ${p.pm_name}` : ''}`
