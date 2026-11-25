@@ -53,6 +53,7 @@ body{padding:0;font-size:10pt;line-height:1.5;position:relative}
 ${renderLetterhead({
   docTitle: 'LABOUR PAYMENT REQUEST', docCode: r.code, gradient: 'laborPayment',
   meta: [['Date', esc(docDate(r.submitted_at ?? r.created_at))], ['Status', esc(r.status)]],
+  date: r.submitted_at ?? r.created_at,
 })}
 ${renderParty({ label: 'Site', name: r.projects ?? '—', lines: [`Requested by ${r.signed_by_name ?? r.created_by_name ?? '—'}`] })}
 ${renderHeading('Pay sheets')}
@@ -76,7 +77,7 @@ ${r.signoff_text ? `<div style="font-size:9.3pt;margin-top:10px;font-style:itali
   <div class="box">Project manager<br/><b>${esc(r.signed_by_name ?? '')}</b><br/>${esc(docDate(r.submitted_at))}</div>
   <div class="box">Approved by — finance<br/><b>${esc(r.approved_by_name ?? '')}</b><br/>${esc(docDate(r.approved_at))}</div>
 </div>
-${renderFooter(r.code, DOCUMENT_GRADIENTS.laborPayment.from)}
+${renderFooter(r.code, DOCUMENT_GRADIENTS.laborPayment.from, r.submitted_at ?? r.created_at)}
 ${images.map(p => `<div class="photo"><img src="${esc(p.url)}" alt="${esc(p.name)}"/></div>`).join('')}
 </body></html>`
 }

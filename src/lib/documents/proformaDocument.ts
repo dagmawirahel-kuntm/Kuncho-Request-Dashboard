@@ -116,6 +116,7 @@ ${renderLetterhead({
   docTitle: 'PROFORMA INVOICE',
   docCode: p.number ? `${p.number}${p.version && p.version > 1 ? ` · v${p.version}` : ''}` : undefined,
   meta: [['Date', esc(docDate(p.date))], ['Valid until', esc(docDate(validUntil))]],
+  date: p.date,
   gradient: 'proforma',
 })}
 ${p.client ? renderParty({
@@ -151,7 +152,7 @@ ${renderHeading('Terms')}
 ${renderBankAccounts('Payments to')}
 ${renderSignoff({ signoff: p.signoff, preparedBy: prepared, verify: p.verify, acceptance: p.client?.client_name ?? null })}
 <p style="font-size:7.8pt;color:#9a927c;margin-top:12px;font-style:italic">This proforma is a quotation, not a tax invoice.</p>
-${renderFooter(p.number ?? undefined, DOCUMENT_GRADIENTS.proforma.from)}
+${renderFooter(p.number ?? undefined, DOCUMENT_GRADIENTS.proforma.from, p.date)}
 </body>
 </html>`
 }

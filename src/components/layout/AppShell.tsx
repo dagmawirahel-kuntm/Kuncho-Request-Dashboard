@@ -16,6 +16,7 @@ import { SubmitStampHost } from '@/components/shared/SubmitStamp'
 import { NotificationsLive } from '@/components/notifications/NotificationsLive'
 import { chime, confetti, useFunEffects, useFunSounds } from '@/lib/celebrate'
 import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
+import { FestiveLights } from '@/components/seasonal/FestiveLights'
 import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
@@ -268,6 +269,7 @@ export function AppShell() {
   return (
     <>
     <AnimatedBackground />
+    {season?.lights && <FestiveLights />}
     <div className="relative z-10 flex h-screen overflow-hidden bg-transparent print:block print:h-auto print:overflow-visible" style={accentVars(nav.active.section)}>
       <Sidebar
         nav={nav}

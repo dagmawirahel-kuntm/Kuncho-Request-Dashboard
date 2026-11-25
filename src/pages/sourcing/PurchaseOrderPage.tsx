@@ -201,6 +201,7 @@ ${renderLetterhead({
     ...(bundle.expected_delivery_date ? [['Expected delivery', esc(docDate(bundle.expected_delivery_date))] as [string, string]] : []),
   ],
   gradient: 'purchaseOrder',
+  date: bundle.approved_at ?? bundle.created_at,
 })}
 ${renderParty({ label: 'Vendor', name: vendorDisplay, tin: p.vendorTin, lines: [p.vendorPhone], right: people })}
 <table class="doc-table">
@@ -231,7 +232,7 @@ ${bundle.notes ? `${renderHeading('Notes')}<div style="font-size:9.3pt">${escLin
 ${renderHeading('Terms')}
 <ol class="doc-terms">${terms.map(t => `<li>${t}</li>`).join('')}</ol>
 ${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
-${renderFooter(bundle.bundle_code, DOCUMENT_GRADIENTS.purchaseOrder.from)}
+${renderFooter(bundle.bundle_code, DOCUMENT_GRADIENTS.purchaseOrder.from, bundle.approved_at ?? bundle.created_at)}
 </body>
 </html>`
 }

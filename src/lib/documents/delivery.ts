@@ -9,7 +9,7 @@ const num = (n: number | null | undefined) => n == null ? '—' : esc(Number(n).
 const lbl = (en: string) => `${esc(en)}${amOf(en) ? `<span class="am">${esc(amOf(en))}</span>` : ''}`
 const when = (d: string | null | undefined) => d ? `${esc(docDate(d))} ${esc(new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}` : '—'
 
-function page(code: string, body: string): string {
+function page(code: string, body: string, date?: string | null): string {
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>${esc(code)} - ${esc(companyName())}</title>
 <style>
@@ -23,7 +23,7 @@ body{padding:0;font-size:10pt;line-height:1.5;position:relative}
 .photos img{height:90px;width:auto;border:1px solid #dccfa9;border-radius:3px}
 </style></head><body>
 ${body}
-${renderFooter(code, DOCUMENT_GRADIENTS.delivery.from)}
+${renderFooter(code, DOCUMENT_GRADIENTS.delivery.from, date)}
 </body></html>`
 }
 
@@ -56,6 +56,7 @@ export function buildSdnHtml(s: SdnPrint): string {
   return page(s.sdn_code, `
 ${renderLetterhead({
   docTitle: 'SITE DELIVERY NOTE', docCode: s.sdn_code, gradient: 'delivery',
+  date: s.issued_at,
   meta: [['Date', esc(docDate(s.issued_at))], ['Purchase order', esc(s.bundle_code ?? '—')],
     ...(s.expected_on ? [['Expected delivery', esc(docDate(s.expected_on))] as [string, string]] : [])],
 })}
@@ -75,7 +76,7 @@ ${s.photos.length ? `<div class="photos">${s.photos.slice(0, 6).map(p => `<img s
   <div class="box">${lbl('Sent by')}<br/>${esc(s.issued_by_name ?? '')}</div>
   <div class="box">${lbl('Received by')} — name, signature, date</div>
 </div>`}
-`)
+`, s.issued_at)
 }
 
 export interface GrnPrint {
@@ -102,6 +103,7 @@ export function buildGrnHtml(g: GrnPrint): string {
   return page(g.grn_code, `
 ${renderLetterhead({
   docTitle: 'GOODS RECEIVED NOTE', docCode: g.grn_code, gradient: 'delivery',
+  date: g.received_at,
   meta: [['Date', esc(docDate(g.received_at))], ['Purchase order', esc(g.bundle_code ?? '—')]],
 })}
 ${renderParty({ label: 'Vendor', name: g.vendor_name ?? '—', lines: [g.project_names ? `For ${g.project_names}` : null], right })}
@@ -118,5 +120,5 @@ ${g.notes ? `${renderHeading('Notes')}<div style="font-size:9.3pt">${escLines(g.
   <div class="box">${lbl('Received by')}<br/><b>${esc(g.received_by_name ?? '')}</b><br/>${when(g.received_at)}</div>
   <div class="box">Checked by (stores / procurement) — name, signature, date</div>
 </div>
-`)
+`, g.received_at)
 }

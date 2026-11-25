@@ -12,7 +12,7 @@ import { useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import type { SeasonMoment } from '@/lib/seasons'
 import { DemeraArt, MeskelCrossArt } from '@/components/seasonal/MeskelArt'
-import { GenaArt, NativityStarArt, NewYearArt, TapersArt } from '@/components/seasonal/FestiveArt'
+import { ChristmasTreeArt, GenaArt, NewYearArt, TapersArt } from '@/components/seasonal/FestiveArt'
 
 const MESKEL_AM = 'እንኳን ለብርሃነ መስቀሉ በሰላም አደረሳችሁ'
 const GENA_AM = 'እንኳን ለብርሃነ ልደቱ በሰላም አደረሳችሁ'
@@ -74,32 +74,32 @@ function cardFor(moment: SeasonMoment): Card | null {
     // ── The festive season ──
     case 'season-open':
       return {
-        art: <TapersArt lit={1} className="h-full w-full" />,
-        artCls: 'h-[68px] w-14 sm:h-20 sm:w-16', tone: 'season-greet--festive', label: 'Festive season greeting',
+        art: <ChristmasTreeArt className="h-full w-full" />,
+        artCls: 'h-[76px] w-16 sm:h-[92px] sm:w-[76px]', tone: 'season-greet--festive', label: 'Festive season greeting',
         eyebrow: 'የበዓል ሰሞን · ኅዳር–ታኅሣሥ',
         title: <p className={titleCls}>The festive season is here</p>,
         line: `Christmas Fri 25 Dec · New Year Fri 1 Jan · Gena Thu 7 Jan (Tahsas 29) — ${days(n)}.`,
       }
     case 'christmas-soon':
       return {
-        art: <NativityStarArt className="h-full w-full" />,
-        artCls: 'h-16 w-16 sm:h-20 sm:w-20', tone: 'season-greet--festive', label: 'Christmas greeting',
+        art: <ChristmasTreeArt className="h-full w-full" />,
+        artCls: 'h-[76px] w-16 sm:h-[92px] sm:w-[76px]', tone: 'season-greet--festive', label: 'Christmas greeting',
         eyebrow: 'Christmas · Friday 25 December',
         title: <p className={titleCls}>Christmas is on Friday · {days(n)}</p>,
         line: 'Gena follows on Thursday 7 January.',
       }
     case 'christmas-eve':
       return {
-        art: <NativityStarArt className="h-full w-full" />,
-        artCls: 'h-16 w-16 sm:h-20 sm:w-20', tone: 'season-greet--festive', label: 'Christmas greeting',
+        art: <ChristmasTreeArt className="h-full w-full" />,
+        artCls: 'h-[76px] w-16 sm:h-[92px] sm:w-[76px]', tone: 'season-greet--festive', label: 'Christmas greeting',
         eyebrow: 'Christmas Eve · 24 December',
         title: <p className={titleCls}>Christmas is tomorrow</p>,
         line: 'A peaceful evening to everyone celebrating tonight.',
       }
     case 'christmas':
       return {
-        art: <NativityStarArt className="h-full w-full" />,
-        artCls: 'h-[72px] w-[72px] sm:h-[88px] sm:w-[88px]', tone: 'season-greet--festive', label: 'Christmas greeting',
+        art: <ChristmasTreeArt gifts className="h-full w-full" />,
+        artCls: 'h-[84px] w-[70px] sm:h-[104px] sm:w-[86px]', tone: 'season-greet--festive', label: 'Christmas greeting',
         eyebrow: 'Christmas · Friday 25 December 2026',
         title: <p className={titleCls}>Merry Christmas</p>,
         line: 'To everyone celebrating today, from all of us at Kuncho. Gena is on 7 January.',
@@ -148,7 +148,7 @@ function cardFor(moment: SeasonMoment): Card | null {
     case 'gena':
       return {
         art: <GenaArt className="h-full w-full" />,
-        artCls: 'h-[76px] w-[76px] sm:h-[96px] sm:w-[96px]', tone: 'season-greet--festive', label: 'Gena greeting',
+        artCls: 'h-[76px] w-[92px] sm:h-[96px] sm:w-[116px]', tone: 'season-greet--festive', label: 'Gena greeting',
         eyebrow: 'ገና · ታኅሣሥ ፳፱ ፳፻፲፱ ዓ.ም.',
         title: <p lang="am" className={amTitleCls}>{GENA_AM}</p>,
         line: 'Melkam Gena from everyone at Kuncho.',

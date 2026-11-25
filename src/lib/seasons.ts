@@ -16,10 +16,14 @@
 //   meskel  Sun 27                       daisies throughout, the full greeting
 //   after   Mon 28                       the daisies thin out, gone by midnight
 //
-// The festive season 2026–27 (candles and stars, Christmas → New Year → Gena):
-//   gathering  Wed 25 Nov → Wed 6 Jan 18:00   candles and gold stars join the
-//                                              numerals, from a few on the first
-//                                              day to about a third on Gena eve
+// The festive season 2026–27 (Christmas → New Year → Gena, in red, green and
+// gold, with string lights across the top of the app throughout):
+//   gathering  Wed 25 Nov → Wed 6 Jan 18:00   baubles, gold stars and candles
+//                                              join the numerals, a quarter of
+//                                              them on the first day, nearly
+//                                              half by Gena eve
+//   snow       Fri 18 Dec → Sat 26 Dec         snow falls the week up to and
+//                                              through Christmas Day
 //   christmas  Thu 24 Dec 18:00 → Sat 26       stars brighten for Christmas
 //   newyear    Thu 31 Dec 18:00 → Sat 2 Jan    gold sparks burst here and there
 //   vigil      Wed 6 Jan 18:00 → Thu 7          Gena eve: the numerals fall back
@@ -58,6 +62,10 @@ export interface SeasonMoment {
   ornamentShare: number
   /** Whether the accent layer and logo mark are on. */
   festive: boolean
+  /** The festive season: string lights across the top of the app. */
+  lights: boolean
+  /** The festive season: snow falling, the week before Christmas. */
+  snow: boolean
   /** Addis calendar days until the day the greeting is counting down to
    *  (Meskel, Christmas, New Year or Gena): 0 on the day itself. */
   daysTo: number
@@ -94,7 +102,7 @@ function meskelAt(now: number): SeasonMoment | null {
   const s = MESKEL_2026
   if (now < s.start || now >= s.end) return null
   const daysTo = daysBetween(now, s.meskel)
-  const base = { key: s.key, motif: 'meskel' as const, daysTo }
+  const base = { key: s.key, motif: 'meskel' as const, daysTo, lights: false, snow: false }
   if (now < s.demera) {
     const p = (now - s.start) / (s.demera - s.start)
     return { ...base, phase: 'bloom', festive: true, ornamentShare: BLOOM_FROM + (BLOOM_TO - BLOOM_FROM) * p, greeting: daysTo <= 1 ? 'eve' : 'countdown' }
@@ -110,6 +118,7 @@ function meskelAt(now: number): SeasonMoment | null {
 const FESTIVE_2026 = {
   key: 'festive-2026',
   start: at('2026-11-25T00:00:00+03:00'),
+  snowFrom: at('2026-12-18T00:00:00+03:00'),
   openUntil: at('2026-12-02T00:00:00+03:00'),        // the "season is here" card, first week
   christmasSoon: at('2026-12-22T00:00:00+03:00'),
   christmasEve: at('2026-12-24T18:00:00+03:00'),
@@ -124,17 +133,18 @@ const FESTIVE_2026 = {
   after: at('2027-01-08T00:00:00+03:00'),
   end: at('2027-01-09T00:00:00+03:00'),
 }
-// The lights gather over six weeks; Christmas, New Year and Gena itself
-// are brighter than the build-up around them.
-const GATHER_FROM = 0.06
-const GATHER_TO = 0.35
-const HOLIDAY_SHARE = 0.5
-const GENA_SHARE = 0.6
+// Festive from the first day, fuller over six weeks; Christmas, New Year and
+// Gena itself are brighter than the build-up around them.
+const GATHER_FROM = 0.25
+const GATHER_TO = 0.45
+const HOLIDAY_SHARE = 0.62
+const GENA_SHARE = 0.68
 
 function festiveAt(now: number): SeasonMoment | null {
   const s = FESTIVE_2026
   if (now < s.start || now >= s.end) return null
-  const base = { key: s.key, motif: 'festive' as const }
+  const snow = now >= s.snowFrom && now < s.christmasEnd
+  const base = { key: s.key, motif: 'festive' as const, snow, lights: now < s.after }
   const gathered = GATHER_FROM + (GATHER_TO - GATHER_FROM) * Math.min(1, (now - s.start) / (s.genaEve - s.start))
 
   if (now >= s.after) {
@@ -183,7 +193,8 @@ const PREVIEW_AT: Record<string, number> = {
   after: at('2026-09-28T08:00:00+03:00'),
   // The festive season 2026–27, in order
   'season-open': at('2026-11-26T12:00:00+03:00'),
-  gathering: at('2026-12-15T12:00:00+03:00'),
+  gathering: at('2026-12-10T12:00:00+03:00'),
+  snow: at('2026-12-19T12:00:00+03:00'),
   'christmas-soon': at('2026-12-23T12:00:00+03:00'),
   'christmas-eve': at('2026-12-24T20:00:00+03:00'),
   christmas: at('2026-12-25T12:00:00+03:00'),
@@ -220,8 +231,50 @@ export function getSeasonMoment(now: number = Date.now()): SeasonMoment | null {
 export function sameMoment(a: SeasonMoment | null, b: SeasonMoment | null): boolean {
   if (!a || !b) return a === b
   return a.key === b.key && a.phase === b.phase && a.greeting === b.greeting
+    && a.snow === b.snow && a.lights === b.lights
     && a.daysTo === b.daysTo && Math.abs(a.ornamentShare - b.ornamentShare) < 0.01
 }
 
 /** For tests and the preview page: the moment at an instant, ignoring any preview. */
 export const seasonMomentAt = momentAt
+
+// ── Documents ────────────────────────────────────────────────────────────────
+// Printed documents carry the season too, as a keepsake: a festive band, a
+// corner ornament and a dated greeting in the footer. What decides is the
+// document's own date (Addis calendar day), not the day it is viewed — a PO
+// dated 20 December stays festive when reprinted in March, one dated in
+// October stays plain when reprinted in December.
+
+export type DocSeasonPhase = 'christmas' | 'newyear' | 'gena'
+
+const DOC_PHASES: { from: string; to: string; phase: DocSeasonPhase }[] = [
+  { from: '2026-11-25', to: '2026-12-26', phase: 'christmas' },
+  { from: '2026-12-27', to: '2027-01-02', phase: 'newyear' },
+  { from: '2027-01-03', to: '2027-01-08', phase: 'gena' },
+]
+
+/** The Addis calendar day of a date: 'YYYY-MM-DD' strings are taken as they are. */
+export function addisDateOf(d: string | Date | number): string {
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d
+  const ms = typeof d === 'number' ? d : typeof d === 'string' ? Date.parse(d) : d.getTime()
+  if (!Number.isFinite(ms)) return ''
+  return new Date(ms + ADDIS_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+/** Which festive mark a document dated `d` carries, or null for none. */
+export function docSeasonPhase(d: string | Date | number | null | undefined): DocSeasonPhase | null {
+  if (d == null || d === '') return null
+  const day = addisDateOf(d)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null
+  return DOC_PHASES.find(p => day >= p.from && day <= p.to)?.phase ?? null
+}
+
+/** A line of greeting for a message sent today (emails, shared links), or null. */
+export function seasonMessageLine(now: number = Date.now()): string | null {
+  switch (docSeasonPhase(now)) {
+    case 'christmas': return "Season's greetings from all of us at Kuncho — Merry Christmas, and Melkam Gena to come."
+    case 'newyear': return 'Happy New Year from all of us at Kuncho — wishing you a good 2027, and Melkam Gena to come.'
+    case 'gena': return 'Melkam Gena from all of us at Kuncho — እንኳን ለብርሃነ ልደቱ በሰላም አደረሳችሁ።'
+    default: return null
+  }
+}

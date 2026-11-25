@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { DaisyMark } from '@/components/seasonal/MeskelArt'
-import { StarMark } from '@/components/seasonal/FestiveArt'
+import { TreeMark } from '@/components/seasonal/FestiveArt'
 import { useSeason } from '@/hooks/useSeason'
 
 // The pages before the app (sign in, sign up, new password, account status)
@@ -166,7 +166,7 @@ function SeasonNote() {
   return (
     <div className="relative rounded-2xl border border-white/10! bg-white/5 p-4 backdrop-blur">
       <p className="text-[11px] font-semibold uppercase tracking-widest text-[#D4AF37]">Today at Kuncho</p>
-      <p className="mt-1 flex items-center gap-2 text-sm text-white/80">{season.motif === 'festive' ? <StarMark className="h-4 w-4 shrink-0" /> : <DaisyMark className="h-4 w-4 shrink-0" />}{text}</p>
+      <p className="mt-1 flex items-center gap-2 text-sm text-white/80">{season.motif === 'festive' ? <TreeMark className="h-5 w-4 shrink-0" /> : <DaisyMark className="h-4 w-4 shrink-0" />}{text}</p>
     </div>
   )
 }

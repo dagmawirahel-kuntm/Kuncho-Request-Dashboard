@@ -14,6 +14,7 @@ const DIST = 270        // max connection distance (px)
 const EMBERS = 80       // Demera embers
 const TAPERS = 54       // Gena eve candles
 const SPARKS = 22       // per New Year burst
+const FLAKES = 110      // snow, the week before Christmas
 
 type P = {
   x: number; y: number
@@ -24,8 +25,9 @@ type P = {
    *  daisy share. Because the key never changes, a rising share turns more
    *  of the same particles into flowers rather than reshuffling them. */
   key: number
-  /** Fixed per particle, for the festive season: a star below 0.55, a
-   *  candle flame above — so the mix stays the same as the share grows. */
+  /** Fixed per particle, for the festive season: a bauble below 0.45, a
+   *  star to 0.78, a candle flame above — so the mix stays the same as the
+   *  share grows. */
   kind: number
   rot: number; vr: number
 }
@@ -33,6 +35,7 @@ type P = {
 type Ember = { x: number; y: number; vy: number; sway: number; sf: number; r: number; c: number; a: number }
 type Taper = { x: number; y: number; r: number; sf: number; ph: number }
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; c: number }
+type Flake = { x: number; y: number; r: number; vy: number; sway: number; sf: number; a: number }
 
 // Adey Abeba, and the Demera's fire from flame to coal (see seasons.ts).
 const PETAL = '#F4C20D'
@@ -48,6 +51,21 @@ const STAR_DARK = '#F5D36B'
 const STAR_LIGHT = '#B8860B'
 const SPARK_DARK = ['#FDE68A', '#F5D36B', '#FCD34D', '#FFFFFF']
 const SPARK_LIGHT = ['#B8860B', '#D97706', '#CA8A04', '#A16207']
+// Baubles: Christmas red, green and gold.
+const BAUBLE_DARK = ['#E53935', '#2E9E55', '#F5D36B']
+const BAUBLE_LIGHT = ['#C62828', '#1E7A3C', '#C9A227']
+
+function spawnFlake(w: number, h: number, anywhere: boolean): Flake {
+  return {
+    x: Math.random() * w,
+    y: anywhere ? Math.random() * h : -8 - Math.random() * 40,
+    r: 0.8 + Math.random() * 2.4,
+    vy: 0.35 + Math.random() * 0.75,
+    sway: Math.random() * Math.PI * 2,
+    sf: 0.4 + Math.random() * 0.9,
+    a: 0.45 + Math.random() * 0.5,
+  }
+}
 
 function spawn(w: number, h: number): P {
   const char = POOL[Math.floor(Math.random() * POOL.length)]
@@ -105,6 +123,7 @@ export function AnimatedBackground() {
     let embers: Ember[] = []
     let tapers: Taper[] = []
     let sparks: Spark[] = []
+    let flakes: Flake[] = []
     let nextBurst = 0
     let w = 0, h = 0
     let t = 0
@@ -124,6 +143,7 @@ export function AnimatedBackground() {
         return { x: Math.random() * w, y, r: 2.2 + 3.6 * ((y / h - 0.58) / 0.4), sf: 2 + Math.random() * 3, ph: Math.random() * Math.PI * 2 }
       })
       sparks = []
+      flakes = Array.from({ length: FLAKES }, () => spawnFlake(w, h, true))
     }
 
     function daisy(x: number, y: number, r: number, rot: number, a: number) {
@@ -190,6 +210,21 @@ export function AnimatedBackground() {
       ctx!.restore()
     }
 
+    /** A Christmas bauble: a ball with a little cap and a highlight. */
+    function bauble(x: number, y: number, r: number, a: number, color: string) {
+      ctx!.save()
+      ctx!.translate(x, y)
+      ctx!.globalAlpha = a
+      ctx!.fillStyle = color
+      ctx!.beginPath(); ctx!.arc(0, 0, r, 0, Math.PI * 2); ctx!.fill()
+      ctx!.fillStyle = '#C9A227'
+      ctx!.fillRect(-r * 0.32, -r * 1.25, r * 0.64, r * 0.36)
+      ctx!.globalAlpha = a * 0.55
+      ctx!.fillStyle = '#ffffff'
+      ctx!.beginPath(); ctx!.arc(-r * 0.35, -r * 0.35, r * 0.28, 0, Math.PI * 2); ctx!.fill()
+      ctx!.restore()
+    }
+
     function burst() {
       const x = w * (0.1 + Math.random() * 0.8)
       const y = h * (0.12 + Math.random() * 0.5)
@@ -227,6 +262,15 @@ export function AnimatedBackground() {
         s.life -= 0.012
       }
       sparks = sparks.filter(s => s.life > 0)
+      // Snow only falls in its week; otherwise the flakes wait.
+      if (seasonRef.current?.snow) {
+        for (let i = 0; i < flakes.length; i++) {
+          const f = flakes[i]
+          f.y += f.vy
+          f.x += Math.sin(t * f.sf + f.sway) * 0.35
+          if (f.y > h + 8) flakes[i] = spawnFlake(w, h, false)
+        }
+      }
       // Embers only rise while the Demera burns; otherwise they wait.
       if (seasonRef.current?.phase === 'demera') {
         for (let i = 0; i < embers.length; i++) {
@@ -336,7 +380,10 @@ export function AnimatedBackground() {
       for (const p of ps) {
         if (p.key < share) {
           if (!festive) daisy(p.x, p.y, p.size * 0.42, p.rot, (isDark ? 0.42 : 0.58) + p.alpha * 2.2)
-          else if (p.kind < 0.55) {
+          else if (p.kind < 0.45) {
+            const pal = isDark ? BAUBLE_DARK : BAUBLE_LIGHT
+            bauble(p.x, p.y, p.size * 0.34, (isDark ? 0.6 : 0.7) + p.alpha * 1.5, pal[Math.floor(p.kind / 0.15) % 3])
+          } else if (p.kind < 0.78) {
             const tw = 0.7 + 0.3 * Math.sin(t * 1.6 + p.rot * 7)
             star(p.x, p.y, p.size * 0.38, p.rot, ((isDark ? 0.5 : 0.55) + p.alpha * 2) * tw, isDark ? STAR_DARK : STAR_LIGHT)
           } else {
@@ -351,6 +398,15 @@ export function AnimatedBackground() {
           : `bold ${p.size}px "SF Mono","Fira Code","Courier New",monospace`
         ctx!.fillStyle = `rgba(${numRGB},${p.alpha})`
         ctx!.fillText(p.char, p.x, p.y)
+      }
+
+      // Snow, the week before Christmas.
+      if (season?.snow) {
+        ctx!.fillStyle = isDark ? '#ffffff' : '#94a3b8'
+        for (const f of flakes) {
+          ctx!.globalAlpha = f.a * (isDark ? 0.8 : 0.7)
+          ctx!.beginPath(); ctx!.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx!.fill()
+        }
       }
 
       // New Year sparks, over everything else.

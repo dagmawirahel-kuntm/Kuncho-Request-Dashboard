@@ -67,6 +67,7 @@ ${p.draft ? '<div class="doc-watermark">DRAFT</div>' : ''}
 ${renderLetterhead({
   docTitle: 'VARIATION ORDER', docTitleAm: 'የሥራ ለውጥ ትዕዛዝ',
   docCode: p.code,
+  date: p.date,
   meta: [['Date', esc(docDate(p.date))], ['Addendum to', p.agreementRef ? esc(p.agreementRef) : 'Original agreement']],
   gradient: 'bdContract',
 })}
@@ -104,7 +105,7 @@ ${p.sumBefore != null ? `${renderHeading('Contract sum', 'የውል ዋጋ')}
   <tr class="total"><td>Revised contract sum</td><td style="text-align:right">${money(after!)}</td></tr>
 </table>` : ''}
 ${renderSignoff({ signoff: p.signoff, acceptance: p.client?.client_name ?? 'the client', acceptanceWhat: 'this variation order' })}
-${renderFooter(p.code)}
+${renderFooter(p.code, undefined, p.date)}
 </body></html>`
 }
 
@@ -129,7 +130,7 @@ export function buildContractStatementHtml(p: StatementInput): string {
   }).join('')
   const days = p.variations.reduce((s, v) => s + v.days, 0)
   return `${head(`Contract statement - ${p.projectName}`, p.preview)}
-${renderLetterhead({ docTitle: 'CONTRACT STATEMENT', docTitleAm: 'የውል ሁኔታ መግለጫ', meta: [['Date', esc(docDate(p.date))]], gradient: 'bdContract' })}
+${renderLetterhead({ docTitle: 'CONTRACT STATEMENT', docTitleAm: 'የውል ሁኔታ መግለጫ', meta: [['Date', esc(docDate(p.date))]], gradient: 'bdContract', date: p.date })}
 ${renderParty({ label: 'Project', name: p.projectName, lines: [p.client?.client_name ?? null, p.agreementRef ? `Agreement: ${p.agreementRef}` : null] })}
 <p class="doc-salute">The agreement for <b>${esc(p.projectName)}</b> as it stands today: the original agreement and every variation order agreed since, each signed as an addendum.</p>
 <table class="doc-table">
@@ -147,6 +148,6 @@ ${days > 0 ? `<p style="font-size:10pt">Time added by agreed variations: <b>${da
 ${p.pending.length ? `${renderHeading('Not yet agreed')}
 <table class="doc-table"><tbody>${p.pending.map(v => `<tr><td style="width:70px">${esc(v.code)}</td><td>${esc(v.title)}</td><td style="width:140px">${esc(v.status)}</td><td class="r" style="width:120px">${money(v.total)}</td></tr>`).join('')}</tbody></table>
 <p style="font-size:9pt;color:#6b6656">These are not part of the contract sum until the client signs them.</p>` : ''}
-${renderFooter()}
+${renderFooter(undefined, undefined, p.date)}
 </body></html>`
 }

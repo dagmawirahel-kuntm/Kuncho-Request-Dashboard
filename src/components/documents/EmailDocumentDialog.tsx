@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useCompanyProfile } from '@/lib/companyProfile'
 import { formatDateTime } from '@/lib/utils'
+import { seasonMessageLine } from '@/lib/seasons'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { emailDocument, isEmail, splitAddresses, useDocumentEmails, useEmailReady } from '@/lib/documents/emailDocument'
 
@@ -46,8 +47,12 @@ export function EmailDocumentDialog({ kind, sourceId, title, fileName, party, de
   const [to, setTo] = useState(defaultTo ?? '')
   const [copyMe, setCopyMe] = useState(!!profile?.email)
   const [subject, setSubject] = useState(`${asSubject(title)}${companyName ? ` — ${companyName}` : ''}`)
-  const [message, setMessage] = useState(
-    `Dear ${party?.trim() || 'Sir / Madam'},\n\nPlease find attached our ${inSentence(title)}.\n\nKind regards,\n${profile?.full_name ?? ''}${companyName ? `\n${companyName}` : ''}`)
+  // In a festive season the note carries the season's greeting (unless
+  // festive documents are turned off in Company & Documents).
+  const [message, setMessage] = useState(() => {
+    const season = company?.festive_documents === false ? null : seasonMessageLine()
+    return `Dear ${party?.trim() || 'Sir / Madam'},\n\nPlease find attached our ${inSentence(title)}.${season ? `\n\n${season}` : ''}\n\nKind regards,\n${profile?.full_name ?? ''}${companyName ? `\n${companyName}` : ''}`
+  })
   const [busy, setBusy] = useState(false)
 
   const addresses = splitAddresses(to)

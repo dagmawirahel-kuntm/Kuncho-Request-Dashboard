@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import type { Theme } from './AppShell'
 import { useEffect, useRef, useState } from 'react'
 import { DaisyMark } from '@/components/seasonal/MeskelArt'
-import { CandleMark, StarMark } from '@/components/seasonal/FestiveArt'
+import { CandleMark, TreeMark } from '@/components/seasonal/FestiveArt'
 import { useSeason } from '@/hooks/useSeason'
 import type { NavGroup } from './navConfig'
 import { NavItemLink, SectionItems } from './NavPieces'
@@ -13,7 +13,7 @@ import { accentVars, sectionOf } from './navAccent'
 
 export function Logo({ theme, festive, onClick, showName }: { theme: Theme; festive: boolean; onClick: () => void; showName: boolean }) {
   const logoRef = useRef<HTMLSpanElement>(null)
-  // The season's mark: a daisy for Meskel, a star through the festive
+  // The season's mark: a daisy for Meskel, a little tree through the festive
   // season, a lit taper on Gena eve.
   const season = useSeason()
 
@@ -45,7 +45,7 @@ export function Logo({ theme, festive, onClick, showName }: { theme: Theme; fest
         {festive && (season?.motif === 'festive'
           ? season.phase === 'vigil'
             ? <CandleMark className="pointer-events-none absolute -right-3 -top-4 h-7 w-3.5 animate-fade-in" />
-            : <StarMark className="pointer-events-none absolute -right-2.5 -top-1.5 h-4 w-4 animate-fade-in" />
+            : <TreeMark className="pointer-events-none absolute -right-3 -top-2.5 h-5 w-[18px] animate-fade-in" />
           : <DaisyMark className="pointer-events-none absolute -right-2.5 -top-1.5 h-4 w-4 animate-fade-in" />)}
       </span>
       {showName && (

@@ -116,6 +116,7 @@ ${renderLetterhead({
   docTitle: 'PAYMENT REQUEST',
   docCode: p.refNum || undefined,
   meta: [['Date', esc(docDate(p.date))]],
+  date: p.date,
   gradient: 'paymentRequestLetter',
 })}
 ${renderParty({ label: 'To', name: p.client?.client_name ?? '—', tin: p.client?.tin, lines: [p.client?.address, p.client?.email, p.client?.phone_number] })}
@@ -129,7 +130,7 @@ ${p.notes ? `<p style="font-style:italic;color:#555">${escLines(p.notes)}</p>` :
 <p>We trust that the above request will receive your favourable consideration and look forward to your prompt response.</p>
 <p>Thank you for your continued partnership.</p>
 ${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
-${renderFooter(p.refNum || undefined, DOCUMENT_GRADIENTS.paymentRequestLetter.from)}
+${renderFooter(p.refNum || undefined, DOCUMENT_GRADIENTS.paymentRequestLetter.from, p.date)}
 </body>
 </html>`
 }

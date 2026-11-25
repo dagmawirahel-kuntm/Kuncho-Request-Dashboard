@@ -32,6 +32,8 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
   const { role } = useAuth()
   // The discount approval limit (migration 390) is admin's or an executive's to set.
   const hasDiscountLimit = saved.discount_approval_percent != null
+  // The festive-documents switch (migration 540): shown once its column exists.
+  const hasFestiveSwitch = 'festive_documents' in saved
   const canSetDiscountLimit = role === 'admin' || role === 'executive'
   const set = <K extends keyof CompanyProfile>(k: K, v: CompanyProfile[K]) => setP(x => ({ ...x, [k]: v }))
   const setBank = (i: number, patch: Partial<BankAccountLine>) => setP(x => ({ ...x, bank_accounts: x.bank_accounts.map((b, j) => (j === i ? { ...b, ...patch } : b)) }))
@@ -79,6 +81,7 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
               account_name: t(b.account_name) || null, on_documents: b.on_documents !== false }
           : { ...b, kind: 'bank' as const, bank: t(b.bank), account_number: t(b.account_number) }
       }),
+      ...(hasFestiveSwitch ? { festive_documents: p.festive_documents !== false } : {}),
       ...(hasDiscountLimit && canSetDiscountLimit ? { discount_approval_percent: Math.min(100, Math.max(0, Number(p.discount_approval_percent ?? 10))) } : {}),
     }).eq('id', true)
     if (error) { setSaving(false); toast(error.message, 'error'); return }
@@ -153,6 +156,14 @@ function ProfileForm({ saved, savedSignoff }: { saved: CompanyProfile; savedSign
                   </label>
                 ))}
               </fieldset>
+              {hasFestiveSwitch && (
+                <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" checked={p.festive_documents !== false} onChange={e => set('festive_documents', e.target.checked)} className="mt-0.5 h-4 w-4 rounded" />
+                  <span>Festive documents — documents dated in the festive season (Christmas, New Year, Gena) carry its mark: a red, green and gold band, a small ornament by the title and a dated greeting in the footer, and emails and shared links carry the season's greeting
+                    <span className="block text-xs text-slate-500">The document's own date decides, so it stays a keepsake of the season when reprinted. The body of the document is never changed.</span>
+                  </span>
+                </label>
+              )}
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input type="checkbox" checked={p.show_ethiopian_dates} onChange={e => set('show_ethiopian_dates', e.target.checked)} className="h-4 w-4 rounded" />
                 Show Ethiopian calendar dates next to Gregorian ones

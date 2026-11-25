@@ -5,7 +5,7 @@
 // --season-* variables in index.css, which differ for light and dark.
 
 import { useId, type ReactNode } from 'react'
-import { StarMark } from '@/components/seasonal/FestiveArt'
+import { StarMark, TreeMark } from '@/components/seasonal/FestiveArt'
 
 const PETAL = '#F4C20D'
 const PETAL_2 = '#EDB70A'
@@ -45,13 +45,14 @@ export function FlameMark({ className }: { className?: string }) {
 
 /**
  * The icon for a calendar entry: a daisy for Meskel, a flame for Demera and
- * a star for Gena, Christmas and New Year,
+ * a tree for Christmas and a star for Gena and New Year,
  * recognised by title in either script, otherwise the entry type's icon.
  */
 export function SeasonalEventIcon({ title, fallback }: { title: string; fallback: ReactNode }) {
   if (/demera|ደመራ/i.test(title)) return <FlameMark className="h-3.5 w-3.5" />
   if (/meskel|መስቀል/i.test(title)) return <DaisyMark className="h-3.5 w-3.5" />
-  if (/gena|genna|ገና|christmas|new year/i.test(title)) return <StarMark className="h-3.5 w-3.5" />
+  if (/christmas/i.test(title)) return <TreeMark className="h-3.5 w-3.5" />
+  if (/gena|genna|ገና|new year/i.test(title)) return <StarMark className="h-3.5 w-3.5" />
   return <>{fallback}</>
 }
 

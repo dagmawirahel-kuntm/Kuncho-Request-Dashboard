@@ -37,6 +37,7 @@ body{padding:0;font-size:10pt;line-height:1.5;position:relative}
 </style></head><body>
 ${renderLetterhead({
   docTitle: 'STATEMENT OF ACCOUNT', docCode: s.code, gradient,
+  date: s.to,
   meta: [['Date', esc(docDate(s.to))], ['Ledger', `${esc(s.account_code)} ${esc(s.ledger)}`]],
 })}
 ${renderParty({
@@ -55,6 +56,6 @@ ${renderParty({
   <tfoot><tr class="total"><td></td><td colspan="3">${s.liability ? 'Balance we owe' : 'Balance owed to us'}</td><td class="r">${esc(docMoney(closing))}</td></tr></tfoot>
 </table>
 <div style="font-size:8.6pt;color:#6b6453;margin-top:10px">Please tell us within 14 days if anything on this statement does not agree with your records.</div>
-${renderFooter(s.code, DOCUMENT_GRADIENTS[gradient].from)}
+${renderFooter(s.code, DOCUMENT_GRADIENTS[gradient].from, s.to)}
 </body></html>`
 }
