@@ -20,7 +20,7 @@ import {
   ArrowLeft, Pencil, CheckCircle2, Clock, XCircle, Building2,
   User, Calendar, AlertCircle, AlertTriangle, Package,
   ChevronDown, ChevronRight, Zap, Receipt, StickyNote, Store, ClipboardList, Printer, Truck, TrendingUp,
-  AtSign,
+  AtSign, ShieldAlert, UserRound,
 } from 'lucide-react'
 import { useMarkEntityRead } from '@/lib/notifications'
 
@@ -118,6 +118,8 @@ export default function OrderDetailPage() {
   return <DetailContent order={order} items={items} />
 }
 
+const USED_FOR_LABEL: Record<string, string> = { project: 'a project', stock: 'stock', workshop: 'the workshop' }
+
 // ── Main detail content ───────────────────────────────────────────────────────
 function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const { role } = useAuth()
@@ -134,6 +136,24 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
   const [emailing, setEmailing]           = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
   const [expanded, setExpanded]           = useState<Set<string>>(new Set())
+
+  // Some requesters' requests wait for an admin before anything is bought (547).
+  const { data: held = false } = useQuery({
+    queryKey: ['order-held', order.id, order.approval_status],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('order_is_held', { p_order: order.id })
+      if (error) throw error
+      return !!data
+    },
+  })
+  async function approveHeld() {
+    const { error } = await supabase.rpc('approve_held_requests', { p_orders: [order.id] })
+    if (error) { toast(error.message, 'error'); return }
+    qc.invalidateQueries({ queryKey: ['order', order.id] })
+    qc.invalidateQueries({ queryKey: ['order-held', order.id] })
+    qc.invalidateQueries({ queryKey: ['orders'] })
+    toast('Approved — procurement can buy it now', 'success')
+  }
 
   // Finance sourcing review (147) was retired as a gate — see migration
   // 226. It made the PR → sourcing process too tight, so purchase
@@ -284,6 +304,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
           { icon: User, value: requestedByName ?? '—' },
         ]}
         actions={[
+          { label: 'Approve', icon: CheckCircle2, onClick: approveHeld, primary: true, hidden: !(held && role === 'admin') },
           { label: 'Reopen request', onClick: () => handleApproval('pending', { rejection_reason: null }), primary: true, hidden: !(approvalStatus === 'rejected' && canCancelRequest) },
           { label: 'Print', icon: Printer, onClick: printRequest },
           { label: 'Email', icon: AtSign, onClick: () => setEmailing(true) },
@@ -299,6 +320,16 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
 
       <div className="space-y-4">
         <TrainerHintBanner entityType="purchase_request" entityId={order.id} hint={orderHint} />
+
+        {held && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3.5 dark:border-amber-800/50 dark:bg-amber-900/20">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Waiting for an admin's approval</p>
+              <p className="text-sm text-amber-700 dark:text-amber-300/90">Requests from {requestedByName ?? 'this requester'} are approved by an admin before anything on them is bought.{role === 'admin' ? ' Approve it above when it looks right.' : ''}</p>
+            </div>
+          </div>
+        )}
 
         {approvalStatus === 'rejected' && order.rejection_reason && (
           <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 dark:border-red-700/40 dark:bg-red-900/20">
@@ -342,6 +373,7 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                       const st = ITEM_S[item.status] ?? ITEM_S.pending
                       const isExpanded = expanded.has(item.id)
                       const cancelled = item.status === 'cancelled'
+                      const ext = item as OrderItem & { requested_for_staff_id?: string | null; used_for?: string | null; used_for_project_id?: string | null }
                       return (
                         <li key={item.id} className={`border-l-4 ${st.border}`}>
                           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-4 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_6rem_7rem_9rem] sm:items-center">
@@ -351,6 +383,12 @@ function DetailContent({ order, items }: { order: Order; items: OrderItem[] }) {
                                 <span className="mr-1 font-mono text-xs text-slate-400 sm:hidden">{idx + 1}.</span>{item.item_name}
                               </p>
                               <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+                                {ext.requested_for_staff_id && (
+                                  <span className="inline-flex items-center gap-0.5 text-slate-500"><UserRound className="h-3 w-3" />for {lookupName(staff, ext.requested_for_staff_id, 'employee_name')}</span>
+                                )}
+                                {ext.used_for && (
+                                  <span className="text-slate-500">Used for {USED_FOR_LABEL[ext.used_for] ?? ext.used_for}{ext.used_for_project_id ? `: ${lookupName(projects, ext.used_for_project_id, 'project_name')}` : ''}</span>
+                                )}
                                 <span className="sm:hidden">{item.quantity ? `${item.quantity} ${item.unit ?? ''}` : 'no qty'}{item.unit_price_est ? ` · ${Number(item.unit_price_est).toLocaleString()} ETB each` : ''}</span>
                                 {(item as { needs_market_check?: boolean }).needs_market_check && <span className="inline-flex items-center gap-0.5 text-amber-600"><Zap className="h-3 w-3" />Check price</span>}
                                 {(() => {

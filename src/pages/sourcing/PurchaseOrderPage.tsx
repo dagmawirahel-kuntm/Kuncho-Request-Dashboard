@@ -39,6 +39,7 @@ import { useMarkEntityRead } from '@/lib/notifications'
 import { ExpensePaymentsPanel } from '@/components/payments/ExpensePaymentsPanel'
 import { PoPaymentPanel } from '@/components/purchasing/PoPaymentPanel'
 import { usePoPaymentStatus } from '@/lib/poPayment'
+import { subLedgerOptions, useLedgerGroups } from '@/lib/ledgerGroups'
 import { PaymentPlanEditor } from '@/components/payments/PaymentPlanEditor'
 import { PART_KIND_LABEL, WHT_MODE_LABEL, newRowKey, savePoPlan } from '@/lib/expensePayments'
 import type { ExpenseWhtMode, PoPlanPart } from '@/types/database'
@@ -270,8 +271,12 @@ export default function PurchaseOrderPage() {
   // Finance picks the general ledger as they approve, so the bill is cleared to pay when it's made (538).
   const [approveLedger, setApproveLedger] = useState<string | null>(null)
   const { data: ledgerCats = [] } = useCategories()
-  const ledgerOptions = useMemo(() => (ledgerCats as { id: string; category_name: string }[]).map(c => ({ id: c.id, label: c.category_name })), [ledgerCats])
   const { data: payStatus } = usePoPaymentStatus(id, ['admin', 'finance', 'procurement_officer', 'operations_manager', 'executive'].includes(role ?? ''))
+  // Sub ledgers inside procurement's general ledger come first (547).
+  const { groups: ledgerGroups } = useLedgerGroups()
+  const procurementGl = payStatus?.general_ledger ?? null
+  const ledgerOptions = useMemo(() => subLedgerOptions(ledgerGroups, ledgerCats as { id: string; category_name: string }[], procurementGl?.id),
+    [ledgerGroups, ledgerCats, procurementGl?.id])
   const [transitioning, setTransitioning] = useState(false)
   const [closingAdvance, setClosingAdvance] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
@@ -773,7 +778,7 @@ export default function PurchaseOrderPage() {
               ? toast(`Pick which variant was bought for: ${linesMissingVariant.map(i => i.order_items?.item_name ?? 'line').join(', ')} — edit the order`, 'error')
               : transition('submitted') },
           { label: 'Approve', icon: Check, onClick: () => (isFinance || isAdmin) && !approveLedger
-              ? toast('Pick the general ledger — the payment is cleared with the approval', 'error')
+              ? toast('Pick the sub ledger — the payment is cleared with the approval', 'error')
               : transition('approved', { finance_notes: financeNotes || null, ...((isFinance || isAdmin) ? { ledger_category_id: approveLedger } : {}) }),
             primary: true, disabled: transitioning, hidden: !canApprove || showRejectPanel },
           { label: 'Mark as ordered', icon: TruckIcon, onClick: () => { setDeliveryMode('hired'); setDeliveryDate(new Date().toISOString().slice(0, 10)); setDeliveryPanel('order') }, primary: true, disabled: transitioning, hidden: !canMarkOrdered || deliveryPanel === 'order' },
@@ -1021,8 +1026,9 @@ export default function PurchaseOrderPage() {
 
               {canApprove && !showRejectPanel && (isFinance || isAdmin) && (
                 <div className="mt-3 space-y-1">
-                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">General ledger</label>
-                  <SearchableSelect value={approveLedger} onChange={setApproveLedger} options={ledgerOptions} placeholder="Pick the general ledger…" />
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Sub ledger</label>
+                  {procurementGl && <p className="text-[11px] text-slate-500">Procurement's general ledger: <b>{procurementGl.code} · {procurementGl.name}</b> — its sub ledgers are listed first.</p>}
+                  <SearchableSelect value={approveLedger} onChange={setApproveLedger} options={ledgerOptions} placeholder="Pick the sub ledger…" />
                   <p className="text-[11px] text-slate-500">Approving also clears the payment: the bill is ready to pay when it's made, to the account under Pay to. Someone else in finance pays it.</p>
                 </div>
               )}

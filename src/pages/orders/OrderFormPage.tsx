@@ -28,7 +28,7 @@ import { FactList, Panel, RecordHeader, RecordLayout } from '@/components/record
 import { Segmented } from '@/components/shared/Segmented'
 import {
   Plus, Trash2, Package, History, Zap, Search, ChevronRight, AlertCircle, ShieldAlert,
-  Sparkles, Copy, Save, ClipboardList, StickyNote, Receipt, AlertTriangle,
+  Sparkles, Copy, Save, ClipboardList, StickyNote, Receipt, AlertTriangle, UserRound, X,
 } from 'lucide-react'
 
 const inputCls = 'w-full rounded-md border dark:border-slate-600 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors dark:bg-slate-800 dark:text-slate-100'
@@ -73,7 +73,12 @@ type LineItem = {
   fulfillment_notes: string
   showSpecs: boolean
   not_in_stock: boolean  // the requester said it isn't any of the stock matches (form only)
+  group: string          // which owner group the line sits in (form only, 547)
 }
+
+// One request can hold lines for several people (547): each group is one
+// owner — who asked — and their lines.
+type OwnerGroup = { key: string; owner: string | null }
 
 function newLine(overrides: Partial<LineItem> = {}): LineItem {
   return {
@@ -91,6 +96,7 @@ function newLine(overrides: Partial<LineItem> = {}): LineItem {
     fulfillment_notes: '',
     showSpecs: false,
     not_in_stock: false,
+    group: 'g0',
     ...overrides,
   }
 }
@@ -619,10 +625,21 @@ function PurchaseRequestFormBody({
         fulfillment_notes: item.fulfillment_notes ?? '',
         showSpecs: !!item.specifications,
         not_in_stock: false,
+        group: (item as { requested_for_staff_id?: string | null }).requested_for_staff_id ?? 'g0',
       }))
     }
     return [newLine()]
   })
+  const [groups, setGroups] = useState<OwnerGroup[]>(() => {
+    const seen: OwnerGroup[] = []
+    for (const item of existingItems) {
+      const owner = (item as { requested_for_staff_id?: string | null }).requested_for_staff_id ?? null
+      const key = owner ?? 'g0'
+      if (!seen.some(g => g.key === key)) seen.push({ key, owner })
+    }
+    return seen.length ? seen : [{ key: 'g0', owner: null }]
+  })
+  const ownerOf = (groupKey: string) => groups.find(g => g.key === groupKey)?.owner ?? null
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -634,10 +651,28 @@ function PurchaseRequestFormBody({
   }, [])
 
   const removeLine = useCallback((idx: number) => {
-    setLines(ls => ls.length <= 1 ? [newLine()] : ls.filter((_, i) => i !== idx))
+    setLines(ls => {
+      const gone = ls[idx]
+      const rest = ls.filter((_, i) => i !== idx)
+      // The last line of an owner's group keeps an empty line, so the group stays.
+      if (gone && !rest.some(l => l.group === gone.group)) return [...rest, newLine({ group: gone.group })]
+      return rest
+    })
   }, [])
 
-  const addLine = useCallback(() => setLines(ls => [...ls, newLine()]), [])
+  const addLine = useCallback((group: string) => setLines(ls => [...ls, newLine({ group })]), [])
+  const addGroup = useCallback(() => {
+    const key = crypto.randomUUID()
+    setGroups(gs => [...gs, { key, owner: null }])
+    setLines(ls => [...ls, newLine({ group: key })])
+  }, [])
+  const removeGroup = useCallback((key: string) => {
+    setGroups(gs => gs.length <= 1 ? gs : gs.filter(g => g.key !== key))
+    setLines(ls => ls.filter(l => l.group !== key))
+  }, [])
+  const setGroupOwner = useCallback((key: string, owner: string | null) => {
+    setGroups(gs => gs.map(g => g.key === key ? { ...g, owner } : g))
+  }, [])
 
   // Two lines of one request that are the same item (same stock item, or
   // names that reduce to the same words) — offered as one line instead.
@@ -718,8 +753,13 @@ function PurchaseRequestFormBody({
   }
 
   async function handleSave() {
+    const groupOrder = new Map(groups.map((g, i) => [g.key, i]))
     const filledLines = lines.filter(l => l.item_name.trim())
+      .map((l, i) => ({ l, i })).sort((a, b) => (groupOrder.get(a.l.group) ?? 0) - (groupOrder.get(b.l.group) ?? 0) || a.i - b.i).map(x => x.l)
     if (filledLines.length === 0) { setError('Add at least one line item.'); return }
+    if (groups.length > 1 && groups.some(g => !g.owner && filledLines.some(l => l.group === g.key))) {
+      setError('Say who asked for each group of lines, or put them in one group.'); return
+    }
     setError(''); setSaving(true)
 
     const op = isEdit
@@ -752,6 +792,7 @@ function PurchaseRequestFormBody({
       needs_market_check: l.needs_market_check,
       status: l.status,
       fulfillment_notes: l.fulfillment_notes || null,
+      requested_for_staff_id: ownerOf(l.group),
       sort_order: i,
     }))
 
@@ -918,8 +959,25 @@ function PurchaseRequestFormBody({
               <span />
             </div>
 
-            <div className="space-y-2">
-              {lines.map((line, idx) => (
+            <div className="space-y-4">
+              {groups.map((g, gi) => {
+                const groupLines = lines.map((line, idx) => ({ line, idx })).filter(x => x.line.group === g.key)
+                return (
+              <div key={g.key} className={groups.length > 1 || g.owner ? 'rounded-xl border border-slate-200 p-2.5 dark:border-slate-700' : ''}>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="text-xs font-medium text-slate-500">{groups.length > 1 ? `Owner ${gi + 1}` : 'Who asked'}</span>
+                  <div className="min-w-[12rem] flex-1">
+                    <SearchableSelect value={g.owner} onChange={v => setGroupOwner(g.key, v)} options={staffOptions}
+                      placeholder={groups.length > 1 ? 'Who asked for these lines…' : 'Who asked for these (optional)'} />
+                  </div>
+                  {groups.length > 1 && (
+                    <button type="button" onClick={() => removeGroup(g.key)} aria-label="Remove this owner and their lines"
+                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-700"><X className="h-4 w-4" /></button>
+                  )}
+                </div>
+                <div className="space-y-2">
+              {groupLines.map(({ line, idx }) => (
                 <LineItemRow
                   key={line._id}
                   item={line}
@@ -934,11 +992,19 @@ function PurchaseRequestFormBody({
                   onCombine={() => { if (dupOf[idx] != null) combineLine(idx, dupOf[idx]!) }}
                 />
               ))}
+                </div>
+                <button type="button" onClick={() => addLine(g.key)}
+                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed py-2 text-sm font-medium text-brand transition-colors hover:border-brand hover:bg-brand/5 dark:border-slate-600">
+                  <Plus className="h-4 w-4" /> Add an item{g.owner ? ` for ${staffOptions.find(o => o.id === g.owner)?.label ?? 'them'}` : ''}
+                </button>
+              </div>
+                )
+              })}
             </div>
 
-            <button type="button" onClick={addLine}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed py-2.5 text-sm font-medium text-brand transition-colors hover:border-brand hover:bg-brand/5 dark:border-slate-600">
-              <Plus className="h-4 w-4" /> Add an item
+            <button type="button" onClick={addGroup}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-brand hover:text-brand dark:border-slate-600 dark:text-slate-300">
+              <UserRound className="h-4 w-4" /> Add lines for another person
             </button>
 
             {lines.some(l => l.status === 'unfulfilled') && (

@@ -16,6 +16,8 @@ export type PoPaymentStatus = {
     approved_by: string | null; approved_by_id: string | null; approved_at: string | null
     paid_by: string | null; paid_date: string | null; method: string | null; bank_ref: string | null
   } | null
+  /** The general ledger procurement picked (547); finance picks the sub ledger inside it. */
+  general_ledger: { id: string; code: string; name: string } | null
   po_approved_by_finance: boolean
 }
 

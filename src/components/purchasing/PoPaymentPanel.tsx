@@ -15,6 +15,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useCategories } from '@/hooks/useLookups'
+import { subLedgerOptions, useLedgerGroups } from '@/lib/ledgerGroups'
 import { usePayerAndAccountOptions, useRefreshPayments } from '@/lib/payments'
 import { SearchableSelect } from '@/components/shared/SearchableSelect'
 import { Pill } from '@/components/record/Record'
@@ -80,7 +81,9 @@ export function PoPaymentPanel({ bundleId, poStatus, payInAdvance }: { bundleId:
   const { data: s, error, isLoading } = usePoPaymentStatus(bundleId)
   const { accountOptions } = usePayerAndAccountOptions()
   const { data: categories = [] } = useCategories()
-  const ledgerOptions = useMemo(() => (categories as { id: string; category_name: string }[]).map(c => ({ id: c.id, label: c.category_name })), [categories])
+  const { groups: ledgerGroups } = useLedgerGroups()
+  const glId = s?.general_ledger?.id
+  const ledgerOptions = useMemo(() => subLedgerOptions(ledgerGroups, categories as { id: string; category_name: string }[], glId), [ledgerGroups, categories, glId])
 
   const [ledger, setLedger] = useState<string | null>(null)
   const [method, setMethod] = useState<(typeof METHODS)[number]['id']>('transfer')
@@ -160,7 +163,8 @@ export function PoPaymentPanel({ bundleId, poStatus, payInAdvance }: { bundleId:
               </p>
               {isFinance ? (
                 <>
-                  <SearchableSelect value={ledger ?? b.category_id} onChange={setLedger} options={ledgerOptions} placeholder="General ledger…" />
+                  {s.general_ledger && <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Procurement's general ledger: <b>{s.general_ledger.name}</b> — its sub ledgers are listed first.</p>}
+                  <SearchableSelect value={ledger ?? b.category_id} onChange={setLedger} options={ledgerOptions} placeholder="Sub ledger…" />
                   <button type="button" disabled={!!busy || !(ledger ?? b.category_id)}
                     onClick={() => run('approve', () => supabase.rpc('po_approve_payment', { p_bundle: bundleId, p_category: ledger ?? b.category_id }), 'Payment approved — the cashier can pay it')}
                     className="w-full rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">

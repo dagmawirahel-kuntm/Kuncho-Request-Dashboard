@@ -8,7 +8,7 @@ import type { Order } from '@/types/database'
 import { useToast } from '@/contexts/ToastContext'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  Plus, Pencil, Trash2, Package, Zap, AlertCircle, CheckCircle2, Search, ChevronRight, AlertTriangle, XCircle, Clock, X, CircleDashed, Loader,
+  Plus, Pencil, Trash2, Package, Zap, AlertCircle, CheckCircle2, Search, ChevronRight, AlertTriangle, XCircle, Clock, X, CircleDashed, Loader, ClipboardList,
 } from 'lucide-react'
 
 type OrderRow = Order & {
@@ -199,11 +199,18 @@ export default function PurchaseRequestsPage() {
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Purchase requests</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">What has been asked for, and how far each request has got</p>
         </div>
-        {canCreate && (
-          <Link to="/purchase-requests/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
-            <Plus className="h-4 w-4" /> New request
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {['admin', 'executive', 'finance', 'operations_manager', 'procurement_officer', 'stock_manager'].includes(role ?? '') && (
+            <Link to="/purchase-requests/daily-use" className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+              <ClipboardList className="h-4 w-4" /> Daily use
+            </Link>
+          )}
+          {canCreate && (
+            <Link to="/purchase-requests/new" className="flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90">
+              <Plus className="h-4 w-4" /> New request
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
