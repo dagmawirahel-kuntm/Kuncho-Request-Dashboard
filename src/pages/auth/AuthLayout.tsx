@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { DaisyMark } from '@/components/seasonal/MeskelArt'
+import { StarMark } from '@/components/seasonal/FestiveArt'
 import { useSeason } from '@/hooks/useSeason'
 
 // The pages before the app (sign in, sign up, new password, account status)
@@ -147,14 +148,25 @@ export function ConstructionBackdrop() {
 function SeasonNote() {
   const season = useSeason()
   if (!season?.festive) return null
-  const text = season.phase === 'meskel' ? 'Melkam Meskel — happy Meskel from all of us.'
-    : season.phase === 'demera' ? 'The Demera is lit tonight. Melkam Meskel!'
-    : season.daysToMeskel <= 1 ? 'Meskel is tomorrow.'
-    : `Meskel is in ${season.daysToMeskel} days.`
+  const n = season.daysTo
+  const inDays = (what: string) => (n <= 1 ? `${what} is tomorrow.` : `${what} is in ${n} days.`)
+  const text = season.motif === 'meskel'
+    ? season.phase === 'meskel' ? 'Melkam Meskel — happy Meskel from all of us.'
+      : season.phase === 'demera' ? 'The Demera is lit tonight. Melkam Meskel!'
+      : inDays('Meskel')
+    : season.phase === 'gena' ? 'Melkam Gena — happy Gena from all of us.'
+      : season.phase === 'vigil' ? 'Gena is tomorrow. A peaceful night to all.'
+      : season.greeting === 'christmas' ? 'Merry Christmas to everyone celebrating today.'
+      : season.greeting === 'christmas-eve' ? 'Christmas is tomorrow.'
+      : season.greeting === 'newyear' ? 'Happy New Year — 2027 is here.'
+      : season.greeting === 'newyear-eve' ? '2027 starts at midnight.'
+      : season.greeting === 'christmas-soon' ? inDays('Christmas')
+      : season.greeting === 'newyear-soon' ? inDays('New Year')
+      : inDays('Gena')
   return (
     <div className="relative rounded-2xl border border-white/10! bg-white/5 p-4 backdrop-blur">
       <p className="text-[11px] font-semibold uppercase tracking-widest text-[#D4AF37]">Today at Kuncho</p>
-      <p className="mt-1 flex items-center gap-2 text-sm text-white/80"><DaisyMark className="h-4 w-4 shrink-0" />{text}</p>
+      <p className="mt-1 flex items-center gap-2 text-sm text-white/80">{season.motif === 'festive' ? <StarMark className="h-4 w-4 shrink-0" /> : <DaisyMark className="h-4 w-4 shrink-0" />}{text}</p>
     </div>
   )
 }

@@ -243,12 +243,15 @@ export function AppShell() {
   }, [theme])
 
   // Holidays (lib/seasons.ts) dress the shell on their own schedule; the
-  // `meskel` class on <html> carries the accent colour changes in index.css.
+  // `meskel` / `festive` class on <html> carries the season's colour changes
+  // in index.css.
   const season = useSeason()
   const festive = !!season?.festive
+  const motif = festive ? season?.motif : undefined
   useEffect(() => {
-    document.documentElement.classList.toggle('meskel', festive)
-  }, [festive])
+    document.documentElement.classList.toggle('meskel', motif === 'meskel')
+    document.documentElement.classList.toggle('festive', motif === 'festive')
+  }, [motif])
 
   // The layer client pages paint their world into (components/clientWorld).
   const [layer, setLayer] = useState<HTMLDivElement | null>(null)

@@ -102,6 +102,22 @@
 .gold { --season-ground: #3a3025; }
 .dark.meskel { --color-brand: #F4C20D; }
 
+/* The festive season (Christmas → New Year → Gena): starlight gold, beeswax
+   tapers, and a netela's woven tilet along the top of the greeting card.
+   The accent itself stays the app's own. */
+:root {
+  --season-star: #D4A017;
+  --season-star-edge: #a87c0c;
+  --season-wax: #e6d29a;
+  --season-wax-band: #b8901d;
+}
+.dark {
+  --season-star: #F5D36B;
+  --season-star-edge: #c9a227;
+  --season-wax: #efe3c2;
+  --season-wax-band: #D4AF37;
+}
+
 /* ── A bank's look (src/lib/bankBrands.ts) ─────────────────────────────
    Inside .bank-theme the app's accent is the bank's: its buttons, tabs,
    rings and links follow. The variables come from brandVars(): the bank
@@ -149,6 +165,52 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .meskel-flame { animation: none; }
+}
+
+.season-greet--festive {
+  background: linear-gradient(115deg, #fffaf0 0%, rgba(255,255,255,0) 60%), var(--color-card);
+  border-color: #eadfbf;
+}
+.dark .season-greet--festive {
+  background: linear-gradient(115deg, rgba(245,211,107,.12) 0%, rgba(245,211,107,0) 60%), var(--color-card);
+  border-color: rgba(245,211,107,.28);
+}
+/* The tilet: a woven band of small gold diamonds between thin coloured
+   threads, as on the border of a netela. */
+.season-greet--festive::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 6px;
+  background:
+    linear-gradient(#0f766e, #0f766e) top / 100% 1px no-repeat,
+    linear-gradient(#b91c1c, #b91c1c) bottom / 100% 1px no-repeat,
+    conic-gradient(from 45deg at 50% 50%, #D4A017 0 25%, transparent 0 50%, #D4A017 0 75%, transparent 0) 0 1px / 8px 4px repeat-x;
+  opacity: .8;
+  pointer-events: none;
+}
+.season-greet--vigil {
+  background-image:
+    radial-gradient(130% 150% at 0% 100%, rgba(245,158,11,.14) 0%, rgba(245,158,11,0) 58%),
+    linear-gradient(115deg, #fffaf0 0%, rgba(255,255,255,0) 60%);
+}
+.dark .season-greet--vigil {
+  background-image:
+    radial-gradient(130% 150% at 0% 100%, rgba(245,158,11,.3) 0%, rgba(245,158,11,0) 58%),
+    linear-gradient(115deg, rgba(245,211,107,.12) 0%, rgba(245,211,107,0) 60%);
+}
+
+.festive-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: meskel-flick 1.4s ease-in-out infinite;
+}
+.festive-flame.f2 { animation-duration: .95s; animation-delay: -.3s; }
+.festive-twinkle { animation: festive-twinkle 2.4s ease-in-out infinite; }
+@keyframes festive-twinkle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .festive-flame, .festive-twinkle { animation: none; }
 }
 
 /* Gold focus ring in dark mode (both Dark and Gold) */
