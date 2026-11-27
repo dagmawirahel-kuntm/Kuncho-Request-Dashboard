@@ -735,6 +735,7 @@ ${renderLetterhead({
     docCode: documentCode ?? undefined,
     metaLines,
     gradient: accentGradient ?? (accentColor ? { from: accentColor, to: accentColor } : 'laborPayment'),
+    date: issuedOn,
   })}
 
 <div class="meta">
@@ -827,7 +828,7 @@ ${notes ? `<div class="note"><b>Notes:</b> ${esc(notes)}</div>` : ''}
 
 <div class="sigs">${approvalBlocks}</div>
 
-${renderFooter(documentCode ?? sourceCode ?? undefined)}
+${renderFooter(documentCode ?? sourceCode ?? undefined, undefined, issuedOn)}
 <div style="margin-top:4px;font-size:7.5pt;color:#c3cbd6">
   ${esc(COMPANY_NAME)} · Official payment request document${issuedByName ? ` · Prepared by ${esc(issuedByName)}` : ''} · ${esc(formatDateGC(issuedOn))}
 </div>

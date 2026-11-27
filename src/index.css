@@ -102,6 +102,30 @@
 .gold { --season-ground: #3a3025; }
 .dark.meskel { --color-brand: #F4C20D; }
 
+/* The festive season (Christmas → New Year → Gena): starlight gold, beeswax
+   tapers, and a netela's woven tilet along the top of the greeting card.
+   The accent itself stays the app's own. */
+:root {
+  --season-star: #D4A017;
+  --season-star-edge: #a87c0c;
+  --season-wax: #e6d29a;
+  --season-wax-band: #b8901d;
+  --season-red: #C62828;
+  --season-green: #1E7A3C;
+  --season-green-2: #15803d;
+  --season-wire: #3f3f46;
+}
+.dark {
+  --season-star: #F5D36B;
+  --season-star-edge: #c9a227;
+  --season-wax: #efe3c2;
+  --season-wax-band: #D4AF37;
+  --season-red: #E53935;
+  --season-green: #2E9E55;
+  --season-green-2: #22c55e;
+  --season-wire: #a1a1aa;
+}
+
 /* ── A bank's look (src/lib/bankBrands.ts) ─────────────────────────────
    Inside .bank-theme the app's accent is the bank's: its buttons, tabs,
    rings and links follow. The variables come from brandVars(): the bank
@@ -149,6 +173,62 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .meskel-flame { animation: none; }
+}
+
+.season-greet--festive {
+  background:
+    radial-gradient(90% 140% at 100% 0%, rgba(30,122,60,.07) 0%, rgba(30,122,60,0) 60%),
+    linear-gradient(115deg, #fff4f2 0%, rgba(255,255,255,0) 55%), var(--color-card);
+  border-color: #eac9b8;
+}
+.dark .season-greet--festive {
+  background:
+    radial-gradient(90% 140% at 100% 0%, rgba(46,158,85,.16) 0%, rgba(46,158,85,0) 60%),
+    linear-gradient(115deg, rgba(229,57,53,.16) 0%, rgba(229,57,53,0) 55%), var(--color-card);
+  border-color: rgba(245,211,107,.3);
+}
+/* The tilet: a woven band of small gold diamonds between thin coloured
+   threads, as on the border of a netela. */
+.season-greet--festive::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0; height: 6px;
+  background:
+    linear-gradient(#1E7A3C, #1E7A3C) top / 100% 1.5px no-repeat,
+    linear-gradient(#C62828, #C62828) bottom / 100% 1.5px no-repeat,
+    conic-gradient(from 45deg at 50% 50%, #D4A017 0 25%, transparent 0 50%, #D4A017 0 75%, transparent 0) 0 1.5px / 8px 3px repeat-x,
+    repeating-linear-gradient(90deg, #C62828 0 8px, #1E7A3C 8px 16px) 0 1.5px / 100% 3px no-repeat;
+  opacity: .9;
+  pointer-events: none;
+}
+.season-greet--vigil {
+  background-image:
+    radial-gradient(130% 150% at 0% 100%, rgba(245,158,11,.14) 0%, rgba(245,158,11,0) 58%),
+    linear-gradient(115deg, #fffaf0 0%, rgba(255,255,255,0) 60%);
+}
+.dark .season-greet--vigil {
+  background-image:
+    radial-gradient(130% 150% at 0% 100%, rgba(245,158,11,.3) 0%, rgba(245,158,11,0) 58%),
+    linear-gradient(115deg, rgba(245,211,107,.12) 0%, rgba(245,211,107,0) 60%);
+}
+
+.festive-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: meskel-flick 1.4s ease-in-out infinite;
+}
+.festive-flame.f2 { animation-duration: .95s; animation-delay: -.3s; }
+.festive-twinkle { animation: festive-twinkle 2.4s ease-in-out infinite; }
+@keyframes festive-twinkle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+.festive-bulb { animation: festive-bulb 1.8s ease-in-out infinite; }
+@keyframes festive-bulb {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .festive-flame, .festive-twinkle, .festive-bulb { animation: none; }
 }
 
 /* Gold focus ring in dark mode (both Dark and Gold) */

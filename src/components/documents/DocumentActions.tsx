@@ -7,7 +7,8 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatDateTime } from '@/lib/utils'
 import { ActionDialog } from '@/components/shared/ActionDialog'
 import { Pill } from '@/components/record/Record'
-import type { VerifyInfo } from '@/lib/documentTheme'
+import { docProfile, type VerifyInfo } from '@/lib/documentTheme'
+import { seasonMessageLine } from '@/lib/seasons'
 import { canIssue, issueDocument, printHtml, verifyUrl, type IssuedDocType, type IssuedDocument } from '@/lib/documents/issue'
 import { shareHtmlFile } from '@/lib/documents/shareFile'
 import { EmailDocumentDialog } from '@/components/documents/EmailDocumentDialog'
@@ -133,7 +134,9 @@ function ShareDialog({ doc, url, title, party, email, phone, onClose, onSent }: 
   const [to, setTo] = useState(email ?? phone ?? '')
   const [via, setVia] = useState<'email' | 'whatsapp' | 'telegram' | 'by hand'>(email ? 'email' : 'whatsapp')
   const [busy, setBusy] = useState(false)
-  const message = `Dear ${party ?? 'Sir / Madam'},\n\nPlease find our ${title} at the link below. You can view, print or save it as a PDF, and check it is genuine.\n\n${url}\n\nKind regards`
+  // The season's greeting, read once when the dialog opens.
+  const [season] = useState(() => (docProfile().festive_documents === false ? null : seasonMessageLine()))
+  const message = `Dear ${party ?? 'Sir / Madam'},\n\nPlease find our ${title} at the link below. You can view, print or save it as a PDF, and check it is genuine.\n\n${url}${season ? `\n\n${season}` : ''}\n\nKind regards`
   const waNumber = (phone ?? '').replace(/[^\d]/g, '').replace(/^0/, '251')
 
   async function copy() {

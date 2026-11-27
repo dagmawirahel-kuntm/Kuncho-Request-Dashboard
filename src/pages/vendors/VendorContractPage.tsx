@@ -85,7 +85,7 @@ ${documentBaseCss}
 </head>
 <body>
 
-${renderCenteredLetterhead({ gradient: 'vendorContract' })}
+${renderCenteredLetterhead({ gradient: 'vendorContract', date: f.contractDate || null })}
 
 ${isHighValue ? '<div style="text-align:center;margin-bottom:4mm"><span class="hv-badge">HIGH VALUE CONTRACT ≥ ETB 100,000</span></div>' : ''}
 

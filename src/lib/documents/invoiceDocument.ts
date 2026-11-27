@@ -60,7 +60,7 @@ body{padding:${p.preview ? '34px 46px' : '0'};font-size:10pt;line-height:1.5;pos
 </style>
 </head>
 <body>
-${renderLetterhead({ docTitle: tax ? 'TAX INVOICE' : 'INVOICE', docCode: p.number ?? undefined, meta, gradient: 'invoice' })}
+${renderLetterhead({ docTitle: tax ? 'TAX INVOICE' : 'INVOICE', docCode: p.number ?? undefined, meta, gradient: 'invoice', date: p.date })}
 ${p.client ? renderParty({
   label: 'Bill to', name: p.client.client_name, tin: p.client.tin,
   lines: [p.client.address, p.client.phone_number, p.client.email],
@@ -89,7 +89,7 @@ ${renderHeading('Payment', 'ክፍያ')}
 ${p.notes ? `<div style="font-size:9.3pt;margin-top:6px">${escLines(p.notes)}</div>` : ''}
 ${renderBankAccounts('Please pay to')}
 ${renderSignoff({ signoff: p.signoff, verify: p.verify, receivedBy: true })}
-${renderFooter(p.number ?? undefined, DOCUMENT_GRADIENTS.invoice.from)}
+${renderFooter(p.number ?? undefined, DOCUMENT_GRADIENTS.invoice.from, p.date)}
 </body>
 </html>`
 }

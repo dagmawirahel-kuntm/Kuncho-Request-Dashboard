@@ -244,7 +244,7 @@ export function printContract(contract: Contract, client: Client) {
       @media print { body { margin: 0.5in; } }
     </style></head>
     <body>
-      ${renderCenteredLetterhead({ gradient: 'bdContract' })}
+      ${renderCenteredLetterhead({ gradient: 'bdContract', date: contract.signed_date ?? null })}
       <h2>Service Contract</h2>
       <h3>Contract Details</h3>
       <table>

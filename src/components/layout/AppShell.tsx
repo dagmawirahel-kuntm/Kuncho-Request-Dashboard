@@ -16,6 +16,7 @@ import { SubmitStampHost } from '@/components/shared/SubmitStamp'
 import { NotificationsLive } from '@/components/notifications/NotificationsLive'
 import { chime, confetti, useFunEffects, useFunSounds } from '@/lib/celebrate'
 import { SeasonalGreeting } from '@/components/seasonal/SeasonalGreeting'
+import { FestiveLights } from '@/components/seasonal/FestiveLights'
 import { CelebrationsBar } from '@/components/celebrations/CelebrationsBar'
 import { useSeason } from '@/hooks/useSeason'
 import { LANDING_PATHS } from '@/router/landingPaths'
@@ -243,12 +244,15 @@ export function AppShell() {
   }, [theme])
 
   // Holidays (lib/seasons.ts) dress the shell on their own schedule; the
-  // `meskel` class on <html> carries the accent colour changes in index.css.
+  // `meskel` / `festive` class on <html> carries the season's colour changes
+  // in index.css.
   const season = useSeason()
   const festive = !!season?.festive
+  const motif = festive ? season?.motif : undefined
   useEffect(() => {
-    document.documentElement.classList.toggle('meskel', festive)
-  }, [festive])
+    document.documentElement.classList.toggle('meskel', motif === 'meskel')
+    document.documentElement.classList.toggle('festive', motif === 'festive')
+  }, [motif])
 
   // The layer client pages paint their world into (components/clientWorld).
   const [layer, setLayer] = useState<HTMLDivElement | null>(null)
@@ -265,6 +269,7 @@ export function AppShell() {
   return (
     <>
     <AnimatedBackground />
+    {season?.lights && <FestiveLights />}
     <div className="relative z-10 flex h-screen overflow-hidden bg-transparent print:block print:h-auto print:overflow-visible" style={accentVars(nav.active.section)}>
       <Sidebar
         nav={nav}

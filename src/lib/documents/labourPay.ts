@@ -55,6 +55,7 @@ body{padding:0;font-size:10pt;line-height:1.5;position:relative}
 ${renderLetterhead({
   docTitle: 'LABOUR PAY SHEET', docCode: s.code, gradient: 'laborPayment',
   meta: [['Period', `${esc(docDate(s.period_start))} – ${esc(docDate(s.period_end))}`], ['Date', esc(docDate(s.confirmed_at))]],
+  date: s.confirmed_at ?? s.period_end,
 })}
 ${renderParty({
   label: 'Site', name: s.project_name ?? '—',
@@ -80,6 +81,6 @@ ${s.note ? `${renderHeading('Notes')}<div style="font-size:9.3pt">${escLines(s.n
   <div class="box">${lbl('Confirmed by')}<br/><b>${esc(s.confirmed_by_name ?? '')}</b><br/>${esc(docDate(s.confirmed_at))}</div>
   <div class="box">${lbl('Approved by')} — finance</div>
 </div>
-${renderFooter(s.code, DOCUMENT_GRADIENTS.laborPayment.from)}
+${renderFooter(s.code, DOCUMENT_GRADIENTS.laborPayment.from, s.confirmed_at ?? s.period_end)}
 </body></html>`
 }

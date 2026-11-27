@@ -11,6 +11,7 @@
 // paper throughout, so it prints well on an office printer.
 
 import { formatEthiopian, toEthiopian } from '@/lib/ethiopianCalendar'
+import { docSeasonPhase, type DocSeasonPhase } from '@/lib/seasons'
 
 export const COMPANY_NAME = 'KUNCHO TRADING PLC'
 export const COMPANY_ADDRESS = 'Addis Ababa, Ethiopia'
@@ -64,6 +65,8 @@ export interface CompanyProfile {
   bilingual_labels?: boolean
   /** Migration 390: discounts above this percentage need a second person's approval. */
   discount_approval_percent?: number | null
+  /** Migration 540: documents dated in a festive season carry its mark (default on). */
+  festive_documents?: boolean | null
 }
 
 export interface CompanySignoff {
@@ -201,6 +204,89 @@ export function tibeb(accent: string, height = 20): string {
 </pattern></defs><rect width="100%" height="${h}" fill="url(#${id})"/></svg>`
 }
 
+// ── The festive season on documents (lib/seasons.ts, docSeasonPhase) ──────
+// A document dated in the season keeps a small mark of it for good: the
+// tibeb band in Christmas red, green and gold with stars woven in, an
+// ornament beside the title — a tree, the tree with the New Year, or the
+// tree with the Ethiopian cross and a taper for Gena — and a dated greeting
+// in the footer. The document's own date decides; Company & Documents
+// can turn it off. The body of the document is never touched.
+
+/** Which festive mark a document dated `date` carries, if any. */
+export function festiveFor(date: string | Date | null | undefined): DocSeasonPhase | null {
+  if (current.festive_documents === false) return null
+  return docSeasonPhase(date ?? new Date())
+}
+
+/** The festive tibeb: red and green lozenges with gold hearts, a gold star
+ *  between, gold rules. Greyscale in the monochrome print style. */
+export function festiveTibeb(height = 20): string {
+  const plain = current.print_style === 'plain'
+  const r = plain ? '#2a2a2a' : '#C62828', gr = plain ? '#5a5a5a' : '#1E7A3C', g = plain ? '#9a9a9a' : GOLD
+  const h = height, m = h / 2
+  const big = Math.max(3, m - 3.2), sr = big * 0.85
+  // lozenge · star · lozenge · star, 2 apart
+  const l1 = 1.5, s1 = l1 + 2 * big + 2 + sr, l2 = s1 + sr + 2, s2 = l2 + 2 * big + 2 + sr
+  const w = Math.round(s2 + sr + 1.5)
+  const id = `ftb${h}${plain ? 'p' : ''}`
+  const loz = (x: number, c: string) => `<path d="M${x} ${m} L${x + big} ${m - big} L${x + 2 * big} ${m} L${x + big} ${m + big}Z" fill="${c}"/><path d="M${x + big - 1.5} ${m} L${x + big} ${m - 1.5} L${x + big + 1.5} ${m} L${x + big} ${m + 1.5}Z" fill="${g}"/>`
+  const star = (cx: number, rr: number) => {
+    const pts = Array.from({ length: 10 }, (_, i) => {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5, q = i % 2 ? rr * 0.42 : rr
+      return `${(cx + Math.cos(a) * q).toFixed(2)},${(m + Math.sin(a) * q).toFixed(2)}`
+    })
+    return `<path d="M${pts.join('L')}Z" fill="${g}"/>`
+  }
+  return `<svg class="doc-tibeb" width="100%" height="${h}" preserveAspectRatio="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+<defs><pattern id="${id}" x="0" y="0" width="${w}" height="${h}" patternUnits="userSpaceOnUse">
+<rect width="${w}" height="${h}" fill="#fff"/>
+<rect y="0" width="${w}" height="1.6" fill="${g}"/><rect y="${h - 1.6}" width="${w}" height="1.6" fill="${g}"/>
+<rect y="2.6" width="${w}" height="0.6" fill="${gr}"/><rect y="${h - 3.2}" width="${w}" height="0.6" fill="${r}"/>
+${loz(l1, r)}${star(s1, sr)}${loz(l2, gr)}${star(s2, sr)}
+</pattern></defs><rect width="100%" height="${h}" fill="url(#${id})"/></svg>`
+}
+
+/** The tree, in a document's colours (or greys). */
+function treeSvg(plain: boolean): string {
+  const green = plain ? '#555' : '#1E7A3C', red = plain ? '#222' : '#C62828', gold = plain ? '#999' : '#C9A227', trunk = plain ? '#777' : '#7a4a22'
+  const baubles = [[44, 42, red], [57, 50, gold], [38, 64, gold], [55, 68, red], [33, 86, red], [48, 90, gold], [64, 86, red]]
+  return `<rect x="45" y="98" width="10" height="13" rx="1.5" fill="${trunk}"/>`
+    + `<path d="M50 18 L78 54 L62 54 L84 80 L66 80 L90 102 L10 102 L34 80 L16 80 L38 54 L22 54 Z" fill="${green}"/>`
+    + `<path d="M30 56 Q50 66 70 54 M24 80 Q50 94 78 80" fill="none" stroke="${gold}" stroke-width="1.6"/>`
+    + baubles.map(([x, y, c]) => `<circle cx="${x}" cy="${y}" r="3.8" fill="${c}"/>`).join('')
+    + `<path d="M50 4 L52.6 11.4 L60.4 11.4 L54.1 16 L56.5 23.4 L50 18.8 L43.5 23.4 L45.9 16 L39.6 11.4 L47.4 11.4Z" fill="${gold}"/>`
+}
+
+/** The ornament beside the title for a festive phase. */
+function festiveMark(phase: DocSeasonPhase): string {
+  const plain = current.print_style === 'plain'
+  const gold = plain ? '#999' : '#A8832E', wax = plain ? '#ddd' : '#e6d29a', flame = plain ? '#888' : '#F59E0B'
+  if (phase === 'christmas') {
+    return `<svg class="doc-festive-mark" viewBox="0 0 100 114" width="44" height="50" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${treeSvg(plain)}</svg>`
+  }
+  if (phase === 'newyear') {
+    return `<svg class="doc-festive-mark" viewBox="0 0 150 114" width="58" height="44" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${treeSvg(plain)}`
+      + `<text x="122" y="70" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="800" fill="${gold}">2027</text>`
+      + [[98, 46], [146, 46], [104, 84], [140, 84], [122, 34]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.4" fill="${gold}"/>`).join('')
+      + `</svg>`
+  }
+  // Gena: the tree, the Ethiopian cross and a lit taper, together.
+  const cross = `<g transform="translate(104 30)"><path d="M18 0v36M0 18h36" stroke="${gold}" stroke-width="3.4" stroke-linecap="round"/>`
+    + [[18, -3], [-3, 18], [39, 18], [18, 39]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3" fill="${gold}"/>`).join('')
+    + `<rect x="13.5" y="13.5" width="9" height="9" transform="rotate(45 18 18)" fill="#fff" stroke="${gold}" stroke-width="1.8"/></g>`
+  const taper = `<rect x="160" y="60" width="7" height="44" rx="2" fill="${wax}"/><path d="M163.5 38 C169 45 169.5 50 168 53 C167 55 165.4 56 163.5 56 C161.6 56 160 55 159 53 C157.5 50 158 45 163.5 38Z" fill="${flame}"/>`
+  return `<svg class="doc-festive-mark" viewBox="0 0 172 114" width="66" height="44" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${treeSvg(plain)}${cross}${taper}</svg>`
+}
+
+/** The dated greeting kept in the footer of a festive document. */
+function keepsakeLine(phase: DocSeasonPhase): string {
+  const am = bilingual() ? ' &middot; <span class="am">እንኳን ለብርሃነ ልደቱ በሰላም አደረሳችሁ</span>' : ''
+  const lead = phase === 'christmas' ? 'Season’s greetings &middot; Merry Christmas'
+    : phase === 'newyear' ? 'Happy New Year 2027 &middot; Season’s greetings'
+    : 'Melkam Gena'
+  return `<div class="doc-keepsake">★ ${lead} &middot; Christmas 2026 &middot; Gena ${bilingual() ? '፳፻፲፱ ዓ.ም.' : '2019 E.C.'}${am}</div>`
+}
+
 // Shared CSS for the HTML-string documents (built via template literals
 // and printed through an iframe or a new window). Include it in each
 // document's <style> block, then the document's own rules. The fonts are
@@ -298,6 +384,12 @@ body{font-family:${DOC_FONT};color:${INK};font-variant-numeric:tabular-nums}
 .doc-verify img{width:72px;height:72px;flex-shrink:0;border:1px solid #e9e3d3;padding:3px;background:#fff}
 .doc-verify-internal{display:block;margin-bottom:2px;font-size:7.4pt;letter-spacing:.1em;text-transform:uppercase;color:#8a2d1a}
 .doc-verify-internal .am{letter-spacing:0;text-transform:none}
+.doc-festive-wrap{display:flex;align-items:flex-start;gap:12px;flex-shrink:0}
+.doc-festive-mark{flex:none;display:block;margin-top:2px}
+.doc-letterhead-centered{position:relative}
+.doc-letterhead-centered .doc-festive-mark{position:absolute;right:4px;top:28px}
+.doc-keepsake{font-size:8pt;color:#8a6d1f;margin:2px 0 6px;letter-spacing:.02em}
+.doc-keepsake .am{font-family:${DOC_ETHIOPIC};color:#8a6d1f}
 .doc-footer{margin-top:26px;font-size:7.8pt;color:#7a735f;break-inside:avoid}
 .doc-footer .row{display:flex;justify-content:space-between;gap:12px;padding-top:6px}
 .doc-footer .thanks{font-family:${DOC_SERIF};font-style:italic;font-size:10pt;color:var(--acc)}
@@ -360,7 +452,10 @@ export function renderLetterhead(p: {
   docTitle: string; docTitleAm?: string; docCode?: string; metaLines?: string[]
   meta?: [string, string][]
   gradient: DocumentGradientKey | { from: string; to: string }
+  /** The document's own date: in a festive season it carries the season's mark. */
+  date?: string | Date | null
 }): string {
+  const festive = festiveFor(p.date)
   const acc = accentOf(p.gradient)
   const accent = current.print_style === 'plain' ? INK : acc
   const titleAm = bilingual() ? (p.docTitleAm ?? TITLE_AM[p.docTitle.replace(/<[^>]+>/g, '').trim()] ?? '') : ''
@@ -369,7 +464,7 @@ export function renderLetterhead(p: {
 <style>:root{--acc:${accent}}</style>
 ${bgLogo()}
 <header class="doc-head">
-  ${tibeb(acc)}
+  ${festive ? festiveTibeb() : tibeb(acc)}
   <div class="doc-head-row">
     <div class="doc-brand">
       ${logoHtml(acc)}
@@ -379,12 +474,12 @@ ${bgLogo()}
         ${current.tagline ? `<div class="doc-tagline">${esc(current.tagline)}</div>` : ''}
       </div>
     </div>
-    <div class="doc-titleblock">
+    ${festive ? `<div class="doc-festive-wrap">${festiveMark(festive)}` : ''}<div class="doc-titleblock">
       <div class="doc-title">${p.docTitle}</div>
       ${titleAm ? `<div class="doc-title-am">${esc(titleAm)}</div>` : ''}
       ${rows.length ? `<table class="doc-metatable">${rows.map(([k, v]) => `<tr><td class="k">${bi(k)}</td><td class="v">${v}</td></tr>`).join('')}</table>` : ''}
       ${(p.metaLines ?? []).map(l => `<div class="doc-meta-line">${l}</div>`).join('')}
-    </div>
+    </div>${festive ? '</div>' : ''}
   </div>
   ${identityRow()}
 </header>`
@@ -392,14 +487,15 @@ ${bgLogo()}
 
 // Centered letterhead for formal/legal documents — Vendor Contract and
 // the BD contract print view.
-export function renderCenteredLetterhead(p: { subtitle?: string; gradient: DocumentGradientKey }): string {
+export function renderCenteredLetterhead(p: { subtitle?: string; gradient: DocumentGradientKey; date?: string | Date | null }): string {
+  const festive = festiveFor(p.date)
   const acc = accentOf(p.gradient)
   const accent = current.print_style === 'plain' ? INK : acc
   return `
 <style>:root{--acc:${accent}}</style>
 ${bgLogo()}
 <header class="doc-letterhead-centered">
-  ${tibeb(acc)}
+  ${festive ? festiveTibeb() + festiveMark(festive) : tibeb(acc)}
   <div class="doc-center">
     ${logoHtml(acc)}
     <div class="doc-company">${esc(companyName())}</div>
@@ -417,12 +513,13 @@ export function renderHeading(en: string, am?: string): string {
   return `<div class="doc-h">${esc(en)}${a && bilingual() ? `<span class="am">${esc(a)}</span>` : ''}</div>`
 }
 
-export function renderFooter(refCode?: string, accent?: string): string {
+export function renderFooter(refCode?: string, accent?: string, date?: string | Date | null): string {
   const p = current
+  const festive = festiveFor(date)
   return `
 <footer class="doc-footer">
   <div class="thanks">Thank you for your trust${bilingual() ? '<span class="am">እናመሰግናለን</span>' : ''}</div>
-  ${tibeb(accent ?? BRAND_NAVY, 14)}
+  ${festive ? keepsakeLine(festive) + festiveTibeb(14) : tibeb(accent ?? BRAND_NAVY, 14)}
   <div class="row">
     <span>${esc(companyName())} &middot; ${esc(companyAddress())}${p.tin ? ` &middot; TIN ${esc(p.tin)}` : ''}${p.footer_note ? `<br/>${esc(p.footer_note)}` : ''}</span>
     <span>${refCode ? `Ref: ${esc(refCode)}` : ''}</span>

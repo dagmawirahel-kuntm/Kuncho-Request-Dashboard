@@ -82,6 +82,7 @@ ${p.rejected ? '<div class="doc-watermark">NOT TO BE SOURCED</div>' : ''}
 ${renderLetterhead({
   docTitle: 'PURCHASE REQUEST',
   docCode: p.code ?? undefined,
+  date: p.submitted,
   meta: [['Date', esc(docDate(p.submitted))], ...(p.neededBy ? [['Needed by', esc(docDate(p.neededBy))] as [string, string]] : [])],
   gradient: 'purchaseRequest',
 })}
@@ -122,7 +123,7 @@ ${p.notes || p.vendorNotes ? `<div class="doc-blocks">
   <div><div class="line"><span class="muted">${lbl('Approved by')} (name, signature, date)</span></div></div>
 </div>
 <p style="font-size:7.8pt;color:#9a927c;margin-top:14px;font-style:italic">Internal document — a request to buy, not an order to a vendor.</p>
-${renderFooter(p.code ?? undefined, DOCUMENT_GRADIENTS.purchaseRequest.from)}
+${renderFooter(p.code ?? undefined, DOCUMENT_GRADIENTS.purchaseRequest.from, p.submitted)}
 </body>
 </html>`
 }
