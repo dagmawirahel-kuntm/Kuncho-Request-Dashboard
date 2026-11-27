@@ -174,6 +174,7 @@ export default function LabourDaySheetPage() {
 
   const payload = () => rows.map(r => ({
     staff_id: r.staff_id, paid_days: r.paid_days, overtime_hours: r.overtime_hours || 0, overtime_night_hours: r.overtime_night_hours || 0, note: r.note,
+    overtime_amount: r.overtime_amount ?? null,
     alloc: cols.filter(c => (r.cells[c.key] ?? 0) > 0).map(c => ({ bucket: c.bucket, project_id: c.project_id, days: r.cells[c.key] })),
   }))
   const updateJob = (id: string, f: (j: JobRow) => JobRow) => { setJobs(js => js.map(j => (j.id === id ? f(j) : j))); setDirty(true) }
@@ -309,7 +310,7 @@ export default function LabourDaySheetPage() {
                     {projectCols.map(p => <th key={p.id} colSpan={2} className="max-w-[10rem] truncate border-l px-2 py-1.5 font-medium dark:border-slate-700" title={p.name}>{p.name}</th>)}
                     {OTHER_BUCKETS.some(b => sheet.buckets[b as 'workshop']) && <th colSpan={3} className="border-l px-2 py-1.5 font-medium dark:border-slate-700">Not a project</th>}
                     <th rowSpan={2} className="border-l px-2 py-2 font-medium dark:border-slate-700">Adds up</th>
-                    <th rowSpan={2} className="px-2 py-2 font-medium">Overtime h</th>
+                    <th rowSpan={2} className="px-2 py-2 font-medium" title="Hours, or an amount agreed for the day — the amount is paid instead of hours × rate">Overtime<span className="block text-[10px] font-normal text-slate-400">hours · or agreed birr</span></th>
                     <th rowSpan={2} />
                   </tr>
                   <tr className="border-b text-[11px] text-slate-400 dark:border-slate-700">
@@ -372,6 +373,10 @@ export default function LabourDaySheetPage() {
                           <input type="number" min={0} max={16} step={0.5} disabled={!canEdit} value={r.overtime_hours || ''} placeholder="0"
                             onChange={e => update(r.staff_id, x => ({ ...x, overtime_hours: Number(e.target.value) || 0 }))}
                             className="w-16 rounded-lg border px-2 py-1.5 text-center text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                          <input inputMode="decimal" disabled={!canEdit} value={r.overtime_amount ?? ''} placeholder="birr" aria-label={`${r.name}: overtime agreed as an amount`}
+                            title="An amount agreed for the day's overtime — paid instead of hours × rate"
+                            onChange={e => { const t = e.target.value.replace(/[^\d.]/g, ''); update(r.staff_id, x => ({ ...x, overtime_amount: t === '' ? null : Number(t) })) }}
+                            className={`mt-1 block w-16 rounded-lg border px-2 py-1 text-right text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${r.overtime_amount != null ? 'border-brand/50 bg-brand/5' : ''}`} />
                         </td>
                         <td className="px-2 py-2">
                           {canEdit && (

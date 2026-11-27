@@ -20,7 +20,7 @@ import {
 import { CalendarRange, ChevronLeft, ChevronRight, ClipboardPaste, Copy, FileDown, Plus, Save, Send, UserPlus, X } from 'lucide-react'
 
 type Col = { key: string; bucket: Bucket; project_id: string | null; project: string | null; label: string; tag: string }
-type Cell = { paid: number; alloc: Record<string, number>; ot: number; night: number; note: string | null }
+type Cell = { paid: number; alloc: Record<string, number>; ot: number; night: number; note: string | null; amount?: number | null }
 type WRow = { staff_id: string; name: string; trade: string | null; day_rate: number | null; photo_url: string | null; verified: boolean }
 type JobDay = { present: string[]; measured: number | null }
 
@@ -113,6 +113,7 @@ export default function LabourWeekSheetPage() {
           c[w.staff_id] = { ...(c[w.staff_id] ?? {}) }
           c[w.staff_id][d] = {
             paid: Number(w.paid_days), ot: Number(w.overtime_hours) || 0, night: Number(w.overtime_night_hours) || 0, note: w.note,
+            amount: w.overtime_amount != null ? Number(w.overtime_amount) : null,
             alloc: Object.fromEntries(w.alloc.map(a => [PROJECT_BUCKETS.includes(a.bucket) ? cellKey(a.bucket, a.project_id) : a.bucket, Number(a.days)])),
           }
         }
@@ -180,7 +181,7 @@ export default function LabourWeekSheetPage() {
       const next: typeof c = {}
       for (const [staff, row] of Object.entries(c)) {
         next[staff] = { ...row }
-        if (row[from]) next[staff][to] = { ...row[from], ot: 0, night: 0, note: null }
+        if (row[from]) next[staff][to] = { ...row[from], ot: 0, night: 0, note: null, amount: null }
       }
       return next
     })
@@ -244,6 +245,7 @@ export default function LabourWeekSheetPage() {
     date: d,
     workers: Object.entries(cells).filter(([, row]) => row[d]?.paid).map(([staff, row]) => ({
       staff_id: staff, paid_days: row[d].paid, overtime_hours: row[d].ot, overtime_night_hours: Math.min(row[d].night, row[d].ot), note: row[d].note,
+      overtime_amount: row[d].amount ?? null,
       alloc: Object.entries(row[d].alloc).filter(([, v]) => v > 0).map(([k, v]) => {
         const c = cols.find(x => x.key === k)
         return { bucket: c?.bucket ?? k, project_id: c?.project_id ?? null, days: v }
@@ -344,7 +346,7 @@ export default function LabourWeekSheetPage() {
         const date = dates[i]
         const before = row[date]
         if (!d) { if (before) { delete row[date]; touched.add(date) } return }
-        row[date] = { paid: d.paid, ot: d.ot, night: Math.min(before?.night ?? 0, d.ot), note: before?.note ?? null, alloc: d.where ? { [d.where]: d.paid } : {} }
+        row[date] = { paid: d.paid, ot: d.ot, night: Math.min(before?.night ?? 0, d.ot), note: before?.note ?? null, amount: before?.amount ?? null, alloc: d.where ? { [d.where]: d.paid } : {} }
         if (JSON.stringify(before) !== JSON.stringify(row[date])) touched.add(date)
       })
       next[r.staff_id] = row
@@ -530,7 +532,7 @@ export default function LabourWeekSheetPage() {
                               className={`h-12 w-full min-w-[6rem] rounded-lg border px-1 text-[11px] leading-tight ${c ? (ok ? 'border-brand/40 bg-brand/10 text-slate-800 dark:text-slate-100' : 'border-red-300 bg-red-50 text-red-700 dark:bg-red-900/20') : 'border-dashed text-slate-300 dark:border-slate-600 dark:text-slate-600'} disabled:cursor-default`}>
                               {c ? (
                                 <>
-                                  <span className="block text-sm font-semibold">{halfDays(c.paid)}{c.ot ? <span className="text-[10px] font-normal text-slate-500"> +{c.ot}h</span> : null}</span>
+                                  <span className="block text-sm font-semibold">{halfDays(c.paid)}{c.amount != null ? <span className="text-[10px] font-normal text-slate-500"> +{Number(c.amount).toLocaleString()} OT</span> : c.ot ? <span className="text-[10px] font-normal text-slate-500"> +{c.ot}h</span> : null}</span>
                                   <span className="block truncate text-slate-500">{keys.length === 1 ? colTag(keys[0]) : keys.length > 1 ? 'split' : 'where?'}</span>
                                 </>
                               ) : editable ? '+' : '·'}
@@ -680,8 +682,9 @@ function CellEditor({ name, date, cols, cell, editable, dayLink, onClose, onSave
   const [paid, setPaid] = useState(cell?.paid ?? 1)
   const [where, setWhere] = useState<string | null>(keys.length === 1 ? keys[0] : null)
   const [ot, setOt] = useState(cell?.ot ?? 0)
+  const [amount, setAmount] = useState(cell?.amount != null ? String(cell.amount) : '')
   const save = (p: number) => onSave(p === 0 ? null : {
-    paid: p, ot, night: cell?.night ?? 0, note: cell?.note ?? null,
+    paid: p, ot, night: cell?.night ?? 0, note: cell?.note ?? null, amount: amount.trim() === '' ? null : Math.max(0, Number(amount) || 0),
     alloc: split && cell ? cell.alloc : where ? { [where]: p } : {},
   })
   return (
@@ -714,6 +717,11 @@ function CellEditor({ name, date, cols, cell, editable, dayLink, onClose, onSave
             <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">Overtime hours
               <input type="number" min={0} max={16} step={0.5} value={ot || ''} placeholder="0" onChange={e => setOt(Number(e.target.value) || 0)}
                 className="w-20 rounded-lg border px-2 py-1.5 text-center text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">or an agreed amount
+              <input inputMode="decimal" value={amount} placeholder="birr" onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                className="w-24 rounded-lg border px-2 py-1.5 text-right text-base sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+              <span className="text-[11px] text-slate-400">paid instead of hours × rate</span>
             </label>
             <div className="flex gap-2 pt-1">
               {cell && <button onClick={() => onSave(null)} className="rounded-lg px-3 py-2 text-sm text-red-600">Didn't work</button>}

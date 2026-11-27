@@ -97,6 +97,9 @@ export type OvertimeSettings = {
   rest_day: number; updated_at: string; updated_by_name: string | null
   /** Staff overtime on payroll: hourly rate = salary ÷ this ÷ 8 (532b). */
   staff_days_per_month?: number | null
+  /** Employees' own overtime rates (549); the unprefixed ones are for casual workers. */
+  staff_evening_multiplier?: number | null; staff_night_multiplier?: number | null
+  staff_rest_day_multiplier?: number | null; staff_holiday_multiplier?: number | null
 }
 /** The rates in force on one request on one day (labour_overtime_day_rates). */
 export type OvertimeDayRates = {

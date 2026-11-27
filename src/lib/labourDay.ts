@@ -42,6 +42,8 @@ export type Alloc = { project_id: string; bucket: Bucket; days: number }
 export type SheetWorker = {
   staff_id: string; name: string; trade: string | null; day_rate: number | null; photo_url: string | null; verified: boolean
   paid_days: number; overtime_hours: number; overtime_night_hours: number; note: string | null
+  /** Overtime agreed as a fixed amount for the day (549); replaces hours × rate. */
+  overtime_amount?: number | null
   paid: boolean; elsewhere: number; alloc: Alloc[]
 }
 export type DaySheet = {
